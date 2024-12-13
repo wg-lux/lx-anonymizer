@@ -1,3 +1,0 @@
-/home/admin/dev/lx-anonymizer/devenv.lock
-/home/admin/dev/lx-anonymizer/devenv.nix
-/home/admin/dev/lx-anonymizer/devenv.yaml
