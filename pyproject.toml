@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "opencv-python>=4.10.0.84",
+    "spacy>=3.8.3",
+    "torch>=2.5.1",
 ]
 
 [tool.setuptools]
