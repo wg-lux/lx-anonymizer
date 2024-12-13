@@ -5,6 +5,8 @@ let
     # cudaPackages.cuda_cudart
     # cudaPackages.cudnn
     stdenv.cc.cc
+    fhsenv-rootfs
+    glib
   ];
 
 
@@ -19,6 +21,7 @@ in
   packages = with pkgs; [
     cudaPackages.cuda_nvcc
     stdenv.cc.cc
+    fhsenv-rootfs
   ];
 
   env = {
