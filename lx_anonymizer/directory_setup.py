@@ -36,8 +36,8 @@ To change the default installation paths, update these variables:
 # 
 # CHANGE THIS IF YOU WANT TO USE A DIFFERENT DIRECTORY
 
-default_main_directory = Path("./agl-anonymizer")
-default_temp_directory = Path("./agl-anonymizer-temp")
+default_main_directory = Path("~/etc/lx-anonymizer/data/")
+default_temp_directory = Path("~/etc/lx-anonymizer/temp/")
 
 # Check if environment variables are set and override if available
 
