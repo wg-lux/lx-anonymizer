@@ -1,9 +1,11 @@
 .devenv/
 .direnv/
 
-#lx_anonymizer/agl-anonymizer/*
-#lx_anonymizer/agl-anonymizer-temp/*
+lx_anonymizer/agl-anonymizer/*
+lx_anonymizer/agl-anonymizer-temp/*
 
+agl-anonymizer/*
+agl-anonymizer-temp/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
