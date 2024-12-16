@@ -131,5 +131,5 @@ def extend_boxes_if_needed(image, boxes, extension_margin=10, color_threshold=30
         # Add the possibly extended box to the list
         extended_boxes.append((startX, startY, endX, endY))
 
-    logger.debug(f"Extended boxes to make rrom for names.")
+    logger.debug(f"Extended boxes to make room for names.")
     return extended_boxes

@@ -1,5 +1,6 @@
 from ocr import trocr_on_boxes, tesseract_on_boxes
-from spacy_NER import NER_German
+from spacy_NER import spacy_NER_German
+from flair_NER import flair_NER_German
 from names_generator import gender_and_handle_full_names, gender_and_handle_separate_names, gender_and_handle_device_names
 from east_text_detection import east_text_detection
 import re
@@ -261,14 +262,39 @@ def modify_image_for_name(image_path, phrase_box, combined_boxes):
     return blur_function(temp_image_path, phrase_box), last_name_box
 
 def split_and_check(phrase):
-    entities = NER_German(phrase)
-    if entities:
-        return [(entity.text, entity.tag) for entity in entities if entity.tag == 'PER']
-    parts = [phrase[:3], phrase[-3:], phrase[:4] + phrase[-4:], phrase[:5] + phrase[-5:], phrase[:6] + phrase[-6:]]
+    # Initialize an empty list to store entities
+    all_entities = []
+    
+    # Get entities from spaCy
+    spacy_entities = spacy_NER_German(phrase)
+    if spacy_entities:
+        all_entities.extend([(entity[0], 'PER') for entity in spacy_entities if entity[3] == 'PER'])
+    
+    # Get entities from Flair
+    flair_entities = flair_NER_German(phrase)
+    if flair_entities:
+        all_entities.extend([(entity.text, 'PER') for entity in flair_entities if entity.tag == 'PER'])
+    
+    if all_entities:
+        return all_entities
+        
+    # If no entities found, try with parts of the phrase
+    parts = [phrase[:3], phrase[-3:], phrase[:4] + phrase[-4:], 
+            phrase[:5] + phrase[-5:], phrase[:6] + phrase[-6:]]
+    
     for part in parts:
-        entities = NER_German(part)
-        if entities:
-            return [(entity.text, entity.tag) for entity in entities if entity.tag == 'PER']
+        spacy_entities = spacy_NER_German(part)
+        if spacy_entities:
+            entities = [(entity[0], 'PER') for entity in spacy_entities if entity[3] == 'PER']
+            if entities:
+                return entities
+                
+        flair_entities = flair_NER_German(part)
+        if flair_entities:
+            entities = [(entity.text, 'PER') for entity in flair_entities if entity.tag == 'PER']
+            if entities:
+                return entities
+    
     return []
 
 # Example usage
