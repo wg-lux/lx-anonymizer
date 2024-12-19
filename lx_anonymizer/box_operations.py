@@ -133,3 +133,55 @@ def extend_boxes_if_needed(image, boxes, extension_margin=10, color_threshold=30
 
     logger.debug(f"Extended boxes to make room for names.")
     return extended_boxes
+
+
+def find_or_create_close_box(phrase_box, boxes, image_width, min_offset=20):
+    """Dynamic box creation based on text length"""
+    (startX, startY, endX, endY) = phrase_box
+    same_line_boxes = [box for box in boxes if abs(box[1] - startY) <= 10]
+    
+    # Calculate required width based on text length
+    box_width = endX - startX
+    required_offset = max(box_width + min_offset, min_offset)
+
+    if same_line_boxes:
+        same_line_boxes.sort(key=lambda box: box[0])
+        for box in same_line_boxes:
+            if box[0] > endX + required_offset:  # Use dynamic offset
+                return box
+
+    # Create new box with dynamic sizing
+    new_startX = min(endX + required_offset, image_width - box_width)
+    new_endX = min(new_startX + box_width, image_width)
+    new_box = (new_startX, startY, new_endX, endY)
+    return new_box
+
+def combine_boxes(text_with_boxes):
+    if not text_with_boxes:
+        return text_with_boxes
+
+    text_with_boxes = sorted(text_with_boxes, key=lambda x: (x[1][1], x[1][0]))
+
+    merged_text_with_boxes = [text_with_boxes[0]]
+
+    for current in text_with_boxes[1:]:
+        last = merged_text_with_boxes[-1]
+
+        current_text, current_box = current
+        last_text, last_box = last
+
+        (last_startX, last_startY, last_endX, last_endY) = last_box
+        (current_startX, current_startY, current_endX, current_endY) = current_box
+
+        if last_startY == current_startY and (current_startX - last_endX) <= 10:
+            merged_box = (min(last_startX, current_startX), last_startY, max(last_endX, current_endX), last_endY)
+            merged_text = last_text + ' ' + current_text
+            merged_text_with_boxes[-1] = (merged_text, merged_box)
+        else:
+            merged_text_with_boxes.append(current)
+
+    return merged_text_with_boxes
+
+def close_to_box(name_box, phrase_box):
+    (startX, startY, _, _) = phrase_box
+    return abs(name_box[0] - startX) <= 10 and abs(name_box[1] - startY) <= 10
