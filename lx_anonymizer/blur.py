@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 temp_dir, base_dir, csv_dir = create_temp_directory()
 
-def blur_function(image_path, box, background_color=None, expansion=10, blur_strength=(51, 51), rectangle_scale=0.8):
+def blur_function(image_path, box, background_color=None, expansion=5, blur_strength=(51, 51), rectangle_scale=0.8):
     """
     Apply a strong Gaussian blur to the specified ROI in the image and slightly extend the blur outside the ROI.
 

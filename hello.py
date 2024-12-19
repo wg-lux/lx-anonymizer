@@ -23,7 +23,7 @@ def write_message(message=None):
     return file_name
 
 def main():
-    print("Hello from DevEnv for endoreg-db-api project!")
+    print("Hello from DevEnv for lx-anonymizer project!")
 
     write_message()
 

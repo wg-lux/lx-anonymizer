@@ -1,17 +1,25 @@
 import spacy
 from custom_logger import get_logger
+import subprocess
 
 logger = get_logger(__name__)
 
 try:
     logger.info("Loading spaCy German NER model...")
-    nlp = spacy.load("de_core_news_md")
+    nlp = spacy.load("de_dep_news_trf")
     logger.info("spaCy German NER model loaded successfully.")
 except Exception as e:
-    logger.error(f"Failed to load spaCy German NER model: {e}")
-    nlp = None
+    logger.error(f"Trying to download spaCy German NER model: {e}")
+    try:
+        logger.info("Loading spaCy German NER model...")
+        subprocess.run(["python", "-m", "spacy", "download", "de_dep_news_trf"], check=True)
+        nlp = spacy.load("de_dep_news_trf")
+        logger.info("spaCy German NER model loaded successfully.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to load spaCy German NER model: {e}")
+        nlp = None
 
-def NER_German(text):
+def spacy_NER_German(text):
     if not isinstance(text, str):
         logger.error(f"Expected a string, but got {type(text)}")
         return None

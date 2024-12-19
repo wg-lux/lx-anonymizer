@@ -101,7 +101,7 @@ def gender_and_handle_separate_names(words, first_name_box, last_name_box, image
         name = f"{female_first_name} {female_last_name}"
         output_image_path = add_name_to_image(male_last_name, female_last_name, "female", first_name_box, last_name_box, device)
     else:  # 'unknown' or 'andy'
-        logger.infont("Neutral or unknown gender")
+        logger.info("Neutral or unknown gender")
         with open(neutral_first_names_file, 'r') as file:
             index = getindex(file)
             neutral_first_name = neutral_first_names[index]

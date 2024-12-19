@@ -49,7 +49,7 @@ if not east_model_path.exists():
         raiselogger = get_logger(__name__)
 
 
-def east_text_detection(image_path, east_path=None, min_confidence=0.5, width=320, height=320):
+def east_text_detection(image_path, east_path=None, min_confidence=0.6, width=320, height=320):
     if east_path is None:
         east_path = str(east_model_path)  # Convert to string for cv2
         
@@ -141,40 +141,79 @@ def east_text_detection(image_path, east_path=None, min_confidence=0.5, width=32
             confidences.append(scoresData[x])
 
     # Apply non-maxima suppression to suppress weak, overlapping bounding boxes
-    boxes = non_max_suppression(np.array(rects), probs=confidences)
-
+    # Modify non-maxima suppression parameters
+    boxes = non_max_suppression(
+        np.array(rects), 
+        probs=confidences,
+        overlapThresh=0.2,  # Decrease overlap threshold (default is 0.3)
+    )
     output_boxes = []
     output_confidences = []
+    min_width = 15
+    max_width = int(origW * 0.3)  # Maximum width (30% of image width)
+    min_height = 8  # Minimum height for a word box
+    max_height = int(origH * 0.1)  # Maximum height (10% of image height)
+    
 
-    # Loop over the bounding boxes and scale them
+
+    # Loop over the bounding boxes and apply size filtering
     for i, (startX, startY, endX, endY) in enumerate(boxes):
-        # Scale the bounding box coordinates based on the respective ratios
+        # Scale the bounding box coordinates
         startX = int(startX * rW)
         startY = int(startY * rH)
         endX = int(endX * rW)
         endY = int(endY * rH)
 
-        # Draw the bounding box on the original image (optional)
-        # cv2.rectangle(orig, (startX, startY), (endX, endY), (0, 255, 0), 2)
+        # Calculate box dimensions
+        width = endX - startX
+        height = endY - startY
 
-        # Append the scaled bounding box to the list of output boxes
-        output_boxes.append((startX, startY, endX, endY))
+        # Filter out boxes that are too small or too large
+        if (min_width <= width <= max_width and 
+            min_height <= height <= max_height and 
+            width/height < 15):  # Aspect ratio check to avoid long text lines
+            
+            output_boxes.append((startX, startY, endX, endY))
+            output_confidences.append({
+                "startX": startX,
+                "startY": startY,
+                "endX": endX,
+                "endY": endY,
+                "confidence": float(confidences[i])
+            })
 
-        # Append the confidence score to the list of output confidences
-        output_confidences.append({
-            "startX": startX,
-            "startY": startY,
-            "endX": endX,
-            "endY": endY,
-            "confidence": float(confidences[i])
-        })
-
-    # Sort and extend boxes if needed
+    # Adjust vertical threshold for more precise line separation
+    vertical_threshold = 5  # Decreased from 10
     output_boxes = sort_boxes(output_boxes)
-    output_boxes = extend_boxes_if_needed(orig, output_boxes)
 
-    # Return both the scaled bounding boxes and the confidence scores in JSON format
+    # Optional: Merge very close boxes that might be parts of the same word
+    output_boxes = merge_close_boxes(output_boxes, horizontal_threshold=10)
+    
+    # Extend boxes if needed with smaller margins
+    output_boxes = extend_boxes_if_needed(orig, output_boxes, extension_margin=2)
+
     return output_boxes, json.dumps(output_confidences)
+
+def merge_close_boxes(boxes, horizontal_threshold=10):
+    """Merge boxes that are horizontally very close and likely part of the same word."""
+    if not boxes:
+        return boxes
+        
+    merged = []
+    current_box = list(boxes[0])
+    
+    for box in boxes[1:]:
+        if (abs(box[0] - current_box[2]) < horizontal_threshold and  # Close horizontally
+            abs(box[1] - current_box[1]) < 5):                       # On same line
+            # Merge boxes
+            current_box[2] = box[2]  # Extend to end of next box
+            current_box[3] = max(current_box[3], box[3])  # Take max height
+        else:
+            merged.append(tuple(current_box))
+            current_box = list(box)
+    
+    merged.append(tuple(current_box))
+    return merged
 
 def sort_boxes(boxes):
     # Define a threshold to consider boxes on the same line

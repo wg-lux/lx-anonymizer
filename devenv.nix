@@ -54,13 +54,17 @@ in
   processes = {
     # django.exec = "run-dev-server";
     silly-example.exec = "while true; do echo hello && sleep 10; done";
-    test-main.exec = "python lx_anonymizer/main.py -i lx_anonymizer/namen.jpg";
+    test-main.exec = "python lx_anonymizer/main.py -i lx_anonymizer/test_images/namen.jpg";
     # django.exec = "${pkgs.uv}/bin/uv run python manage.py runserver 127.0.0.1:8123";
+  };
+  tasks."run-test-main" = {
+    exec = "devenv up test-main";
+    after = [ "devenv:python:virtualenv" ];
   };
 
   enterShell = ''
     . .devenv/state/venv/bin/activate
-    python -m spacy download de_core_news_md
     hello
+    cd lx_anonymizer
   '';
 }
