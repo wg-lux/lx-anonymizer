@@ -158,28 +158,38 @@ def draw_text_to_fit(text, font, box, font_color, font_thickness, background_col
     box_width = endX - startX
     box_height = endY - startY
     
-    # Create a new image with the background color
-    text_img = np.full((box_height, box_width + 20, 3), background_color, dtype=np.uint8)
+    # Add padding
+    padding = 10
+    effective_width = box_width - (2 * padding)
+    effective_height = box_height - (2 * padding)
     
-    # Find the maximum font scale that fits the text height inside the box
+    # Create slightly larger image to prevent cutoff
+    text_img = np.full((box_height, box_width + padding * 2, 3), background_color, dtype=np.uint8)
+    
+    # Find optimal font scale
     font_scale = 1.0
-    text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
-    while text_size[1] > box_height:
-        font_scale -= 0.1
+    while font_scale > 0.1:
         text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
-        if font_scale <= 0.1:  # Prevent font_scale from becoming too small
+        if text_size[0] <= effective_width and text_size[1] <= effective_height:
             break
-
-    # Calculate the position to start the text
-    text_x = 0  # Start at the beginning of the box (left side)
-    text_y = (box_height + text_size[1]) // 2
+        font_scale -= 0.1
     
-    logger.debug(f"Function: draw_text_to_fit Text coordinates: Text size: {text_size}, Text position: ({text_x}, {text_y}), Font scale: {font_scale}")  
-
+    # Calculate centered position
+    text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
+    text_x = padding + (effective_width - text_size[0]) // 2
+    text_y = padding + (effective_height + text_size[1]) // 2
+    
     cv2.putText(text_img, text, (text_x, text_y), font, font_scale, font_color, font_thickness)
     
-    logger.info(f"Text drawn in new image to fit the new name size to the box.")
-
+    # Trim any excess padding while keeping text centered
+    non_zero_cols = np.where(text_img.any(axis=0).any(axis=1))[0]
+    if len(non_zero_cols) > 0:
+        left_margin = non_zero_cols[0]
+        right_margin = text_img.shape[1] - non_zero_cols[-1]
+        trim_amount = min(left_margin, right_margin)
+        text_img = text_img[:, trim_amount:-trim_amount if trim_amount > 0 else None]
+    
+    logger.debug(f"Text drawn with size: {text_size}, position: ({text_x}, {text_y}), scale: {font_scale}")
     return text_img
 
 
@@ -259,57 +269,71 @@ def draw_text_centered(text, font, font_scale, font_color, font_thickness, backg
 
 
 def add_name_to_image(first_name, last_name, gender_par, first_name_box, last_name_box, device=None, font=None, font_size=100, background_color="(255, 255, 255)", font_color="(0, 0, 0)", text_formatting="first_name last_name", line_spacing=40, font_scale=1, font_thickness=2):
-    
     logger.info(f"Adding name to image: {first_name} {last_name}")
+    
     try:
         config = read_text_formatting(device)
-        
         if config is None:
-            logger.error(f"No text formatting configuration found for device: {device}")
             raise ValueError(f"No text formatting configuration found for device: {device}")
         
         background_color, font_color, font, font_scale, font_thickness, text_formatting = config
-        logger.debug(f"Name formatting: {background_color}, {font_color}, {font}, {font_scale}, {font_thickness}, {text_formatting}")
         background_color = ast.literal_eval(background_color) if isinstance(background_color, str) else background_color
         font_color = ast.literal_eval(font_color) if isinstance(font_color, str) else font_color
     except (FileNotFoundError, KeyError, ValueError) as e:
         logger.debug(f"Error reading device configuration: {e}. Using default parameters.")
-        background_color = (255, 255, 255)  # Default to white
-        font_color = (0, 0, 0)  # Default to black
+        background_color = (255, 255, 255)
+        font_color = (0, 0, 0)
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1
-        font_thickness = 2
+        font_thickness = 1
         text_formatting = "first_name last_name"
 
-    formatted_name = format_name(f"{first_name} {last_name}", text_formatting)
-
-    logger.info(f"Formatted name: {formatted_name}")
+    # Get standardized height from the taller box
+    standard_height = max(first_name_box[3] - first_name_box[1], 
+                         last_name_box[3] - last_name_box[1])
     
-    # Ensure boxes are not None
-    if first_name_box is None or last_name_box is None:
-        logger.warning("Error: Name boxes cannot be None")
-        return None
-
-    first_name_coords = (first_name_box[0], first_name_box[1], first_name_box[2], first_name_box[3])
-    last_name_coords = (last_name_box[0], last_name_box[1], last_name_box[2], last_name_box[3])
+    # Fixed spacing between names (adjust this value as needed)
+    fixed_spacing = 5  # pixels
     
-    logger.debug(f"First name coords: {first_name_coords[0]}, {first_name_coords[1]}, {first_name_coords[2]}, {first_name_coords[3]}")
-    logger.debug(f"Last name coords: {last_name_coords[0]}, {last_name_coords[1]}, {last_name_coords[2]}, {last_name_coords[3]}")
-    #print(f"First name coords: {first_name_coords[0]}, {first_name_coords[1]}, {first_name_coords[2]}, {first_name_coords[3]}")
-    #print(f"Last name coords: {last_name_coords[0]}, {last_name_coords[1]}, {last_name_coords[2]}, {last_name_coords[3]}")
-
-    # Draw the text on the image    
-    text_img_fn = draw_text_to_fit(first_name, font, first_name_box, font_color, font_thickness, background_color)
-    text_img_ln = draw_text_to_fit(last_name, font, last_name_box, font_color, font_thickness, background_color)
+    # Create standardized boxes with same height
+    first_name_standardized = (
+        first_name_box[0],
+        first_name_box[1],
+        first_name_box[2],
+        first_name_box[1] + standard_height
+    )
     
-    # Concatenate with spacing to avoid overlapping
-    spacing = 0  # Add spacing between the two images
-    text_img = hconcat_resize_min_with_spacing([text_img_fn, text_img_ln], spacing=spacing)
+    last_name_standardized = (
+        last_name_box[0],
+        last_name_box[1],
+        last_name_box[2],
+        last_name_box[1] + standard_height
+    )
+
+    # Draw text with standardized heights
+    text_img_fn = draw_text_to_fit(first_name, font, first_name_standardized, 
+                                  font_color, font_thickness, background_color)
+    text_img_ln = draw_text_to_fit(last_name, font, last_name_standardized, 
+                                  font_color, font_thickness, background_color)
+
+    # Create final image with fixed spacing
+    total_width = text_img_fn.shape[1] + fixed_spacing + text_img_ln.shape[1]
+    final_img = np.full((standard_height, total_width, 3), background_color, dtype=np.uint8)
+
+    # Place first name at the start
+    final_img[:, :text_img_fn.shape[1]] = cv2.resize(text_img_fn, 
+                                                    (text_img_fn.shape[1], standard_height))
+    
+    # Place last name after fixed spacing
+    start_x = text_img_fn.shape[1] + fixed_spacing
+    final_img[:, start_x:start_x + text_img_ln.shape[1]] = cv2.resize(text_img_ln, 
+                                                                     (text_img_ln.shape[1], standard_height))
 
     unique_id = str(uuid.uuid4())
     output_filename = f"{gender_par}_{int(time.time())}_{unique_id}.png"
     output_image_path = Path(temp_dir) / output_filename
-    cv2.imwrite(str(output_image_path), text_img)
+    cv2.imwrite(str(output_image_path), final_img)
+    
     logger.debug(f"Name added to image. Image saved to {output_image_path}")
     logger.info(f"Image saved to {output_image_path}")
 

@@ -9,6 +9,7 @@ dependencies = [
     "endoreg-db>=0.5.2",
     "flair>=0.14.0",
     "gender-guesser>=0.4.0",
+    "hezar>=0.42.0",
     "imutils>=0.5.4",
     "opencv-python>=4.10.0.84",
     "pymupdf>=1.25.1",

@@ -1,0 +1,84 @@
+filename,startX,startY,endX,endY,ocr_confidence,entity_text,entity_tag
+lx_anonymizer/test_images/namen.jpg,213,381,275,437,0.9751773476600647,Dieter,PER
+lx_anonymizer/test_images/namen.jpg,220,479,294,538,0.989324152469635,BEATRIX,PER
+lx_anonymizer/test_images/namen.jpg,14,59,50,579,0.9513506889343262,THOTHO,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,0.9301485419273376,LALA,PER
+lx_anonymizer/test_images/namen.jpg,207,47,292,96,95.0,Margret,PER
+lx_anonymizer/test_images/namen.jpg,222,165,294,240,95.0,erhard Beatrix,PER
+lx_anonymizer/test_images/namen.jpg,512,191,601,281,88.66666666666667,Margret Elisabeth,PER
+lx_anonymizer/test_images/namen.jpg,493,244,563,355,70.66666666666667,Elisab Mijo Karina Nilhelm,PER
+lx_anonymizer/test_images/namen.jpg,426,266,480,341,82.33333333333333,AANrens Asbacl Balster Bartos,PER
+lx_anonymizer/test_images/namen.jpg,30,287,92,525,95.0,Uwerf,PER
+lx_anonymizer/test_images/namen.jpg,508,309,584,461,59.45454545454545,Eke do,PER
+lx_anonymizer/test_images/namen.jpg,508,309,584,461,59.45454545454545,Dagmar berhard,PER
+lx_anonymizer/test_images/namen.jpg,508,309,584,461,59.45454545454545,Beatrix Agnes,PER
+lx_anonymizer/test_images/namen.jpg,196,306,265,394,80.66666666666667,Bernd,PER
+lx_anonymizer/test_images/namen.jpg,196,306,265,394,80.66666666666667,lorbert Rudolf,PER
+lx_anonymizer/test_images/namen.jpg,213,381,275,437,63.5,Dieter negret,PER
+lx_anonymizer/test_images/namen.jpg,215,409,288,478,91.5,negret,PER
+lx_anonymizer/test_images/namen.jpg,215,409,288,478,91.5,Ursula,PER
+lx_anonymizer/test_images/namen.jpg,472,405,551,559,61.5,emann,PER
+lx_anonymizer/test_images/namen.jpg,472,405,551,559,61.5,Be,PER
+lx_anonymizer/test_images/namen.jpg,472,405,551,559,61.5,Agnes,PER
+lx_anonymizer/test_images/namen.jpg,472,405,551,559,61.5,Susanne Angelika Egbert,PER
+lx_anonymizer/test_images/namen.jpg,472,405,551,559,61.5,Willy,PER
+lx_anonymizer/test_images/namen.jpg,472,405,551,559,61.5,Carmeline,PER
+lx_anonymizer/test_images/namen.jpg,220,479,294,538,95.0,Beatrix,PER
+lx_anonymizer/test_images/namen.jpg,569,592,629,651,71.5,Petra,PER
+lx_anonymizer/test_images/namen.jpg,424,635,490,713,58.8,Hoffterh Hulsdun,PER
+lx_anonymizer/test_images/namen.jpg,424,635,490,713,58.8,Hasing,PER
+lx_anonymizer/test_images/namen.jpg,424,635,490,713,58.8,Huxel,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Abel,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Heike,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Jan Abramowski,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Margret,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Jan Balster,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Wilhem,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Jan Bartoszewicz,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Elke,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Jan Berkel,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Guido 20,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Jan Bernhardt,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Dagmar,PER
+lx_anonymizer/test_images/namen.jpg,127,33,663,190,85.64285714285714,Eberhard,PER
+lx_anonymizer/test_images/namen.jpg,16,88,439,125,69.3076923076923,Excel Balster,PER
+lx_anonymizer/test_images/namen.jpg,16,88,439,125,69.3076923076923,Wilhelm,PER
+lx_anonymizer/test_images/namen.jpg,16,88,439,125,69.3076923076923,Jan,PER
+lx_anonymizer/test_images/namen.jpg,16,88,439,125,69.3076923076923,Excel Bartoszewicz Elke,PER
+lx_anonymizer/test_images/namen.jpg,16,88,439,125,69.3076923076923,Jan,PER
+lx_anonymizer/test_images/namen.jpg,8,129,439,166,71.0,Excel Berkel,PER
+lx_anonymizer/test_images/namen.jpg,8,129,439,166,71.0,Guido,PER
+lx_anonymizer/test_images/namen.jpg,8,129,439,166,71.0,Jan,PER
+lx_anonymizer/test_images/namen.jpg,8,129,439,166,71.0,Excel Bernhardt,PER
+lx_anonymizer/test_images/namen.jpg,8,129,439,166,71.0,Dagmar,PER
+lx_anonymizer/test_images/namen.jpg,3,400,414,459,76.63636363636364,Thorwesten,PER
+lx_anonymizer/test_images/namen.jpg,3,400,414,459,76.63636363636364,Dieter,PER
+lx_anonymizer/test_images/namen.jpg,3,400,414,459,76.63636363636364,Wehling,PER
+lx_anonymizer/test_images/namen.jpg,3,400,414,459,76.63636363636364,Annegret,PER
+lx_anonymizer/test_images/namen.jpg,3,400,414,459,76.63636363636364,Ursula,PER
+lx_anonymizer/test_images/namen.jpg,3,439,414,470,47.63636363636363,Ursula,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Ursula,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Fischer,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Susanne,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Abel.Heke,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,PoverPoint,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,"Berkel,Guido",PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Bruggemann,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Bearix,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Fluck,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Egbert,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Gerke,PER
+lx_anonymizer/test_images/namen.jpg,3,439,671,559,58.89655172413793,Karl,PER
+lx_anonymizer/test_images/namen.jpg,3,539,414,581,76.0,Karl,PER
+lx_anonymizer/test_images/namen.jpg,3,539,414,581,76.0,Bernd,PER
+lx_anonymizer/test_images/namen.jpg,3,575,671,624,56.2,PowaePoigia Niewerth Paul,PER
+lx_anonymizer/test_images/namen.jpg,3,575,671,624,56.2,Alfons,PER
+lx_anonymizer/test_images/namen.jpg,3,575,671,624,56.2,Hencrhol.lWittkaweki Potra,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Hlenschel-VVIlkowskl,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Fetra,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Hoffterheide,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Alfred 24 Hulsdunker,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Willy 25 Hising,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Ginter,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Huxel,PER
+lx_anonymizer/test_images/namen.jpg,382,616,671,756,67.26086956521739,Felix Kampmann,PER

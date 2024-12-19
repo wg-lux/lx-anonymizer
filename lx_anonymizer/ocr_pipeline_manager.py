@@ -2,12 +2,13 @@ from ocr import trocr_on_boxes, tesseract_on_boxes
 from spacy_NER import spacy_NER_German
 from flair_NER import flair_NER_German
 from names_generator import gender_and_handle_full_names, gender_and_handle_separate_names, gender_and_handle_device_names
-from east_text_detection import east_text_detection
 import re
 from pdf_operations import convert_pdf_to_images
 from blur import blur_function
 from device_reader import read_name_boxes, read_background_color
+from east_text_detection import east_text_detection
 from tesseract_text_detection import tesseract_text_detection
+from craft_text_detection import craft_text_detection
 import cv2
 import json
 from pathlib import Path
@@ -17,24 +18,31 @@ import csv
 from custom_logger import get_logger
 import torch
 import fitz
+from llm import analyze_full_image_with_context
 
 # Configure logging
 logger = get_logger(__name__)
 
 
 
-def find_or_create_close_box(phrase_box, boxes, image_width, offset=60):
+def find_or_create_close_box(phrase_box, boxes, image_width, min_offset=20):
+    """Dynamic box creation based on text length"""
     (startX, startY, endX, endY) = phrase_box
     same_line_boxes = [box for box in boxes if abs(box[1] - startY) <= 10]
+    
+    # Calculate required width based on text length
+    box_width = endX - startX
+    required_offset = max(box_width + min_offset, min_offset)
 
     if same_line_boxes:
         same_line_boxes.sort(key=lambda box: box[0])
         for box in same_line_boxes:
-            if box[0] > endX:
+            if box[0] > endX + required_offset:  # Use dynamic offset
                 return box
 
-    new_startX = min(endX + offset, image_width)
-    new_endX = new_startX + (endX - startX)
+    # Create new box with dynamic sizing
+    new_startX = min(endX + required_offset, image_width - box_width)
+    new_endX = min(new_startX + box_width, image_width)
     new_box = (new_startX, startY, new_endX, endY)
     return new_box
 
@@ -127,8 +135,9 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
                 blurred_image_path = blur_function(blurred_image_path, last_name_box, background_color)
 
             east_boxes, east_confidences_json = east_text_detection(img_path, east_path, min_confidence, width, height)
-            tesseract_boxes, tesseract_confidences = tesseract_text_detection(img_path, min_confidence, width, height)
-            combined_boxes = east_boxes + tesseract_boxes
+            tesseract_boxes, tesseract_confidences_json = tesseract_text_detection(img_path, min_confidence, width, height)
+            craft_boxes, craft_confidences_json = craft_text_detection(img_path, min_confidence, width, height)  
+            combined_boxes = east_boxes + tesseract_boxes + craft_boxes
 
             logger.info("Running OCR on boxes")
             trocr_results, trocr_confidences = trocr_on_boxes(img_path, combined_boxes)
@@ -136,7 +145,19 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
 
             all_ocr_results = trocr_results + tesseract_results
             all_ocr_confidences = trocr_confidences + tess_confidences
+            east_confidences = json.loads(east_confidences_json)
+            tesseract_confidences = json.loads(tesseract_confidences_json)
+            craft_confidences = json.loads(craft_confidences_json)
+            
+            all_text_detection_confidences = (
+                east_confidences +           # Now a list of dictionaries
+                tesseract_confidences +      # Already a list of dictionaries
+                craft_confidences           # Already a list of dictionaries
+            )
 
+            # If you need it as JSON later:
+            all_text_detection_confidences_json = json.dumps(all_text_detection_confidences)
+            
             for (phrase, phrase_box), ocr_confidence in zip(all_ocr_results, all_ocr_confidences):
                 blurred_image_path, modified_images_map, combined_results, genders = process_ocr_results(
                     blurred_image_path, phrase, phrase_box, ocr_confidence,
@@ -149,7 +170,11 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
         # Prepare CSV writing
         csv_path = csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
         with open(csv_path, mode='w', newline='', encoding='utf-8') as csv_file:
-            fieldnames = ['filename', 'startX', 'startY', 'endX', 'endY', 'ocr_confidence', 'entity_text', 'entity_tag']
+            fieldnames = [
+                'filename', 'startX', 'startY', 'endX', 'endY', 
+                'text', 'phrase_box', 'ocr_confidence', 
+                'entity_text', 'entity_tag'
+            ]            
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
 
             writer.writeheader()
@@ -164,6 +189,8 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
                         'startY': startY,
                         'endX': endX,
                         'endY': endY,
+                        'text': phrase,
+                        'phrase_box': phrase_box,
                         'ocr_confidence': ocr_confidence,
                         'entity_text': entity_text,
                         'entity_tag': entity_tag
@@ -188,8 +215,10 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             final_image = cv2.imread(str(blurred_image_path))
             cv2.imwrite(str(output_path), final_image)
             logger.info(f"Final blurred image saved to: {output_path}")
+        
+        #llm_results, llm_csv_path = analyze_full_image_with_context(file_path, csv_path, csv_dir)
 
-        logger.info(f"Processing completed: {combined_results}")
+        logger.info(f"Processing completed: {combined_results} csv with pipeline results: {csv_path}") #llm results: {llm_csv_path}")
         return modified_images_map, result
     except Exception as e:
         error_message = f"Error in process_images_with_OCR_and_NER: {e}, File Path: {file_path}"

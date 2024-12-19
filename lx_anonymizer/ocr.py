@@ -107,7 +107,7 @@ def trocr_on_boxes(image_path, boxes):
                 if cudasupport==True:
                     # Move pixel_values to the same device as the model
                     pixel_values = pixel_values.to(device)
-                    with torch.cuda.amp.autocast():  # Enable automatic mixed precision
+                    with torch.amp.autocast():  # Enable automatic mixed precision
                         pixel_values = processor(
                             cropped_image, 
                             return_tensors="pt"
@@ -179,8 +179,8 @@ def tesseract_on_boxes(image_path, boxes):
             # Expand the region of interest
             image_np = np.asarray(image)
             image_shape = image_np.shape
-            expanded_box = expand_roi(startX, startY, endX, endY, 5, image_shape)
-            (startX_exp, startY_exp, endX_exp, endY_exp) = expanded_box
+            #expanded_box = expand_roi(startX, startY, endX, endY, 5, image_shape)
+            (startX_exp, startY_exp, endX_exp, endY_exp) = box
 
             # Crop the image to the expanded box
             cropped_image = image.crop((startX_exp, startY_exp, endX_exp, endY_exp))
@@ -199,7 +199,7 @@ def tesseract_on_boxes(image_path, boxes):
             confidence_score = sum(text_confidences) / len(text_confidences) if text_confidences else 0.0
 
             # Append results to the lists
-            extracted_text_with_boxes.append((ocr_result.strip(), expanded_box))
+            extracted_text_with_boxes.append((ocr_result.strip(), box))
             confidences.append(confidence_score)
 
             logger.debug(f"Processed box {idx + 1}/{len(boxes)}: '{ocr_result.strip()}' with confidence {confidence_score:.2f}")
