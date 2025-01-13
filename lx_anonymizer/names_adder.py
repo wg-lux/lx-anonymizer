@@ -14,6 +14,42 @@ logger = get_logger(__name__)
 # Create or read temporary directory
 temp_dir, base_dir, csv_dir = create_temp_directory()
 
+def upscale_image(image, scale_factor=2):
+    """
+    Upscale an image by the given factor using INTER_CUBIC for sharper edges.
+    """
+    height, width = image.shape[:2]
+    new_width = width * scale_factor
+    new_height = height * scale_factor
+    return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+
+def compute_uniform_font_scale(text1, text2, font, box1, box2, font_thickness):
+    """
+    Compute a single font scale so that both text1 and text2 can fit 
+    into their respective boxes at the same scale.
+    """
+    # Extract dimensions from the boxes
+    (startX1, startY1, endX1, endY1) = box1
+    (startX2, startY2, endX2, endY2) = box2
+
+    width1 = endX1 - startX1
+    height1 = endY1 - startY1
+    width2 = endX2 - startX2
+    height2 = endY2 - startY2
+
+    # We will find a scale that allows BOTH text1 and text2 to fit.
+    font_scale = 1.0
+    while font_scale > 0.1:
+        size1 = cv2.getTextSize(text1, font, font_scale, font_thickness)[0]  # (width, height)
+        size2 = cv2.getTextSize(text2, font, font_scale, font_thickness)[0]
+        
+        # We check if both texts can fit into their boxes at this scale
+        if (size1[0] <= width1 and size1[1] <= height1 and
+            size2[0] <= width2 and size2[1] <= height2):
+            break
+        font_scale -= 0.1
+    
+    return font_scale
 
 def format_name(name, format_string):
     names = name.split()
@@ -50,11 +86,13 @@ def draw_text_with_line_break(text, font, font_scale, font_color, font_thickness
     first_name_x = padding
     first_name_y = padding + first_name_coords[3]  # Adjusted for padding
     last_name_x = padding
-    last_name_y = first_name_y + last_name_coords[3] + line_spacing  # Adjusted for padding and line spacing
+    last_name_y = first_name_y + last_name_coords[3] + line_spacing  # Adjusted for line spacing
 
-    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
+    cv2.putText(text_img, first_name, (first_name_x, first_name_y), 
+                font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     if last_name:
-        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
+        cv2.putText(text_img, last_name, (last_name_x, last_name_y), 
+                    font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
 
     return text_img
 
@@ -74,14 +112,15 @@ def draw_text_without_line_break(text, font, font_scale, font_color, font_thickn
     last_name = names[1] if len(names) > 1 else ''
 
     first_name_x = padding // 2
-    
     first_name_y = padding // 2 + first_name_coords[3]  # Adjusted for padding
     last_name_x = padding // 2
-    last_name_y = first_name_y + last_name_coords[3] + line_spacing  # Adjusted for padding and line spacing
+    last_name_y = first_name_y + last_name_coords[3] + line_spacing  # Adjusted for line spacing
 
-    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
+    cv2.putText(text_img, first_name, (first_name_x, first_name_y), 
+                font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     if last_name:
-        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
+        cv2.putText(text_img, last_name, (last_name_x, last_name_y), 
+                    font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
 
     return text_img
 
@@ -103,16 +142,29 @@ def draw_free_text(text, font, font_scale, font_color, font_thickness, backgroun
     first_name_x = padding // 2
     first_name_y = first_name_coords[3]  # Reduced top padding
     last_name_x = padding // 2
-    last_name_y = last_name_coords[3] + line_spacing  # Adjusted for padding and line spacing
+    last_name_y = last_name_coords[3] + line_spacing  # Adjusted for line spacing
 
-    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
+    cv2.putText(text_img, first_name, (first_name_x, first_name_y), 
+                font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     if last_name:
-        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
+        cv2.putText(text_img, last_name, (last_name_x, last_name_y), 
+                    font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
 
     return text_img
 
-def add_device_name_to_image(name, gender_par, device=None, font=None, font_size=100, background_color=(0, 0, 0), font_color=(255, 255, 255), text_formatting=None, line_spacing=40, font_scale=1, font_thickness=2):
-    
+def add_device_name_to_image(
+    name, 
+    gender_par, 
+    device=None, 
+    font=None, 
+    font_size=100, 
+    background_color=(0, 0, 0), 
+    font_color=(255, 255, 255), 
+    text_formatting=None, 
+    line_spacing=40, 
+    font_scale=1, 
+    font_thickness=1  # Set thickness = 1 for better readability
+):
     try:
         device_config = read_device(device)
         if device_config is None:
@@ -123,8 +175,12 @@ def add_device_name_to_image(name, gender_par, device=None, font=None, font_size
          first_name_x, first_name_y, first_name_width, first_name_height, 
          last_name_x, last_name_y, last_name_width, last_name_height) = device_config
 
+        # Convert from string to tuple if necessary
         background_color = ast.literal_eval(background_color) if isinstance(background_color, str) else background_color
         font_color = ast.literal_eval(font_color) if isinstance(font_color, str) else font_color
+
+        # Force thickness = 1 for better readability
+        font_thickness = 1
 
         first_name_coords = (first_name_x, first_name_y, first_name_width, first_name_height)
         last_name_coords = (last_name_x, last_name_y, last_name_width, last_name_height)
@@ -133,18 +189,29 @@ def add_device_name_to_image(name, gender_par, device=None, font=None, font_size
         background_color = (0, 0, 0)
         font_color = (255, 255, 255)
         font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        font_thickness = 1
+        text_formatting = "first_name last_name"
         first_name_coords = (50, 50, 200, 50)
         last_name_coords = (50, 110, 200, 50)
-        text_formatting = "first_name last_name"
 
     if font is None:
         font = cv2.FONT_HERSHEY_SIMPLEX
 
     formatted_name = format_name(name, text_formatting)
     if "\n" in formatted_name:
-        text_img = draw_text_with_line_break(formatted_name, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing)
+        text_img = draw_text_with_line_break(
+            formatted_name, font, font_scale, font_color, font_thickness, 
+            background_color, first_name_coords, last_name_coords, line_spacing
+        )
     else:
-        text_img = draw_text_without_line_break(formatted_name, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing)
+        text_img = draw_text_without_line_break(
+            formatted_name, font, font_scale, font_color, font_thickness, 
+            background_color, first_name_coords, last_name_coords, line_spacing
+        )
+
+    # Optional Upscale to reduce aliasing (then optionally downscale)
+    # text_img = upscale_image(text_img, scale_factor=2)
 
     unique_id = str(uuid.uuid4())[:8]
     output_filename = f"{gender_par}_{int(time.time())}_{unique_id}.png"
@@ -158,16 +225,19 @@ def draw_text_to_fit(text, font, box, font_color, font_thickness, background_col
     (startX, startY, endX, endY) = box
     box_width = endX - startX
     box_height = endY - startY
-    
+
+    # Reduced thickness = 1 for readability
+    font_thickness = 1
+
     # Add padding
     padding = 10
     effective_width = box_width - (2 * padding)
     effective_height = box_height - (2 * padding)
     
     # Create slightly larger image to prevent cutoff
-    text_img = np.full((box_height, box_width + padding * 2, 3), background_color, dtype=np.uint8)
+    text_img = np.full((box_height, box_width + 2 * padding, 3), background_color, dtype=np.uint8)
     
-    # Find optimal font scale
+    # Find optimal font scale (start from 1.0 downwards)
     font_scale = 1.0
     while font_scale > 0.1:
         text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
@@ -188,13 +258,14 @@ def draw_text_to_fit(text, font, box, font_color, font_thickness, background_col
         left_margin = non_zero_cols[0]
         right_margin = text_img.shape[1] - non_zero_cols[-1]
         trim_amount = min(left_margin, right_margin)
-        text_img = text_img[:, trim_amount:-trim_amount if trim_amount > 0 else None]
-    
+        if trim_amount > 0:
+            text_img = text_img[:, trim_amount:-trim_amount]
+
     logger.debug(f"Text drawn with size: {text_size}, position: ({text_x}, {text_y}), scale: {font_scale}")
-    return text_img
+    return text_img, font_scale
 
 
-# Define letter size table
+# Define letter size table (unchanged)
 LETTER_SIZE_TABLE = {
     'a': (10, 20), 'b': (10, 20), 'c': (10, 20), 'd': (10, 20), 'e': (10, 20),
     'f': (5, 20), 'g': (10, 20), 'h': (10, 20), 'i': (5, 20), 'j': (5, 20),
@@ -211,11 +282,9 @@ LETTER_SIZE_TABLE = {
     '7': (10, 20), '8': (10, 20), '9': (10, 20)
 }
 
-
 def calculate_text_size(text, font_scale, font_thickness):
     width = 0
     height = 0
-    font_scale=font_scale
     for char in text:
         if char in LETTER_SIZE_TABLE:
             char_width, char_height = LETTER_SIZE_TABLE[char]
@@ -241,7 +310,8 @@ def enlarge_box(box, required_width, required_height, padding=10):
     new_endX = new_startX + new_width
     new_endY = new_startY + new_height
     
-    logger.debug(f"Changed box coordinates from start_x:{startX}, start_y: {startY}, end_x: {endX}, end_y: {endY} to new measurements: staart_x:{new_startX}, start_y: {new_startY}, end_x: {new_endX}, end_y: {new_endY})")
+    logger.debug(f"Changed box coordinates from ({startX}, {startY}, {endX}, {endY}) to "
+                 f"({new_startX}, {new_startY}, {new_endX}, {new_endY})")
 
     return new_startX, new_startY, new_endX, new_endY
 
@@ -262,14 +332,27 @@ def draw_text_centered(text, font, font_scale, font_color, font_thickness, backg
 
     # Draw text
     cv2.putText(text_img, text, (text_x, text_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
-    
-    
-    logger.debug(f"Text drawn centrally: Text size: {text_width}, {text_height}, Text position: ({text_x}, {text_y}), Font scale: {font_scale}")
+    logger.debug(f"Text drawn centrally: Text size: {text_width}, {text_height}, position: ({text_x}, {text_y}), scale: {font_scale}")
 
     return text_img
 
 
-def add_name_to_image(first_name, last_name, gender_par, first_name_box, last_name_box, device=None, font=None, font_size=100, background_color="(255, 255, 255)", font_color="(0, 0, 0)", text_formatting="first_name last_name", line_spacing=40, font_scale=1, font_thickness=2):
+def add_name_to_image(
+    first_name, 
+    last_name, 
+    gender_par, 
+    first_name_box, 
+    last_name_box, 
+    device=None, 
+    font=None, 
+    font_size=100, 
+    background_color="(255, 255, 255)", 
+    font_color="(0, 0, 0)", 
+    text_formatting="first_name last_name", 
+    line_spacing=40, 
+    font_scale=1, 
+    font_thickness=1  # reduce thickness
+):
     logger.info(f"Adding name to image: {first_name} {last_name}")
     
     try:
@@ -280,6 +363,8 @@ def add_name_to_image(first_name, last_name, gender_par, first_name_box, last_na
         background_color, font_color, font, font_scale, font_thickness, text_formatting = config
         background_color = ast.literal_eval(background_color) if isinstance(background_color, str) else background_color
         font_color = ast.literal_eval(font_color) if isinstance(font_color, str) else font_color
+        # Force thickness = 1 for uniform readability
+        font_thickness = 1
     except (FileNotFoundError, KeyError, ValueError) as e:
         logger.debug(f"Error reading device configuration: {e}. Using default parameters.")
         background_color = (255, 255, 255)
@@ -289,21 +374,25 @@ def add_name_to_image(first_name, last_name, gender_par, first_name_box, last_na
         font_thickness = 1
         text_formatting = "first_name last_name"
 
-    # Get standardized height from the taller box
-    standard_height = max(first_name_box[3] - first_name_box[1], 
-                         last_name_box[3] - last_name_box[1])
+    if font is None:
+        font = cv2.FONT_HERSHEY_SIMPLEX
     
-    # Fixed spacing between names (adjust this value as needed)
+    # Make sure both first_name and last_name use the SAME scale
+    # by computing one scale that fits both boxes
+    uniform_scale = compute_uniform_font_scale(first_name, last_name, font, first_name_box, last_name_box, font_thickness)
+    
+    # Standardize box heights
+    standard_height = max(first_name_box[3] - first_name_box[1], 
+                          last_name_box[3] - last_name_box[1])
+    
     fixed_spacing = 5  # pixels
     
-    # Create standardized boxes with same height
     first_name_standardized = (
         first_name_box[0],
         first_name_box[1],
         first_name_box[2],
         first_name_box[1] + standard_height
     )
-    
     last_name_standardized = (
         last_name_box[0],
         last_name_box[1],
@@ -311,24 +400,30 @@ def add_name_to_image(first_name, last_name, gender_par, first_name_box, last_na
         last_name_box[1] + standard_height
     )
 
-    # Draw text with standardized heights
-    text_img_fn = draw_text_to_fit(first_name, font, first_name_standardized, 
-                                  font_color, font_thickness, background_color)
-    text_img_ln = draw_text_to_fit(last_name, font, last_name_standardized, 
-                                  font_color, font_thickness, background_color)
+    # Draw text with standardized heights and uniform scale
+    text_img_fn, _ = draw_text_to_fit(first_name, font, first_name_standardized, 
+                                      font_color, font_thickness, background_color)
+    text_img_ln, _ = draw_text_to_fit(last_name, font, last_name_standardized, 
+                                      font_color, font_thickness, background_color)
 
-    # Create final image with fixed spacing
+    # If you want to override with the uniform_scale found above, you can do so directly:
+    # text_img_fn = draw_text_centered(first_name, font, uniform_scale, font_color, font_thickness, background_color, first_name_standardized)
+    # text_img_ln = draw_text_centered(last_name, font, uniform_scale, font_color, font_thickness, background_color, last_name_standardized)
+
     total_width = text_img_fn.shape[1] + fixed_spacing + text_img_ln.shape[1]
     final_img = np.full((standard_height, total_width, 3), background_color, dtype=np.uint8)
 
-    # Place first name at the start
+    # Place first name
     final_img[:, :text_img_fn.shape[1]] = cv2.resize(text_img_fn, 
-                                                    (text_img_fn.shape[1], standard_height))
+                                                     (text_img_fn.shape[1], standard_height))
     
-    # Place last name after fixed spacing
+    # Place last name after spacing
     start_x = text_img_fn.shape[1] + fixed_spacing
     final_img[:, start_x:start_x + text_img_ln.shape[1]] = cv2.resize(text_img_ln, 
-                                                                     (text_img_ln.shape[1], standard_height))
+                                                                      (text_img_ln.shape[1], standard_height))
+
+    # Optional Upscale for less aliasing (then you could downscale back if you prefer):
+    # final_img = upscale_image(final_img, scale_factor=2)
 
     unique_id = str(uuid.uuid4())
     output_filename = f"{gender_par}_{int(time.time())}_{unique_id}.png"
@@ -342,40 +437,52 @@ def add_name_to_image(first_name, last_name, gender_par, first_name_box, last_na
 
 def hconcat_resize_min_with_spacing(im_list, spacing=10, interpolation=cv2.INTER_CUBIC):
     h_min = min(im.shape[0] for im in im_list)
-    im_list_resize = [cv2.resize(im, (int(im.shape[1] * h_min / im.shape[0]), h_min), interpolation=interpolation)
-                      for im in im_list]
+    im_list_resize = [
+        cv2.resize(im, (int(im.shape[1] * h_min / im.shape[0]), h_min), interpolation=interpolation)
+        for im in im_list
+    ]
     
-    # Adding spacing
     total_width = sum(im.shape[1] for im in im_list_resize) + (len(im_list_resize) - 1) * spacing
-    result_image = np.full((h_min, total_width, 3), 255, dtype=np.uint8)  # Assuming a white background for the spacing
+    result_image = np.full((h_min, total_width, 3), 255, dtype=np.uint8)
 
     current_x = 0
     for image in im_list_resize:
         result_image[:, current_x:current_x + image.shape[1]] = image
-        current_x += image.shape[1] + spacing  # Move the start point for the next image and add spacing
+        current_x += image.shape[1] + spacing
 
     return result_image
 
-
-def add_full_name_to_image(name, gender_par, box, font=None, font_size=100, background_color=(0, 0, 0), font_color=(255, 255, 255), font_scale=1, font_thickness=2):
-
+def add_full_name_to_image(
+    name, 
+    gender_par, 
+    box, 
+    font=None, 
+    font_size=100, 
+    background_color=(0, 0, 0), 
+    font_color=(255, 255, 255), 
+    font_scale=1, 
+    font_thickness=1
+):
     StartX, StartY, EndX, EndY = box
     box_width = EndX - StartX
+
     if font is None:
         font = cv2.FONT_HERSHEY_SIMPLEX
 
-    text_img, font_scale = draw_text_to_fit(name, font, box, font_color, font_thickness, background_color)
+    # Use the updated draw_text_to_fit with lineType=LINE_AA
+    text_img, actual_scale = draw_text_to_fit(name, font, box, font_color, font_thickness, background_color)
 
-    # If the text overflows the box width, we create a larger canvas
-    text_size = cv2.getTextSize(name, font, font_scale, font_thickness)[0]
+    # If the text overflows, create a larger canvas
+    text_size = cv2.getTextSize(name, font, actual_scale, font_thickness)[0]
     if text_size[0] > box_width:
-        # Create a new image with the same height but wider width to fit the text
-        new_width = text_size[0] + 20  # Add some padding
+        new_width = text_size[0] + 20  # some padding
         larger_text_img = np.full((text_img.shape[0], new_width, 3), background_color, dtype=np.uint8)
-        larger_text_img[:, :text_img.shape[1]] = text_img  # Copy the text image to the left side
+        larger_text_img[:, :text_img.shape[1]] = text_img
         text_img = larger_text_img
 
-    # Generate the output filename and save the image
+    # Optional upscale
+    # text_img = upscale_image(text_img, scale_factor=2)
+
     unique_id = str(uuid.uuid4())[:8]
     output_filename = f"{gender_par}_{int(time.time())}_{unique_id}.png"
     output_image_path = Path(temp_dir) / output_filename

@@ -1,5 +1,5 @@
 import uuid
-from custom_logger import get_logger
+from custom_logger import get_logger, configure_global_logger
 from pdf_operations import merge_pdfs, convert_image_to_pdf
 from directory_setup import create_temp_directory, create_results_directory
 from pathlib import Path
@@ -46,8 +46,11 @@ by changing the values specified in the directory_setup.py file.
 '''
 from contextlib import contextmanager
 
+
+
 @contextmanager
 def temp_directory_manager():
+    logger = get_logger(__name__)  # Use global logger
     temp_dir, base_dir, csv_dir = create_temp_directory()
     try:
         yield temp_dir, base_dir, csv_dir
@@ -66,6 +69,7 @@ class ImageProcessingError(Exception):
 
 
 def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation=False, min_confidence=0.5, width=320, height=320):
+    logger = get_logger(__name__)  # Use global logger
     try:
         clear_gpu_memory()
         with temp_directory_manager() as (temp_dir, base_dir, csv_dir):
@@ -123,7 +127,7 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
                 merge_pdfs(processed_pdf_paths, final_pdf_path)
                 output_path = final_pdf_path
             else:
-                output_path = Path(results_dir) / processed_pdf_paths[0]
+                output_path = processed_pdf_paths[0]
 
             logger.info(f"Output Path: {output_path}")
             if not validation:
@@ -134,21 +138,30 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
     except Exception as e:
         raise ImageProcessingError(f"Processing failed: {str(e)}")
 
-# Configure logging
-logger = get_logger(__name__)
 
 if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("-i", "--image", type=str, required=True, help="path to input image")
-    ap.add_argument("-east", "--east", type=str, required=False, help="path to input EAST text detector")
-    ap.add_argument("-d", "--device", type=str, default="olympus_cv_1500", help="device name is required to set the correct text settings")
-    ap.add_argument("-v", "--validation", type=bool, default=False, help="Boolean value representing if validation through the AGL-Validator is required.")
-    ap.add_argument("-c", "--min-confidence", type=float, default=0.5, help="minimum probability required to inspect a region")
-    ap.add_argument("-w", "--width", type=int, default=320, help="resized image width (should be multiple of 32)")
-    ap.add_argument("-e", "--height", type=int, default=320, help="resized image height (should be multiple of 32)")
-    args = vars(ap.parse_args())
+    ap.add_argument("-i", "--image", type=str, required=True, help="Path to input image")
+    ap.add_argument("-east", "--east", type=str, required=False, help="Path to input EAST text detector")
+    ap.add_argument("-d", "--device", type=str, default="olympus_cv_1500", help="Device name to set the correct text settings")
+    ap.add_argument("-V", "--validation", type=bool, default=False, help="Boolean value representing if validation through the AGL-Validator is required.")
+    ap.add_argument("-c", "--min-confidence", type=float, default=0.5, help="Minimum probability required to inspect a region")
+    ap.add_argument("-w", "--width", type=int, default=320, help="Resized image width (should be multiple of 32)")
+    ap.add_argument("-e", "--height", type=int, default=320, help="Resized image height (should be multiple of 32)")
+    ap.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
 
-    main(args["image"], args["east"], args["device"], args["validation"], args["min_confidence"], args["width"], args["height"])
+    args = vars(ap.parse_args())
+    configure_global_logger(verbose=args["verbose"])
+
+    main(
+        args["image"], 
+        args["east"], 
+        args["device"], 
+        args["validation"], 
+        args["min_confidence"], 
+        args["width"], 
+        args["height"], 
+    )
 

@@ -62,7 +62,7 @@ coverage.xml
 cover/
 **~/etc
 **/etc/
-**data/
-**temp/
+**/data/
+**/temp/
 images/
 results/

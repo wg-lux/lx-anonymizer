@@ -3,7 +3,9 @@ import pytesseract
 from pytesseract import Output
 import json
 from box_operations import extend_boxes_if_needed
-from custom_logger import logger
+from custom_logger import get_logger
+
+logger=get_logger(__name__)
 
 def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=320):
     """
