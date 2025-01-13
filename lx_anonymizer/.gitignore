@@ -12,8 +12,8 @@ __pycache__/
 .Python
 ./~/
 ./etc/
-./data
-./temp
+./data/
+./temp/
 build/
 develop-eggs/
 dist/
