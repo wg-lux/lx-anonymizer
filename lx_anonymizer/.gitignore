@@ -61,5 +61,8 @@ coverage.xml
 .pytest_cache/
 cover/
 *~/etc
+*etc/
+*data/
+*temp/
 images/
 results/
