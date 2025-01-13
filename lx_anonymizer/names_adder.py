@@ -37,7 +37,7 @@ def draw_text_with_line_break(text, font, font_scale, font_color, font_thickness
     validate_coordinates(last_name_coords)
     
     padding = 10  # Padding around the text
-    total_height = first_name_coords[3] + last_name_coords[3] + line_spacing + 2 * padding
+    total_height = first_name_coords[3] + last_name_coords[3] + line_spacing + padding
     max_text_width = max(first_name_coords[2], last_name_coords[2])
     total_width = max_text_width + 2 * padding
 
@@ -52,9 +52,9 @@ def draw_text_with_line_break(text, font, font_scale, font_color, font_thickness
     last_name_x = padding
     last_name_y = first_name_y + last_name_coords[3] + line_spacing  # Adjusted for padding and line spacing
 
-    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness)
+    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     if last_name:
-        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness)
+        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
 
     return text_img
 
@@ -74,13 +74,14 @@ def draw_text_without_line_break(text, font, font_scale, font_color, font_thickn
     last_name = names[1] if len(names) > 1 else ''
 
     first_name_x = padding // 2
+    
     first_name_y = padding // 2 + first_name_coords[3]  # Adjusted for padding
     last_name_x = padding // 2
     last_name_y = first_name_y + last_name_coords[3] + line_spacing  # Adjusted for padding and line spacing
 
-    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness)
+    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     if last_name:
-        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness)
+        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
 
     return text_img
 
@@ -104,9 +105,9 @@ def draw_free_text(text, font, font_scale, font_color, font_thickness, backgroun
     last_name_x = padding // 2
     last_name_y = last_name_coords[3] + line_spacing  # Adjusted for padding and line spacing
 
-    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness)
+    cv2.putText(text_img, first_name, (first_name_x, first_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     if last_name:
-        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness)
+        cv2.putText(text_img, last_name, (last_name_x, last_name_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
 
     return text_img
 
@@ -179,7 +180,7 @@ def draw_text_to_fit(text, font, box, font_color, font_thickness, background_col
     text_x = padding + (effective_width - text_size[0]) // 2
     text_y = padding + (effective_height + text_size[1]) // 2
     
-    cv2.putText(text_img, text, (text_x, text_y), font, font_scale, font_color, font_thickness)
+    cv2.putText(text_img, text, (text_x, text_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     
     # Trim any excess padding while keeping text centered
     non_zero_cols = np.where(text_img.any(axis=0).any(axis=1))[0]
@@ -260,7 +261,7 @@ def draw_text_centered(text, font, font_scale, font_color, font_thickness, backg
     text_y = (box_height + text_height) // 2
 
     # Draw text
-    cv2.putText(text_img, text, (text_x, text_y), font, font_scale, font_color, font_thickness)
+    cv2.putText(text_img, text, (text_x, text_y), font, font_scale, font_color, font_thickness, lineType=cv2.LINE_AA)
     
     
     logger.debug(f"Text drawn centrally: Text size: {text_width}, {text_height}, Text position: ({text_x}, {text_y}), Font scale: {font_scale}")

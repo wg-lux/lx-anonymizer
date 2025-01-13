@@ -123,7 +123,7 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
                 merge_pdfs(processed_pdf_paths, final_pdf_path)
                 output_path = final_pdf_path
             else:
-                output_path = processed_pdf_paths[0]
+                output_path = Path(results_dir) / processed_pdf_paths[0]
 
             logger.info(f"Output Path: {output_path}")
             if not validation:
