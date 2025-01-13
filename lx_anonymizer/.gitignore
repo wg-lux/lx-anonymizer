@@ -10,8 +10,10 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-~/
-etc/
+./~/
+./etc/
+./data
+./temp
 build/
 develop-eggs/
 dist/
