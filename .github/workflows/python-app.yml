@@ -21,9 +21,9 @@ jobs:
         curl -L https://nixos.org/nix/install | sh
         . /home/runner/.nix-profile/etc/profile.d/nix.sh
 
-    - name: Install direnv and nix-direnv
+    - name: Install direnv
       run: |
-        nix-env -iA nixpkgs.direnv
+        nix-shell -p direnv
 
     - name: Allow direnv
       run: direnv allow .
