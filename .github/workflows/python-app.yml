@@ -26,14 +26,6 @@ jobs:
       with:
         version: '2.32.1'
 
-    - name: Allow direnv
-      run: direnv allow .
-
-    - name: Set up devenv
-      run: |
-        nix-shell -p devenv.out --run 'direnv allow'
-        direnv reload  # Reload to ensure environment is applied
-
     - name: Ensure flake8 is installed
       run: |
         which flake8 || pip install flake8  # Fallback if flake8 isn't found
@@ -47,4 +39,5 @@ jobs:
         pip install pytest
     - name: Test with pytest
       run: |
+        direnv allow
         pytest
