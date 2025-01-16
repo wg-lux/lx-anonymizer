@@ -40,4 +40,6 @@ jobs:
     - name: Test with pytest
       run: |
         direnv allow
+        pip install uv
+        uv sync
         pytest
