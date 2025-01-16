@@ -23,8 +23,7 @@ jobs:
 
     - name: Install direnv and nix-direnv
       run: |
-        nix-env -iA nixpkgs.direnv nixpkgs.nix-direnv
-        echo 'eval "$(direnv hook bash)"' >> ~/.bashrc
+        nix-env -iA nixpkgs.direnv
 
     - name: Allow direnv
       run: direnv allow .
