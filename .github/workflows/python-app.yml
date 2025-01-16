@@ -29,7 +29,6 @@ jobs:
     - name: Install dependencies
       run: |
         direnv allow
-        uv pip install flake8 pytest
 
     - name: Lint with flake8
       run: |
