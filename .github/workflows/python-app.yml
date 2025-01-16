@@ -33,10 +33,6 @@ jobs:
       run: |
         nix-shell -p devenv.out --run 'direnv allow'
 
-    - name: Set up uv2nix
-      run: |
-        nix-shell -p uv2nix --run 'echo "uv2nix installed"'
-
     - name: Lint with flake8
       run: |
         # Ensure environment is ready before running lint
