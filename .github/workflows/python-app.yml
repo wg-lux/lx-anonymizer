@@ -27,7 +27,7 @@ jobs:
         version: '2.32.1'  # Specify the version you need
 
     - name: Allow direnv
-      run: direnv allow .
+      run: direnv allow
 
     - name: Lint with flake8
       run: |
