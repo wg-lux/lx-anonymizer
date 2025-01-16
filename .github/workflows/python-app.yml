@@ -28,9 +28,6 @@ jobs:
 
     - name: Allow direnv
       run: direnv allow .
-      
-    - name: Install Python dependencies
-      run: uv sync
 
     - name: Lint with flake8
       run: |
