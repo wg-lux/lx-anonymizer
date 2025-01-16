@@ -3,7 +3,8 @@ from custom_logger import get_logger, configure_global_logger
 from pdf_operations import merge_pdfs, convert_image_to_pdf
 from directory_setup import create_temp_directory, create_results_directory
 from pathlib import Path
-from image_loader import get_image_paths, process_image, resize_image
+from image_loader import get_image_paths
+from image_processor import process_image
 from gpu_management import clear_gpu_memory
 
 
@@ -77,7 +78,7 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
             image_paths = get_image_paths(Path(image_or_pdf_path), Path(temp_dir))
             
             processed_pdf_paths = []
-            result = None
+            anonymization_data = None
             
             for img_path in image_paths:
                 success = False
@@ -102,7 +103,7 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
                         if not local_img_path.exists():
                             raise ImageProcessingError(f"Local image path does not exist: {local_img_path}")
                         
-                        processed_image_path, result = process_image(
+                        processed_image_path, anonymization_data = process_image(
                             local_img_path, east_path, device, min_confidence, width, height,
                             Path(results_dir), Path(temp_dir)
                         )
@@ -133,7 +134,7 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
             if not validation:
                 return output_path
             else:
-                return output_path, result, image_or_pdf_path
+                return output_path, anonymization_data, image_or_pdf_path
 
     except Exception as e:
         raise ImageProcessingError(f"Processing failed: {str(e)}")
