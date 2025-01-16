@@ -61,6 +61,7 @@ in
 
   enterShell = ''
     . .devenv/state/venv/bin/activate
+    uv sync
     hello
     cd lx_anonymizer
   '';
