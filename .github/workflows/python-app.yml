@@ -31,6 +31,5 @@ jobs:
     - name: Test with pytest
       run: |
         pip install pyproject.toml
-        cd lx_anonymizer
         python -m pytest
       working-directory: ./lx_anonymizer
