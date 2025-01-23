@@ -27,7 +27,6 @@ jobs:
         pip install pytest
     - name: Test with pytest
       run: |
-        pip install uv
-        uv sync
+        pip install pyproject.toml
         cd lx_anonymizer
         python -m pytest
