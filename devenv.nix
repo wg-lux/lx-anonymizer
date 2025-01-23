@@ -18,6 +18,7 @@ in
 
 
   packages = with pkgs; [
+    git
     cudaPackages.cuda_nvcc
     stdenv.cc.cc
     glib

@@ -6,14 +6,14 @@ logger = get_logger(__name__)
 
 try:
     logger.info("Loading spaCy German NER model...")
-    nlp = spacy.load("de_dep_news_trf")
+    nlp = spacy.load("de_core_news_lg")
     logger.info("spaCy German NER model loaded successfully.")
 except Exception as e:
     logger.error(f"Trying to download spaCy German NER model: {e}")
     try:
         logger.info("Loading spaCy German NER model...")
-        subprocess.run(["python", "-m", "spacy", "download", "de_dep_news_trf"], check=True)
-        nlp = spacy.load("de_dep_news_trf")
+        subprocess.run(["python", "-m", "spacy", "download", "de_core_news_lg"], check=True)
+        nlp = spacy.load("de_core_news_lg")
         logger.info("spaCy German NER model loaded successfully.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to load spaCy German NER model: {e}")
