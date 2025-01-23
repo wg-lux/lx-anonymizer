@@ -42,4 +42,5 @@ jobs:
         direnv allow
         pip install uv
         uv sync
-        pytest
+        cd lx_anonymizer
+        python -m pytest
