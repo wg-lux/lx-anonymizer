@@ -39,4 +39,4 @@ jobs:
       - name: Run tests
         run: 
           uv run pytest tests
-        working-directory: lx_anonymizer
+        working-directory: ./
