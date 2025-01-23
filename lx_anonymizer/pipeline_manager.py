@@ -1,4 +1,4 @@
-from ocr import trocr_on_boxes, tesseract_on_boxes
+from ocr import trocr_on_boxes, tesseract_on_boxes, tesseract_full_image_ocr
 from spacy_NER import spacy_NER_German
 from flair_NER import flair_NER_German
 from names_generator import gender_and_handle_full_names, gender_and_handle_separate_names, gender_and_handle_device_names
@@ -18,7 +18,8 @@ from custom_logger import get_logger
 import torch
 import fitz
 from llm import analyze_full_image_with_context
-from box_operations import find_or_create_close_box, combine_boxes, close_to_box
+from box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes
+from fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
 
 # Configure logging
 logger = get_logger(__name__)
@@ -74,6 +75,7 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
         blurred_image_path = image_paths[0]
         for img_path in image_paths:
             logger.info(f"Processing image: {img_path}")
+            full_text, word_boxes = tesseract_full_image_ocr(img_path)
             try:
                 first_name_box, last_name_box = read_name_boxes(device)
                 background_color = read_background_color(device)
@@ -106,18 +108,26 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
                 tesseract_confidences +      # Already a list of dictionaries
                 craft_confidences           # Already a list of dictionaries
             )
+            all_ocr_results = filter_empty_boxes(all_ocr_results)
 
             # If you need it as JSON later:
             all_text_detection_confidences_json = json.dumps(all_text_detection_confidences)
             
             for (phrase, phrase_box), ocr_confidence in zip(all_ocr_results, all_ocr_confidences):
-                blurred_image_path, modified_images_map, combined_results, genders = process_ocr_results(
-                    blurred_image_path, phrase, phrase_box, ocr_confidence,
-                    combined_results, names_detected, device,
-                    modified_images_map, combined_boxes,
-                    first_name_box, last_name_box
+                blurred_image_path, modified_images_map, combined_results, updated_genders = do_ocr_with_fuzzy_correction(
+                    all_ocr_results=all_ocr_results,
+                    all_ocr_confidences=all_ocr_confidences,
+                    blurred_image_path=blurred_image_path,
+                    combined_results=combined_results,
+                    names_detected=names_detected,
+                    device=device,
+                    modified_images_map=modified_images_map,
+                    combined_boxes=combined_boxes,
+                    first_name_box=first_name_box,
+                    last_name_box=last_name_box,
+                    full_text_candidates=phrase
                 )
-                gender_pars.extend(genders)  # Assuming 'genders' is a list
+                gender_pars.extend(updated_genders)  # Assuming 'genders' is a list
 
         # Prepare CSV writing
         csv_path = csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
@@ -226,6 +236,71 @@ def process_ocr_results(
 
     combined_results.append((phrase, phrase_box, ocr_confidence, entities))
     return new_image_path, modified_images_map, combined_results, gender_pars  # Always return the last modified path
+
+def do_ocr_with_fuzzy_correction(
+    all_ocr_results,
+    all_ocr_confidences,
+    blurred_image_path,
+    combined_results,
+    names_detected,
+    device,
+    modified_images_map,
+    combined_boxes,
+    first_name_box=None,
+    last_name_box=None,
+    full_text_candidates=None
+):
+    """
+    Demonstrates how to integrate fuzzy matching and box correction
+    into your existing loop before calling 'process_ocr_results'.
+    """
+    # If you don't have a big list of words, you can pass in your entire recognized text 
+    # as e.g. `full_text_candidates = full_text.split()`.
+    if full_text_candidates is None:
+        full_text_candidates = []
+
+    updated_genders = []
+
+    for ((snippet_text, snippet_box), snippet_conf) in zip(all_ocr_results, all_ocr_confidences):
+
+        # 1) Fuzzy match the snippet_text against a global list or full-image words
+        best_match, ratio = fuzzy_match_snippet(snippet_text, full_text_candidates, threshold=0.7)
+
+        corrected_text = snippet_text  # default is the original
+        corrected_box = snippet_box
+
+        # 2) If the best_match is significantly better, use it
+        #    Let's say ratio > 0.85 is considered a "strong" match
+        if best_match and ratio > 0.85 and len(best_match) > len(snippet_text):
+            logger.info(f"Fuzzy corrected '{snippet_text}' -> '{best_match}' (ratio={ratio:.2f})")
+            corrected_text = best_match
+
+            # 3) Adjust bounding box if the new text is longer
+            corrected_box = correct_box_for_new_text(
+                blurred_image_path,
+                snippet_box,
+                old_text=snippet_text,
+                new_text=corrected_text,
+                extension_margin=15
+            )
+
+        # 4) Now feed the (corrected) text + box to your NER and anonymization logic
+        blurred_image_path, modified_images_map, combined_results, genders = process_ocr_results(
+            blurred_image_path,
+            corrected_text,
+            corrected_box,
+            snippet_conf,
+            combined_results,
+            names_detected,
+            device,
+            modified_images_map,
+            combined_boxes,
+            first_name_box,
+            last_name_box
+        )
+        updated_genders.extend(genders)
+
+    return blurred_image_path, modified_images_map, combined_results, updated_genders
 
 
 def modify_image_for_name(image_path, phrase_box, combined_boxes):

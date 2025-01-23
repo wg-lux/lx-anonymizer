@@ -74,6 +74,32 @@ def print_gpu_info():
         cudasupport = False
         return cudasupport
 
+def tesseract_full_image_ocr(image_path):
+    """
+    Perform OCR on the entire image using Tesseract.
+    Returns:
+      - A single string with all recognized text.
+      - A list of (word, (left, top, width, height)) for each recognized word.
+    """
+    from PIL import Image
+    import pytesseract
+
+    image = Image.open(image_path).convert("RGB")
+    # 1. Full text in a single chunk
+    full_text = pytesseract.image_to_string(image, config='--psm 6')
+
+    # 2. Word-level bounding boxes
+    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    word_boxes = []
+    for i in range(len(data['text'])):
+        word = data['text'][i].strip()
+        if word != "":
+            x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+            word_boxes.append((word, (x, y, w, h)))
+
+    return full_text.strip(), word_boxes
+
+
 def trocr_on_boxes(image_path, boxes):
     try:
         image = Image.open(image_path).convert("RGB")

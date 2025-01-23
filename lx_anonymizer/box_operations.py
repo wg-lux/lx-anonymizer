@@ -13,6 +13,17 @@ bounding boxes in images.
 
 '''
 
+def filter_empty_boxes(ocr_results, min_text_len=2):
+    """
+    ocr_results: List of (text, box)
+    Returns only entries where text length >= min_text_len
+    """
+    filtered = []
+    for (text, box) in ocr_results:
+        if len(text.strip()) >= min_text_len:
+            filtered.append((text, box))
+    return filtered
+
 def get_dominant_color(image, box):
     """
     Get the dominant color in a given box region of the image.
