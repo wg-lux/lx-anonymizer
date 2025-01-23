@@ -47,7 +47,7 @@ def get_dominant_color(image, box):
     logger.debug(f"Found dominant color: {dominant}")
     return tuple(map(int, dominant))
 
-def make_box_from_name(image, name, padding=10):
+def make_box_from_name(image, name, padding=2):
     """
     Create a bounding box around the given name in the image.
 

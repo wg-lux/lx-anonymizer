@@ -18,7 +18,7 @@ from custom_logger import get_logger
 import torch
 import fitz
 from llm import analyze_full_image_with_context
-from box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes
+from box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes, get_dominant_color
 from fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
 
 # Configure logging
@@ -82,7 +82,7 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             except Exception as e:
                 logger.warning("Using default values for name replacement.")
                 first_name_box, last_name_box = None, None
-                background_color = (0, 0, 0)
+                background_color = get_dominant_color(cv2.imread(str(img_path)))
 
             if first_name_box and last_name_box:
                 blurred_image_path = blur_function(blurred_image_path, first_name_box, background_color)

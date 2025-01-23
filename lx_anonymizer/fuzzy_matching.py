@@ -12,6 +12,8 @@ def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
     """
     best_match = None
     best_ratio = 0.0
+    
+    logger.debug(f"Fuzzy matching: snippet text: {snippet_text}")
 
     for candidate in candidates:
         ratio = difflib.SequenceMatcher(None, snippet_text, candidate).ratio()

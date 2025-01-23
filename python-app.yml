@@ -14,6 +14,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v30
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Set up direnv
+      uses: andreygubarev/setup-direnv@v1.1.0
+      with:
+        version: '2.32.1'
+
     - name: Ensure flake8 is installed
       run: |
         which flake8 || pip install flake8  # Fallback if flake8 isn't found
@@ -27,6 +39,7 @@ jobs:
         pip install pytest
     - name: Test with pytest
       run: |
+        direnv allow
         pip install uv
         uv sync
         cd lx_anonymizer
