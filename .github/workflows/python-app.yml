@@ -37,4 +37,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run tests
-        run: uv run pytest tests
+        run: 
+          uv run pytest tests
+        working-directory: lx_anonymizer
