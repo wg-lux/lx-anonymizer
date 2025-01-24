@@ -32,9 +32,10 @@ jobs:
           version: '2.32.1'
 
       - name: Install dependencies
-        run: 
+        run: |
           direnv allow
       - name: Run tests
+        run: |
           echo "PYTHONPATH=$PYTHONPATH:$(pwd)/lx_anonymizer" >> $GITHUB_ENV
           uv run pytest tests
       
