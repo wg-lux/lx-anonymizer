@@ -31,9 +31,9 @@ jobs:
         with:
           version: '2.32.1'
 
-
       - name: Run tests
         run: |
+          curl -sfL https://devenv.sh/install.sh | sh
           direnv allow
           # Export direnv's env vars for the rest of this script:
           eval "$(direnv export bash)"
