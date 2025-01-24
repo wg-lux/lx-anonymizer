@@ -33,5 +33,6 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Run tests
-        run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)/lx_anonymizer" >> $GITHUB_ENV
-        run: uv run pytest tests
+        run: 
+          echo "PYTHONPATH=$PYTHONPATH:$(pwd)/lx_anonymizer" >> $GITHUB_ENV
+          uv run pytest tests
