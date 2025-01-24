@@ -26,24 +26,16 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Install devenv
+      - name: Set up direnv
+        uses: andreygubarev/setup-direnv@v1.1.0
+        with:
+          version: '2.32.1'
         run: |
-          curl -sfL https://devenv.sh/install.sh | sh
-      
-      - name: Set up devenv environment
-        run: |
-          devenv cache --preload
-          devenv up
-      
-      - name: Lint with flake8
-        run: devenv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          direnv allow
 
       - name: Run tests
-        run: devenv run pytest tests
-
-      - name: Publish to PyPI
-        run: devenv run python -m build && devenv run twine upload dist/*
-
-
-
+        run: |
+          direnv allow
+          echo "PYTHONPATH=$PYTHONPATH:$(pwd)/lx_anonymizer" >> $GITHUB_ENV
+          uv run pytest tests
       
