@@ -35,6 +35,8 @@ jobs:
       - name: Run tests
         run: |
           direnv allow
+          # Export direnv's env vars for the rest of this script:
+          eval "$(direnv export bash)"
+
           echo "PYTHONPATH=$PYTHONPATH:$(pwd)/lx_anonymizer" >> $GITHUB_ENV
           uv run pytest tests
-      
