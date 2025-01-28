@@ -37,4 +37,3 @@ jobs:
           echo "PYTHONPATH=$PYTHONPATH:$(pwd)/lx_anonymizer" >> $GITHUB_ENV
           uv run pytest tests
       
-      - name: 
