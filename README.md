@@ -129,7 +129,7 @@ The `add_argument` method is used to define each argument that the script can ac
 
 - `-d` or `--device`: Specifies the device name used to set the correct text settings. This argument is optional and defaults to "olympus_cv_1500". It expects a string value.
 
-- `-v` or `--validation`: Specifies if validation through the AGL-Validator is required. This argument is optional and defaults to `False`. It expects a boolean value.
+- `-v` or `--validation`: Specifies if validation through the lx-annotate is required. This argument is optional and defaults to `False`. It expects a boolean value.
 
 - `-c` or `--min-confidence`: Specifies the minimum probability required to inspect a region in EAST Text Detection. This argument is optional and defaults to `0.5`. It expects a float value.
 
@@ -157,7 +157,7 @@ The `main` function is responsible for processing either images or PDF files thr
    The device name used to set the correct OCR and NER (Named Entity Recognition) text settings for different devices. Defaults to `olympus_cv_1500`.
 
 - **validation** (`bool`, optional):  
-   If set to `True`, the function will perform additional validation by using an external AGL-Validator service to validate the results and return extra output. Defaults to `False`.
+   If set to `True`, the function will perform additional validation by using an external lx-annotate service to validate the results and return extra output. Defaults to `False`.
 
 - **min_confidence** (`float`, optional):  
    Minimum confidence level for detecting text regions within the image. Regions with a confidence score below this threshold will not be processed. Defaults to `0.5`.
