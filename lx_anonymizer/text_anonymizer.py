@@ -1,5 +1,6 @@
 from flair_NER import flair_NER_German
 from custom_logger import get_logger
+from names_generator import get_random_name
 
 logger = get_logger(__name__)
 
@@ -16,6 +17,7 @@ def anonymize_text(text):
             anonymized_text = text
             for entity in entities:
                 if entity.tag == 'PER':
+                    person = get_random_name()
                     anonymized_text = anonymized_text.replace(entity.text, 'PERSON')
             return anonymized_text
         else:

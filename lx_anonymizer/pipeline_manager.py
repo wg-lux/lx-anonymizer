@@ -17,7 +17,7 @@ import csv
 from custom_logger import get_logger
 import torch
 import fitz
-from llm import analyze_full_image_with_context
+from llm import analyze_full_image_with_context, analyze_text_with_phi4
 from box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes, get_dominant_color
 from fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
 
@@ -25,7 +25,28 @@ from fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
 logger = get_logger(__name__)
 
 
-def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detection.pb', device="default", min_confidence=0.5, width=320, height=320):
+def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detection.pb', device="default", min_confidence=0.5, width=320, height=320, skip_blur=False, skip_reassembly=False):
+    """
+    Process images with OCR and NER.
+    
+    Parameters:
+    - file_path: str
+        The path to the image or PDF file to process.
+    - east_path: str
+        The path to the EAST text detector model. Default is 'frozen_east_text_detection.pb'.
+    - device: str
+        The device name to set the correct text settings. Default is 'default'.
+    - min_confidence: float
+        The minimum probability required to inspect a region. Default is 0.5.
+    - width: int
+        The resized image width (should be a multiple of 32). Default is 320.
+    - height: int
+        The resized image height (should be a multiple of 32). Default is 320.
+    - skip_blur: bool
+        A boolean value representing if the blur function should be skipped. Default is False.
+    - skip_reassembly: bool
+        Skip reassembling the PDF after processing. Default is False.
+    """
     temp_dir, base_dir, csv_dir = create_temp_directory()
     logger.info(f"Processing file: {file_path}")
     modified_images_map = {}
@@ -71,6 +92,13 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             error_message = "No images to process."
             logger.error(error_message)
             raise RuntimeError(error_message)
+            
+        # If we have extracted text and we're skipping blur, analyze with LLM first
+        if extracted_text and skip_blur:
+            logger.info("Analyzing extracted text with LLM")
+            text_csv_path = csv_dir / f"text_analysis_{uuid.uuid4()}.csv"
+            text_results, _ = analyze_text_with_phi4(extracted_text, text_csv_path, file_path)
+            logger.info(f"LLM text analysis results: {text_results}")
 
         blurred_image_path = image_paths[0]
         for img_path in image_paths:
@@ -84,9 +112,17 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
                 first_name_box, last_name_box = None, None
                 background_color = get_dominant_color(cv2.imread(str(img_path)))
 
-            if first_name_box and last_name_box:
-                blurred_image_path = blur_function(blurred_image_path, first_name_box, background_color)
-                blurred_image_path = blur_function(blurred_image_path, last_name_box, background_color)
+            # Handle LLM analysis of the image
+            if skip_blur:
+                logger.info("Skipping blur, running LLM analysis on image")
+                llm_csv_path = csv_dir / f"image_analysis_{uuid.uuid4()}.csv"
+                image_results, _ = analyze_full_image_with_context(img_path, llm_csv_path, csv_dir)
+                logger.info(f"LLM image analysis results: {len(image_results) if image_results else 0} entities")
+            else:
+                # Regular blur processing 
+                if first_name_box and last_name_box:
+                    blurred_image_path = blur_function(blurred_image_path, first_name_box, background_color)
+                    blurred_image_path = blur_function(blurred_image_path, last_name_box, background_color)
 
             east_boxes, east_confidences_json = east_text_detection(img_path, east_path, min_confidence, width, height)
             tesseract_boxes, tesseract_confidences_json = tesseract_text_detection(img_path, min_confidence, width, height)
@@ -104,9 +140,9 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             craft_confidences = json.loads(craft_confidences_json)
             
             all_text_detection_confidences = (
-                east_confidences +           # Now a list of dictionaries
-                tesseract_confidences +      # Already a list of dictionaries
-                craft_confidences           # Already a list of dictionaries
+                east_confidences +
+                tesseract_confidences +
+                craft_confidences
             )
             all_ocr_results = filter_empty_boxes(all_ocr_results)
 
@@ -114,6 +150,13 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             all_text_detection_confidences_json = json.dumps(all_text_detection_confidences)
             
             for (phrase, phrase_box), ocr_confidence in zip(all_ocr_results, all_ocr_confidences):
+                # Skip blur operations if requested
+                if skip_blur:
+                    # Just collect OCR results without blurring
+                    combined_results.append((phrase, phrase_box, ocr_confidence, []))
+                    continue
+                
+                # Normal processing path with fuzzy correction and blurring
                 blurred_image_path, modified_images_map, combined_results, updated_genders = do_ocr_with_fuzzy_correction(
                     all_ocr_results=all_ocr_results,
                     all_ocr_confidences=all_ocr_confidences,
@@ -127,7 +170,7 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
                     last_name_box=last_name_box,
                     full_text_candidates=phrase
                 )
-                gender_pars.extend(updated_genders)  # Assuming 'genders' is a list
+                gender_pars.extend(updated_genders)
 
         # Prepare CSV writing
         csv_path = csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
@@ -167,10 +210,11 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             'names_detected': names_detected,
             'combined_results': combined_results,
             'modified_images_map': modified_images_map,
-            'gender_pars': gender_pars  # Consistent key name
+            'gender_pars': gender_pars
         }
 
-        if blurred_image_path is not None:
+        # If not skipping blur and we have a blurred image path
+        if not skip_blur and blurred_image_path is not None:
             output_filename = f"blurred_image_{uuid.uuid4()}.jpg"
             blur_dir = create_blur_directory()
             output_path = Path(blur_dir) / output_filename
@@ -178,9 +222,12 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
             cv2.imwrite(str(output_path), final_image)
             logger.info(f"Final blurred image saved to: {output_path}")
         
-        #llm_results, llm_csv_path = analyze_full_image_with_context(file_path, csv_path, csv_dir)
+        # Always run LLM analysis and add results 
+        llm_results, llm_csv_path = analyze_full_image_with_context(file_path, csv_path, csv_dir)
+        result['llm_results'] = llm_results
+        result['llm_csv_path'] = llm_csv_path
 
-        logger.info(f"Processing completed: {combined_results} csv with pipeline results: {csv_path}") #llm results: {llm_csv_path}")
+        logger.info(f"Processing completed: {len(combined_results)} results, csv: {csv_path}, llm results: {llm_csv_path}")
         return modified_images_map, result
     except Exception as e:
         error_message = f"Error in process_images_with_OCR_and_NER: {e}, File Path: {file_path}"
