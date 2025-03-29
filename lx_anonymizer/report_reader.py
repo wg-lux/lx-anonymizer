@@ -3,35 +3,40 @@ from faker import Faker
 import gender_guesser.detector as gender_detector
 from typing import List
 import os
-
+import warnings
+import hashlib
 import pdfplumber
 from uuid import uuid4
 import json
 import os
-from .anonymization import anonymize_report
-from .extraction import extract_report_meta
-import warnings
-from .utils import pdf_hash
+from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
+from .text_anonymizer import anonymize_text
 
 class ReportReader:
     def __init__(
             self,
             report_root_path:str = None, # DEPRECEATED
             locale:str = DEFAULT_SETTINGS["locale"],
-            employee_first_names:List[str] = DEFAULT_SETTINGS["first_names"],
-            employee_last_names:List[str] = DEFAULT_SETTINGS["last_names"],
-            flags:List[str] = DEFAULT_SETTINGS["flags"],
+            employee_first_names:List[str] = None,
+            employee_last_names:List[str] = None,
+            flags:dict = None,
             text_date_format:str = DEFAULT_SETTINGS["text_date_format"]
     ):
         self.report_root_path = report_root_path
 
         self.locale = locale
         self.text_date_format = text_date_format
-        self.employee_first_names = employee_first_names
-        self.employee_last_names = employee_last_names
-        self.flags = flags
+        self.employee_first_names = employee_first_names if employee_first_names is not None else DEFAULT_SETTINGS["first_names"]
+        self.employee_last_names = employee_last_names if employee_last_names is not None else DEFAULT_SETTINGS["last_names"]
+        self.flags = flags if flags is not None else DEFAULT_SETTINGS["flags"]
         self.fake = Faker(locale=locale)
         self.gender_detector = gender_detector.Detector(case_sensitive = True)
+        
+        # Initialize extractors
+        self.patient_extractor = PatientDataExtractor()
+        self.examiner_extractor = ExaminerDataExtractor()
+        self.endoscope_extractor = EndoscopeDataExtractor()
+        self.examination_extractor = ExaminationDataExtractor()
     
     def read_pdf(self, pdf_path):
         '''
@@ -54,19 +59,51 @@ class ReportReader:
     
         
     def extract_report_meta(self, text, pdf_path):
-        report_meta = extract_report_meta(
-            text,
-            patient_info_line_flag = self.flags["patient_info_line"],
-            endoscope_info_line_flag = self.flags["endoscope_info_line"],
-            examiner_info_line_flag = self.flags["examiner_info_line"],
-            gender_detector=self.gender_detector
-        )
+        """
+        Extract metadata from report text using the spacy extractor classes.
+        """
+        report_meta = {}
+        
+        # Split text into lines for processing
+        lines = text.split('\n')
+        
+        # Extract patient information
+        for line in lines:
+            if self.flags["patient_info_line"] in line:
+                patient_info = self.patient_extractor.extract_patient_info(line)
+                if patient_info:
+                    report_meta.update(patient_info)
+                break
+        
+        # Extract endoscope information
+        for line in lines:
+            if self.flags["endoscope_info_line"] in line:
+                endoscope_info = self.endoscope_extractor.extract_endoscope_info(line)
+                if endoscope_info:
+                    report_meta.update(endoscope_info)
+                break
+        
+        # Extract examiner information
+        for line in lines:
+            if self.flags["examiner_info_line"] in line:
+                examiner_info = self.examiner_extractor.extract_examiner_info(line)
+                if examiner_info:
+                    report_meta.update(examiner_info)
+                break
+        
+        # Extract examination information
+        for line in lines:
+            if "Unters.:" in line or "Eingang am:" in line:
+                examination_info = self.examination_extractor.extract_examination_info(line)
+                if examination_info:
+                    report_meta.update(examination_info)
+                break
 
+        # Add PDF hash
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
-            pdf_hash_value = pdf_hash(pdf_bytes)
+            pdf_hash_value = self.pdf_hash(pdf_bytes)
             report_meta["pdf_hash"] = pdf_hash_value
-
 
         return report_meta
     
@@ -75,15 +112,16 @@ class ReportReader:
             text,
             report_meta
     ):
-        anonymized_text = anonymize_report(
+        anonymized_text = anonymize_text(
             text = text,
             report_meta = report_meta,
             text_date_format = self.text_date_format,
-            lower_cut_off_flags=self.flags["cut_off_below"],
-            upper_cut_off_flags=self.flags["cut_off_above"],
+            lower_cut_off_flags = self.flags["cut_off_below"],
+            upper_cut_off_flags = self.flags["cut_off_above"],
             locale = self.locale,
             first_names = self.employee_first_names,
-            last_names = self.employee_last_names
+            last_names = self.employee_last_names,
+            apply_cutoffs = True  # Für ReportReader aktivieren wir die Briefkopf-Entfernung
         )
 
         return anonymized_text
@@ -107,4 +145,19 @@ class ReportReader:
 
 
         return text, anonymized_text, report_meta
+    
+
+    def pdf_hash(self, pdf_binary):
+        """
+        Calculates the SHA256 hash of a PDF file.
+        
+        Parameters:
+        - pdf_binary: bytes
+            The binary content of the PDF file.
+            
+        Returns:
+        - hash: str
+            The SHA256 hash of the PDF file.
+        """
+        return hashlib.sha256(pdf_binary).hexdigest()
     

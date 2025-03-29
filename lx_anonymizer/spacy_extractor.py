@@ -3,10 +3,29 @@ from spacy.matcher import Matcher
 from datetime import datetime
 import re
 from .determine_gender import determine_gender
+from .custom_logger import get_logger
+import subprocess
+
+# import spacy language model
+from spacy.language import Language
+
+def load_spacy_model(model_name:str="de_core_news_lg") -> "Language":
+    try:      
+        nlp_model = spacy.load(model_name)
+
+    except:
+        subprocess.run(["uv", "run", "python", "-m", "spacy", "download", model_name], check=True)
+        nlp_model = spacy.load(model_name)               
+
+    return nlp_model
 
 class PatientDataExtractor:
+
+
     def __init__(self):
-        self.nlp = spacy.load("de_core_news_lg")
+        self.logger = get_logger(__name__)
+
+        self.nlp = load_spacy_model("de_core_news_lg")
         self.matcher = Matcher(self.nlp.vocab)
         self._setup_patterns()
 
