@@ -5,18 +5,20 @@ import re
 from .determine_gender import determine_gender
 from .custom_logger import get_logger
 import subprocess
+from .spacy_regex import PatientDataExtractorLg
 
+logger = get_logger(__name__)
 # import spacy language model
 from spacy.language import Language
 
 def load_spacy_model(model_name:str="de_core_news_lg") -> "Language":
-    try:      
+    try:
         nlp_model = spacy.load(model_name)
 
-    except:
+    except OSError as e:
         subprocess.run(["uv", "run", "python", "-m", "spacy", "download", model_name], check=True)
-        nlp_model = spacy.load(model_name)               
-
+        logger.debug(f"Downloaded spacy model: {model_name} downloading after {e}")
+        nlp_model = spacy.load(model_name)
     return nlp_model
 
 class PatientDataExtractor:
@@ -103,18 +105,58 @@ class PatientDataExtractor:
                 except ValueError:
                     birthdate = None
             
-            gender=determine_gender(first_name)
+            gender = determine_gender(first_name)
             
-            return {
-                "last_name": last_name,
-                "first_name": first_name,
-                "birthdate": birthdate,
-                "casenumber": casenumber,
-                "gender": gender
+            # Ensure first_name and last_name are never None
+            if first_name and last_name:
+                return {
+                    "patient_first_name": first_name,
+                    "patient_last_name": last_name,
+                    "patient_dob": birthdate,
+                    "casenumber": casenumber,
+                    'patient_gender': gender
+                }
+            elif first_name and not last_name:
+                return {
+                    "patient_first_name": first_name,
+                    "patient_last_name": "UNBEKANNT",
+                    "patient_dob": birthdate,
+                    "casenumber": casenumber,
+                    'patient_gender': gender
+                }
+            elif last_name and not first_name:
+                return {
+                    "patient_first_name": "UNBEKANNT", 
+                    "patient_last_name": last_name,
+                    "patient_dob": birthdate,
+                    "casenumber": casenumber,
+                    'patient_gender': "Unbekannt"
+                }
+            else:
+                # If nothing is properly extracted, try the alternative extractor
+                pe = PatientDataExtractorLg()
+                data = pe.extract_patient_info(text)
+                if data and data.get('patient_first_name') != "NOT FOUND":
+                    return data
                 
-            }
+                # Absolute fallback values  
+                return {
+                    "patient_first_name": "UNBEKANNT",
+                    "patient_last_name": "UNBEKANNT",
+                    "patient_dob": None,
+                    "casenumber": None,
+                    'patient_gender': "Unbekannt"
+                }
 
-        return None
+        # If no match is found
+        return {
+            "patient_first_name": "UNBEKANNT", 
+            "patient_last_name": "UNBEKANNT",
+            "patient_dob": None,
+            "casenumber": None,
+            "patient_gender": "Unbekannt"
+        }
+
 class ExaminerDataExtractor:
     def __init__(self):
         self.nlp = spacy.load("de_core_news_lg")

@@ -4,8 +4,6 @@ import random
 import re
 from .custom_logger import get_logger
 
-logger = get_logger(__name__)
-
 def replace_umlauts(text):
     """Replace German umlauts with their corresponding letter (ä -> ae)."""
     text = text.replace('ä', 'ae')
@@ -79,95 +77,65 @@ def replace_employee_names(text, first_names, last_names, locale=None):
                 
     return text
 
-def anonymize_text(
-        text,
-        report_meta=None,
-        text_date_format='%d.%m.%Y',
-        lower_cut_off_flags=None,
-        upper_cut_off_flags=None,
-        locale=None,
-        first_names=None,
-        last_names=None,
-        apply_cutoffs=False
-    ):
+def anonymize_text(text, report_meta, text_date_format="%d.%m.%Y", 
+                   lower_cut_off_flags=None, upper_cut_off_flags=None, 
+                   locale="de_DE", first_names=None, last_names=None,
+                   apply_cutoffs=False, verbose=False):
     """
-    Anonymizes text by replacing sensitive information with fake data.
+    Anonymizes the given text by replacing personal information.
     
-    Parameters:
-    - text: Text content to anonymize
-    - report_meta: Dictionary with extracted metadata like names, dates, etc.
-    - text_date_format: Format for dates in the text
-    - lower_cut_off_flags: Flags to identify where to cut off trailing text (for reports)
-    - upper_cut_off_flags: Flags to identify where to cut off leading text (for reports)
-    - locale: Locale for generating fake data
-    - first_names: List of employee first names to anonymize
-    - last_names: List of employee last names to anonymize
-    - apply_cutoffs: Whether to apply the cutoff functionality (default: False)
-    
+    Args:
+        text (str): The text to anonymize.
+        report_meta (dict): Metadata containing patient and examiner information.
+        text_date_format (str): Format for dates in the text.
+        lower_cut_off_flags (list): Markers to remove text after a given line.
+        upper_cut_off_flags (list): Markers to remove text before a given line.
+        locale (str): Locale for generating fake data.
+        first_names (list): List of first names to use.
+        last_names (list): List of last names to use.
+        apply_cutoffs (bool): Whether to apply text cutoffs.
+        verbose (bool): Enable verbose logging.
+        
     Returns:
-    - Anonymized text content
+        str: Anonymized text.
     """
-    if text is None:
-        return None
-        
-    fake = Faker(locale=locale if locale else 'de_DE')
+    logger = get_logger(__name__, verbose=verbose)
+    logger.info("Starting text anonymization")
+    fake = Faker(locale=locale)
+    anonymized_text = text
+
+    # Ersetze Patientennamen, falls Schlüssel in report_meta anders benannt sind, 
+    # nehmen wir hier z.B. patient_first_name und patient_last_name:
+    if report_meta.get("patient_first_name") and report_meta.get("patient_last_name"):
+        first_name = report_meta["patient_first_name"]
+        last_name = report_meta["patient_last_name"]
+        pseudo_first_name = fake.first_name()
+        pseudo_last_name = fake.last_name()
+        anonymized_text = anonymized_text.replace(first_name, pseudo_first_name)
+        anonymized_text = anonymized_text.replace(last_name, pseudo_last_name)
+        logger.debug(f"Replaced patient name: {first_name} {last_name} -> {pseudo_first_name} {pseudo_last_name}")
     
-    # Initialize defaults
-    report_meta = report_meta or {}
-    first_names = first_names or []
-    last_names = last_names or []
-    lower_cut_off_flags = lower_cut_off_flags or []
-    upper_cut_off_flags = upper_cut_off_flags or []
-    
-    # Loop through each key-value pair in report_meta to replace names and dates
-    for key, value in report_meta.items():
-        # Skip if value is None or empty
-        if not value:
-            continue
-            
-        # Remove titles and replace names
-        if 'first_name' in key:
-            clean_name = remove_titles(value)
-            fake_name = fake.first_name()
-            text = text.replace(clean_name, fake_name)
-            
-        if 'last_name' in key:
-            clean_name = remove_titles(value)
-            fake_name = fake.last_name()
-            text = text.replace(clean_name, fake_name)
-        
-        # Replace patient's birthdate with a random date in the same year
-        if ('birthdate' in key or 'dob' in key):
-            try:
-                birth_date = datetime.strptime(value, '%Y-%m-%d')
-                random_birthdate = datetime(birth_date.year, random.randint(1, 12), random.randint(1, 28))
-                formatted_date = random_birthdate.strftime(text_date_format)
-                text = text.replace(datetime.strftime(birth_date, text_date_format), formatted_date)
-            except (ValueError, TypeError):
-                pass
-        
-        # Replace examination date with a random date in the same month
-        if 'examination_date' in key:
-            try:
-                exam_date = datetime.strptime(value, '%Y-%m-%d')
-                random_exam_date = exam_date + timedelta(days=random.randint(-15, 15))
-                formatted_date = random_exam_date.strftime(text_date_format)
-                text = text.replace(datetime.strftime(exam_date, text_date_format), formatted_date)
-            except (ValueError, TypeError):
-                pass
-    
-    # Replace employee names 
-    text = replace_employee_names(text, first_names, last_names, locale=locale)
-    
-    # Replace large numbers (like case numbers, phone numbers, etc.)
-    text = replace_large_numbers(text)
-    
-    # Cut off text based on flags only if apply_cutoffs is True
+    if report_meta.get("examiner_first_name") and report_meta.get("examiner_last_name"):
+        examiner_first_name = report_meta["examiner_first_name"]
+        examiner_last_name = report_meta["examiner_last_name"]
+        pseudo_examiner_first_name = fake.first_name()
+        pseudo_examiner_last_name = fake.last_name()
+        anonymized_text = anonymized_text.replace(examiner_first_name, pseudo_examiner_first_name)
+        anonymized_text = anonymized_text.replace(examiner_last_name, pseudo_examiner_last_name)
+        logger.debug(f"Replaced examiner name: {examiner_first_name} {examiner_last_name} -> {pseudo_examiner_first_name} {pseudo_examiner_last_name}")
+
+    # Verbessertes Cut-Off: Zuerst oberen Teil entfernen, dann unteren.
     if apply_cutoffs:
+        logger.info("Applying text cutoffs")
+        # Entferne den oberen Teil (alles vor Erleben eines Upper‑Flags)
         if upper_cut_off_flags:
-            text = cutoff_leading_text(text, upper_cut_off_flags)
+            anonymized_text = cutoff_leading_text(anonymized_text, upper_cut_off_flags)
+            logger.debug("Applied upper cutoff")
+        # Entferne den unteren Teil (alles nach Erleben eines Lower‑Flags)
         if lower_cut_off_flags:
-            text = cutoff_trailing_text(text, lower_cut_off_flags)
+            anonymized_text = cutoff_trailing_text(anonymized_text, lower_cut_off_flags)
+            logger.debug("Applied lower cutoff")
     
-    return text
+    logger.info("Text anonymization complete")
+    return anonymized_text
 
