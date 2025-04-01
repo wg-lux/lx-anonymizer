@@ -99,6 +99,37 @@ def tesseract_full_image_ocr(image_path):
 
     return full_text.strip(), word_boxes
 
+def trocr_full_image_ocr(image_path):
+    """
+    Perform OCR on the entire image using TrOCR.
+    Returns:
+      - A single string with all recognized text.
+    """
+    image = Image.open(image_path).convert("RGB")
+    processor, model, tokenizer, device = preload_models()
+
+    # Process the image using the processor
+    pixel_values = processor(
+        image, 
+        return_tensors="pt"
+    ).pixel_values
+
+    # Generate text predictions using the model
+    outputs = model.generate(
+        pixel_values, 
+        output_scores=True, 
+        return_dict_in_generate=True, 
+        max_new_tokens=50
+    )
+
+    # Decode the output tokens into readable text
+    generated_text = tokenizer.batch_decode(
+        outputs.sequences, 
+        skip_special_tokens=True
+    )[0]
+
+    return generated_text.strip()
+
 
 def trocr_on_boxes(image_path, boxes):
     try:
