@@ -214,16 +214,16 @@ class ReportReader:
                     ocr_text += text_part
                 text = ocr_text
                 
-                # # Apply correction using Ollama with DeepSeek
-                # logger.info("Applying DeepSeek correction to OCR text via Ollama")
-                # try:
-                #     text = model_service.correct_text_with_ollama(text)
-                # except Exception as e:
-                #     logger.warning(f"Error using Ollama for correction: {e}")
+                # Apply correction using Ollama with DeepSeek
+                logger.info("Applying DeepSeek correction to OCR text via Ollama")
+                try:
+                    text = model_service.correct_text_with_ollama(text)
+                except Exception as e:
+                    logger.warning(f"Error using Ollama for correction: {e}")
                 
-                # if len(text) < 10:
-                #     logger.error("OCR fallback produced very short text, skipping anonymization.")
-                #     return text, text, {}
+                if len(text) < 10:
+                    logger.error("OCR fallback produced very short text, skipping anonymization.")
+                    return text, text, {}
             
             except Exception as e:
                 logger.error(f"OCR fallback failed: {e}")

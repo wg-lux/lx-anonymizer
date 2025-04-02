@@ -10,14 +10,14 @@ from .determine_gender import determine_gender
 class PatientDataExtractorLg:
     def __init__(self):
         self.nlp = spacy.load("de_core_news_lg")
-        self.ruler = self.nlp.add_pipe("entity_ruler")
+        self.ruler = self.nlp.add_pipe("entity_ruler", before="ner")
         self.setup_matcher()
     
     def setup_matcher(self):
         """Setup the SpaCy Matcher with patient information patterns"""
         self.matcher = Matcher(self.nlp.vocab)
         
-        # Pattern 1: Patient: Nachname ,Vorname geb. DD.MM.YYYY Fallnummer: NNNNNNNN
+        # Define patterns
         pattern1 = [
             {"LOWER": "patient"}, 
             {"LOWER": ":"}, 
@@ -31,8 +31,6 @@ class PatientDataExtractorLg:
             {"TEXT": ":"}, 
             {"SHAPE": "dddddddd"}
         ]
-
-        # Pattern 2: Patient: Nachname, Vorname geboren am: DD.MM.YYYY
         pattern2 = [
             {"LOWER": "patient"}, 
             {"LOWER": ":"}, 
@@ -45,110 +43,20 @@ class PatientDataExtractorLg:
             {"SHAPE": "dd.dd.dddd", "OP": "?"}
         ]
 
-        # Neue Muster für zusätzliche Formate
-        pattern3 = [
-            {"LOWER": "patient"}, 
-            {"TEXT": ":"}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"TEXT": ","}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"TEXT": "geb"}, 
-            {"TEXT": "."}, 
-            {"SHAPE": "dd.dd.dddd"}, 
-            {"TEXT": "fallnummer"}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dddddddd"}
-        ]
-        pattern4 = [
-            {"LOWER": "patient"}, 
-            {"TEXT": ":"}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"TEXT": ","}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"TEXT": "geb"}, 
-            {"LOWER": "am"}, 
-            {"SHAPE": "dd.dd.dddd"}, 
-            {"TEXT": "pat.nr."}, 
-            {"TEXT": "fall.nr."}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dddddddd"}
-        ]
-
-        # New pattern: Last name before first name, separated by a comma
-        pattern5 = [
-            {"LOWER": "patient"}, 
-            {"TEXT": ":"}, 
-            {"POS": "PROPN", "OP": "+"},  # Last name
-            {"TEXT": ","}, 
-            {"POS": "PROPN", "OP": "+"},  # First name
-            {"LOWER": "geb"}, 
-            {"TEXT": "."}, 
-            {"SHAPE": "dd.dd.dddd", "OP": "?"},
-            {"LOWER": "fallnummer"}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dddddddd"}
-        ]
-
-        # New pattern: Last name before first name, no comma
-        pattern6 = [
-            {"LOWER": "patient"}, 
-            {"TEXT": ":"}, 
-            {"POS": "PROPN", "OP": "+"},  # Last name
-            {"POS": "PROPN", "OP": "+"},  # First name
-            {"LOWER": "geb"}, 
-            {"TEXT": "."}, 
-            {"SHAPE": "dd.dd.dddd", "OP": "?"},
-            {"LOWER": "fallnummer"}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dddddddd"}
-        ]
-
-        # New pattern: Last name before first name with title and birthdate
-        pattern7 = [
-            {"LOWER": "pat"}, 
-            {"TEXT": "."}, 
-            {"POS": "PROPN", "OP": "+"},  # Last name
-            {"TEXT": ","}, 
-            {"TEXT": "dr."},  # Title
-            {"POS": "PROPN", "OP": "+"},  # First name
-            {"LOWER": "geb.dat"}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dd.dd.dddd"}  # Birthdate
-        ]
-
-        # Additional patterns for more flexible matching
-        pattern8 = [
-            {"LOWER": {"IN": ["patient", "pat", "patientin", "pat."]}},
-            {"IS_PUNCT": True, "OP": "?"},
-            {"POS": "PROPN", "OP": "+"},  # Last name
-            {"IS_PUNCT": True, "OP": "?"},
-            {"POS": "PROPN", "OP": "+"}   # First name
-        ]
-        
-        pattern9 = [
-            {"TEXT": {"REGEX": "(?i)pat(ient)?\.?:?"}},
-            {"POS": "PROPN", "OP": "+"}   # First part of name
-        ]
-        
-        pattern10 = [
-            {"ORTH": "Patient"},
-            {"ORTH": ":"},
-            {"TEXT": {"REGEX": "[A-Z][a-zäöüÄÖÜß\-]+"}},  # More flexible name matching
-            {"ORTH": ",", "OP": "?"},
-            {"TEXT": {"REGEX": "[A-Z][a-zäöüÄÖÜß\-]+"}},
-        ]
-
         # Add patterns to the matcher
         self.matcher.add("PATIENT_INFO_1", [pattern1])
         self.matcher.add("PATIENT_INFO_2", [pattern2])
-        self.matcher.add("PATIENT_INFO_3", [pattern3])
-        self.matcher.add("PATIENT_INFO_4", [pattern4])
-        self.matcher.add("PATIENT_INFO_5", [pattern5])
-        self.matcher.add("PATIENT_INFO_6", [pattern6])
-        self.matcher.add("PATIENT_INFO_7", [pattern7])
-        self.matcher.add("PATIENT_INFO_8", [pattern8])
-        self.matcher.add("PATIENT_INFO_9", [pattern9])
-        self.matcher.add("PATIENT_INFO_10", [pattern10])
+
+        # Add patterns to the EntityRuler
+        patterns = [
+            {"label": "PATIENT_INFO", "pattern": pattern1},
+            {"label": "PATIENT_INFO", "pattern": pattern2}
+        ]
+        self.ruler.add_patterns(patterns)
+
+        # Debugging: Check if patterns are loaded
+        if len(self.ruler.patterns) == 0:
+            raise ValueError("No patterns were added to the EntityRuler.")
     
     def patient_data_extractor(self, text):
         """Extract patient data using entity ruler"""
@@ -257,7 +165,6 @@ class PatientDataExtractorLg:
             {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
             {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
             {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},   
             {"label": "PER", "pattern": "Patient: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"}, 
             {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
             {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
@@ -269,6 +176,7 @@ class PatientDataExtractorLg:
             {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
             {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ [A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
             {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ [A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
+            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+,[A-Z][a-z]+ [A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
             ]
         ruler = EntityRuler(nlp)
         ruler.add_patterns(patterns)
@@ -299,7 +207,7 @@ class PatientDataExtractorLg:
                     elif gender == "female":
                         gender = "Weiblich"
                     else:
-                        gender = "Unbekannt"
+                        gender = "Unknown"
                     
                     return {
                         'patient_first_name': first_name,
@@ -311,11 +219,11 @@ class PatientDataExtractorLg:
         
         # Wenn nichts gefunden wurde, geben wir sinnvolle Standardwerte zurück
         return {
-            'patient_first_name': "UNBEKANNT",
-            'patient_last_name': "UNBEKANNT",
+            'patient_first_name': "Unknown",
+            'patient_last_name': "Unknown",
             'birthdate': None,
             'casenumber': None,
-            'patient_gender': "Unbekannt"
+            'patient_gender': "Unknown"
         }
         
     def examiner_data_extractor(self, text):
@@ -341,5 +249,5 @@ class PatientDataExtractorLg:
             if ent.label_ == "PER":
                 return ent.text
         return None
-    
+
 

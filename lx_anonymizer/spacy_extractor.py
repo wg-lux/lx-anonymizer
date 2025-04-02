@@ -119,18 +119,18 @@ class PatientDataExtractor:
             elif first_name and not last_name:
                 return {
                     "patient_first_name": first_name,
-                    "patient_last_name": "UNBEKANNT",
+                    "patient_last_name": "Unknown",
                     "patient_dob": birthdate,
                     "casenumber": casenumber,
                     'patient_gender': gender
                 }
             elif last_name and not first_name:
                 return {
-                    "patient_first_name": "UNBEKANNT", 
+                    "patient_first_name": "Unknown", 
                     "patient_last_name": last_name,
                     "patient_dob": birthdate,
                     "casenumber": casenumber,
-                    'patient_gender': "Unbekannt"
+                    'patient_gender': "Unknown"
                 }
             else:
                 # If nothing is properly extracted, try the alternative extractor
@@ -141,20 +141,20 @@ class PatientDataExtractor:
                 
                 # Absolute fallback values  
                 return {
-                    "patient_first_name": "UNBEKANNT",
-                    "patient_last_name": "UNBEKANNT",
+                    "patient_first_name": "Unknown",
+                    "patient_last_name": "Unknown",
                     "patient_dob": None,
                     "casenumber": None,
-                    'patient_gender': "Unbekannt"
+                    'patient_gender': "Unknown"
                 }
 
         # If no match is found
         return {
-            "patient_first_name": "UNBEKANNT", 
-            "patient_last_name": "UNBEKANNT",
+            "patient_first_name": "Unknown", 
+            "patient_last_name": "Unknown",
             "patient_dob": None,
             "casenumber": None,
-            "patient_gender": "Unbekannt"
+            "patient_gender": "Unknown"
         }
 
 class ExaminerDataExtractor:
