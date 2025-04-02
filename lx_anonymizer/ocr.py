@@ -1,4 +1,6 @@
-from region_detector import expand_roi  # Ensure this module is correctly referenced
+from django.template.loader_tags import do_block
+from torch.cuda import temperature
+from .region_detector import expand_roi  # Ensure this module is correctly referenced
 from PIL import Image
 from transformers import (
     ViTImageProcessor,
@@ -9,7 +11,9 @@ from transformers import (
 import torch
 import pytesseract
 import numpy as np
-from custom_logger import get_logger
+from .custom_logger import get_logger
+from .craft_text_detection import craft_text_detection  # Neuer Import für CRAFT
+from .model_service import model_service
 
 logger = get_logger(__name__)
 # At the start of your script
@@ -81,8 +85,6 @@ def tesseract_full_image_ocr(image_path):
       - A single string with all recognized text.
       - A list of (word, (left, top, width, height)) for each recognized word.
     """
-    from PIL import Image
-    import pytesseract
 
     image = Image.open(image_path).convert("RGB")
     # 1. Full text in a single chunk
@@ -100,43 +102,80 @@ def tesseract_full_image_ocr(image_path):
     return full_text.strip(), word_boxes
 
 def trocr_full_image_ocr(image_path):
-    """
-    Perform OCR on the entire image using TrOCR.
-    Returns:
-      - A single string with all recognized text.
-    """
     image = Image.open(image_path).convert("RGB")
-    processor, model, tokenizer, device = preload_models()
 
-    # Process the image using the processor
-    pixel_values = processor(
-        image, 
-        return_tensors="pt"
-    ).pixel_values
+    processor, model, tokenizer, device = model_service.load_trocr_model()
 
-    # Generate text predictions using the model
+    pixel_values = processor(image, return_tensors="pt").pixel_values.to(device)
     outputs = model.generate(
         pixel_values, 
         output_scores=True, 
+        do_sample=False,            # Use beam search for more deterministic results
+        num_beams=5,                # Example beam count for better exploration
         return_dict_in_generate=True, 
-        max_new_tokens=50
+        max_new_tokens=150          # Increase max tokens to allow for longer text
     )
-
-    # Decode the output tokens into readable text
-    generated_text = tokenizer.batch_decode(
-        outputs.sequences, 
-        skip_special_tokens=True
-    )[0]
-
-    return generated_text.strip()
+    return tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)[0].strip()
 
 
-def trocr_on_boxes(image_path, boxes):
+def trocr_full_image_ocr_on_boxes(image_path):
+    """
+    Perform OCR on the entire image using TrOCR.
+    """
+    # Lade Modelle vom Service anstatt von preload_models
+    processor, model, tokenizer, device = model_service.load_trocr_model()
+    
+    # Behandle Fehler, wenn Modelle nicht geladen werden konnten
+    if processor is None or model is None or tokenizer is None:
+        logger.warning("TrOCR model not available, falling back to tesseract")
+        # Fallback zu Tesseract implementieren
+        image = Image.open(image_path).convert("RGB")
+        full_text = pytesseract.image_to_string(image, config='--psm 6')
+        return full_text.strip()
+    
+    image = Image.open(image_path).convert("RGB")
+    
+    # Detect text regions using CRAFT
+    boxes, _ = craft_text_detection(image_path)
+    
+    ocr_results = []
+    
+    if boxes:
+        logger.info(f"CRAFT detected {len(boxes)} regions. Processing each region with TrOCR.")
+        for box in boxes:
+            (startX, startY, endX, endY) = box
+            cropped_image = image.crop((startX, startY, endX, endY))
+            pixel_values = processor(cropped_image, return_tensors="pt").pixel_values.to(device)
+            outputs = model.generate(
+                pixel_values, 
+                output_scores=True, 
+                do_sample=True,
+                temperature=0.6,
+                return_dict_in_generate=True, 
+                max_new_tokens=50
+            )
+            recognized_text = tokenizer.batch_decode(
+                outputs.sequences, 
+                skip_special_tokens=True
+            )[0]
+            logger.debug(f"Box {box} yielded text: '{recognized_text}'")
+            if recognized_text.strip():
+                ocr_results.append(recognized_text.strip())
+        final_text = "\n".join(ocr_results)
+        if not final_text.strip():
+            logger.warning("No text recognized in regions, falling back to full image OCR.")
+            final_text = fallback_full_ocr(image, processor, model, tokenizer, device)
+    else:
+        logger.info("No regions detected by CRAFT. Falling back to full image OCR.")
+        final_text = fallback_full_ocr(image, processor, model, tokenizer, device)
+    
+    return final_text
+
+def trocr_on_boxes(image_path, boxes)->list:
     try:
         image = Image.open(image_path).convert("RGB")
         extracted_text_with_boxes = []
         confidences = []
-
         # Ensure models are loaded
         processor, model, tokenizer, device = preload_models()
 
@@ -161,10 +200,10 @@ def trocr_on_boxes(image_path, boxes):
                     cropped_image, 
                     return_tensors="pt"
                 ).pixel_values
-                if cudasupport==True:
+                if cudasupport:
                     # Move pixel_values to the same device as the model
                     pixel_values = pixel_values.to(device)
-                    with torch.amp.autocast():  # Enable automatic mixed precision
+                    with torch.amp.autocast(device_type='cpu'):  # Enable automatic mixed precision
                         pixel_values = processor(
                             cropped_image, 
                             return_tensors="pt"
@@ -185,7 +224,6 @@ def trocr_on_boxes(image_path, boxes):
                     pixel_values, 
                     output_scores=True, 
                     return_dict_in_generate=True, 
-                    max_new_tokens=50
                 )
 
                 # Decode the output tokens into readable text

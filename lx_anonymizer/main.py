@@ -7,7 +7,7 @@ from image_loader import get_image_paths
 from image_processor import process_image
 from gpu_management import clear_gpu_memory
 import pdfplumber
-from llm import initialize_phi4, analyze_text_with_phi4, analyze_full_image_with_context, cleanup_model
+from lx_anonymizer.lx_anonymizer.llm_phi4 import initialize_phi4, analyze_text_with_phi4, analyze_full_image_with_context, cleanup_model
 import atexit
 from spacy_regex import PersonDataExtractor
 from spacy_extractor import PatientDataExtractor

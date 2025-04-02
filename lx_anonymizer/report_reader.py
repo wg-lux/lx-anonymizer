@@ -1,3 +1,4 @@
+from django.core.files import images
 from .settings import DEFAULT_SETTINGS
 from faker import Faker
 import gender_guesser.detector as gender_detector
@@ -14,6 +15,10 @@ from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
+from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr # Import OCR fallback
+from .pdf_operations import convert_pdf_to_images
+from .llm_phi4 import phi4_ocr_correction
+from .model_service import model_service
 
 class ReportReader:
     def __init__(
@@ -196,6 +201,33 @@ class ReportReader:
         Process a report by extracting text, metadata, and creating an anonymized version.
         """
         text = self.read_pdf(pdf_path)
+        if not text.strip():
+            try:
+                logger.info("No text detected by pdfplumber, applying OCR fallback.")
+                images_from_pdf = convert_pdf_to_images(pdf_path)
+                ocr_text = ""
+                for image in images_from_pdf:
+                    text_part, _ = tesseract_full_image_ocr(image)  # Extract full_text only
+                    text_part_2 = trocr_full_image_ocr(image)  # Extract full_text only
+                    if len(text_part) < len(text_part_2):
+                        text_part = text_part_2
+                    ocr_text += text_part
+                text = ocr_text
+                
+                # # Apply correction using Ollama with DeepSeek
+                # logger.info("Applying DeepSeek correction to OCR text via Ollama")
+                # try:
+                #     text = model_service.correct_text_with_ollama(text)
+                # except Exception as e:
+                #     logger.warning(f"Error using Ollama for correction: {e}")
+                
+                # if len(text) < 10:
+                #     logger.error("OCR fallback produced very short text, skipping anonymization.")
+                #     return text, text, {}
+            
+            except Exception as e:
+                logger.error(f"OCR fallback failed: {e}")
+                
         report_meta = self.extract_report_meta(text, pdf_path)
         anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
         

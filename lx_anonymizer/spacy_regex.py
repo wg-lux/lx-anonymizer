@@ -341,4 +341,5 @@ class PatientDataExtractorLg:
             if ent.label_ == "PER":
                 return ent.text
         return None
+    
 

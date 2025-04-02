@@ -23,6 +23,7 @@ in
     stdenv.cc.cc
     glib
     tesseract
+    ollama
     python3Packages.pip
   ];
 

@@ -22,6 +22,9 @@ def convert_pdf_page_to_image(page):
 
 def convert_pdf_to_images(pdf_path):
     """Convert a PDF file to a list of image paths."""
+    # Ensure pdf_path is a Path object
+    if not isinstance(pdf_path, Path):
+        pdf_path = Path(pdf_path)
     images = []
     doc = fitz.open(pdf_path)
     for page_num in range(len(doc)):
