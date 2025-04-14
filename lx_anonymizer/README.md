@@ -137,7 +137,7 @@ The `main` function is responsible for processing either images or PDF files thr
    The device name used to set the correct OCR and NER (Named Entity Recognition) text settings for different devices. Defaults to `olympus_cv_1500`.
 
 - **validation** (`bool`, optional):  
-   If set to `True`, the function will perform additional validation by using an external AGL-Validator service to validate the results and return extra output. Defaults to `False`.
+   If set to `True`, the function will perform additional validation by using an external lx-annotate service to validate the results and return extra output. Defaults to `False`.
 
 - **min_confidence** (`float`, optional):  
    Minimum confidence level for detecting text regions within the image. Regions with a confidence score below this threshold will not be processed. Defaults to `0.5`.

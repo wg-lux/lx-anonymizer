@@ -1,11 +1,11 @@
 from hezar.models import Model
 from hezar.utils import load_image, draw_boxes
-from custom_logger import get_logger
+from .custom_logger import get_logger
 from pathlib import Path
 import cv2
 import json
 import numpy as np
-from box_operations import extend_boxes_if_needed
+from .box_operations import extend_boxes_if_needed
 import torch
 
 logger = get_logger(__name__)
