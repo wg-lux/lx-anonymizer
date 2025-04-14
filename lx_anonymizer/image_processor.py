@@ -17,9 +17,10 @@ def process_image(
     height, 
     results_dir, 
     temp_dir, 
-    text_extracted=False,
+    text_extracted=None,
     skip_blur=False, 
-    skip_reassembly=False
+    skip_reassembly=False,
+    disable_llm=False
 ):
     """
     Process a single image or PDF page
@@ -33,9 +34,10 @@ def process_image(
     - height: Height for resizing 
     - results_dir: Directory to save results
     - temp_dir: Temporary directory for processing
-    - text_extracted: Whether text was already extracted from the source
+    - text_extracted: Optional extracted text from PDF
     - skip_blur: Whether to skip blurring operations
     - skip_reassembly: Whether to skip PDF reassembly
+    - disable_llm: Whether to disable LLM analysis
     
     Returns:
     - Path to the processed image
@@ -43,31 +45,35 @@ def process_image(
     """
     logger.info(f"Processing image: {img_path}")
     
-    # If we're skipping the blur operations, just analyze the image
-    if skip_blur:
+    # If we have pre-extracted text and LLM is enabled, analyze it
+    if text_extracted and not disable_llm:
+        logger.info("Analyzing extracted text with LLM")
+        csv_path = temp_dir / f"text_analysis_{uuid.uuid4()}.csv"
+        text_results, _ = analyze_text_with_phi4(
+            text_extracted, 
+            csv_path=csv_path,
+            image_path=img_path
+        )
+    
+    # If we're skipping the blur operations but want analysis, use LLM
+    if skip_blur and not disable_llm:
         logger.info("Skipping blur operations, performing analysis only")
         
         # Use LLM to analyze the image directly
         csv_path = temp_dir / f"image_analysis_{uuid.uuid4()}.csv"
         llm_results, llm_csv_path = analyze_full_image_with_context(img_path, csv_path, temp_dir)
         
-        # If text was already extracted (from PDF), use that for additional analysis
-        if text_extracted:
-            logger.info("Analyzing extracted text with LLM")
-            text_results, text_csv_path = analyze_text_with_phi4(
-                text_extracted, 
-                csv_path=csv_path,
-                image_path=img_path
-            )
-            
-            # Combine analysis results
+        # Combine analysis results if we have text
+        if text_extracted and not disable_llm:
             combined_results = {
                 "image_analysis": llm_results,
                 "text_analysis": text_results
             }
+        else:
+            combined_results = {"image_analysis": llm_results}
             
-            # Return the original image path and the analysis results
-            return img_path, combined_results
+        # Return the original image path and the analysis results
+        return img_path, combined_results
     
     # Normal processing path with OCR, NER, and optional blurring
     modified_images_map, result = process_images_with_OCR_and_NER(

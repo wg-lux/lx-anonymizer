@@ -16,7 +16,7 @@ from directory_setup import create_temp_directory, create_blur_directory
 import csv
 from custom_logger import get_logger
 import torch
-import fitz
+import pymupdf
 from lx_anonymizer.lx_anonymizer.llm_phi4 import analyze_full_image_with_context, analyze_text_with_phi4
 from box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes, get_dominant_color
 from fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
@@ -74,8 +74,8 @@ def process_images_with_OCR_and_NER(file_path, east_path='frozen_east_text_detec
         extracted_text = ''
 
         if file_type == 'pdf':
-            # Open PDF using fitz
-            doc = fitz.open(file_path)
+            # Open PDF using pymupdf
+            doc = pymupdf.open(file_path)
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 text = page.get_text()

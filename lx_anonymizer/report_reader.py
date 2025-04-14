@@ -7,9 +7,11 @@ import os
 import warnings
 import hashlib
 import pdfplumber
+from PIL import Image
 from uuid import uuid4
 import json
 import re
+
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
@@ -206,20 +208,34 @@ class ReportReader:
                 logger.info("No text detected by pdfplumber, applying OCR fallback.")
                 images_from_pdf = convert_pdf_to_images(pdf_path)
                 ocr_text = ""
-                for image in images_from_pdf:
-                    text_part, _ = tesseract_full_image_ocr(image)  # Extract full_text only
-                    text_part_2 = trocr_full_image_ocr(image)  # Extract full_text only
+                for pil_image in images_from_pdf:
+                    if hasattr(pil_image, "convert"):  # simple check for a PIL image
+                        text_part, _ = tesseract_full_image_ocr(pil_image)  # Directly pass the PIL image
+                        text_part_2 = trocr_full_image_ocr(pil_image)
+                    else:
+                        text_part, _ = tesseract_full_image_ocr(str(pil_image))
+                        text_part_2 = trocr_full_image_ocr(str(pil_image))
+                        
+                    # Choose the OCR result with more content
                     if len(text_part) < len(text_part_2):
                         text_part = text_part_2
                     ocr_text += text_part
                 text = ocr_text
+                logger.info(f"OCR text: {text[:200]}...")
                 
                 # Apply correction using Ollama with DeepSeek
-                logger.info("Applying DeepSeek correction to OCR text via Ollama")
-                try:
-                    text = model_service.correct_text_with_ollama(text)
-                except Exception as e:
-                    logger.warning(f"Error using Ollama for correction: {e}")
+                if text.strip():  # Nur korrigieren, wenn Text erkannt wurde
+                    logger.info("Applying LLM correction to OCR text via Ollama")
+                    try:
+                        corrected_text = model_service.correct_text_with_ollama(text)
+                        # Prüfe, ob die Korrektur erfolgreich war (keine Fehlermeldung enthält)
+                        if corrected_text and not corrected_text.startswith("Error:"):
+                            text = corrected_text
+                            logger.info("OCR text successfully corrected.")
+                        else:
+                            logger.warning("OCR correction failed, using original OCR text.")
+                    except Exception as e:
+                        logger.warning(f"Error using Ollama for correction: {e}")
                 
                 if len(text) < 10:
                     logger.error("OCR fallback produced very short text, skipping anonymization.")

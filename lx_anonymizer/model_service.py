@@ -1,7 +1,7 @@
 import subprocess
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-from transformers import ViTImageProcessor, VisionEncoderDecoderModel
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 import gc
 import os
 from pathlib import Path
@@ -127,7 +127,7 @@ class ModelService:
     
     def load_trocr_model(self, force_reload=False):
         """Lädt das TrOCR-Modell, wenn es noch nicht geladen ist oder wenn force_reload=True"""
-        if self.trocr_processor is not None and self.trocr_model is not None and self.trocr_tokenizer is not None and not force_reload:
+        if self.trocr_processor is not None and self.trocr_model is not None and not force_reload:
             logger.debug("Using cached TrOCR model")
             return self.trocr_processor, self.trocr_model, self.trocr_tokenizer, self.trocr_device
         
@@ -136,29 +136,47 @@ class ModelService:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()
         
         device = self.get_device()
         
         try:
-            # Modelle laden
-            processor = ViTImageProcessor.from_pretrained('microsoft/trocr-base-str')
+            # TrOCRProcessor verwenden (kombiniert Feature Extractor und Tokenizer)
+            processor = TrOCRProcessor.from_pretrained('microsoft/trocr-base-str')
             model = VisionEncoderDecoderModel.from_pretrained('microsoft/trocr-base-str')
-            tokenizer = AutoTokenizer.from_pretrained('microsoft/trocr-base-str')
             
-            # Auf Gerät verschieben
+            # Auf Gerät verschieben mit zusätzlichen CUDA-Optimierungen
             if device.type == 'cuda':
-                model = model.cuda()
+                try:
+                    # CUDA optimizations
+                    torch.backends.cudnn.benchmark = True
+                    model = model.cuda()
+                    
+                    # Optional: Mixed precision für bessere Performance
+                    # model = model.half()  # Nur aktivieren, wenn gemischte Präzision gewünscht
+                    
+                    logger.info(f"TrOCR model loaded on CUDA device: {torch.cuda.get_device_name(0)}")
+                    logger.info(f"CUDA memory allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+                except RuntimeError as e:
+                    if "CUDA out of memory" in str(e):
+                        logger.warning(f"CUDA out of memory when loading TrOCR model: {e}")
+                        # Auf CPU zurückfallen
+                        device = torch.device('cpu')
+                        model = VisionEncoderDecoderModel.from_pretrained('microsoft/trocr-base-str')
+                        logger.info("Fallback: TrOCR model loaded on CPU")
+                    else:
+                        raise
             
             model.to(device)
             
             # Cache-Modelle speichern
             self.trocr_processor = processor
-            self.trocr_model = model 
-            self.trocr_tokenizer = tokenizer
+            self.trocr_model = model
+            self.trocr_tokenizer = processor.tokenizer  # TrOCRProcessor enthält bereits den Tokenizer
             self.trocr_device = device
             
             logger.info(f"Successfully loaded TrOCR model on {device}")
-            return processor, model, tokenizer, device
+            return processor, model, processor.tokenizer, device
             
         except Exception as e:
             logger.error(f"Error initializing TrOCR model: {e}")
@@ -166,9 +184,6 @@ class ModelService:
     
     def correct_text_with_ollama(self, text, model_name="deepseek-r1:1.5b"):
         """Use Ollama with DeepSeek model to correct text"""
-        # Ensure model is available locally
-        ollama_service.ensure_model_available(model_name)
-        
         # Use the ollama service to correct the text
         return ollama_service.correct_ocr_text(text, model_name)
     
