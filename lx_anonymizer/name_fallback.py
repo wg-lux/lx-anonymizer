@@ -44,9 +44,13 @@ def extract_patient_info_from_text(text):
             info['casenumber'] = match1.group(4).strip()
             
         # Determine gender based on context
-        if "Patientin" in text:
+        # Check for gender indicators near the extracted name
+        context_window = text[max(0, text.find(info['patient_first_name']) - 30):
+                              min(len(text), text.find(info['patient_first_name']) + len(info['patient_first_name']) + 30)]
+        
+        if "Patientin" in context_window:
             info['patient_gender'] = "female"
-        elif "Patient" in text:
+        elif "Patient" in context_window and "Patientin" not in context_window:
             info['patient_gender'] = "male"
             
         return info
