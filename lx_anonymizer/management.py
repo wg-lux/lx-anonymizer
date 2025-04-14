@@ -1,6 +1,6 @@
-from pipeline_manager import process_images_with_OCR_and_NER
 from pathlib import Path
-from text_anonymizer import anonymize_text
+from .pipeline_manager import process_images_with_OCR_and_NER
+from .text_anonymizer import anonymize_text
 
 class PDF_Anonymizer:
     def __init__(self, pdf_path: Path, output_dir: Path):
