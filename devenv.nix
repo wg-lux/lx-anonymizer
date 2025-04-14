@@ -1,21 +1,25 @@
 { pkgs, lib, config, inputs, ... }:
 let
+  appName = "lx_anonymizer";
   buildInputs = with pkgs; [
     python312Full
-    # cudaPackages.cuda_cudart
-    # cudaPackages.cudnn
     stdenv.cc.cc
+    git
+    direnv
     glib
+    ollama
   ];
 
+  customTasks = (
+    import ./devenv/tasks/default.nix ({
+      inherit config pkgs lib;
+    })
+  );
 
-in 
+in
 {
-
-  # A dotenv file was found, while dotenv integration is currently not enabled.
   dotenv.enable = false;
   dotenv.disableHint = true;
-
 
   packages = with pkgs; [
     git
@@ -32,7 +36,7 @@ in
       with pkgs;
       lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
-
+    OLLAMA_HOST = "0.0.0.0";
   };
 
   languages.python = {
@@ -44,7 +48,7 @@ in
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
-  
+
   scripts.env-setup.exec = ''
     export LD_LIBRARY_PATH="${
       with pkgs;
@@ -52,18 +56,21 @@ in
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
   '';
 
-
   processes = {
-    # django.exec = "run-dev-server";
-    silly-example.exec = "while true; do echo hello && sleep 10; done";
-    test-main.exec = "python lx_anonymizer/main.py -i lx_anonymizer/test_images/namen.jpg";
-    # django.exec = "${pkgs.uv}/bin/uv run python manage.py runserver 127.0.0.1:8123";
+    ollama-serve.exec = "export OLLAMA_DEBUG=1 && ollama serve";
+    ollama-pull-model.exec = "ollama pull deepseek-r1:1.5b&";
+    ollama-run-model.exec = "ollama run deepseek-r1:1.5b";
+    ollama-verify.exec = "curl http://127.0.0.1:11434/api/models";
+    };
+
+  tasks = {
   };
 
 
   enterShell = ''
     . .devenv/state/venv/bin/activate
     uv sync
+
     hello
     cd lx_anonymizer
   '';

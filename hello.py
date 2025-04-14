@@ -1,4 +1,5 @@
 # Define a function which creates a file (YYYY-MM-DD_HH-MM-SS.txt) in the directory "./data" and writes a message to it
+import subprocess
 
 def write_message(message=None):
     import os
@@ -24,6 +25,7 @@ def write_message(message=None):
 
 def main():
     print("Hello from DevEnv for lx-anonymizer project!")
+    subprocess.run(['sh', './start-devenv.sh'], check=True)
 
     write_message()
 
