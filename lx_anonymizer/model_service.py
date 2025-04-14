@@ -70,7 +70,7 @@ class ModelService:
                 # Versuche auf dem ermittelten Gerät zu laden
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map=device,
+                    device_map="auto",  # or "cpu"/"cuda", or a dictionary mapping module names to devices
                     torch_dtype="auto",
                     trust_remote_code=False,
                     low_cpu_mem_usage=True,
@@ -182,10 +182,45 @@ class ModelService:
             logger.error(f"Error initializing TrOCR model: {e}")
             return None, None, None, None
     
-    def correct_text_with_ollama(self, text, model_name="deepseek-r1:1.5b"):
-        """Use Ollama with DeepSeek model to correct text"""
+    def setup_ollama(self, model_path):
+        """Set up Ollama model path."""
+        ollama_service.model_name = model_path  # Update the model_name attribute
+        logger.info(f"Ollama model path set to: {model_path}")
+        
+        if not ollama_service.is_server_running():
+            logger.error("Ollama server is not running")
+            return False
+        else:
+            logger.info("Ollama server is running")
+            return True
+            
+    def correct_text_with_ollama(self, text):
+        """Use Ollama with current model to correct text"""
+        if not ollama_service.is_server_running():
+            logger.error("Ollama server is not running")
+            return text
+        if not text:
+            logger.warning("No text provided for correction")
+            return text
+        if not isinstance(text, str):
+            logger.error("Provided text is not a string")
+            return text
         # Use the ollama service to correct the text
-        return ollama_service.correct_ocr_text(text, model_name)
+        return ollama_service.correct_ocr_text(text)
+   
+    def correct_text_with_ollama_in_chunks(self, text, chunk_size=2048):
+        """Use Ollama with current model to correct text in smaller chunks"""
+        if not ollama_service.is_server_running():
+            logger.error("Ollama server is not running")
+            return text
+        if not text:
+            logger.warning("No text provided for correction")
+            return text
+        if not isinstance(text, str):
+            logger.error("Provided text is not a string")
+            return text
+        # Use the ollama service to correct the text
+        return ollama_service.correct_ocr_text_in_chunks(text)
     
     def cleanup_models(self):
         """Bereinigt alle geladenen Modelle und gibt Speicher frei"""

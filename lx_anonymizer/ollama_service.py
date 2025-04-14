@@ -1,122 +1,177 @@
 import json
-from ollama_python.endpoints import GenerateAPI, ModelManagementAPI
-from requests import api
+import requests
 from .custom_logger import get_logger
 import subprocess
-
+import time
+import subprocess
 logger = get_logger(__name__)
 
 class OllamaService:
-    """Service to interact with a locally running Ollama instance via the ollama-python library."""
+    """Service to interact with a locally running Ollama instance."""
     
-    def __init__(self, base_url="http://127.0.0.1:11434"):  # Korrigierter Standard-Port für Ollama
+    def __init__(self, base_url="http://127.0.0.1:11434", model_name="deepseek-r1:1.5b"):
+
         self.base_url = base_url
-        # The ModelManagementAPI is used to manage model availability.
-        self.model_api = ModelManagementAPI(base_url=self.base_url)
-        self.generate_api = GenerateAPI(base_url=self.base_url, model="deepseek-r1:1.5b")  # Remove default model here
-        logger.info(f"Initialized OllamaService with base_url: {self.base_url}")
+        self.model_name = model_name
+        self.ensure_model_is_running()  # Ensure the model is running during initialization
+        logger.info(f"Initialized OllamaService with base_url: {self.base_url}, model: {self.model_name}")
 
     def is_server_running(self):
-        """Check if the Ollama server is accessible by attempting to list local models."""
+        """Check if the Ollama server is accessible."""
         try:
-            _ = self.list_models()
-            logger.info("Ollama server is running")
-            return True
-        except Exception as e:
+            response = requests.get(f"{self.base_url}/api/version")
+            if response.status_code == 200:
+                logger.info("Ollama server is running")
+                return True
+            else:
+                logger.error(f"Ollama server is not running. Status code: {response.status_code}")
+                return False
+        except requests.exceptions.ConnectionError as e:
             logger.error(f"Ollama server is not running: {e}")
             return False
 
-    def list_models(self):
-        """List all models available locally from the Ollama instance."""
+    def ensure_model_is_running(self):
+        """Ensure the specified model is running using subprocess."""
         try:
-            result = self.model_api.list_local_models()
-            models = [model.name for model in result.models]  # Extract model names from the list of Model objects
-            logger.info("Retrieved models: " + ", ".join(models))
-            return models
-        except Exception as e:
-            logger.error(f"Error listing models: {e}")
-            return []
+            # Check if the model is already running
+            process = subprocess.run(["ollama", "ps"], capture_output=True, text=True)
+            if self.model_name in process.stdout:
+                logger.info(f"Model {self.model_name} is already running.")
+                return True
 
-    def ensure_model_loaded(self, model_name="mistral"):
-        """
-        Ensure the specified model is available. If not, pull it using the ModelManagementAPI.
-        
-        Returns:
-            bool: True if the model is available after this call, False otherwise.
-        """
-        models = self.list_models()
-        if model_name in models:
-            logger.info(f"Model {model_name} is already loaded")
+            # Run the model using subprocess
+            logger.info(f"Starting model {self.model_name} in background...")
+            subprocess.Popen(["ollama", "run", self.model_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            # Wait for a short time to allow the model to start
+            time.sleep(5)  # Adjust the waiting time as needed
+
+            logger.info(f"Model {self.model_name} started in background.")
             return True
-        
-        logger.info(f"Model {model_name} not found. Pulling model (this may take a while)...")
-        try:
-            # Use the ModelManagementAPI to pull the model
-            result = self.model_api.pull(name=model_name, stream=False)  # Disable streaming for simplicity
-            logger.info(f"Pull result: {result}")
-            return True  # Assume success if no exception
         except Exception as e:
-            logger.error(f"Error pulling model {model_name}: {e}")
+            logger.error(f"Error starting model {self.model_name}: {e}")
             return False
 
-    def generate_text(self, prompt, model_name="deepseek-r1:1.5b", max_tokens=1000, temperature=0.3):
-        """
-        Generate text using the specified model.
-        
-        This method automatically ensures that the model is loaded.
-        
-        Returns:
-            str or None: The generated text response or None if an error occurred.
-        """
-        if not self.ensure_model_loaded(model_name):
-            logger.error(f"Model {model_name} is not available")
+    def generate_text(self, prompt, max_tokens=1000, temperature=0.3):
+        """Generate text using the specified model."""
+        if not self.is_server_running():
+            logger.error("Ollama server is not running")
             return None
+
         try:
-            # Use the GenerateAPI to generate text
-            options = {"num_predict": max_tokens, "temperature": temperature}  # Use num_predict instead of num_tokens
-            result = self.generate_api.generate(prompt=prompt, stream=False, options=options)  # Disable streaming
-            logger.info(f"Generated text using model {model_name}")
-            return result.response
+            data = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"num_predict": max_tokens, "temperature": temperature},
+            }
+            response = requests.post(f"{self.base_url}/api/generate", json=data)
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Generated text using model {self.model_name}")
+                return result["response"]
+            else:
+                logger.error(f"Error generating text: {response.status_code} - {response.text}")
+                return None
         except Exception as e:
             logger.error(f"Error generating text: {e}")
             return None
 
-    def correct_ocr_text(self, text, model_name="deepseek-r1:1.5b"):
-        """
-        Correct OCR text using an Ollama model.
-        
-        Constructs a prompt instructing the model to fix common OCR errors and return just the corrected text.
-        
-        Returns:
-            str: The corrected OCR text or the original text if an error occurred.
-        """
-        if not self.ensure_model_loaded(model_name):
-            logger.error(f"Model {model_name} is not available")
+    def split_text_into_chunks(self, text, max_chunk_size=2048):
+        """Split text into smaller chunks."""
+        words = text.split()
+        chunks = []
+        current_chunk = []
+
+        current_size = 0
+        for word in words:
+            word_size = len(word) + 1  # accounting for space
+            if current_size + word_size > max_chunk_size:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = [word]
+                current_size = word_size
+            else:
+                current_chunk.append(word)
+                current_size += word_size
+
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+
+        return chunks
+
+    def correct_ocr_text(self, text):# -> Any | Any:
+        """Correct OCR text using an Ollama model."""
+        if not self.is_server_running():
+            logger.error("Ollama server is not running")
             return text
 
-        prompt = f"""Korrigiere den folgenden OCR-Text und behebe Fehler, die bei der Texterkennung entstanden sein könnten.
-Liefere nur den korrigierten Text zurück, ohne weitere Erklärungen.
 
-OCR-Text:
+        prompt = f"""Bitte korrigiere den folgenden OCR-Text. Gib als Antwort **nur** den vollständig korrigierten Text (ohne Erklärungen oder Kommentare) zurück, der grammatikalisch korrekt, flüssig und konsistent formatiert ist.
+Hier ist der OCR-Text:
 {text}
-
 Korrigierter Text:"""
         try:
-            try:
-                result = self.generate_api.generate(prompt=prompt, stream=False, format="json")
+            data = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+            }
+            response = requests.post(f"{self.base_url}/api/generate", json=data)
 
-                logger.info("OCR text correction completed.")
-                return result.response
-            except ConnectionError as conn_err:
-                logger.error(f"Ollama server connection failed: {conn_err}")
-                logger.warning(f"Please check if Ollama server is running at {self.base_url}")
-                logger.warning("OCR text correction skipped due to Ollama server connection failure.")
-                return text  # Gebe den ursprünglichen Text zurück, wenn keine Verbindung möglich ist
-                
+            if response.status_code == 200:
+                result = response.json()
+                corrected_text=result["response"]
+            else:
+                logger.error(f"Error correcting OCR text: {response.status_code} - {response.text}")
+                return text  # Return original text on error
         except Exception as e:
             logger.error(f"Error correcting OCR text: {e}")
-            logger.warning("Returning original text due to correction error.")
-            return text  # Gebe den ursprünglichen Text zurück statt einer Fehlermeldung
+
+        # Combine corrected chunks back into a single string
+        logger.info("OCR text correction completed.")
+        return corrected_text
+
+    def correct_ocr_text_in_chunks(self, text):# -> Any | Any:
+        """Correct OCR text using an Ollama model."""
+        if not self.is_server_running():
+            logger.error("Ollama server is not running")
+            return text
+
+        # Split the text into chunks
+        text_chunks = self.split_text_into_chunks(text)
+        corrected_chunks = []
+
+        # Process each chunk independently
+        for chunk in text_chunks:
+            prompt = f"""Bitte korrigiere den folgenden OCR-Text. Gib als Antwort **nur** den vollständig korrigierten Text (ohne Erklärungen oder Kommentare) zurück, der grammatikalisch korrekt, flüssig und konsistent formatiert ist.
+Hier ist der OCR-Text:
+{chunk}
+Korrigierter Text:"""
+            try:
+                data = {
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                }
+                response = requests.post(f"{self.base_url}/api/generate", json=data)
+
+                if response.status_code == 200:
+                    result = response.json()
+                    corrected_chunks.append(result["response"])
+                else:
+                    logger.error(f"Error correcting OCR text: {response.status_code} - {response.text}")
+                    corrected_chunks.append(chunk)  # Return original chunk on error
+            except Exception as e:
+                logger.error(f"Error correcting OCR text: {e}")
+                corrected_chunks.append(chunk)  # Return original chunk on error
+
+        # Combine corrected chunks back into a single string
+        corrected_text = " ".join(corrected_chunks)
+        logger.info("OCR text correction completed.")
+        return corrected_text
 
 # Global instance of the service for convenience.
 ollama_service = OllamaService()

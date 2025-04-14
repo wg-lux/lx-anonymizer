@@ -37,6 +37,7 @@ in
       lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
+    PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
   };
 
   languages.python = {
@@ -58,8 +59,10 @@ in
 
   processes = {
     ollama-serve.exec = "export OLLAMA_DEBUG=1 && ollama serve";
-    ollama-pull-model.exec = "ollama pull deepseek-r1:1.5b&";
+    ollama-pull-deepseek-model.exec = "ollama pull deepseek-r1:1.5b&";
+    ollama-pull-med-model.exec = "ollama pull rjmalagon/medllama3-v20:fp16";
     ollama-run-model.exec = "ollama run deepseek-r1:1.5b";
+    ollama-run-med-model.exec = "ollama run rjmalagon/medllama3-v20:fp16";
     ollama-verify.exec = "curl http://127.0.0.1:11434/api/models";
     };
 

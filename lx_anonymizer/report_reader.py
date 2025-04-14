@@ -1,3 +1,4 @@
+from pyexpat import model
 from django.core.files import images
 from .settings import DEFAULT_SETTINGS
 from faker import Faker
@@ -11,16 +12,17 @@ from PIL import Image
 from uuid import uuid4
 import json
 import re
-
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
 from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr # Import OCR fallback
+from .ollama_service import ollama_service
 from .pdf_operations import convert_pdf_to_images
-from .llm_phi4 import phi4_ocr_correction
 from .model_service import model_service
+from .donut_ocr import donut_full_image_ocr
+from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
 
 class ReportReader:
     def __init__(
@@ -148,14 +150,6 @@ class ReportReader:
             fallback_info.setdefault("patient_gender", "Unknown")
             report_meta.update(fallback_info)
         
-        # Extract endoscope information
-        for line in lines:
-            if self.flags["endoscope_info_line"] in line:
-                endoscope_info = self.endoscope_extractor.extract_endoscope_info(line)
-                if endoscope_info:
-                    report_meta.update(endoscope_info)
-                break
-        
         # Extract examiner information
         for line in lines:
             if self.flags["examiner_info_line"] in line:
@@ -170,6 +164,14 @@ class ReportReader:
                 examination_info = self.examination_extractor.extract_examination_info(line)
                 if examination_info:
                     report_meta.update(examination_info)
+                break
+        
+        # Extract endoscope information
+        for line in lines:
+            if self.flags["endoscope_info_line"] in line:
+                endoscope_info = self.endoscope_extractor.extract_endoscope_info(line)
+                if endoscope_info:
+                    report_meta.update(endoscope_info)
                 break
 
         # Add PDF hash
@@ -198,9 +200,11 @@ class ReportReader:
 
         return anonymized_text
         
-    def process_report(self, pdf_path, verbose = True):
+    def process_report(self, pdf_path, use_ensemble=False, verbose=True):
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
+        If the normal pdfplumber extraction fails (or returns very little text), fallback to OCR.
+        Optionally, use an ensemble OCR method to improve output quality.
         """
         text = self.read_pdf(pdf_path)
         if not text.strip():
@@ -208,28 +212,61 @@ class ReportReader:
                 logger.info("No text detected by pdfplumber, applying OCR fallback.")
                 images_from_pdf = convert_pdf_to_images(pdf_path)
                 ocr_text = ""
+                
                 for pil_image in images_from_pdf:
-                    if hasattr(pil_image, "convert"):  # simple check for a PIL image
-                        text_part, _ = tesseract_full_image_ocr(pil_image)  # Directly pass the PIL image
-                        text_part_2 = trocr_full_image_ocr(pil_image)
+                    if use_ensemble:
+                        # Use the ensemble OCR approach
+                        logger.info("Using ensemble OCR approach")
+                        ocr_part = ensemble_ocr(pil_image)
                     else:
-                        text_part, _ = tesseract_full_image_ocr(str(pil_image))
-                        text_part_2 = trocr_full_image_ocr(str(pil_image))
+                        # Default: try multiple OCR methods and choose the best
+                        if hasattr(pil_image, "convert"):
+                            text_part, _ = tesseract_full_image_ocr(pil_image)
+                            text_part_2 = trocr_full_image_ocr(pil_image)
+                            text_part_3 = donut_full_image_ocr(pil_image)
+                        else:
+                            text_part, _ = tesseract_full_image_ocr(str(pil_image))
+                            text_part_2 = trocr_full_image_ocr(str(pil_image))
+                            text_part_3 = donut_full_image_ocr(str(pil_image))
                         
-                    # Choose the OCR result with more content
-                    if len(text_part) < len(text_part_2):
-                        text_part = text_part_2
-                    ocr_text += text_part
-                text = ocr_text
+                        # Choose the OCR result with the most content
+                        if len(text_part) >= len(text_part_2) and len(text_part) >= len(text_part_3):
+                            ocr_part = text_part
+                            logger.info("Selected Tesseract OCR result")
+                        elif len(text_part_2) >= len(text_part) and len(text_part_2) >= len(text_part_3):
+                            ocr_part = text_part_2
+                            logger.info("Selected TrOCR result")
+                        else:
+                            ocr_part = text_part_3
+                            logger.info("Selected GOT OCR result")
+                    
+                    ocr_text += " " + ocr_part
+                
+                text = ocr_text.strip()
                 logger.info(f"OCR text: {text[:200]}...")
                 
                 # Apply correction using Ollama with DeepSeek
-                if text.strip():  # Nur korrigieren, wenn Text erkannt wurde
+                if text.strip():  # Only correct if text was recognized
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:
                         corrected_text = model_service.correct_text_with_ollama(text)
-                        # Prüfe, ob die Korrektur erfolgreich war (keine Fehlermeldung enthält)
+                        # Check if correction was successful (doesn't start with an error message)
                         if corrected_text and not corrected_text.startswith("Error:"):
+                            # Additional checks for correction quality
+                            if len(corrected_text) < len(text):
+                                logger.warning("OCR correction produced shorter text")
+                                model_service.setup_ollama("rjmalagon/medllama3-v20:fp16")
+                                corrected_text = model_service.correct_text_with_ollama(corrected_text)
+                                model_service.cleanup_models()
+                                if len(corrected_text) < len(text):
+                                    logger.warning("OCR correction produced shorter text again")
+                                    corrected_text = text
+                                    model_service.setup_ollama("deepseek-r1:1.5b")
+                                    corrected_text = model_service.correct_text_with_ollama_in_chunks(corrected_text)
+                                    model_service.cleanup_models()
+                                    if len(corrected_text) < len(text):
+                                        logger.warning("OCR correction produced shorter text after multiple attempts")
+                                        corrected_text = text
                             text = corrected_text
                             logger.info("OCR text successfully corrected.")
                         else:
@@ -243,12 +280,12 @@ class ReportReader:
             
             except Exception as e:
                 logger.error(f"OCR fallback failed: {e}")
-                
+        
         report_meta = self.extract_report_meta(text, pdf_path)
         anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
         
         logger.debug(f"Anonymized text: {anonymized_text}")
-
+        
         return text, anonymized_text, report_meta
     
     def pdf_hash(self, pdf_binary):

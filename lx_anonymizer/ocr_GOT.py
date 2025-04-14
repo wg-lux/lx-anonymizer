@@ -2,7 +2,7 @@ from transformers import AutoModel, AutoTokenizer
 import cv2
 import numpy as np
 from PIL import Image
-
+import io
 import torch
 
 # Check if CUDA is available and set device accordingly
@@ -13,8 +13,6 @@ try:
     model = AutoModel.from_pretrained(
         'ucaslcl/GOT-OCR2_0', 
         trust_remote_code=True, 
-        low_cpu_mem_usage=True, 
-        device_map=device, 
         use_safetensors=True, 
         pad_token_id=tokenizer.eos_token_id
     )
@@ -26,7 +24,26 @@ except Exception as e:
     raise
 
 def ocr(image):
-
-    res = model.chat(tokenizer, image, ocr_type='ocr')
+    """
+    Perform OCR on an image.
+    
+    Args:
+        image: A PIL Image object or a path to an image file.
+    
+    Returns:
+        str: The extracted text from the image.
+    """
+    if isinstance(image, Image.Image):
+        # Convert PIL Image to bytes
+        buffered = io.BytesIO()
+        image.save(buffered, format="PNG")  # You can use other formats like JPEG
+        image_bytes = buffered.getvalue()
+        
+        res = model.chat(tokenizer, image_bytes, ocr_type='ocr')
+    else:
+        # Assume it's a file path
+        with open(image, 'rb') as f:
+            image_bytes = f.read()
+        res = model.chat(tokenizer, image_bytes, ocr_type='ocr')
 
     return res

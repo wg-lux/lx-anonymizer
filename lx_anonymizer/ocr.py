@@ -103,7 +103,7 @@ def trocr_full_image_ocr(image_path):
         do_sample=False,            # Use beam search for more deterministic results
         num_beams=5,                # Example beam count for better exploration
         return_dict_in_generate=True, 
-        max_new_tokens=150          # Increase max tokens to allow for longer text
+        max_new_tokens=30000          # Increase max tokens to allow for longer text
     )
     return processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0].strip()
 
