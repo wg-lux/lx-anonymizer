@@ -4,10 +4,10 @@ import uuid
 from pathlib import Path
 import time
 import ast
-from device_reader import read_device, read_text_formatting
-from directory_setup import create_temp_directory
-from box_operations import make_box_from_device_list, make_box_from_name, extend_boxes_if_needed
-from custom_logger import get_logger
+from .device_reader import read_device, read_text_formatting
+from .directory_setup import create_temp_directory
+from .box_operations import make_box_from_device_list, make_box_from_name, extend_boxes_if_needed
+from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 

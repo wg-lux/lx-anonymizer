@@ -1,5 +1,5 @@
 import spacy
-from custom_logger import get_logger
+from .custom_logger import get_logger
 import subprocess
 import sys
 

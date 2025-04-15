@@ -1,4 +1,4 @@
-from region_detector import expand_roi  # Ensure this module is correctly referenced
+from .region_detector import expand_roi  # Ensure this module is correctly referenced
 from PIL import Image
 from transformers import (
     ViTImageProcessor,
@@ -9,7 +9,7 @@ from transformers import (
 import torch
 import pytesseract
 import numpy as np
-from custom_logger import get_logger
+from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 # At the start of your script

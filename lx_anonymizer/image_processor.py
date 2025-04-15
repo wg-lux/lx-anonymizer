@@ -1,10 +1,10 @@
 from pathlib import Path
 import cv2
 import uuid
-from custom_logger import get_logger
-from image_reassembly import reassemble_image
-from pipeline_manager import process_images_with_OCR_and_NER
-from gpu_management import clear_gpu_memory
+from .custom_logger import get_logger
+from .image_reassembly import reassemble_image
+from .pipeline_manager import process_images_with_OCR_and_NER
+from .gpu_management import clear_gpu_memory
 
 logger = get_logger(__name__)
 

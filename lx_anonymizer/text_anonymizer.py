@@ -1,5 +1,5 @@
-from flair_NER import flair_NER_German
-from custom_logger import get_logger
+from .flair_NER import flair_NER_German
+from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 

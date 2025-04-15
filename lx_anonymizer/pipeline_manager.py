@@ -1,25 +1,25 @@
-from ocr import trocr_on_boxes, tesseract_on_boxes, tesseract_full_image_ocr
-from spacy_NER import spacy_NER_German
-from flair_NER import flair_NER_German
-from names_generator import gender_and_handle_full_names, gender_and_handle_separate_names, gender_and_handle_device_names
+from .ocr import trocr_on_boxes, tesseract_on_boxes, tesseract_full_image_ocr
+from .spacy_NER import spacy_NER_German
+from .flair_NER import flair_NER_German
+from .names_generator import gender_and_handle_full_names, gender_and_handle_separate_names, gender_and_handle_device_names
 import re
-from blur import blur_function
-from device_reader import read_name_boxes, read_background_color
-from east_text_detection import east_text_detection
-from tesseract_text_detection import tesseract_text_detection
-from craft_text_detection import craft_text_detection
+from .blur import blur_function
+from .device_reader import read_name_boxes, read_background_color
+from .east_text_detection import east_text_detection
+from .tesseract_text_detection import tesseract_text_detection
+from .craft_text_detection import craft_text_detection
 import cv2
 import json
 from pathlib import Path
 import uuid
-from directory_setup import create_temp_directory, create_blur_directory
+from .directory_setup import create_temp_directory, create_blur_directory
 import csv
-from custom_logger import get_logger
+from .custom_logger import get_logger
 import torch
 import fitz
-from llm import analyze_full_image_with_context
-from box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes, get_dominant_color
-from fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
+from .llm import analyze_full_image_with_context
+from .box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes, get_dominant_color
+from .fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
 
 # Configure logging
 logger = get_logger(__name__)
