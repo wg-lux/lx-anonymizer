@@ -157,10 +157,10 @@ def trocr_full_image_ocr_on_boxes(image_path):
         final_text = "\n".join(ocr_results)
         if not final_text.strip():
             logger.warning("No text recognized in regions, falling back to full image OCR.")
-            final_text = trocr_full_image_ocr(image, processor, model, tokenizer, device)
+            final_text = trocr_full_image_ocr(image)
     else:
         logger.info("No regions detected by CRAFT. Falling back to full image OCR.")
-        final_text = trocr_full_image_ocr(image, processor, model, tokenizer, device)
+        final_text = trocr_full_image_ocr(image)
     
     return final_text
 

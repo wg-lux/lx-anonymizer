@@ -100,18 +100,35 @@ def process_image(
     if processed_image_path != img_path:
         file_extension = os.path.splitext(processed_image_path)[1]
         result_path = results_dir / f"processed_{uuid.uuid4()}{file_extension}"
-        
-        # Copy the image to the results directory
-        cv2.imwrite(
-            str(result_path), 
-            cv2.imread(str(processed_image_path))
-        )
+        try:
+            if cv2.imread(str(processed_image_path)) is None:
+                logger.error(f"Failed to read image: {processed_image_path}")
+            else:
+                # Copy the image to the results directory
+                cv2.imwrite(
+                    str(result_path), 
+                    cv2.imread(str(processed_image_path))
+                )
+                logger.debug(f"Image copied successfully to: {result_path}")
+        except Exception as e:
+            logger.error(f"Failed to save image to results with error {e}")
+                
         processed_image_path = result_path
     
     return processed_image_path, result
 
 def resize_image(image_path: Path, max_width=1024, max_height=1024):
-    image = cv2.imread(str(image_path))  # OpenCV expects a string
+    try:
+        if cv2.imread(str(image_path)) is None:
+            logger.error(f"Failed to read image: {image_path}")
+            # Handle the error or return gracefully
+        else:
+            image=cv2.imread(str(image_path)))
+    except Exception as e:
+        logger.error(f"Error copying processed image: {e}")
+        # Handle the exception or return gracefully    if image is None:
+        logger.error(f"Unable to read image for resizing: {image_path}")
+        return
     if image is None:
         logger.error(f"Unable to read image for resizing: {image_path}")
         return
@@ -120,5 +137,13 @@ def resize_image(image_path: Path, max_width=1024, max_height=1024):
         scaling_factor = min(max_width / width, max_height / height)
         new_size = (int(width * scaling_factor), int(height * scaling_factor))
         resized_image = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
-        cv2.imwrite(str(image_path), resized_image)  # Saving image
+        try:
+            if cv2.imwrite(str(image_path)) is None:
+                logger.error("Failed to write image")
+            else:
+                cv2.imwrite(str(image_path), resized_image)  # Saving image
+                logger.debug(f"Image saved successfully: {image_path}")
+        except Exception as e:
+            logger.error(f"Error saving image: {e}")
+
         logger.debug(f"Image resized to {new_size}")
