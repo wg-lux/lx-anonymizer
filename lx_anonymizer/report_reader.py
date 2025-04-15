@@ -17,8 +17,7 @@ from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
-from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr # Import OCR fallback
-from .ollama_service import ollama_service
+from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr_on_boxes # Import OCR fallback
 from .pdf_operations import convert_pdf_to_images
 from .model_service import model_service
 from .donut_ocr import donut_full_image_ocr
@@ -222,11 +221,11 @@ class ReportReader:
                         # Default: try multiple OCR methods and choose the best
                         if hasattr(pil_image, "convert"):
                             text_part, _ = tesseract_full_image_ocr(pil_image)
-                            text_part_2 = trocr_full_image_ocr(pil_image)
+                            text_part_2 = trocr_full_image_ocr_on_boxes(pil_image)
                             text_part_3 = donut_full_image_ocr(pil_image)
                         else:
                             text_part, _ = tesseract_full_image_ocr(str(pil_image))
-                            text_part_2 = trocr_full_image_ocr(str(pil_image))
+                            text_part_2 = trocr_full_image_ocr_on_boxes(str(pil_image))
                             text_part_3 = donut_full_image_ocr(str(pil_image))
                         
                         # Choose the OCR result with the most content
