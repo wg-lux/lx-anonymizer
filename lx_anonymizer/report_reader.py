@@ -1,5 +1,6 @@
 from pyexpat import model
 from django.core.files import images
+from transformers.models import trocr
 from .settings import DEFAULT_SETTINGS
 from faker import Faker
 import gender_guesser.detector as gender_detector
@@ -17,7 +18,7 @@ from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
-from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr_on_boxes # Import OCR fallback
+from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr #, trocr_full_image_ocr_on_boxes # Import OCR fallback
 from .pdf_operations import convert_pdf_to_images
 from .model_service import model_service
 from .donut_ocr import donut_full_image_ocr
@@ -214,31 +215,64 @@ class ReportReader:
                 
                 for pil_image in images_from_pdf:
                     if use_ensemble:
-                        # Use the ensemble OCR approach
                         logger.info("Using ensemble OCR approach")
-                        ocr_part = ensemble_ocr(pil_image)
+                        try:
+                            ocr_part = ensemble_ocr(pil_image)
+                        except Exception as e:
+                            logger.error(f"Ensemble OCR failed with error: {e}")
+                            ocr_part = None  # You may set a default or further fallback if needed.
                     else:
-                        # Default: try multiple OCR methods and choose the best
-                        if hasattr(pil_image, "convert"):
-                            text_part, _ = tesseract_full_image_ocr(pil_image)
-                            text_part_2 = trocr_full_image_ocr_on_boxes(pil_image)
-                            text_part_3 = donut_full_image_ocr(pil_image)
-                        else:
-                            text_part, _ = tesseract_full_image_ocr(str(pil_image))
-                            text_part_2 = trocr_full_image_ocr_on_boxes(str(pil_image))
-                            text_part_3 = donut_full_image_ocr(str(pil_image))
+                        # Initialize OCR result variables.
+                        text_part = ""
+                        text_part_2 = ""
+                        text_part_3 = ""
                         
-                        # Choose the OCR result with the most content
+                        # Check if the image is a PIL Image (has "convert" method).
+                        if hasattr(pil_image, "convert"):
+                            try:
+                                text_part, _ = tesseract_full_image_ocr(pil_image)
+                            except Exception as e:
+                                logger.error(f"Tesseract Text detection failed with error: {e}")
+                                text_part = ""
+                            try:
+                                text_part_2 = trocr_full_image_ocr(pil_image)
+                            except Exception as e:
+                                logger.error(f"TROCR Text detection failed with error: {e}")
+                                text_part_2 = ""
+                            try:
+                                text_part_3 = donut_full_image_ocr(pil_image)
+                            except Exception as e:
+                                logger.error(f"Donut OCR failed with error: {e}")
+                                text_part_3 = ""
+                        else:
+                            # Fallback when the input isn't a PIL Image: assume it can be converted to string.
+                            try:
+                                text_part, _ = tesseract_full_image_ocr(str(pil_image))
+                            except Exception as e:
+                                logger.error(f"Tesseract Text detection failed with error: {e}")
+                                text_part = ""
+                            try:
+                                text_part_2 = trocr_full_image_ocr(str(pil_image))
+                            except Exception as e:
+                                logger.error(f"TROCR Text detection failed with error: {e}")
+                                text_part_2 = ""
+                            try:
+                                text_part_3 = donut_full_image_ocr(str(pil_image))
+                            except Exception as e:
+                                logger.error(f"Donut OCR failed with error: {e}")
+                                text_part_3 = ""
+
+                        # Choose the OCR result with the most content.
                         if len(text_part) >= len(text_part_2) and len(text_part) >= len(text_part_3):
                             ocr_part = text_part
                             logger.info("Selected Tesseract OCR result")
                         elif len(text_part_2) >= len(text_part) and len(text_part_2) >= len(text_part_3):
                             ocr_part = text_part_2
-                            logger.info("Selected TrOCR result")
+                            logger.info("Selected TrOCR OCR result")
                         else:
                             ocr_part = text_part_3
-                            logger.info("Selected GOT OCR result")
-                    
+                            logger.info("Selected Donut OCR result")
+
                     ocr_text += " " + ocr_part
                 
                 text = ocr_text.strip()
