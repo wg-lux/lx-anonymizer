@@ -18,11 +18,11 @@ from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
-from .ocr import tesseract_full_image_ocr, trocr_full_image_ocr #, trocr_full_image_ocr_on_boxes # Import OCR fallback
+from .ocr import tesseract_full_image_ocr #, trocr_full_image_ocr_on_boxes # Import OCR fallback
 from .pdf_operations import convert_pdf_to_images
 from .model_service import model_service
-from .donut_ocr import donut_full_image_ocr
 from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
+from .ocr_preprocessing import  preprocess_image, optimize_image_for_medical_text
 
 class ReportReader:
     def __init__(
@@ -234,16 +234,7 @@ class ReportReader:
                             except Exception as e:
                                 logger.error(f"Tesseract Text detection failed with error: {e}")
                                 text_part = ""
-                            try:
-                                text_part_2 = trocr_full_image_ocr(pil_image)
-                            except Exception as e:
-                                logger.error(f"TROCR Text detection failed with error: {e}")
-                                text_part_2 = ""
-                            try:
-                                text_part_3 = donut_full_image_ocr(pil_image)
-                            except Exception as e:
-                                logger.error(f"Donut OCR failed with error: {e}")
-                                text_part_3 = ""
+
                         else:
                             # Fallback when the input isn't a PIL Image: assume it can be converted to string.
                             try:
@@ -252,15 +243,21 @@ class ReportReader:
                                 logger.error(f"Tesseract Text detection failed with error: {e}")
                                 text_part = ""
                             try:
-                                text_part_2 = trocr_full_image_ocr(str(pil_image))
+                                # Preprocess the image for better OCR results
+                                pil_image = preprocess_image(pil_image, methods=['grayscale', 'denoise', 'contrast', 'sharpen'])
+                                text_part_2 = tesseract_full_image_ocr(str(pil_image))
                             except Exception as e:
-                                logger.error(f"TROCR Text detection failed with error: {e}")
+                                logger.error(f"Preprocessing Text detection before ocr failed with error: {e}")
                                 text_part_2 = ""
                             try:
-                                text_part_3 = donut_full_image_ocr(str(pil_image))
+                                # Optimize the image for medical text
+                                pil_image = optimize_image_for_medical_text(pil_image)
+                                text_part_3 = tesseract_full_image_ocr(str(pil_image))
                             except Exception as e:
-                                logger.error(f"Donut OCR failed with error: {e}")
+                                logger.error(f"Optimizing Text detection before ocr failed with error: {e}")
                                 text_part_3 = ""
+                                
+
 
                         # Choose the OCR result with the most content.
                         if len(text_part) >= len(text_part_2) and len(text_part) >= len(text_part_3):
@@ -268,10 +265,11 @@ class ReportReader:
                             logger.info("Selected Tesseract OCR result")
                         elif len(text_part_2) >= len(text_part) and len(text_part_2) >= len(text_part_3):
                             ocr_part = text_part_2
-                            logger.info("Selected TrOCR OCR result")
+                            logger.info("Selected Tesseract OCR result with default preprocessing")
                         else:
                             ocr_part = text_part_3
-                            logger.info("Selected Donut OCR result")
+                            logger.info("Selected Tesseract OCR result with optimization for medical text")
+
 
                     ocr_text += " " + ocr_part
                 
@@ -282,6 +280,7 @@ class ReportReader:
                 if text.strip():  # Only correct if text was recognized
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:
+                        model_service.setup_ollama("deepseek-r1:1.5b")
                         corrected_text = model_service.correct_text_with_ollama(text)
                         # Check if correction was successful (doesn't start with an error message)
                         if corrected_text and not corrected_text.startswith("Error:"):

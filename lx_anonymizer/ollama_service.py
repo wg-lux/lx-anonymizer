@@ -1,9 +1,12 @@
 import json
+from logging import root
+from pathlib import Path
 import requests
 from .custom_logger import get_logger
 import subprocess
 import time
 import subprocess
+import os
 logger = get_logger(__name__)
 
 class OllamaService:
@@ -15,6 +18,28 @@ class OllamaService:
         self.model_name = model_name
         self.ensure_model_is_running()  # Ensure the model is running during initialization
         logger.info(f"Initialized OllamaService with base_url: {self.base_url}, model: {self.model_name}")
+        
+    def correct_ocr_with_ollama(self, text):
+        """Convenience function to correct OCR text using the DeepSeek model.
+        
+        It first checks if the Ollama server is running and, if not, starts it using
+        the 'devenv up -d' command. The function then proceeds to perform OCR text correction.
+        """
+        # First check if the server is running
+        if not self.is_server_running():
+            logger.info("Ollama service is not running. Starting with 'devenv up -d'...")
+            try:
+                anon_env = os.environ.copy()
+                anon_env["DEVENV_RUNTIME"] = "./lx-anonymizer"          
+                subprocess.run(["devenv", "up", "-d"], env=anon_env, check=True)
+                # Wait for the service to properly start (adjust sleep time as needed)
+                time.sleep(10)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to start devenv: {e}")
+                # Optionally, return the original text if the service fails to start
+                return text
+
+        return self.correct_ocr_text(text)
 
     def is_server_running(self):
         """Check if the Ollama server is accessible."""
@@ -100,12 +125,21 @@ class OllamaService:
 
         return chunks
 
-    def correct_ocr_text(self, text):# -> Any | Any:
+    def correct_ocr_text(self, text):
         """Correct OCR text using an Ollama model."""
         if not self.is_server_running():
             logger.error("Ollama server is not running")
             return text
 
+        # Ensure text is a string
+        if not isinstance(text, str):
+            logger.error(f"Expected string for text correction but got {type(text)}")
+            # Try to convert to string if possible
+            try:
+                text = str(text)
+            except Exception as e:
+                logger.error(f"Could not convert input to string: {e}")
+                return ""
 
         prompt = f"""Bitte korrigiere den folgenden OCR-Text. Gib als Antwort **nur** den vollständig korrigierten Text (ohne Erklärungen oder Kommentare) zurück, der grammatikalisch korrekt, flüssig und konsistent formatiert ist.
 Hier ist der OCR-Text:
@@ -122,16 +156,14 @@ Korrigierter Text:"""
 
             if response.status_code == 200:
                 result = response.json()
-                corrected_text=result["response"]
+                corrected_text = result["response"]
+                return corrected_text
             else:
                 logger.error(f"Error correcting OCR text: {response.status_code} - {response.text}")
                 return text  # Return original text on error
         except Exception as e:
             logger.error(f"Error correcting OCR text: {e}")
-
-        # Combine corrected chunks back into a single string
-        logger.info("OCR text correction completed.")
-        return corrected_text
+            return text  # Return original text on exception
 
     def correct_ocr_text_in_chunks(self, text):# -> Any | Any:
         """Correct OCR text using an Ollama model."""

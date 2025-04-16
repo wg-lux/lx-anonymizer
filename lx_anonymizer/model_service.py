@@ -196,17 +196,21 @@ class ModelService:
             
     def correct_text_with_ollama(self, text):
         """Use Ollama with current model to correct text"""
-        if not ollama_service.is_server_running():
-            logger.error("Ollama server is not running")
-            return text
         if not text:
             logger.warning("No text provided for correction")
             return text
         if not isinstance(text, str):
-            logger.error("Provided text is not a string")
-            return text
+            logger.error(f"Provided text is not a string but a {type(text)}")
+            try:
+                # Try to convert to string if possible (e.g., it might be a dict)
+                text = str(text)
+                logger.warning(f"Converted non-string input to string for Ollama correction")
+            except Exception as e:
+                logger.error(f"Failed to convert input to string: {e}")
+                return ""
+                
         # Use the ollama service to correct the text
-        return ollama_service.correct_ocr_text(text)
+        return ollama_service.correct_ocr_with_ollama(text)
    
     def correct_text_with_ollama_in_chunks(self, text, chunk_size=2048):
         """Use Ollama with current model to correct text in smaller chunks"""
