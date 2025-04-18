@@ -42,6 +42,71 @@ female_last_names = load_names(female_last_names_file)
 male_first_names = load_names(male_first_names_file)
 male_last_names = load_names(male_last_names_file)
 
+def get_random_full_name(name) -> str:
+    d = gender.Detector()
+    gender_guess = d.get_gender(name)
+    if gender_guess in ['male', 'mostly_male']:
+        logger.info("Male gender")
+        with open(male_first_names_file, 'r') as file:
+            index = getindex(file)
+            male_first_name = male_first_names[index]
+        with open(male_last_names_file, 'r') as file:
+            index = getindex(file)
+            male_last_name = male_last_names[index]
+        name = f"{male_first_name} {male_last_name}"
+    elif gender_guess in ['female', 'mostly_female']:
+        logger.info("Female gender")
+        with open(female_first_names_file, 'r') as file:
+            index = getindex(file)
+            female_first_name = female_first_names[index]
+        with open(female_last_names_file, 'r') as file:
+            index = getindex(file)
+            female_last_name = female_last_names[index]
+        name = f"{female_first_name} {female_last_name}"
+    else:  # 'unknown' or 'andy'
+        logger.info("Neutral or unknown gender")
+        with open(neutral_first_names_file, 'r') as file:
+            index = getindex(file)
+            neutral_first_name = neutral_first_names[index]
+        with open(neutral_last_names_file, 'r') as file:
+            index = getindex(file)
+            neutral_last_name = neutral_last_names[index]
+        name = f"{neutral_first_name} {neutral_last_name}"
+    return name
+
+def person_meta(name) -> str:
+    d = gender.Detector()
+    gender_guess = d.get_gender(name)
+    if gender_guess in ['male', 'mostly_male']:
+        logger.info("Male gender")
+        with open(male_first_names_file, 'r') as file:
+            index = getindex(file)
+            first_name = male_first_names[index]
+        with open(male_last_names_file, 'r') as file:
+            index = getindex(file)
+            last_name = male_last_names[index]
+        gender= "Männlich"
+    elif gender_guess in ['female', 'mostly_female']:
+        logger.info("Female gender")
+        with open(female_first_names_file, 'r') as file:
+            index = getindex(file)
+            first_name = female_first_names[index]
+        with open(female_last_names_file, 'r') as file:
+            index = getindex(file)
+            last_name = female_last_names[index]
+        gender= "Weiblich"
+    else:  # 'unknown' or 'andy'
+        logger.info("Neutral or unknown gender")
+        with open(neutral_first_names_file, 'r') as file:
+            index = getindex(file)
+            first_name = neutral_first_names[index]
+        with open(neutral_last_names_file, 'r') as file:
+            index = getindex(file)
+            last_name = neutral_last_names[index]
+        gender= "Neutral"
+    dob= random.randint(1, 28), random.randint(1, 12), random.randint(1950, 2020)
+    return first_name, last_name, dob, gender
+
 def getindex(file):
     # Only usable on opened file objects
     file_length = len(file.readlines())

@@ -1,5 +1,4 @@
 import cv2
-import os
 import uuid
 from directory_setup import create_temp_directory, create_blur_directory
 from box_operations import get_dominant_color
@@ -13,6 +12,7 @@ logger = get_logger(__name__)
 temp_dir, base_dir, csv_dir = create_temp_directory()
 
 def blur_function(image_path, box, background_color=None, expansion=5, blur_strength=(51, 51), rectangle_scale=0.8):
+    
     """
     Apply a strong Gaussian blur to the specified ROI in the image and slightly extend the blur outside the ROI.
 
@@ -33,9 +33,9 @@ def blur_function(image_path, box, background_color=None, expansion=5, blur_stre
     Returns:
     str
         The path to the saved output image.
-    """ 
+    """
     logger.info("Applying blur to the specified region")
-    blur_dir= create_blur_directory()
+    blur_dir = create_blur_directory()
     if blur_dir is None:
         raise ValueError("Blur directory could not be created or accessed")
     image_path = Path(image_path)

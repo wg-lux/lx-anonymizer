@@ -1,4 +1,6 @@
 # Define a function which creates a file (YYYY-MM-DD_HH-MM-SS.txt) in the directory "./data" and writes a message to it
+import subprocess
+import platform
 
 def write_message(message=None):
     import os
@@ -24,6 +26,15 @@ def write_message(message=None):
 
 def main():
     print("Hello from DevEnv for lx-anonymizer project!")
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(['powershell', '-Command', '.\\start-devenv.sh'], check=True)
+        else:
+            subprocess.run(['sh', './start-devenv.sh'], check=True)
+        print("Development environment started successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error starting development environment: {e}")
+        # Consider whether to continue execution or exit
 
     write_message()
 
