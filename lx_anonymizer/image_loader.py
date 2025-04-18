@@ -2,7 +2,7 @@ from pathlib import Path
 import fitz
 import cv2
 import uuid
-from custom_logger import get_logger
+from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 

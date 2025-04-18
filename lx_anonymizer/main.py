@@ -1,16 +1,16 @@
 import uuid
-from custom_logger import get_logger, configure_global_logger
-from pdf_operations import merge_pdfs, convert_image_to_pdf
-from directory_setup import create_temp_directory, create_results_directory
+from .custom_logger import get_logger, configure_global_logger
+from .pdf_operations import merge_pdfs, convert_image_to_pdf
+from .directory_setup import create_temp_directory, create_results_directory
 from pathlib import Path
-from image_loader import get_image_paths
-from image_processor import process_image
-from gpu_management import clear_gpu_memory
+from .image_loader import get_image_paths
+from .image_processor import process_image
+from .gpu_management import clear_gpu_memory
 import pdfplumber
-from lx_anonymizer.lx_anonymizer.llm_phi4 import initialize_phi4, analyze_text_with_phi4, analyze_full_image_with_context, cleanup_model
+from .lx_anonymizer.lx_anonymizer.llm_phi4 import initialize_phi4, analyze_text_with_phi4, analyze_full_image_with_context, cleanup_model
 import atexit
-from spacy_regex import PersonDataExtractor
-from spacy_extractor import PatientDataExtractor
+from .spacy_regex import PersonDataExtractor
+from .spacy_extractor import PatientDataExtractor
 
 # Initialize the model once at startup
 model_init_result = initialize_phi4()

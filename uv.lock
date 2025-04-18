@@ -1164,8 +1164,13 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
+<<<<<<< HEAD
 version = "0.1.0"
 source = { editable = "." }
+=======
+version = "0.7.0"
+source = { virtual = "." }
+>>>>>>> prototype
 dependencies = [
     { name = "certifi" },
     { name = "endoreg-db" },
@@ -1192,7 +1197,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "certifi", specifier = ">=2024.8.30" },
-    { name = "endoreg-db", specifier = ">=0.5.2" },
+    { name = "endoreg-db" },
     { name = "flair", specifier = ">=0.14.0" },
     { name = "flake8", specifier = ">=7.1.1" },
     { name = "gender-guesser", specifier = ">=0.4.0" },
