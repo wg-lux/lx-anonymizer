@@ -5,7 +5,10 @@ from datetime import datetime
 import re
 from .determine_gender import determine_gender
 from .custom_logger import get_logger
-import subprocess
+# Remove subprocess import
+# import subprocess
+# Import spacy's download function
+import spacy.cli
 
 logger = get_logger(__name__)
 # import spacy language model
@@ -14,11 +17,20 @@ from spacy.language import Language
 def load_spacy_model(model_name:str="de_core_news_lg") -> "Language":
     try:
         nlp_model = spacy.load(model_name)
-
+        logger.info(f"Successfully loaded spacy model: {model_name}")
     except OSError as e:
-        subprocess.run(["uv", "run", "python", "-m", "spacy", "download", model_name], check=True)
-        logger.debug(f"Downloaded spacy model: {model_name} downloading after {e}")
-        nlp_model = spacy.load(model_name)
+        logger.warning(f"Spacy model '{model_name}' not found. Attempting download...")
+        try:
+            # Use spacy's built-in download command
+            spacy.cli.download(model_name)
+            logger.info(f"Successfully downloaded spacy model: {model_name}")
+            # Try loading again after download
+            nlp_model = spacy.load(model_name)
+            logger.info(f"Successfully loaded spacy model after download: {model_name}")
+        except Exception as download_exc:
+            logger.error(f"Failed to download or load spacy model '{model_name}' after attempt: {download_exc}")
+            raise download_exc # Re-raise the exception if download/load fails
+
     return nlp_model
 
 # Updated DATE_RE to also accept 8 digits without separators (DDMMYYYY)
@@ -237,8 +249,12 @@ class PatientDataExtractor:
         }
 
 class ExaminerDataExtractor:
+    _nlp: Language | None = None # Use class variable for shared model
+
     def __init__(self):
-        self.nlp = spacy.load("de_core_news_lg")
+        if ExaminerDataExtractor._nlp is None:
+            ExaminerDataExtractor._nlp = load_spacy_model("de_core_news_lg") # Load once
+        self.nlp = ExaminerDataExtractor._nlp
         self.matcher = Matcher(self.nlp.vocab)
         self._setup_patterns()
 
@@ -292,8 +308,12 @@ class ExaminerDataExtractor:
         return None
 
 class EndoscopeDataExtractor:
+    _nlp: Language | None = None # Use class variable for shared model
+
     def __init__(self):
-        self.nlp = spacy.load("de_core_news_lg")
+        if EndoscopeDataExtractor._nlp is None:
+            EndoscopeDataExtractor._nlp = load_spacy_model("de_core_news_lg") # Load once
+        self.nlp = EndoscopeDataExtractor._nlp
         self.matcher = Matcher(self.nlp.vocab)
         self._setup_patterns()
 
@@ -332,9 +352,14 @@ class EndoscopeDataExtractor:
         return None
 
 class ExaminationDataExtractor:
+    _nlp: Language | None = None # Use class variable for shared model
+
     def __init__(self):
-        self.nlp = spacy.load("de_core_news_lg")
-        
+        if ExaminationDataExtractor._nlp is None:
+            ExaminationDataExtractor._nlp = load_spacy_model("de_core_news_lg") # Load once
+        self.nlp = ExaminationDataExtractor._nlp
+        # No matcher needed here based on current implementation
+
     def extract_examination_info(self, text, remove_examiner_titles=True):
         if "1. Unters.:" in text or "Unters.:" in text:
             return self._extract_meta_format_1(text, remove_examiner_titles)

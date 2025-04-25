@@ -1,3 +1,4 @@
+from pyexpat import model
 from faker import Faker
 import gender_guesser.detector as gender_detector
 from typing import List
@@ -16,11 +17,11 @@ from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
 from .ocr import tesseract_full_image_ocr #, trocr_full_image_ocr_on_boxes # Import OCR fallback
 from .pdf_operations import convert_pdf_to_images
-from .model_service import model_service
 from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
-from .ocr_preprocessing import  preprocess_image, optimize_image_for_medical_text
-from datetime import datetime # Add import
-import dateparser # Add import
+from .ocr_preprocessing import preprocess_image, optimize_image_for_medical_text
+from datetime import datetime, date
+import dateparser
+from .llm_ollama import extract_with_fallback
 
 class ReportReader:
     def __init__(
@@ -101,20 +102,24 @@ class ReportReader:
         report_meta = {}
 
         logger.debug(f"Full text extracted from PDF: {text[:500]}...")
-        lines = text.split('\n')
+        lines = text.split('\n') if text else [] # Handle empty text
 
         patient_info = None
-        # Option 1: Try on whole text
-        patient_info = self.patient_extractor(text) # Use __call__
-        logger.debug(f"Patient extractor result on full text: {patient_info}")
+        # Option 1: Try on whole text with SpaCy
+        if text: # Only run if text exists
+            patient_info = self.patient_extractor(text) # Use __call__
+            logger.debug(f"Patient extractor result on full text: {patient_info}")
+        else:
+            logger.debug("Skipping SpaCy extraction on empty text.")
+            patient_info = PatientDataExtractor._blank() # Start with blank if no text
 
         # Check if the result is valid (name found, not None)
         is_valid_info = patient_info and \
                         (patient_info.get('patient_first_name') is not None or \
                          patient_info.get('patient_last_name') is not None) # Check for None
 
-        # Option 2: If full text failed, try line by line
-        if not is_valid_info:
+        # Option 2: If full text failed, try line by line with SpaCy
+        if not is_valid_info and lines: # Only run if SpaCy failed AND there are lines
             logger.debug("Extractor failed on full text, trying line by line.")
             for line in lines:
                  if re.search(r"pat(?:ient|ientin|\.|iont|bien)", line, re.IGNORECASE): # Include OCR variants in check
@@ -130,8 +135,8 @@ class ReportReader:
                          is_valid_info = True
                          break
 
-        # If SpaCy extractor failed, try the regex fallback
-        if not is_valid_info:
+        # Option 3: If SpaCy extractor failed, try the regex fallback
+        if not is_valid_info and text: # Only run if SpaCy failed AND there is text
             logger.debug("SpaCy extractor failed, using regex fallback extraction")
             fallback_info = extract_patient_info_from_text(text) # This fallback might still fail on dotless date
             # Use fallback only if it found something SpaCy missed (check against "Unknown")
@@ -146,92 +151,131 @@ class ReportReader:
                  is_valid_info = True
             else:
                  logger.debug("Regex fallback also found nothing significant.")
+                 # Ensure patient_info is the blank dict if it was None before fallback
                  if not patient_info: patient_info = PatientDataExtractor._blank()
 
-        # Update report_meta with the final patient_info, ensuring correct DOB type
-        if patient_info:
-             dob_value = patient_info.get('patient_dob')
-             parsed_dob = None
-             if isinstance(dob_value, str):
-                 # Use dateparser for robust parsing, prefer DD.MM.YYYY
-                 parsed_dob = dateparser.parse(dob_value, date_formats=['%d.%m.%Y', '%Y-%m-%d'])
-                 if parsed_dob:
-                     logger.debug(f"Successfully parsed DOB string '{dob_value}' to datetime object: {parsed_dob}")
-                 else:
-                     logger.warning(f"Could not parse DOB string '{dob_value}' using dateparser. Setting DOB to None.")
-                     parsed_dob = None
-             elif isinstance(dob_value, datetime): # Handle if it's already datetime
-                 parsed_dob = dob_value # Keep as datetime
-             elif dob_value is None:
-                 parsed_dob = None
-             else:
-                 # Attempt conversion if it's a date object already
-                 if hasattr(dob_value, 'year') and hasattr(dob_value, 'month') and hasattr(dob_value, 'day'):
-                     try:
-                         # Convert date to datetime (assuming time is not relevant)
-                         parsed_dob = datetime(dob_value.year, dob_value.month, dob_value.day)
-                         logger.debug(f"Converted date object {dob_value} to datetime object: {parsed_dob}")
-                     except Exception as e:
-                          logger.warning(f"Could not convert date-like object {dob_value} ({type(dob_value)}) to datetime: {e}. Setting DOB to None.")
-                          parsed_dob = None
-                 else:
-                     logger.warning(f"Unexpected type for DOB '{dob_value}' ({type(dob_value)}). Setting DOB to None.")
-                     parsed_dob = None
+        # Ensure patient_info is initialized if all methods failed or text was empty
+        if not patient_info:
+            patient_info = PatientDataExtractor._blank()
 
-             # Ensure final_patient_info uses the parsed_dob
-             final_patient_info = {
-                 "patient_first_name": patient_info.get('patient_first_name'),
-                 "patient_last_name": patient_info.get('patient_last_name'),
-                 "patient_dob": parsed_dob, # Use the parsed datetime object or None
-                 "casenumber": patient_info.get('casenumber'),
-                 "patient_gender": patient_info.get('patient_gender')
-             }
-             report_meta.update(final_patient_info)
+        # Update report_meta with the final patient_info, ensuring correct DOB type
+        # (This part remains largely the same, processing the 'patient_info' dict)
+        dob_value = patient_info.get('patient_dob')
+        parsed_dob = None
+        if isinstance(dob_value, str):
+            # Use dateparser for robust parsing, prefer DD.MM.YYYY
+            # Specify German date order preference
+            parsed_dob = dateparser.parse(dob_value, languages=['de'], settings={'DATE_ORDER': 'DMY'})
+            if parsed_dob:
+                logger.debug(f"Successfully parsed DOB string '{dob_value}' to datetime object: {parsed_dob.date()}") # Log only date part
+                parsed_dob = parsed_dob.date() # Store only the date part
+            else:
+                logger.warning(f"Could not parse DOB string '{dob_value}' using dateparser. Setting DOB to None.")
+                parsed_dob = None
+        elif isinstance(dob_value, datetime): # Handle if it's already datetime
+            parsed_dob = dob_value.date() # Store only the date part
+        elif isinstance(dob_value, date): # Handle if it's already date
+             parsed_dob = dob_value # Keep as date
+        elif dob_value is None:
+            parsed_dob = None
         else:
-             # Ensure report_meta has default keys (all None) even if everything failed
-             report_meta.update(PatientDataExtractor._blank()) # dob is already None here
+            logger.warning(f"Unexpected type for DOB '{dob_value}' ({type(dob_value)}). Setting DOB to None.")
+            parsed_dob = None
+
+        # Ensure final_patient_info uses the parsed_dob (which is now date or None)
+        final_patient_info = {
+            "patient_first_name": patient_info.get('patient_first_name'),
+            "patient_last_name": patient_info.get('patient_last_name'),
+            "patient_dob": parsed_dob, # Use the parsed date object or None
+            "casenumber": patient_info.get('casenumber'),
+            "patient_gender": patient_info.get('patient_gender')
+        }
+        report_meta.update(final_patient_info)
 
 
         # --- Extract other information (Examiner, Examination, Endoscope) ---
+        # This part remains the same, using SpaCy extractors on lines
         examiner_found = False
-        for line in lines:
-            # Use regex to quickly check if line might contain examiner info
-            if re.search(r"unters\w*\s*arzt", line, re.IGNORECASE):
-                examiner_info = self.examiner_extractor.extract_examiner_info(line)
-                if examiner_info:
-                    report_meta.update(examiner_info)
-                    examiner_found = True
-                    break # Assuming only one examiner line needed
+        if lines: # Only run if lines exist
+            for line in lines:
+                # Use regex to quickly check if line might contain examiner info
+                if re.search(r"unters\w*\s*arzt", line, re.IGNORECASE):
+                    examiner_info = self.examiner_extractor.extract_examiner_info(line)
+                    if examiner_info:
+                        report_meta.update(examiner_info)
+                        examiner_found = True
+                        break # Assuming only one examiner line needed
 
         examination_found = False
-        for line in lines:
-             # Use regex to quickly check if line might contain examination date/time info
-             if re.search(r"unters\.:|u-datum:|eingang\s*am:", line, re.IGNORECASE):
-                examination_info = self.examination_extractor.extract_examination_info(line)
-                if examination_info:
-                    # Ensure examination_date exists before updating
-                    if examination_info.get('examination_date'):
-                         report_meta.update(examination_info)
-                         examination_found = True
-                         break # Assuming only one examination line needed
+        if lines: # Only run if lines exist
+            for line in lines:
+                 # Use regex to quickly check if line might contain examination date/time info
+                 if re.search(r"unters\.:|u-datum:|eingang\s*am:", line, re.IGNORECASE):
+                    examination_info = self.examination_extractor.extract_examination_info(line)
+                    if examination_info:
+                        # Ensure examination_date exists before updating
+                        if examination_info.get('examination_date'):
+                             report_meta.update(examination_info)
+                             examination_found = True
+                             break # Assuming only one examination line needed
 
         endoscope_found = False
-        for line in lines:
-            if self.flags["endoscope_info_line"] in line.lower(): # Check flag case-insensitively
-                endoscope_info = self.endoscope_extractor.extract_endoscope_info(line)
-                if endoscope_info:
-                    report_meta.update(endoscope_info)
-                    endoscope_found = True
-                    break
+        if lines: # Only run if lines exist
+            for line in lines:
+                # Use case-insensitive check for the flag
+                if self.flags.get("endoscope_info_line", "").lower() in line.lower():
+                    endoscope_info = self.endoscope_extractor.extract_endoscope_info(line)
+                    if endoscope_info:
+                        report_meta.update(endoscope_info)
+                        endoscope_found = True
+                        break
 
         # Add PDF hash (remains the same)
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-            pdf_hash_value = self.pdf_hash(pdf_bytes)
-            report_meta["pdf_hash"] = pdf_hash_value
+        try:
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+                pdf_hash_value = self.pdf_hash(pdf_bytes)
+                report_meta["pdf_hash"] = pdf_hash_value
+        except Exception as e:
+             logger.error(f"Could not calculate PDF hash for {pdf_path}: {e}")
+             report_meta["pdf_hash"] = None
+
 
         return report_meta
-    
+
+    def extract_report_meta_deepseek(self, text, pdf_path):
+        """Extract metadata using DeepSeek via Ollama structured output."""
+        logger.info("Attempting metadata extraction with DeepSeek (Ollama Structured Output)")
+        # Use the wrapper that handles retries and returns {} on failure
+        meta = extract_with_fallback(text, model="deepseek-r1:1.5b")
+        if not meta:
+            logger.warning("DeepSeek Ollama extraction failed, returning empty dict.")
+        else:
+             logger.info("DeepSeek Ollama extraction successful.")
+        return meta
+
+    def extract_report_meta_medllama(self, text, pdf_path):
+        """Extract metadata using MedLLaMA via Ollama structured output."""
+        logger.info("Attempting metadata extraction with MedLLaMA (Ollama Structured Output)")
+        # Use the wrapper that handles retries and returns {} on failure
+        meta = extract_with_fallback(text, model="rjmalagon/medllama3-v20:fp16")
+        if not meta:
+            logger.warning("MedLLaMA Ollama extraction failed, returning empty dict.")
+        else:
+             logger.info("MedLLaMA Ollama extraction successful.")
+        return meta
+
+    def extract_report_meta_llama3(self, text, pdf_path):
+        """Extract metadata using Llama3 via Ollama structured output."""
+        logger.info("Attempting metadata extraction with Llama3 (Ollama Structured Output)")
+        # Use the wrapper that handles retries and returns {} on failure
+        meta = extract_with_fallback(text, model="llama3:8b") # Or llama3:70b if available/needed
+        if not meta:
+            logger.warning("Llama3 Ollama extraction failed, returning empty dict.")
+        else:
+             logger.info("Llama3 Ollama extraction successful.")
+        return meta
+
     def anonymize_report(self, text, report_meta):
         """
         Anonymize the report text using the extracted metadata.
@@ -250,124 +294,129 @@ class ReportReader:
 
         return anonymized_text
         
-    def process_report(self, pdf_path, use_ensemble=False, verbose=True):
+    def process_report(self, pdf_path, use_ensemble=False, verbose=True, use_llm_extractor=None):
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         If the normal pdfplumber extraction fails (or returns very little text), fallback to OCR.
         Optionally, use an ensemble OCR method to improve output quality.
+        Optionally, specify an LLM extractor ('deepseek', 'medllama', 'llama3') to use INSTEAD of SpaCy/regex.
         """
         text = self.read_pdf(pdf_path)
-        if not text.strip():
+        ocr_applied = False # Flag to track if OCR was used
+
+        # --- OCR Fallback ---
+        if not text or len(text.strip()) < 50: # Trigger OCR if text is empty or very short
+            ocr_applied = True
             try:
-                logger.info("No text detected by pdfplumber, applying OCR fallback.")
+                logger.info(f"Short/No text detected by pdfplumber ({len(text.strip())} chars), applying OCR fallback.")
+                # ... (OCR logic remains the same as before) ...
                 images_from_pdf = convert_pdf_to_images(pdf_path)
                 ocr_text = ""
-                
-                for pil_image in images_from_pdf:
+
+                for idx, pil_image in enumerate(images_from_pdf):
+                    logger.info(f"Processing page {idx+1} with OCR...")
+                    ocr_part = ""
                     if use_ensemble:
                         logger.info("Using ensemble OCR approach")
                         try:
                             ocr_part = ensemble_ocr(pil_image)
                         except Exception as e:
-                            logger.error(f"Ensemble OCR failed with error: {e}")
-                            ocr_part = None  # You may set a default or further fallback if needed.
-                    else:
-                        # Initialize OCR result variables.
-                        text_part = ""
-                        text_part_2 = ""
-                        text_part_3 = ""
-                        
-                        # Check if the image is a PIL Image (has "convert" method).
-                        if hasattr(pil_image, "convert"):
+                            logger.error(f"Ensemble OCR failed on page {idx+1}: {e}")
+                            # Fallback to Tesseract if ensemble fails
                             try:
+                                logger.info("Falling back to Tesseract OCR after ensemble failure.")
                                 text_part, _ = tesseract_full_image_ocr(pil_image)
-                            except Exception as e:
-                                logger.error(f"Tesseract Text detection failed with error: {e}")
-                                text_part = ""
-
-                        else:
-                            # Fallback when the input isn't a PIL Image: assume it can be converted to string.
-                            try:
-                                text_part, _ = tesseract_full_image_ocr(str(pil_image))
-                            except Exception as e:
-                                logger.error(f"Tesseract Text detection failed with error: {e}")
-                                text_part = ""
-                            try:
-                                # Preprocess the image for better OCR results
-                                pil_image = preprocess_image(pil_image, methods=['grayscale', 'denoise', 'contrast', 'sharpen'])
-                                text_part_2 = tesseract_full_image_ocr(str(pil_image))
-                            except Exception as e:
-                                logger.error(f"Preprocessing Text detection before ocr failed with error: {e}")
-                                text_part_2 = ""
-                            try:
-                                # Optimize the image for medical text
-                                pil_image = optimize_image_for_medical_text(pil_image)
-                                text_part_3 = tesseract_full_image_ocr(str(pil_image))
-                            except Exception as e:
-                                logger.error(f"Optimizing Text detection before ocr failed with error: {e}")
-                                text_part_3 = ""
-                                
-
-
-                        # Choose the OCR result with the most content.
-                        if len(text_part) >= len(text_part_2) and len(text_part) >= len(text_part_3):
+                                ocr_part = text_part
+                            except Exception as te:
+                                logger.error(f"Tesseract fallback also failed on page {idx+1}: {te}")
+                                ocr_part = ""
+                    else:
+                        # Default Tesseract OCR
+                        try:
+                            text_part, _ = tesseract_full_image_ocr(pil_image)
                             ocr_part = text_part
-                            logger.info("Selected Tesseract OCR result")
-                        elif len(text_part_2) >= len(text_part) and len(text_part_2) >= len(text_part_3):
-                            ocr_part = text_part_2
-                            logger.info("Selected Tesseract OCR result with default preprocessing")
-                        else:
-                            ocr_part = text_part_3
-                            logger.info("Selected Tesseract OCR result with optimization for medical text")
+                            logger.info(f"Tesseract OCR successful for page {idx+1}")
+                        except Exception as e:
+                            logger.error(f"Tesseract OCR failed on page {idx+1}: {e}")
+                            ocr_part = ""
 
+                    ocr_text += " " + ocr_part if ocr_part else "" # Append only if OCR succeeded
 
-                    ocr_text += " " + ocr_part
-                
                 text = ocr_text.strip()
-                logger.info(f"OCR text: {text[:200]}...")
-                
-                # Apply correction using Ollama with DeepSeek
-                if text.strip():  # Only correct if text was recognized
+                logger.info(f"OCR fallback finished. Total text length: {len(text)}. Preview: {text[:200]}...")
+
+                # Apply correction using Ollama (Keep this part)
+                if text and len(text.strip()) > 10: # Only correct if OCR produced something meaningful
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:
-                        model_service.setup_ollama("deepseek-r1:1.5b")
-                        corrected_text = model_service.correct_text_with_ollama(text)
-                        # Check if correction was successful (doesn't start with an error message)
-                        if corrected_text and not corrected_text.startswith("Error:"):
-                            # Additional checks for correction quality
-                            if len(corrected_text) < len(text):
-                                logger.warning("OCR correction produced shorter text")
-                                model_service.setup_ollama("rjmalagon/medllama3-v20:fp16")
-                                corrected_text = model_service.correct_text_with_ollama(corrected_text)
-                                model_service.cleanup_models()
-                                if len(corrected_text) < len(text):
-                                    logger.warning("OCR correction produced shorter text again")
-                                    corrected_text = text
-                                    model_service.setup_ollama("deepseek-r1:1.5b")
-                                    corrected_text = model_service.correct_text_with_ollama_in_chunks(corrected_text)
-                                    model_service.cleanup_models()
-                                    if len(corrected_text) < len(text):
-                                        logger.warning("OCR correction produced shorter text after multiple attempts")
-                                        corrected_text = text
+                        # Use the existing ollama_service for correction
+                        from .ollama_service import ollama_service # Import locally if needed
+                        # Ensure the desired correction model is set up if different from extraction
+                        # ollama_service.setup_ollama("deepseek-r1:1.5b") # Or another model
+                        corrected_text = ollama_service.correct_ocr_text_in_chunks(text) # Use chunking
+
+                        if corrected_text and corrected_text != text and len(corrected_text) > 0.5 * len(text): # Basic sanity check
+                            logger.info("OCR text successfully corrected by Ollama.")
                             text = corrected_text
-                            logger.info("OCR text successfully corrected.")
+                        elif corrected_text == text:
+                             logger.info("Ollama correction resulted in the same text.")
                         else:
-                            logger.warning("OCR correction failed, using original OCR text.")
+                            logger.warning("Ollama OCR correction failed or produced poor result, using original OCR text.")
                     except Exception as e:
                         logger.warning(f"Error using Ollama for correction: {e}")
-                
-                if len(text) < 10:
-                    logger.error("OCR fallback produced very short text, skipping anonymization.")
-                    return text, text, {}
-            
+
+                if not text or len(text.strip()) < 10:
+                    logger.error("OCR fallback produced very short/no text, cannot proceed with metadata extraction.")
+                    # Return empty/original text and empty meta if OCR fails badly
+                    original_text_from_pdf = self.read_pdf(pdf_path) # Re-read original for context
+                    return original_text_from_pdf, original_text_from_pdf, {}
+
             except Exception as e:
-                logger.error(f"OCR fallback failed: {e}")
-        
-        report_meta = self.extract_report_meta(text, pdf_path)
+                logger.error(f"OCR fallback process failed entirely: {e}")
+                # Return empty/original text and empty meta if OCR fails badly
+                original_text_from_pdf = self.read_pdf(pdf_path) # Re-read original for context
+                return original_text_from_pdf, original_text_from_pdf, {}
+
+        # --- Metadata Extraction ---
+        report_meta = {}
+        if text and len(text.strip()) >= 10: # Proceed only if we have some text
+            if use_llm_extractor:
+                logger.info(f"Using specified LLM extractor: {use_llm_extractor}")
+                if use_llm_extractor == 'deepseek':
+                    report_meta = self.extract_report_meta_deepseek(text, pdf_path)
+                elif use_llm_extractor == 'medllama':
+                    report_meta = self.extract_report_meta_medllama(text, pdf_path)
+                elif use_llm_extractor == 'llama3':
+                    report_meta = self.extract_report_meta_llama3(text, pdf_path)
+                else:
+                    logger.warning(f"Unknown LLM extractor specified: {use_llm_extractor}. Falling back to default.")
+                    report_meta = self.extract_report_meta(text, pdf_path) # Default SpaCy/Regex
+
+                # If LLM extraction failed (returned {}), fall back to default SpaCy/Regex
+                if not report_meta:
+                    logger.warning(f"LLM extractor '{use_llm_extractor}' failed. Falling back to default SpaCy/Regex extraction.")
+                    report_meta = self.extract_report_meta(text, pdf_path)
+
+            else:
+                # Default extraction: SpaCy + Regex fallback
+                logger.info("Using default SpaCy/Regex metadata extraction.")
+                report_meta = self.extract_report_meta(text, pdf_path)
+        else:
+             logger.warning("Skipping metadata extraction due to insufficient text content.")
+             report_meta = {"pdf_hash": self.pdf_hash(open(pdf_path, "rb").read()) if os.path.exists(pdf_path) else None} # Still add hash if possible
+
+
+        # --- Anonymization ---
         anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
-        
-        logger.debug(f"Anonymized text: {anonymized_text}")
-        
+
+        # Log final outcome
+        if ocr_applied:
+             logger.info(f"Processed (OCR applied): {pdf_path}. Meta keys found: {list(report_meta.keys())}")
+        else:
+             logger.info(f"Processed (No OCR): {pdf_path}. Meta keys found: {list(report_meta.keys())}")
+        logger.debug(f"Final Report Meta: {report_meta}")
+        # logger.debug(f"Anonymized text preview: {anonymized_text[:200]}...") # Be careful logging anonymized text
+
         return text, anonymized_text, report_meta
     
     def pdf_hash(self, pdf_binary):

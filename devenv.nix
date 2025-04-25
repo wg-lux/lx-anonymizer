@@ -59,11 +59,12 @@ in
 
   processes = {
     ollama-serve.exec = "export OLLAMA_DEBUG=1 && ollama serve";
-    ollama-pull-llama.exec = "ollama pull llama3.3";
-    ollama-run-llama.exec = "ollama run llama3.3";
+    #ollama-pull-llama.exec = "ollama pull llama3.3";
+    #ollama-run-llama.exec = "ollama run llama3.3";
     ollama-pull-deepseek-model.exec = "ollama pull deepseek-r1:1.5b&";
-    ollama-pull-med-model.exec = "ollama pull rjmalagon/medllama3-v20:fp16";
-    ollama-run-med-model.exec = "ollama run rjmalagon/medllama3-v20:fp16";
+    ollama-run-deepseek-model.exec = "ollama run deepseek-r1:1.5b";
+    #ollama-pull-med-model.exec = "ollama pull rjmalagon/medllama3-v20:fp16";
+    #ollama-run-med-model.exec = "ollama run rjmalagon/medllama3-v20:fp16";
     ollama-verify.exec = "curl http://127.0.0.1:11434/api/models";
     };
 
