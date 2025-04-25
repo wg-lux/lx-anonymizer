@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der Patient, Herr Dr. Bashir Khouri, wurde aufgrund von abdominellen Beschwerden und einer bekannten Colitis in die Gastroenterologie überwiesen. Während der Koloskopie zeigte die Mukosa im Colon transversum einen ödematösen Aspekt. Im Colon descendens fanden sich abheilende Ulzera nach Colitis. Kein Blutnachweis in der gesamten Kolonschleimhaut. Im Sigma wurden Mukosabiopsien entnommen. Im Rektum wurde ein sessiler Polyp der Größe 15 mm entdeckt, der in Piecemeal-Technik unter Verwendung einer Schlinge reseziert und anschließend mit Clip-Versorgung gesichert wurde.",
+    "pathology report": "Die histologische Untersuchung ergab ein tubulovillöses Adenom ohne Anzeichen einer hochgradigen intraepithelialen Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Nadia Hariri kam zur Routineuntersuchung ohne spezifische Symptome. Die Koloskopie ergab im Colon transversum eine Mukosa mit ödematösem Aspekt und abheilenden Ulzera in Übereinstimmung mit ihrem Colitis-Verlauf. Keine Zeichen von Blutungen. Ein 8 mm großer, flacher Polyp im Bereich des Colon ascendens wurde mit der Heißschlingentechnik entfernt. Mukosabiopsien wurden aus dem Sigma entnommen.",
+    "pathology report": "Der Polyp war ein tubuläres Adenom ohne Anzeichen einer hochgradigen Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Sami Hamad, ein 55-jähriger Patient, stellte sich aufgrund rezidivierender Unterbauchschmerzen vor. Im Colon transversum zeigte sich die Mukosa mit ödematösem Aspekt. Es wurden drei Polypen im Bereich des Colon sigmoideum identifiziert: ein 5 mm, ein 7 mm und ein 12 mm großer sessiler Polyp, die alle mittels kalter Schlinge entfernt wurden. Im übrigen Colon keine Auffälligkeiten und kein Blutnachweis.",
+    "pathology report": "Die histologische Untersuchung der Polypen ergab tubuläre Adenome, der 12 mm große Polyp zeigte eine mäßige intraepitheliale Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Dr. Fadi Mardini stellte sich mit rezidivierenden Diarrhoe-Episoden vor. Die Koloskopie zeigte im Colon transversum eine ödematös veränderte Mukosa. Im Sigma wurden Mukosabiopsien entnommen. Zwei Polypen (jeweils 6 mm) im Rektum wurden mit der kalten Schlingentechnik abgetragen. Der Rest des Kolons wies keine Blutungen oder andere Auffälligkeiten auf.",
+    "pathology report": "Die histologische Untersuchung bestätigte tubuläre Adenome ohne Hinweise auf Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Der Patient, Herr Abdul Rahman, stellte sich zur Darmkrebsvorsorgeuntersuchung vor. Es zeigte sich eine ödematöse Mukosa im Colon transversum und abheilende Ulzera nach Colitis. Im Colon sigmoideum wurden Mukosabiopsien entnommen. Ein sessiler Polyp im Colon ascendens mit einer Größe von 22 mm wurde in Piecemeal-Technik reserziert und mit Clips gesichert. Kein Blutnachweis.",
+    "pathology report": "Histologische Untersuchung ergab ein tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "2–6 Monate"
+  }
+}

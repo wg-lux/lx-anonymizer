@@ -1,11 +1,11 @@
 import spacy
 from spacy.matcher import Matcher
+from spacy.pipeline import EntityRuler
 from datetime import datetime
 import re
 from .determine_gender import determine_gender
 from .custom_logger import get_logger
 import subprocess
-from .spacy_regex import PatientDataExtractorLg
 
 logger = get_logger(__name__)
 # import spacy language model
@@ -21,140 +21,219 @@ def load_spacy_model(model_name:str="de_core_news_lg") -> "Language":
         nlp_model = spacy.load(model_name)
     return nlp_model
 
-class PatientDataExtractor:
+# Updated DATE_RE to also accept 8 digits without separators (DDMMYYYY)
+DATE_RE = re.compile(r"(\d{1,2}[.\s]?\d{1,2}[.\s]?\d{2,4})|(\d{8})")
 
+def _clean_date(date_str: str) -> str | None:
+    """Converts various date formats including dd.mm.yyyy, dd mm yyyy, ddmmyyyy to YYYY-MM-DD."""
+    date_str = date_str.strip()
+    normalized_date_str = re.sub(r'\s+', '.', date_str) # Normalize spaces to dots
+    normalized_date_str = re.sub(r'[^\d.]', '', normalized_date_str) # Keep only digits and dots
 
-    def __init__(self):
-        self.logger = get_logger(__name__)
+    formats_to_try = [
+        "%d.%m.%Y",  # 01.12.2023
+        "%d.%m.%y",  # 01.12.23
+        "%d%m%Y",    # 01122023 (8 digits) - Added
+    ]
+    dt_obj = None
 
-        self.nlp = load_spacy_model("de_core_news_lg")
-        self.matcher = Matcher(self.nlp.vocab)
-        self._setup_patterns()
-
-    def _setup_patterns(self):
-        """Define patterns for extracting patient information."""
-        # Pattern 1: Patient: Nachname ,Vorname geb. DD.MM.YYYY Fallnummer: NNNNNNNN
-        pattern1 = [
-            {"LOWER": "patient"},
-            {"LOWER": ":"},
-            {"POS": "PROPN", "OP": "+"},
-            {"TEXT": ","},
-            {"POS": "PROPN", "OP": "+"},
-            {"LOWER": "geb"},
-            {"TEXT": "."},
-            {"SHAPE": "dd.dd.dddd", "OP": "?"},
-            {"LOWER": "fallnummer"},
-            {"TEXT": ":"},
-            {"SHAPE": "dddddddd"}
-        ]
-
-        # Pattern 2: Patient: Nachname, Vorname geboren am: DD.MM.YYYY
-        pattern2 = [
-            {"LOWER": "patient"},
-            {"LOWER": ":"},
-            {"POS": "PROPN", "OP": "+"},
-            {"TEXT": ","},
-            {"POS": "PROPN", "OP": "+"},
-            {"LOWER": "geboren"},
-            {"LOWER": "am"},
-            {"TEXT": ":"},
-            {"SHAPE": "dd.dd.dddd", "OP": "?"}
-        ]
-
-        self.matcher.add("PATIENT_INFO_1", [pattern1])
-        self.matcher.add("PATIENT_INFO_2", [pattern2])
-
-    def extract_patient_info(self, text):
-        """
-        Extract patient information from the given text.
-
-        Parameters:
-        - text (str): Input text containing patient information.
-
-        Returns:
-        - dict: Extracted patient information or None if no match is found.
-        """
-        doc = self.nlp(text)
-        matches = self.matcher(doc)
-
-        for match_id, start, end in matches:
-            span = doc[start:end]
-            pattern_name = self.nlp.vocab.strings[match_id]
-
-            # Extract fields based on the matched pattern
-            last_name, first_name, birthdate, casenumber = None, None, None, None
-            tokens = list(span)
-
-            if pattern_name == "PATIENT_INFO_1":
-                last_name = " ".join([t.text for t in tokens[2:tokens.index(tokens[3])]])
-                first_name = " ".join([t.text for t in tokens[tokens.index(tokens[3]) + 1:tokens.index(tokens[5])]])
-                if tokens[-3].shape_ == "dd.dd.dddd":
-                    birthdate = tokens[-3].text
-                casenumber = tokens[-1].text
-
-            elif pattern_name == "PATIENT_INFO_2":
-                last_name = " ".join([t.text for t in tokens[2:tokens.index(tokens[3])]])
-                first_name = " ".join([t.text for t in tokens[tokens.index(tokens[3]) + 1:tokens.index(tokens[5])]])
-                if tokens[-1].shape_ == "dd.dd.dddd":
-                    birthdate = tokens[-1].text
-
-            # Format birthdate
-            if birthdate:
-                try:
-                    birthdate = datetime.strptime(birthdate, "%d.%m.%Y").strftime("%Y-%m-%d")
-                except ValueError:
-                    birthdate = None
-            
-            gender = determine_gender(first_name)
-            
-            # Ensure first_name and last_name are never None
-            if first_name and last_name:
-                return {
-                    "patient_first_name": first_name,
-                    "patient_last_name": last_name,
-                    "patient_dob": birthdate,
-                    "casenumber": casenumber,
-                    'patient_gender': gender
-                }
-            elif first_name and not last_name:
-                return {
-                    "patient_first_name": first_name,
-                    "patient_last_name": "Unknown",
-                    "patient_dob": birthdate,
-                    "casenumber": casenumber,
-                    'patient_gender': gender
-                }
-            elif last_name and not first_name:
-                return {
-                    "patient_first_name": "Unknown", 
-                    "patient_last_name": last_name,
-                    "patient_dob": birthdate,
-                    "casenumber": casenumber,
-                    'patient_gender': "Unknown"
-                }
+    # Handle the 8-digit case first if it matches
+    if re.fullmatch(r"\d{8}", date_str):
+        try:
+            # Ensure day and month are valid before parsing
+            day = int(date_str[0:2])
+            month = int(date_str[2:4])
+            year = int(date_str[4:8])
+            if 1 <= day <= 31 and 1 <= month <= 12:
+                 dt_obj = datetime.strptime(date_str, "%d%m%Y")
             else:
-                # If nothing is properly extracted, try the alternative extractor
-                pe = PatientDataExtractorLg()
-                data = pe.extract_patient_info(text)
-                if data and data.get('patient_first_name') != "NOT FOUND":
-                    return data
-                
-                # Absolute fallback values  
-                return {
-                    "patient_first_name": "Unknown",
-                    "patient_last_name": "Unknown",
-                    "patient_dob": None,
-                    "casenumber": None,
-                    'patient_gender': "Unknown"
-                }
+                 logger.warning(f"Invalid day/month in 8-digit date: {date_str}")
+        except ValueError:
+            pass # Will be caught later if no format matches
 
-        # If no match is found
+    # Try other formats if 8-digit parsing failed or didn't apply
+    if not dt_obj:
+        for fmt in formats_to_try:
+             # Skip 8-digit format here if already tried or doesn't match input structure
+             if fmt == "%d%m%Y" and not re.fullmatch(r"\d{8}", normalized_date_str):
+                 continue
+             # Use normalized string for dot-separated formats
+             current_str_to_try = date_str if fmt == "%d%m%Y" else normalized_date_str
+             try:
+                 dt_obj = datetime.strptime(current_str_to_try, fmt)
+                 # Handle two-digit year ambiguity
+                 if dt_obj.year < 100:
+                     if dt_obj.year >= 69: # Assuming 69-99 are 19xx
+                         dt_obj = dt_obj.replace(year=dt_obj.year + 1900)
+                     else: # Assuming 00-68 are 20xx
+                         dt_obj = dt_obj.replace(year=dt_obj.year + 2000)
+                 break # Stop if parsing is successful
+             except ValueError:
+                 continue # Try next format
+
+    if dt_obj:
+        return dt_obj.strftime("%Y-%m-%d")
+    else:
+        logger.warning(f"Invalid or unparseable date format encountered: {date_str}")
+        return None
+
+class PatientDataExtractor:
+    """
+    Rule-based header line extractor for German medical reports.
+    Uses SpaCy Matcher and EntityRuler with token-based patterns.
+    Loads the SpaCy model once and reuses it.
+    """
+
+    _nlp: Language | None = None
+    _ruler: EntityRuler | None = None
+    _matcher: Matcher | None = None
+    _rules_built = False
+
+    def __init__(self) -> None:
+        if PatientDataExtractor._nlp is None:
+             PatientDataExtractor._nlp = load_spacy_model("de_core_news_lg")
+
+        if not PatientDataExtractor._rules_built:
+            if "entity_ruler" not in PatientDataExtractor._nlp.pipe_names:
+                 PatientDataExtractor._ruler = PatientDataExtractor._nlp.add_pipe(
+                    "entity_ruler", before="ner", config={"overwrite_ents": True}
+                 )
+            else:
+                 PatientDataExtractor._ruler = PatientDataExtractor._nlp.get_pipe("entity_ruler")
+
+            PatientDataExtractor._matcher = Matcher(PatientDataExtractor._nlp.vocab)
+            self._build_rules()
+            PatientDataExtractor._rules_built = True
+
+        self._nlp = PatientDataExtractor._nlp
+        self._matcher = PatientDataExtractor._matcher
+        self._ruler = PatientDataExtractor._ruler
+
+    def _build_rules(self) -> None:
+        """Builds the token-based patterns including OCR variants."""
+        # Include OCR variants "pationt" and potential anonymizer output "patbien"
+        HEADER_VARIANTS = [
+            r"^pat(?:ient|ientin|\.?)$",   # original: Pat./Patient/Patientin
+            r"^pationt$",                  # common OCR slip: Pationt
+            r"^patbien$",                  # potential anonymizer output: PatBien
+        ]
+        pat_header = [
+            {"LOWER": {"REGEX": "(" + "|".join(HEADER_VARIANTS) + ")"}}, # Combined regex
+            {"TEXT": ":", "OP": "?"}
+        ]
+        name_tokens = [
+            {"IS_TITLE": True, "OP": "+"},
+            {"TEXT": ","},
+            {"IS_TITLE": True, "OP": "+"}
+        ]
+        geb_block = [
+            {"LOWER": {"IN": ["geb", "geb.", "geboren"]}},
+            {"LOWER": "am", "OP": "?"},
+            {"TEXT": ":", "OP": "?"},
+            # Use the updated DATE_RE pattern allowing optional dots/spaces OR 8 digits
+            {"TEXT": {"REGEX": DATE_RE.pattern}}
+        ]
+        fall_block = [
+            {"LOWER": {"REGEX": r"^fall(?:nr\.?|nummer)$"}},
+            {"TEXT": ":",  "OP": "?"},
+            {"TEXT": {"REGEX": r"\d+"}}
+        ]
+        space = {"IS_SPACE": True, "OP": "*"}
+
+        full_pattern = pat_header + [space] + name_tokens + \
+                       [space] + [{"OP": "?"}] + geb_block + [space] + \
+                       [{"OP": "?"}] + fall_block
+
+        PatientDataExtractor._matcher.add("PATIENT_LINE", [full_pattern])
+        PatientDataExtractor._ruler.add_patterns([{"label": "PATIENT_INFO", "pattern": full_pattern}])
+        logger.debug("SpaCy rules for PatientDataExtractor built (with OCR variants).")
+
+    def __call__(self, text: str) -> dict[str, str | None]:
+        if not self._nlp or not self._matcher:
+             logger.error("SpaCy NLP model or Matcher not initialized.")
+             return self._blank()
+
+        doc = self._nlp(text)
+        matches = self._matcher(doc)
+
+        if not matches:
+            return self._blank()
+
+        match_id, start, end = max(matches, key=lambda m: m[2] - m[1])
+        span = doc[start:end]
+
+        tokens = list(span)
+        first_name, last_name, birthdate, case_num = "NOT FOUND", "NOT FOUND", "NOT FOUND", "NOT FOUND"
+
+        comma_indices = [i for i, t in enumerate(tokens) if t.text == ","]
+        if comma_indices:
+            comma_idx = comma_indices[0]
+            name_start_idx = 1
+            if len(tokens) > 1 and tokens[1].text == ':':
+                name_start_idx = 2
+
+            last_name_tokens = [t.text for t in tokens[name_start_idx:comma_idx] if t.is_title]
+            if last_name_tokens:
+                last_name = " ".join(last_name_tokens)
+
+            geb_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["geb", "geb.", "geboren"]]
+            fall_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
+            next_block_start = min(geb_indices + fall_indices + [len(tokens)])
+            first_name_tokens = [t.text for t in tokens[comma_idx + 1 : next_block_start] if t.is_title]
+            if first_name_tokens:
+                first_name = " ".join(first_name_tokens)
+
+        # Extract birth date using the updated DATE_RE
+        date_token = next((t for t in tokens if DATE_RE.fullmatch(t.text)), None)
+        if date_token:
+            birthdate_cleaned = _clean_date(date_token.text) # Use updated function
+            birthdate = birthdate_cleaned if birthdate_cleaned is not None else "INVALID DATE FORMAT"
+        else:
+             birthdate = None
+
+        case_token = None
+        for i, t in enumerate(tokens):
+            if t.like_num and i > 0:
+                prev_token = tokens[i-1]
+                if prev_token.lower_ in ("fallnr", "fallnr.", "fallnummer", ":"):
+                     if prev_token.text == ":" and i > 1 and \
+                        tokens[i-2].lower_ in ("fallnr", "fallnr.", "fallnummer"):
+                         case_token = t
+                         break
+                     elif prev_token.lower_ in ("fallnr", "fallnr.", "fallnummer"):
+                         case_token = t
+                         break
+        if case_token:
+            case_num = case_token.text
+
+        gender = determine_gender(first_name) if first_name and first_name != "NOT FOUND" else "NOT FOUND"
+
+        # Map internal "NOT FOUND" for names to None before returning
+        if first_name == "NOT FOUND": first_name = None
+        if last_name == "NOT FOUND": last_name = None
+        if gender == "NOT FOUND": gender = None
+
+        # Ensure invalid dates become None
+        if birthdate == "INVALID DATE FORMAT": birthdate = None
+
+        result = {
+            "patient_first_name": first_name,
+            "patient_last_name":  last_name,
+            "patient_dob":        birthdate,
+            "casenumber":         case_num, # Already None if not found
+            "patient_gender":     gender
+        }
+        return result
+
+    @staticmethod
+    def _blank() -> dict[str, str | None]:
+        """Returns a dictionary with default None values."""
         return {
-            "patient_first_name": "Unknown", 
-            "patient_last_name": "Unknown",
-            "patient_dob": None,
-            "casenumber": None,
-            "patient_gender": "Unknown"
+            "patient_first_name": None, # Default to None
+            "patient_last_name":  None, # Default to None
+            "patient_dob":        None,
+            "casenumber":         None,
+            "patient_gender":     None  # Default to None or "Unknown"
         }
 
 class ExaminerDataExtractor:
@@ -164,8 +243,6 @@ class ExaminerDataExtractor:
         self._setup_patterns()
 
     def _setup_patterns(self):
-        """Define patterns for extracting examiner information."""
-        # Pattern 1: Untersuchender Arzt: Dr. Vorname Nachname
         pattern1 = [
             {"LOWER": "untersuchender"},
             {"LOWER": "arzt"},
@@ -175,7 +252,6 @@ class ExaminerDataExtractor:
             {"POS": "PROPN"}
         ]
 
-        # Pattern 2: Untersuchender Arzt: Vorname Nachname
         pattern2 = [
             {"LOWER": "untersuchender"},
             {"LOWER": "arzt"},
@@ -188,15 +264,6 @@ class ExaminerDataExtractor:
         self.matcher.add("EXAMINER_INFO_2", [pattern2])
 
     def extract_examiner_info(self, text):
-        """
-        Extract examiner information from the given text.
-
-        Parameters:
-        - text (str): Input text containing examiner information.
-
-        Returns:
-        - dict: Extracted examiner information or None if no match is found.
-        """
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
@@ -204,7 +271,6 @@ class ExaminerDataExtractor:
             span = doc[start:end]
             pattern_name = self.nlp.vocab.strings[match_id]
 
-            # Extract fields based on the matched pattern
             title, first_name, last_name = None, None, None
             tokens = list(span)
 
@@ -232,8 +298,6 @@ class EndoscopeDataExtractor:
         self._setup_patterns()
 
     def _setup_patterns(self):
-        """Define patterns for extracting endoscope information."""
-        # Pattern 1: Endoskop: Modellname Seriennummer: NNNNNNNN
         pattern1 = [
             {"LOWER": "endoskop"},
             {"TEXT": ":"},
@@ -246,15 +310,6 @@ class EndoscopeDataExtractor:
         self.matcher.add("ENDOSCOPE_INFO_1", [pattern1])
 
     def extract_endoscope_info(self, text):
-        """
-        Extract endoscope information from the given text.
-
-        Parameters:
-        - text (str): Input text containing endoscope information.
-
-        Returns:
-        - dict: Extracted endoscope information or None if no match is found.
-        """
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
@@ -262,7 +317,6 @@ class EndoscopeDataExtractor:
             span = doc[start:end]
             pattern_name = self.nlp.vocab.strings[match_id]
 
-            # Extract fields based on the matched pattern
             model_name, serial_number = None, None
             tokens = list(span)
 
@@ -282,46 +336,28 @@ class ExaminationDataExtractor:
         self.nlp = spacy.load("de_core_news_lg")
         
     def extract_examination_info(self, text, remove_examiner_titles=True):
-        """
-        Extracts examiner and examination time information from the given text.
-        
-        Parameters:
-        - text (str): Text containing examination information.
-        - remove_examiner_titles (bool): Whether to remove titles from examiner names.
-        
-        Returns:
-        - dict: Extracted examination information or None if no match is found.
-        """
-        # Try to match the first pattern: "Unters.: [last name], [first name] U-datum: [date] [time]"
         if "1. Unters.:" in text or "Unters.:" in text:
             return self._extract_meta_format_1(text, remove_examiner_titles)
         
-        # Try to match the second pattern: "Eingang am: [date]"
         if "Eingang am:" in text:
             return self._extract_meta_format_2(text, remove_examiner_titles)
             
         return None
         
     def _extract_meta_format_1(self, line, remove_examiner_titles=True):
-        """Extract examiner info with date and time."""
         if remove_examiner_titles:
-            # This would need implementation of remove_titles function
             pass
             
-        # Define the regular expression pattern for matching the relevant fields
         pattern = r"Unters\.: ([\w\s\.]+), ([\w\s]+)\s*U-datum:\s*(\d{2}\.\d{2}\.\d{4}) (\d{2}:\d{2})"
         
-        # Search for the pattern in the given line
         match = re.search(pattern, line)
         
         if match:
             examiner_last_name = match.group(1).strip()
             examiner_first_name = match.group(2).strip()
             
-            # Convert the examination date to the format YYYY-MM-DD
             examination_date = datetime.strptime(match.group(3), '%d.%m.%Y').strftime('%Y-%m-%d')
             
-            # Extract the examination time
             examination_time = match.group(4)
             
             return {
@@ -340,19 +376,14 @@ class ExaminationDataExtractor:
         return None
         
     def _extract_meta_format_2(self, line, remove_examiner_titles=True):
-        """Extract only examination date."""
         if remove_examiner_titles:
-            # This would need implementation of remove_titles function
             pass
             
-        # Define the regular expression pattern for matching the relevant fields
         pattern = r"Eingang am:\s*(\d{2}\.\d{2}\.\d{4})"
         
-        # Search for the pattern in the given line
         match = re.search(pattern, line)
         
         if match:
-            # Convert the examination date to the format YYYY-MM-DD
             examination_date = datetime.strptime(match.group(1), '%d.%m.%Y').strftime('%Y-%m-%d')
             
             return {

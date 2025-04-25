@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Patient Temur Chkhikvadze (Z.n. Hemikolektomie rechts bei Kolontumor 2019, aktuell 54 J.) wurde aufgrund rezidivierender Diarrhöen eine Koloskopie durchgeführt. Die Anastomose im Colon transversum ist unauffällig, keine Stenosen, keine residuellen Pathologien. Bei eingezogener Schleimhaut und leicht eingeschränkter Insufflationstoleranz war die Übersicht teils limitiert. Im gesamten Kolon zeigte sich eine gerötete Schleimhaut mit Verlust des Gefäßmusters und zahlreichen flächigen, teils tiefen Ulzerationen (max. im Colon descendens), vereinbar mit einer Pan-Colitis. Aus den tiefen Ulzerationen im Colon descendens sowie aus multiplen Bereichen im Kolonbiopsien entnommen, ebenso Mukosabiopsien aus dem Sigma. Kein Nachweis von Polyposis. Polypektomie war nicht erforderlich.",
+    "beurteilung": "Chronisch-entzündlicher Umbau als floride Pan-Colitis, tiefe Ulzerationen. Keine Hinweise auf Dysplasie, bisher kein makroskopischer Tumor. Anastomose unauffällig.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Nino Tsiklauri, 67 J., Zustand nach Hemikolektomie links bei Divertikulose, kommt zur Nachsorge. Anastomose im Colon transversum reizlos und ohne pathologische Befunde. Aufgrund eingeschränkt insufflationstoleranter Patientin wurden Teile des Kolons suboptimal entfaltet. Im Bereich des Sigmas wurde eine flache Läsion nach Paris-IIa mit max. 12 mm Durchmesser entdeckt. Diese wurde per Schlingentechnik abgetragen. Zusätzlich Mukosabiopsien aus Sigma entnommen. Keine weiteren Auffälligkeiten, keine Hinweise auf rezidivierende Pan-Colitis.",
+    "beurteilung": "Komplette, komplikationslose Abtragung des Sigmapolyps. Keine Hinweise auf Rezidiv oder Tumor an der Anastomose.",
+    "pathology report": "Tubuläres Adenom mit low-grade intraepithelialer Neoplasie, R0-Resektion.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Prof. Archil Shengelia, 72 J., bekannte CU mit Verlauf als Pan-Colitis, Zustand nach rechter Hemikolektomie, stellt sich mit abdominalen Schmerzen und Blutabgang vor. Die Anastomose im Colon transversum ist unauffällig. Bei insgesamt eingeschränkter Insufflationstoleranz infolge massiven Meteorisumus konnte das Kolon bis zum Rektum eingesehen werden. Im Colon descendens tiefe Ulzeration von ca. 1,5 cm Durchmesser, hier gezielte Biopsien entnommen. Zusätzlich multiple flächige Entzündungszeichen im gesamten Kolon, mit Biopsien aus verschiedenen Abschnitten, darunter auch Mukosabiopsien aus Sigma. Keine Polypen, keine tumorsuspekten Läsionen.",
+    "beurteilung": "Aktive Pan-Colitis mit tiefen Ulzerationen, kein Nachweis einer Dysplasie oder Neoplasie. Anastomose reizlos.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Ketevan Beridze, 61 J., Z.n. Hemikolektomie links. Bei nach wie vor eingeschränkt insufflationstoleranter Patientin konnte das Kolon nur unter niedriger Luftinsufflation ausreichend beurteilt werden. Anastomose reizlos. Im Colon transversum und Colon ascendens zeigen sich entzündliche Veränderungen mit Durchbrechungen der Lamina propria, vereinbar mit aktiver Pan-Colitis. Im Sigma zwei gestielte Polypen, jeweils 9 mm und 7 mm (Paris-Ip, JNET 2A), mittels Kaltabtragung entfernt. Mukosabiopsien aus Sigma und Biopsien aus Ulzerationen im Colon descendens wurden entnommen.",
+    "beurteilung": "Komplette Entfernung von zwei Adenomen, ansonsten aktive Colitis. Keine Hinweise auf Tumor oder Komplikationen.",
+    "pathology report": "2x Tubuläres Adenom, kein Anhalt für high grade Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Avtandil Dzotsenidze, 74 J., bekannter Morbus Crohn mit ausgedehnter Pan-Colitis und Zustand nach Hemikolektomie rechts 2021. Die Anastomose im Colon transversum ist reizlos. Bei eingeschränkt insufflationstolerantem Patienten war die Übersicht teilweise limitiert. Im Colon descendens zeigte sich eine tiefe, randständige Ulzeration von ca. 2 cm Länge, Biopsien wurden entnommen. Zusätzlich multiple flächige erosive Veränderungen im gesamten Kolon mit Biopsieentnahmen. Außerdem wurde im Sigma ein breitbasiger Polyp (Paris-Is, 13 mm, JNET 2B) gesehen und in Piecemeal-Technik reseziert. Mukosabiopsien aus Sigma ebenfalls entnommen.",
+    "beurteilung": "Aktive Crohn-Pan-Colitis mit tiefen Ulzerationen, inkomplett abgetragener Sigmapolyp (Piecemeal-Resektion). Anastomose unauffällig.",
+    "pathology report": "Tubulovillöses Adenom mit fokaler hochgradiger intraepithelialer Neoplasie (IEN), Resektionsränder nicht sicher im Gesunden (Piecemeal).",
+    "follow up?": "2–6 Monate"
+  }
+}

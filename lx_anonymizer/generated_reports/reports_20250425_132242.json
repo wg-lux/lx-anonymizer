@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Johann Hinterseer erfolgte eine Koloskopie aufgrund eines positiven iFOBT. Die Darmvorbereitung war mangelhaft, zahlreiche Stuhlreste beeinträchtigten die Beurteilung des Kolons, vor allem im rechten Hemikolon. Im absteigenden Colon eine 12 mm flache Läsion, Paris 0-IIb, mit auffälliger Kryptenarchitektur und einer tiefen Ulzeration zentral. Multiple Biopsien wurden entnommen. An anderen Stellen kein sicherer Polypenverdacht, jedoch aufgrund der schlechten Übersicht ist keine abschließende Beurteilung möglich.\nBeurteilung: Flache, ulzerierte Läsion im Colon descendens, Biopsien entnommen, gesamte Koloninspektion eingeschränkt. Empfehlung: erneute Koloskopie nach adäquater Vorbereitung, Überprüfung der Läsion nach Vorliegen der Histologie.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Erneute Untersuchung empfohlen"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Frau Romy Windisch, 63 J., stellte sich mit intermittierenden Blutabgängen vor. Bei unauffälliger Kolonwand im proximalen Colon wurde im Sigma eine 7 mm große, flache Läsion Paris 0-IIb identifiziert. Die Kryptenarchitektur erschien auffällig, eine geringe Ulzeration war sichtbar. Mithilfe einer Kaltzange wurden gezielte Biopsien entnommen. Im übrigen Befund keine weiteren Polypen oder Läsionen. Darmvorbereitung war ausreichend.\nBeurteilung: Flache, auffällige Läsion im Sigma, Biopsien entnommen. Bei niedriggradiger IEN Kontrolle in 5 Jahren empfohlen.",
+    "pathology report": "Histologisch: niedriggradige intraepitheliale Neoplasie (IEN), kein Hinweis auf Invasion.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Alois Grünwieser wurde wegen anhaltendem Durchfall eine Koloskopie durchgeführt. Die Darmreinigung war mangelhaft, sodass vor allem das Zökum nur eingeschränkt beurteilbar war. Im Colon transversum zeigte sich eine ca 20 mm große, erhabene flache Läsion Paris 0-IIb, zentral mit tiefer Ulzeration. Die Kryptenarchitektur war diffus gestört. Mit EMR-Schlinge wurde die Läsion piecemeal reseziert, und einzelne Biopsien wurden von der Ulzeration entnommen. Kein Blutungskomplikation.\nBeurteilung: ausgedehnte, ulzerierte Läsion im Colon transversum, piecemeal-Resektion, histologische Beurteilung folgt. Erneute Koloskopie zur Nachresektion und vollständigen Beurteilung empfohlen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2-6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Sepp Wiesinger, 52 J., Vorsorgeuntersuchung. Darmreinigung war ausreichend. Im Rektum fand sich eine 9mm große flache Läsion (Paris 0-IIb), mit auffälliger Kryptenarchitektur ohne Ulzeration. Polypektomie mittels Schlinge komplikationslos durchgeführt, Biopsien ebenfalls entnommen.\nBeurteilung: einzelne flache Läsion, komplette Entfernung, keine weiteren Auffälligkeiten. Bei Nachweis einer niedriggradigen IEN Kontrolle in 5 Jahren, andernfalls 10 Jahre.",
+    "pathology report": "Tubuläres Adenom mit niedriggradiger IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Babett Obermoser präsentiert sich zur Koloskopie nach positivem Stuhltest. Die Darmvorbereitung war unzureichend; wiederholt zahlreiche Stuhlreste im Dickdarm, insbesondere im Colon ascendens. Im Colon sigmoideum konnte eine 15 mm große, flache Paris 0-IIb Läsion mit zentraler tiefer Ulzeration dargestellt werden. Auffällige Kryptenarchitektur. Mit heißer Schlinge wurde die Läsion in toto entfernt, Biopsien von den Rändern entnommen. Restdickdarm nur eingeschränkt beurteilbar.\nBeurteilung: Große flache ulzerierte Läsion im Sigma, Resektion erfolgt, Darmreinigung ungenügend. Erneute Komplettuntersuchung nach Darmentleerung dringend angeraten.",
+    "pathology report": "Histologisch: tubulovillöses Adenom mit niedriggradiger IEN, Resektionsränder im Randbiopsat unauffällig.",
+    "follow up?": "3 Jahre (wegen >10mm Adenom)"
+  }
+}

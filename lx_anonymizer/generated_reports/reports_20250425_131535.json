@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Somchai Prasert, 53 Jahre, wurde eine Koloskopie aufgrund eines positiven immunchemischen Stuhltests durchgeführt. Im Colon transversum zeigte sich ein frischer Koagel ohne aktive Blutungsquelle. Im Sigma fanden sich eine rötliche, makroskopische Veränderung der Mucosa auf ca. 8 mm, woraus eine PE entnommen wurde. Zusätzlich wurde ein Polyp mit breiter Basis (Paris Is, ca. 18 mm) im absteigenden Colon entdeckt und mittels EMR-Technik in Piecemeal-Technik reseziert. Von unauffälliger Schleimhaut im Sigma wurden Mukosabiopsien entnommen. Im Colon ascendens fand sich ein kleiner gestielter Polyp (Paris Ip, 5 mm) mit malignitätsverdächtiger Oberfläche, der mit Schlinge vollständig entfernt wurde. Keine weiteren Auffälligkeiten.",
+    "beurteilung": "Komplikationslose Polypektomien. Die Resektion des breitbasigen Polypen erfolgte in Piecemeal-Technik, eine vollständige Abtragung wurde endoskopisch bestätigt. Die Histologie steht für alle entnommenen Proben noch aus.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Suda Charoen, 69 Jahre, wurde eine Abklärungskoloskopie aufgrund von intermittierenden Blutabgang durchgeführt. Im Colon transversum fand sich ein frischer Koagel, keine aktive Blutung. Im Sigma zeigte sich eine rötliche, makroskopische Veränderung (ca. 6 mm), PE zur Histologie entnommen. Ein Polyp mit breiter Basis (Paris Is, 12 mm), JNET 2A, wurde im Rektum entdeckt und mittels EMR komplett abgetragen (En-bloc). Weitere Mukosabiopsien aus dem Sigma aufgrund diskreter Schleimhautunregelmäßigkeiten entnommen. Im aufsteigenden Colon wurde ein Polyp (Paris Is, 8 mm) mit malignitätsverdächtiger Oberfläche detektiert und mit heißer Schlinge reseziert.",
+    "beurteilung": "Keine intra- oder postinterventionellen Komplikationen. Eine suffiziente, vollständige Abtragung aller Polypen. Nachsorge entsprechend dem Nachweis von 3 Adenomen <10 mm und einem >10 mm erfolgt.",
+    "pathology report": "Tubuläres Adenom mit low-grade intraepithelialer Neoplasie (Polyp im Rektum), tubulovillöses Adenom mit high-grade intraepithelialer Neoplasie (Polyp im aufsteigenden Colon), entzündliche Veränderungen in PE, keine Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Herr Dr. Kittisak Wattanaporn, 62 Jahre, stellte sich zur Kontrollkoloskopie nach Darmkrebs in der Anamnese vor. Im Colon transversum wurde ein frischer Koagel ohne eindeutigen Blutungsherd nachgewiesen. Im Sigma zeigte sich eine rötliche, makroskopische Veränderung, woraus eine PE entnommen wurde. Es fanden sich keine weiteren Polypen im untersuchten Kolonabschnitt. Von unauffälliger Mukosa im Sigma wurden routinemäßig Biopsien entnommen. Kein Hinweis auf Polypen mit malignitätsverdächtiger Oberfläche.",
+    "beurteilung": "Unauffällige Kontrollkoloskopie bei Zustand nach Malignomresektion. PE aus rötlicher Veränderung ohne suspekte makroskopische Malignitätszeichen. Keine Intervention notwendig.",
+    "pathology report": "Mukosa mit chronisch-entzündlicher Veränderung, kein Nachweis von Dysplasie oder Neoplasie.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Patchara Boonsri, 57 Jahre, wurde zur Abklärung von unklaren Bauchschmerzen eine Koloskopie durchgeführt. Im Colon transversum zeigte sich ein frischer Koagel, der abgetragen wurde. Im Sigma war eine rötliche makroskopische Veränderung sichtbar, PE zur Histologie entnommen. Ein breitbasiger Polyp (Paris IIa, 14 mm, JNET 2B) wurde im Colon descendens entdeckt und in EMR-Technik en-bloc entfernt. Zusätzlich ein kleiner Polyp mit malignitätsverdächtiger Oberfläche (6 mm, Paris Is) im Colon ascendens, dieser wurde mit Schlinge abgetragen. Mukosabiopsien aus unauffälligem Sigma durchgeführt.",
+    "beurteilung": "Komplette Abtragung des breitbasigen Polypen sowie des Polypen mit verdächtiger Oberfläche. Komplikationsloser Verlauf. Nachsorgeempfehlung nach Resektion eines Polypen >10 mm.",
+    "pathology report": "Breitbasiger Polyp: tubulovillöses Adenom mit low-grade und fokal high-grade intraepithelialer Neoplasie, vollständige Resektion. Polyp im Colon ascendens: tubuläres Adenom mit hochgradiger Neoplasie, Resektionsränder tumorfrei.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Anurak Suksawat, 45 Jahre, stellte sich mit positivem Stuhltest vor. Im Colon transversum zeigte sich ein frischer Koagel, ohne Blutungsquelle. Im Sigma fand sich eine rötliche makroskopische Veränderung; PE entnommen. Mukosabiopsien aus unauffälligem Sigma eingesandt. Im Colon sigmoideum entdeckten wir einen Polypen (10 mm, Paris Is) mit breiter Basis; EMR wurde durchgeführt, vollständige Entfernung bestätigt. Zusätzlich ein weiterer kleiner Polyp (7 mm) mit malignitätsverdächtiger Oberfläche im Colon ascendens, mit Schlinge entfernt.",
+    "beurteilung": "Resektion beider Polypen komplikationslos und vollständig. Angaben zu Malignität und Dysplasie ausstehend.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "3 Jahre"
+  }
+}

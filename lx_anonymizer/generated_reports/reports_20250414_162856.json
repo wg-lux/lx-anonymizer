@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Monsieur Jean-Pierre Lefevre, 68 Jahre, stellt sich zur Kontroll-Koloskopie nach Z.n. Hemikolektomie und Z.n. Hartmann-Operation vor. Der Eingriff wurde aufgrund eines perforierten Sigmadivertikels durchgeführt. Der Koloskopiebeginn erfolgte problemlos. Im Colon ascendens werden multiple kleine Adenome, Größe 5 mm, Typ Paris 0-Is, JNET-Klassifikation Typ 2A, festgestellt und mittels Kaltbiopsiezange entfernt. Im Colon transversum wird ein frischer Koagel gesehen, jedoch keine aktive Blutungsquelle. Im Rektum sind auffällige Teleangiektasien erkennbar, zurückzuführen auf Z.n. Radiatio. Die Anastomose ist unauffällig und zeigt keine pathologischen Veränderungen.",
+    "pathology report": "Histologische Untersuchung der Polypen ergab tubuläre Adenome ohne Anzeichen von hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Dr. Amélie Durand, 72 Jahre, wird zur Nachsorge nach Z.n. Hemikolektomie aufgrund eines Kolonkarzinoms vorgestellt. Während der Koloskopie wird ein 12 mm großes Adenom im Colon ascendens entdeckt, Paris Typ 0-Is, JNET Typ 2A, und mittels heißer Schlingentechnik entfernt. Im Colon transversum, nahe der unauffälligen Anastomose, wird ein frischer Koagel gefunden, jedoch keine Blutungsquelle. Die Rektalschleimhaut zeigt Z.n. Radiatio bedingte Teleangiektasien.",
+    "pathology report": "Das entfernte Adenom zeigt histologisch tubuläre Strukturen mit fokaler hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Monsieur François Lefèvre, 60 Jahre, zur Routine-Koloskopie präsentiert. Z.n. Hartmann-Operation und bekanntes Reizdarmsyndrom. Bei der Untersuchung fallen im Colon ascendens mehrere kleine Adenome, Paris Typ 0-Is, JNET Typ 1, mit einer Größe von jeweils 6 mm auf. Diese werden tutte mit Kaltbiopsie entfernt. Zusätzlich zeigt sich im Colon transversum ein frischer Koagel ohne erkennbare Blutungsquelle. Die Schleimhaut im Rektum ist unauffällig.",
+    "pathology report": "Die Polypen weisen ein tubuläres Adenom ohne Anzeichen für Malignität auf.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Madame Chantal Dubois, 65 Jahre, stellt sich zur Kontrolle nach Z.n. Radiatio eines Rektumkarzinoms dar. Während der Koloskopie wird im Colon ascendens ein 8 mm großes Adenom, Paris Typ 0-Is, JNET Typ 2A, entdeckt. Es wird mittels Kaltpolypektomie entfernt. Die Rektumschleimhaut zeigt ausgeprägte Teleangiektasien infolge der Strahlentherapie, jedoch keine aktiven Blutungen. Die Anastomose im Colon transversum ist unauffällig.",
+    "pathology report": "Das Adenom weist tubuläre Strukturen ohne hochgradige Läsionen auf.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Monsieur Jacques Boucher, 70 Jahre, zur Nachsorge nach Z.n. Hemikolektomie vorgestellt. Im Colon ascendens zeigen sich zwei 10 mm große Adenome, Paris Typ 0-Isp, JNET Typ 2A, die mittels heißer Polypektomie-Schlinge entfernt wurden. Ein frischer Koagel im Colon transversum wird gesichtet, jedoch keine aktive Blutungsquelle. Die Anastomose zeigt sich unauffällig. Im Rektum erscheinen leichte Teleangiektasien durch frühere Radiotherapie.",
+    "pathology report": "Beide Adenome sind tubulär ohne Hinweise auf hochgradige Dysplasien.",
+    "follow up?": "3 Jahre"
+  }
+}

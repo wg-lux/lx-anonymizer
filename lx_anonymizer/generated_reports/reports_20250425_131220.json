@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Dr. Jean-Luc Van Damme, ein 62-jähriger Patient, stellte sich zur Kontrolle nach transanaler Polypabtragung vor. Während der Koloskopie fanden sich im Colon transversum frische Koagel und eine polypöse Schleimhautveränderung von 8 mm (Paris-Klassifikation: 0-Is, JNET-Klassifikation: Typ 2A). Eine tiefe Ulzeration im Bereich des Colon ascendens wurde ebenfalls festgestellt, Biopsien wurden entnommen. Beurteilung: Die Polypektomie wurde mittels Schlingentechnik durchgeführt. Komplikationslose Resektion. Empfehlung der nächsten Koloskopie in 5 Jahren, vorausgesetzt die Histologie zeigt keine hochgradige Neoplasie.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom ohne Anzeichen von hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Marie Delacroix, eine 54-jährige Patientin, kam zur Koloskopie mit dem Verdacht auf mikroskopische Colitis. Im Colon transversum wurde ein frischer Koagel gefunden, und im gesamten Kolon zeigte sich eine polypöse Schleimhautveränderung. In der rechten Kolonflexur fand sich eine auffällige Läsion von 12 mm (Paris-Klassifikation: 0-IIa, JNET-Klassifikation: Typ 2B). Biopsien wurden entnommen. Beurteilung: Resektion der Läsion erfolgte in Piecemeal-Technik. Histologie steht noch aus. Empfehlung der nächsten Koloskopie in 6 Monaten zur Kontrolle der kompletten Resektion.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Leopold Dupont, ein 70-jähriger Patient, zur Vorsorgekoloskopie. Es zeigte sich eine polypöse Schleimhautveränderung (9 mm, Paris-Klassifikation: 0-Is, JNET-Klassifikation: Typ 2A) im Colon sigmoideum. Ebenso wurde eine tiefe Ulzeration im Colon descendens festgestellt, aus welcher mehrere Biopsien entnommen wurden. Beurteilung: Die Polypenentfernung wurde mit Schlinge und Klammerung durchgeführt. Komplikationslose Resektion. Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Histologiebefund: Tubulo-villöses Adenom mit fokaler hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Baron François de la Roche, 65 Jahre, stellt sich zur Verlaufskontrolle einer bekannten mikroskopischen Colitis vor. Bei der Koloskopie fanden sich frische Koagel im Colon transversum und eine diffuse polypöse Schleimhautveränderung im Colon ascendens. Eine tiefe Ulzeration im Rektum wurde ebenfalls biopsiert. Beurteilung: Keine Polypektomie erforderlich. Empfehlung der nächsten Koloskopie in 10 Jahren zur Überwachung der mikroskopischen Colitis.",
+    "pathology report": "Histologiebefund: Zeichen einer mikroskopischen Colitis, keine Neoplasie.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Elise Martens, 48 Jahre, stellt sich zur Nachsorge nach Polypenabtragung vor. Während der Koloskopie wurde eine polypöse Schleimhautveränderung, 6 mm groß (Paris-Klassifikation: 0-Is, JNET-Klassifikation: Typ 1), im Colon descendens entdeckt und entfernt. Frische Koagel im Colon transversum wurden gesichtet, und eine tiefe Ulzeration im Sigma wurde biopsiert. Beurteilung: Komplikationslose Resektion mittels Schlinge. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Histologiebefund: Hyperplastischer Polyp, keine Malignität festgestellt.",
+    "follow up?": "5 Jahre"
+  }
+}

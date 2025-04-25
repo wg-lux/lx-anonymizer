@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. rer. nat. Egon Sächsinger, Z.n. Hemikolektomie rechts wegen kolorektalem Adenom, wurde die Koloskopie bei Verdacht auf Rezidiv eines Adenoms durchgeführt. Die Anastomose im Colon transversum erscheint unauffällig, keine Stenose, keine Ulzera. Im Bereich des Colon descendens nach Z.n. Radiatio sind ausgeprägte Teleangiektasien sichtbar, kein aktiver Blutnachweis. Im Colon sigmoideum zeigte sich ein flacher, gestielter Polyp (Paris Is, 9 mm, JNET 2A), der mittels Schlinge abgetragen wurde. Keine Blutungskomplikation, Clip wurde nicht benötigt. Im Übrigen kein Hinweis auf weitere Polypen oder Tumoren.",
+    "beurteilung": "Unauffällige Anastomose, singuläres Adenom <10 mm im Sigma, komplikationslose Polypektomie. Nachsorgekoloskopie in 5 Jahren empfohlen, sofern die Histologie das Adenom bestätigt.",
+    "pathology report": "Histologie: Tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie, Resektion im Gesunden.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Traudel Zschopau, 71 J., Z.n. Hemikolektomie links und Radiatio wegen Adenom, Vorstellung zum Ausschluss eines Rezidivs. Im gesamten Restkolon zahlreiche Teleangiektasien, passend zum Zustand nach Radiatio, jedoch kein Blutnachweis. Die Anastomose im Colon sigmoideum erscheint makroskopisch völlig unauffällig, keine Hinweise auf Tumor oder Ulzeration. Im Colon sigmoideum fand sich ein Polypenrossette (Paris IIa, 6 mm, JNET 2A), der mit Diathermieschlinge komplikationslos reseziert wurde. Kein weiterer Polyp, kein Tumor.",
+    "beurteilung": "Zustand nach Hemikolektomie und Radiatio, singulärer, kleiner Polyp im Sigma durch Polypektomie entfernt. Empfehlung zur Nachsorge in 5 Jahren.",
+    "pathology report": "Tubuläres Adenom, keine hochgradigen Dysplasien, Ränder frei.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Rainer Kluge aus Bad Lausick, Vorstellung wegen Verdacht auf Rezidiv eines Adenoms, Z.n. Hemikolektomie rechts. Anastomose Colon transversum unauffällig, kein Nachweis von Blut. Im distalen Colon descendens ausgeprägte Teleangiektasien nach Radiatio. Im Colon sigmoideum polypöse Läsion (Paris Is, 14mm, JNET 2A), Abtragung in Piecemeal-Technik wegen Größe und Ausdehnung, keine unmittelbaren Blutungskomplikationen. KEIN aktiver Blutnachweis. Kein weiterer Polyp detektiert.",
+    "beurteilung": "Piecemeal-Resektion eines großen Adenoms im Sigma, unauffällige Anastomose, keine Blutung. Empfehlung: Kontrollkoloskopie in 2-6 Monaten zur Überprüfung auf Residualgewebe. histo steht noch aus.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Siegfried Krabbenhans, 77 Jahre, Z.n. Hemikolektomie links und Radiatio bei Adenom, Kontrolle zum Rezidivausschluss. Anastomose Colon descendens unauffällig; zahlreiche Teleangiektasien, kein Blut. Im Sigmoid mehrere Polypen gefunden: 4 Polypen (Paris Is, je 4–8mm, JNET 2A), alle mit kalter Schlinge abgetragen. Kein Tumor, keine weiteren Auffälligkeiten.",
+    "beurteilung": "Multiples Adenomgeschehen, alle Polypen unter 10mm, unauffällige Anastomose. Kontrolle in 3 Jahren empfohlen.",
+    "pathology report": "Alle Polypen: Tubulär-villöses Adenom mit niedriggradiger intraepithelialer Neoplasie, vollständige Entfernung.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Frau Prof. Dr. med. Renate Haubitz, Z.n. Hemikolektomie rechts, bekannte Radiatio-Problematik. In der Nähe der Anastomose – diese unauffällig – zahlreiche Teleangiektasien, aber kein Blutnachweis. Im Colon sigmoideum zeigte sich ein Polyp (Paris Ip, 12mm, JNET 2A). Der Polyp wurde mit heißer Schlinge abgetragen, keine akute Blutung, Clip zur Prophylaxe gesetzt. Keine weiteren Polypen, kein Tumor gesehen.",
+    "beurteilung": "Singuläres Adenom >10mm im Sigma, Resektion komplikationslos, unauffällige Anastomose. Nachsorge in 3 Jahren empfohlen.",
+    "pathology report": "Tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie, Ränder frei.",
+    "follow up?": "3 Jahre"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Xaver Brandl, 72-jähriger Patient, stellte sich nach Z.n. Hartmann-Operation bei Divertikulitis zur Koloskopie vor. Im Colon transversum zeigte sich ein frischer Koagel, keine aktive Blutung nachweisbar. Absteigendes Colon mit einzelnen flachen Erosionen, teils gerötet. Region um die Anastomose unauffällig, jedoch dort auffällige Kryptenarchitektur. Bei 38cm Entfernung ein 12mm großer, breitbasiger Polyp (Paris Is, JNET 2A) entdeckt; Lifting negativ, sodass keine vollständige Abtragung möglich war, Biopsien genommen. Sonst keine weiteren Auffälligkeiten. Abgang ins Rektum unauffällig.",
+    "beurteilung": "Kein vollständiger Befund wegen nicht abtragbarer Läsion, Biopsien entnommen. Empfehlung: Kontrolle in 6 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Resi Prantl, 59 Jahre alt, bekannt nach Z.n. Hartmann-OP, zeigte im Colon transversum einen frischen Koagel, daneben unauffällige Schleimhaut. Im absteigenden Colon mehrere kleine Erosionen sichtbar. Bei 41 cm fand sich ein einzelner 7mm Polyp (Paris Is, JNET 2A), welcher mit Kaltzange abgetragen wurde. An der Anastomose gibt es Bereiche auffälliger Kryptenarchitektur, ansonsten keine weiteren Besonderheiten. Lifting-Test hier negativ, daher kein Versuch weiterer Resektion.",
+    "beurteilung": "Kleine Polypektomie komplikationslos. Lifting negativ, keine weitere Abtragung möglich. Empfehlung: Kontrolle in 5 Jahren.",
+    "pathology report": "Tubuläres Adenom, low-grade IEN, vollständig abgetragen.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Dr. Sepp Zirngibl, 66J, Koloskopie bei V.a. Nachblutung nach Hartmann-Op. Im Colon transversum lag ein frischer Koagel, darunter keine klare Blutungsquelle. Einzelne Erosionen im absteigenden Colon, keine aktiven Ulzera. Bei 23cm ein 18 mm großer, breitbasiger gestielter Polyp (Paris Ip, JNET 2B, Lifting negativ), inkomplette Schlingenresektion, Biopsien aus Randbereichen. Auffällig teils gestörte Kryptenarchitektur perianastomotisch.",
+    "beurteilung": "Inkomplette Polypenresektion bei Lifting negativ, Biopsien entnommen. Empfehlung: Kontrolle in 6 Monaten.",
+    "pathology report": "Tubulo-villöses Adenom mit low-grade IEN und Herden von high-grade IEN; Resektionsrand unklar.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Walburga Hinterwimmer, 75 J, nach Z.n. Hartmann-Resektion. Colon transversum mit frischem Koagel, weiter distal einzelne punktförmige Erosion im absteigenden Colon. In der Flexura eine Zone auffälliger Kryptenarchitektur. Kein Polyp, Lifting-Test daher hier nicht relevant, vollständige Inspektion erschwert durch schlechte Reinigung.",
+    "beurteilung": "Kein Hinweis auf Polypen oder Tumoren, keine Intervention notwendig. Empfehlung: nächste Vorsorge in 10 Jahren.",
+    "pathology report": "Keine Proben entnommen.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Maxl Daxenberger, 62J, nach Hartmann-OP, Vorstellung zur Nachsorge bei rezidivierender Blutung. Colon transversum mit frischem Koagel, keine Blutungsquelle identifizierbar. Im absteigenden Colon mehrere kleine Erosionen. Im Bereich der Anastomose stark gestörte, auffällige Kryptenarchitektur und ein ca. 10mm großer, superfizieller, unregelmäßiger Polyp (Paris IIa/c, JNET 3, Lifting negativ), Biopsien durchgeführt, komplette Resektion wegen Lifting negativ nicht möglich.",
+    "beurteilung": "Tumorverdächtige Läsion, Biopsien entnommen. Lifting negativ – keine komplette Resektion. Empfehlung: Kontrolle nach Vorliegen der Histologie, ggf. baldig chirurgisches Vorgehen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Nach individueller Rücksprache, Termin nach Pathologie"
+  }
+}

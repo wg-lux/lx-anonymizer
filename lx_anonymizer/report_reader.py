@@ -1,7 +1,3 @@
-from pyexpat import model
-from django.core.files import images
-from transformers.models import trocr
-from .settings import DEFAULT_SETTINGS
 from faker import Faker
 import gender_guesser.detector as gender_detector
 from typing import List
@@ -13,8 +9,8 @@ from PIL import Image
 from uuid import uuid4
 import json
 import re
+from .settings import DEFAULT_SETTINGS
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
-from .spacy_regex import PatientDataExtractorLg
 from .text_anonymizer import anonymize_text
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
@@ -23,6 +19,8 @@ from .pdf_operations import convert_pdf_to_images
 from .model_service import model_service
 from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
 from .ocr_preprocessing import  preprocess_image, optimize_image_for_medical_text
+from datetime import datetime # Add import
+import dateparser # Add import
 
 class ReportReader:
     def __init__(
@@ -45,8 +43,7 @@ class ReportReader:
         self.gender_detector = gender_detector.Detector(case_sensitive = True)
         
         # Initialize extractors
-        self.patient_extractor = PatientDataExtractor()
-        self.verbose_patient_extractor = PatientDataExtractorLg()
+        self.patient_extractor = PatientDataExtractor() # Instantiates the improved class
         self.examiner_extractor = ExaminerDataExtractor()
         self.endoscope_extractor = EndoscopeDataExtractor()
         self.examination_extractor = ExaminationDataExtractor()
@@ -98,83 +95,136 @@ class ReportReader:
     def extract_report_meta(self, text, pdf_path):
         """
         Extract metadata from report text using the spacy extractor classes.
+        Uses the improved PatientDataExtractor and falls back to regex if needed.
+        Handles None values correctly and ensures DOB is a datetime object or None.
         """
         report_meta = {}
-        
+
         logger.debug(f"Full text extracted from PDF: {text[:500]}...")
         lines = text.split('\n')
-        patient_lines = [line for line in lines if self.flags["patient_info_line"] in line]
-        logger.debug(f"Found {len(patient_lines)} lines containing patient_info_line: {patient_lines}")
-        
+
         patient_info = None
+        # Option 1: Try on whole text
+        patient_info = self.patient_extractor(text) # Use __call__
+        logger.debug(f"Patient extractor result on full text: {patient_info}")
+
+        # Check if the result is valid (name found, not None)
+        is_valid_info = patient_info and \
+                        (patient_info.get('patient_first_name') is not None or \
+                         patient_info.get('patient_last_name') is not None) # Check for None
+
+        # Option 2: If full text failed, try line by line
+        if not is_valid_info:
+            logger.debug("Extractor failed on full text, trying line by line.")
+            for line in lines:
+                 if re.search(r"pat(?:ient|ientin|\.|iont|bien)", line, re.IGNORECASE): # Include OCR variants in check
+                     logger.debug(f"Processing potential patient line: {line}")
+                     patient_info_line = self.patient_extractor(line)
+                     logger.debug(f"Patient extractor result on line: {patient_info_line}")
+                     # Check if this line gave a valid result (name found, not None)
+                     is_valid_line_info = patient_info_line and \
+                                          (patient_info_line.get('patient_first_name') is not None or \
+                                           patient_info_line.get('patient_last_name') is not None) # Check for None
+                     if is_valid_line_info:
+                         patient_info = patient_info_line
+                         is_valid_info = True
+                         break
+
+        # If SpaCy extractor failed, try the regex fallback
+        if not is_valid_info:
+            logger.debug("SpaCy extractor failed, using regex fallback extraction")
+            fallback_info = extract_patient_info_from_text(text) # This fallback might still fail on dotless date
+            # Use fallback only if it found something SpaCy missed (check against "Unknown")
+            if fallback_info.get("patient_first_name") != "Unknown" or fallback_info.get("patient_last_name") != "Unknown":
+                 logger.debug(f"Regex fallback result: {fallback_info}")
+                 # Map fallback's "Unknown" to None for consistency before merging
+                 fallback_info['patient_first_name'] = None if fallback_info.get('patient_first_name') == "Unknown" else fallback_info.get('patient_first_name')
+                 fallback_info['patient_last_name'] = None if fallback_info.get('patient_last_name') == "Unknown" else fallback_info.get('patient_last_name')
+                 fallback_info['patient_gender'] = None if fallback_info.get('patient_gender') == "Unknown" else fallback_info.get('patient_gender')
+                 # Assume fallback might return date as string or None
+                 patient_info = fallback_info
+                 is_valid_info = True
+            else:
+                 logger.debug("Regex fallback also found nothing significant.")
+                 if not patient_info: patient_info = PatientDataExtractor._blank()
+
+        # Update report_meta with the final patient_info, ensuring correct DOB type
+        if patient_info:
+             dob_value = patient_info.get('patient_dob')
+             parsed_dob = None
+             if isinstance(dob_value, str):
+                 # Use dateparser for robust parsing, prefer DD.MM.YYYY
+                 parsed_dob = dateparser.parse(dob_value, date_formats=['%d.%m.%Y', '%Y-%m-%d'])
+                 if parsed_dob:
+                     logger.debug(f"Successfully parsed DOB string '{dob_value}' to datetime object: {parsed_dob}")
+                 else:
+                     logger.warning(f"Could not parse DOB string '{dob_value}' using dateparser. Setting DOB to None.")
+                     parsed_dob = None
+             elif isinstance(dob_value, datetime): # Handle if it's already datetime
+                 parsed_dob = dob_value # Keep as datetime
+             elif dob_value is None:
+                 parsed_dob = None
+             else:
+                 # Attempt conversion if it's a date object already
+                 if hasattr(dob_value, 'year') and hasattr(dob_value, 'month') and hasattr(dob_value, 'day'):
+                     try:
+                         # Convert date to datetime (assuming time is not relevant)
+                         parsed_dob = datetime(dob_value.year, dob_value.month, dob_value.day)
+                         logger.debug(f"Converted date object {dob_value} to datetime object: {parsed_dob}")
+                     except Exception as e:
+                          logger.warning(f"Could not convert date-like object {dob_value} ({type(dob_value)}) to datetime: {e}. Setting DOB to None.")
+                          parsed_dob = None
+                 else:
+                     logger.warning(f"Unexpected type for DOB '{dob_value}' ({type(dob_value)}). Setting DOB to None.")
+                     parsed_dob = None
+
+             # Ensure final_patient_info uses the parsed_dob
+             final_patient_info = {
+                 "patient_first_name": patient_info.get('patient_first_name'),
+                 "patient_last_name": patient_info.get('patient_last_name'),
+                 "patient_dob": parsed_dob, # Use the parsed datetime object or None
+                 "casenumber": patient_info.get('casenumber'),
+                 "patient_gender": patient_info.get('patient_gender')
+             }
+             report_meta.update(final_patient_info)
+        else:
+             # Ensure report_meta has default keys (all None) even if everything failed
+             report_meta.update(PatientDataExtractor._blank()) # dob is already None here
+
+
+        # --- Extract other information (Examiner, Examination, Endoscope) ---
+        examiner_found = False
         for line in lines:
-            if self.flags["patient_info_line"] in line:
-                logger.debug(f"Processing patient line: {line}")
-                patient_info = self.verbose_patient_extractor.extract_patient_info(line)
-                logger.debug(f"Verbose extractor result: {patient_info}")
-                if not patient_info or patient_info.get('patient_first_name') in [None, "NOT FOUND", "Dr", "Dr."]:
-                    logger.debug("Falling back to standard extractor")
-                    patient_info = self.patient_extractor.extract_patient_info(line)
-                    logger.debug(f"Standard extractor result: {patient_info}")
-                if not patient_info or patient_info.get('patient_first_name') in [None, "NOT FOUND", "Dr", "Dr."]:
-                    from .name_extractor_utils import extract_name_from_patient_line
-                    logger.debug("Trying direct regex extraction")
-                    first_name, last_name, birthdate, _ = extract_name_from_patient_line(line)
-                    if first_name not in ["Unknown", "Dr", "Dr."] or last_name not in ["Unknown"]:
-                        from .determine_gender import determine_gender
-                        gender = determine_gender(first_name)
-                        patient_info = {
-                            "patient_first_name": first_name,
-                            "patient_last_name": last_name,
-                            "patient_dob": birthdate,
-                            "patient_gender": gender
-                        }
-                        logger.debug(f"Regex extraction result: {patient_info}")
-                if patient_info:
-                    # Setze konsistente Default-Werte
-                    if not patient_info.get('patient_first_name') or patient_info.get('patient_first_name') in ["NOT FOUND", "Dr", "Dr."]:
-                        patient_info['patient_first_name'] = "Unknown"
-                    if not patient_info.get('patient_last_name') or patient_info.get('patient_last_name') in ["NOT FOUND"]:
-                        patient_info['patient_last_name'] = "Unknown"
-                    if not patient_info.get('patient_gender') or patient_info.get('patient_gender') in ["NOT FOUND", None]:
-                        patient_info['patient_gender'] = "Unknown"
-                    report_meta.update(patient_info)
-                break
-        
-        if not patient_info or all(patient_info.get(k) in [None, "Unknown"] for k in ['patient_first_name', 'patient_last_name']):
-            logger.debug("Standard extractors failed, using fallback extraction")
-            fallback_info = extract_patient_info_from_text(text)
-            # Sichert konsistente Werte
-            fallback_info.setdefault("patient_first_name", "Unknown")
-            fallback_info.setdefault("patient_last_name", "Unknown")
-            fallback_info.setdefault("patient_gender", "Unknown")
-            report_meta.update(fallback_info)
-        
-        # Extract examiner information
-        for line in lines:
-            if self.flags["examiner_info_line"] in line:
+            # Use regex to quickly check if line might contain examiner info
+            if re.search(r"unters\w*\s*arzt", line, re.IGNORECASE):
                 examiner_info = self.examiner_extractor.extract_examiner_info(line)
                 if examiner_info:
                     report_meta.update(examiner_info)
-                break
-        
-        # Extract examination information
+                    examiner_found = True
+                    break # Assuming only one examiner line needed
+
+        examination_found = False
         for line in lines:
-            if "Unters.:" in line or "Eingang am:" in line:
+             # Use regex to quickly check if line might contain examination date/time info
+             if re.search(r"unters\.:|u-datum:|eingang\s*am:", line, re.IGNORECASE):
                 examination_info = self.examination_extractor.extract_examination_info(line)
                 if examination_info:
-                    report_meta.update(examination_info)
-                break
-        
-        # Extract endoscope information
+                    # Ensure examination_date exists before updating
+                    if examination_info.get('examination_date'):
+                         report_meta.update(examination_info)
+                         examination_found = True
+                         break # Assuming only one examination line needed
+
+        endoscope_found = False
         for line in lines:
-            if self.flags["endoscope_info_line"] in line:
+            if self.flags["endoscope_info_line"] in line.lower(): # Check flag case-insensitively
                 endoscope_info = self.endoscope_extractor.extract_endoscope_info(line)
                 if endoscope_info:
                     report_meta.update(endoscope_info)
-                break
+                    endoscope_found = True
+                    break
 
-        # Add PDF hash
+        # Add PDF hash (remains the same)
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
             pdf_hash_value = self.pdf_hash(pdf_bytes)

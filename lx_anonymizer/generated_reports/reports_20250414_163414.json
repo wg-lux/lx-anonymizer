@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Bei Herrn Dr. Piotr Zielinski, 58 Jahre alt, wurde eine Koloskopie aufgrund positiver Stuhluntersuchungen durchgeführt. Das Kolon war vollständig insuffliert und sichtbar bis zur Ileozökalklappe. In der Flexura lienalis zeigte sich eine veränderte Gefäßzeichnung. Im Colon ascendens fanden sich multiple flache Adenome, alle unter 5 mm im Durchmesser, entsprechend der Paris Klassifikation Typ IIa. Eine Piecemeal-Resektion erfolgte bei einem größeren Polypen und wurde mit Clip-Versorgung abgeschlossen.",
+    "pathology report": "Die histologische Untersuchung ergab ein tubulovillöses Adenom mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Bei Frau Agnieszka Nowak, 63 Jahre alt, erfolgte die Koloskopie aufgrund einer Anämie unklarer Genese. Das Kolon wurde vollständig insuffliert. Im Bereich der Flexura lienalis war eine veränderte Gefäßzeichnung zu beobachten. Im Colon transversum fanden sich 3 flache Adenome, jedes unter 5 mm, klassifiziert als Paris Typ IIa. Eine Schlingenpolypektomie wurde durchgeführt.",
+    "pathology report": "Die histologische Untersuchung ergab tubuläre Adenome ohne Anzeichen einer Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Prof. Dr. Stanislaw Kowalski, 70 Jahre alt, wurde aufgrund eines familiären Risikos für Kolonkarzinom zur Koloskopie überwiesen. Das Kolon war vollständig insuffliert und ohne pathologische Befunde bis zur Flexura lienalis. Dort zeigte sich eine veränderte Gefäßzeichnung. Im Sigma wurden 4 flache Adenome zwischen 3 mm und 6 mm gefunden (Paris Typ IIa). Eine vollständige Abtragung erfolgte mittels Kaltbiopsie.",
+    "pathology report": "Die histologische Befundung ergab tubuläre Adenome ohne Hinweise auf Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Janusz Szymanski, 54 Jahre alt, stellte sich zur Vorsorgekoloskopie vor. Das Kolon war vollständig insuffliert. In der Flexura lienalis bemerkte man eine veränderte Gefäßzeichnung ohne weitere Auffälligkeiten. Im Colon sigmoideum wurden 6 flache Adenome (3–5 mm) nach Paris Typ IIa entdeckt. Eine Piecemeal-Resektion wurde durchgeführt, gefolgt von Clip-Versorgung.",
+    "pathology report": "Die histologische Untersuchung bestätigte tubulovillöse Adenome mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Bei Frau Katarzyna Wojcik, 66 Jahre alt, wurde eine Koloskopie aufgrund von chronischen Bauchschmerzen durchgeführt. Das Kolon war vollständig insuffliert mit unauffälligen Befunden außer in der Flexura lienalis, wo eine veränderte Gefäßzeichnung vorlag. Im Rectum wurde ein einzelnes flaches Adenom von 7 mm (Paris Typ IIa) gefunden und mittels heißer Schlinge entfernt.",
+    "pathology report": "Die histopathologische Untersuchung ergab ein tubuläres Adenom ohne Anzeichen erhöhter Dysplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

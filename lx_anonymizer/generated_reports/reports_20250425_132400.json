@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Herr Kurt-Werner Jähnig, 62 J., Z.n. tiefer anteriorer Resektion wegen Rektumkarzinom vor 3 Jahren, kommt zur Kontrollkoloskopie. Der anastomotische Ring ist vollständig und frei durchgängig. Im transversum wird ein 6mm großer, leicht geröteter, flacher Polyp (Paris IIa, JNET Typ 2A) entdeckt und mit kalter Polypektomieschlinge entfernt. Clipversorgung nach Entfernung wegen leichter Nachblutung. Im Colon descendens zeigen sich einzelne kleine Erosionen. Im aufsteigenden Colon fanden sich multiple flache Adenome (<5mm, insgesamt 3 Stück), die mit Kaltzange abgetragen wurden. Im Bereich des Colon sigmoideum ein 7mm großer sessiler, serratierter Polyp, entfernt mittels kalter Schlinge. Keine weiteren Auffälligkeiten. keine Tumoren gesehen.",
+    "beurteilung": "Mehrfache kleine Adenome und ein sessiler serratierter Polyp, alle entfernt. Anastomose reizlos, einzelne Erosionen ohne weitere Bedeutung. Empfehlung: Kontrolle der Koloskopie in 3 Jahren.",
+    "pathology report": "Sessiler serratierter Polyp, tubuläres Adenom ohne Dysplasie, keine Malignität. (Histologie für Sigmapolyp steht noch aus)",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Ingrid-Sybille Zirkonowski, 57 J., zur Vorsorge. Der anastomotische Ring vollständig (Status nach Sigma-Resektion wg. Divertikulitis). Im Colon ascendens zeigt sich auf 40cm ein breitbasiger 4mm Polyp (Paris IIb, JNET Typ 2A), entfernt mit Kaltbiopsiezange. Im Bereich Colon descendens mehrere (insgesamt 6) flache adenomatöse Polypen, alle <5mm, die mit Kaltzange abgetragen wurden. Im absteigenden Colon 2 kleine Erosionen, sonst unauffällig. Im Rektum ein flacher 5mm großer sessiler, serratierter Polyp, ebenfalls entfernt. ",
+    "beurteilung": "Polypektomie multipler kleiner Adenome und eines sessilen serratierten Polypen. Clip-Versorgung im Colon ascendens nach Polypektomie wegen Blutungsrisiko. Empfehlung: Kontrolle der Koloskopie in unter 3 Jahren.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Prof. Dr. rer. nat. Gottfried Sächsinger, 68 J., mit V.a. Mikroskopische Kolitis. Anastomotischer Ring vollständig. Im Colon transversum 1 flacher Polyp (3mm, Paris IIa, JNET Typ 2A), Polypektomie mit kalter Zange. Im Sigmoid werden 2 weitere flache Adenome (beide 4 mm) entfernt. Im Colon descendens einzelne Erosionen, aber keine Ulzera. Im Colon ascendens ein 8mm großer sessiler serratierter Polyp, entfernt mit EMR und Clip-Versorgung. ",
+    "beurteilung": "Alle Polypen komplett entfernt, keine Blutung, keine Perforation. Kontrolle empfohlen in 5 Jahren.",
+    "pathology report": "Tubuläres Adenom ohne Dysplasie, sessiler serratierter Polyp mit niedriggradiger Dysplasie. ",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Uwe-Peter Kluge, 71 Jahre, Status nach Polypektomie 2019. Anastomotischer Ring nach Hemikolektomie komplett. Im Bereich des Colon descendens einzelne Erosionen. Im Colon sigmoideum multipel flache Adenome (<5mm, insgesamt 5 Stück), alle mit Kaltbiopsiezange abgetragen. Im Colon transversum ein sessiler serratierter Polyp (6mm, Paris Is), entfernt mit kalter Schlinge, Clip-Versorgung aufgrund leichter Blutung. Keine suspekten Tumoren.",
+    "beurteilung": "Multipel kleine Adenome und ein sessiler serratierter Polyp, alles entfernt. Empfehlung: Kontrolle der Koloskopie in unter 3 Jahren.",
+    "pathology report": "Sessiler serratierter Polyp mit hyperplastischen Veränderungen, tubuläres Adenom o. Dysplasie.",
+    "follow up?": "2 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Mandy Grimmer-Scholz, 54J,kam zur Screening-Koloskopie. AnastomotischerRing vollständig. Im Colon ascendens einzeln flacher Polyp 4mm (JNET 2A), entferntmit Kaltzange. Im Colon transversum ein 3mm sessiler serratierter Polyp, ebenfalls entfernt. Im Descendens 2 kleine Erosionen beobachtet; keine tumorösen Veränderungen, multipel weitere Polypen wurden nichtgefunden.",
+    "beurteilung": "Polypektomie eines kleinen Adenoms und eines sessilen serratierten Polypen. Kein Hinweis auf Malignität. Empfehlung: nächste Koloskopie in 5 Jahren.",
+    "pathology report": "Histologie zeigt tubuläres Adenom ohne Dysplasie und serratierter Polyp ohne Dysplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

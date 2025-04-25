@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 58-jährige Patient, Herr Dr. Andrej Viktorowitsch Ivanov, wurde aufgrund rezidivierender Bauchschmerzen und Verdacht auf Colon irritabile vorgestellt. Der Kolon erreichte die terminale Ileumschleimhaut, in der eine abgeflachte Architektur ohne Blutnachweis zu sehen war. Im Colon transversum wurde ein frischer Koagel identifiziert, jedoch ohne erkennbare Blutungsquelle. Im Sigma fand sich ein 8 mm großer, nach Paris-Klassifikation IIa, JNET Typ 2A Polyp, der mittels Schlinge entfernt wurde. Beurteilung: Komplikationslose Polypektomie. Empfehlung: Nächste Koloskopie in 5 Jahren.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom mit leichtgradiger Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Die 67-jährige Patientin, Frau Svetlana Alexandrowa Petrowa, klagte über immense Müdigkeit und Gewichtsverlust. Zwingende Indikation zur Koloskopie. Im Colon ascendens wurde ein raumfordernder, ulzerierter Tumor von circa 25 mm Größe festgestellt. Der Tumor war nach Paris-Klassifikation Isp, JNET Typ 3. Mehrere Biopsien wurden entnommen. Ansonsten kein pathologischer Befund. Beurteilung: Verdacht auf maligne Neoplasie, Histologie steht noch aus. Empfehlung: Weitere Behandlung je nach histologischem Befund.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Je nach histologischem Befund"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 45-jährige Herr Sergej Nikolajewitsch Karpow zeigte Anzeichen für ein Colon irritabile. Bei der Koloskopie wurde im Colon transversum ein frischer Koagel mit unbekannter Blutungsquelle gefunden. Im Colon descendens wurden drei Polypen, jeweils 6 mm groß, nach Paris IIa, Typ JNET 2A, festgestellt und durch Schlingenabtragung entfernt. Kein Blutnachweis. Abgeflachte Architektur der terminalen Ileumschleimhaut ohne pathologische Auffälligkeiten. Beurteilung: Komplikationslose Polypektomie, Empfehlung zur Koloskopie in 3 Jahren.",
+    "pathology report": "Histologiebefund: Tubuläre Adenome ohne hochgradige Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Die 73-jährige Frau Professor Dr. Olga Michailowna Tschajkowskaja mit anhaltendem Darmbluten und diagnostiziertem Colon irritabile. In der Koloskopie wurden sechs Polypen im Sigma, jeweils etwa 5 mm groß, nach Paris-Klassifikation IIa, JNET Typ 2A, festgestellt. Diese wurden mittels Heißbiopsie-Zange entfernt. Kein Blutnachweis in der Ileumschleimhaut oder im Colon transversum. Beurteilung: Vollständige Resektion, Empfehlung zur nächsten Koloskopie in unter 3 Jahren.",
+    "pathology report": "Histologiebefund: Tubuläre Adenome mit niedriggradiger Dysplasie. Kein Nachweis von Karzinom.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Die 64-jährige Patientin, Frau Ekaterina Sergejewna Romanova, wurde aufgrund von anhaltenden Veränderungen des Stuhlgangs untersucht. Im Colon transversum ergab sich ein frischer Koagel ohne erkennbare Blutquelle. In der Kolonspiegelung fand sich im Colon sigmoideum ein 15 mm großer, gestielter Polyp, Paris-Klassifikation Ip, JNET Typ 2A, der mittels Schlinge in Piecemeal-Technik abgetragen wurde. Abgeflachte Architektur der terminalen Ileumschleimhaut ohne pathologische Befunde. Empfohlene Nachsorge: Engmaschige Kontrolle durch die noch ausstehende Histologie.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Engmaschige Kontrolle"
+  }
+}

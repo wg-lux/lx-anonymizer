@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn José Alejandro Cárdenas Olvera, 62 Jahre alt, wurde eine komplette Koloskopie bis ins terminale Ileum durchgeführt. Im Colon ascendens zeigte sich ein Polyp (Paris Is, JNET 2A) mit breiter Basis, etwa 12 mm groß. Keine weiteren Polypen oder Zeichen einer Neoplasie im restlichen Kolon. EMR des Polypen mittels Schlinge erfolgte, die Resektion verlief komplikationslos. keine aktive Blutung, clips nicht erforderlich. Z.n. Loop-Resektion. Proben wurden zur Histologie eingesandt. Beurteilung/Empfehlung: Größeres Adenom > 10 mm wurde komplett endoskopisch entfernt, die Nachsorge sollte in 3 Jahren erfolgen.",
+    "pathology report": "Pathologisch zeigte sich ein tubulovillöses Adenom ohne high-grade-IEN. Keine Anzeichen für ein Adenokarzinom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Senora Dr. María Fernanda López-Hernández, 55 J., erfolgte eine Koloskopie wegen positiver Familienanamnese für Kolorektalkarzinom. Im Sigmoid fand sich ein größeres Adenom (>10mm), Paristyp Is, ca. 17mm, mit breiter Basis, kein Hinweis auf Malignität. EMR wurde durchgeführt, Resektion verlief soweit komplett, Piecemeal-Technik aufgrund der Größe. Im Colon transversum kleiner 4 mm Polyp, Snare-Polypektomie problemlos. Keine Zeichen einer Neoplasie sonst. Beurteilung/Empfehlung: Nach Piecemeal-EMR bei >10mm-Adenom Kontrolle in 6 Monaten empfohlen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Don Miguel Ángel Soto Gutierrez, 68, stellte sich zur Routine-Koloskopie vor. Im Colon descendens zeigte sich ein ulzerierter Tumor, ca. 25mm, Paris IIa+IIc, JNET 2B, mit breiter Basis. Ausserdem hyperplastischer Polyp (2mm) im Rektum, entfernt per Kaltzange. Tumor-Biopsien entnommen. Keine weiteren Polypen. Beurteilung/Empfehlung: Tumorresektionsverdacht. Nachsorge je nach Tumorkonferenz und Therapieempfehlung.",
+    "pathology report": "Pathologisch zeigte sich ein Adenokarzinom im Biopsat aus dem Colon descendens.",
+    "follow up?": "nach Tumorboard"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Rafael Ernesto Zambrano Ruiz, 60 Jahre alt, zeigte sich ein Polyp im Colon sigmoideum, ca. 9mm (Paris Ip, JNET 2A), mit breiter Basis. Z.n. Loop-Resektion, problemlose Entfernung mit Einmal-Schlinge, kein aktives Bluten. keine weiteren Polypen. Keine makroskopischen Zeichen einer Neoplasie. Beurteilung/Empfehlung: Ein Adenom <10mm, Follow-up in 5 Jahren empfohlen.",
+    "pathology report": "Histologie ergab ein tubuläres Adenom ohne high-grade-IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Señora Guadalupe Martinez Sandoval, 63, kam zur Vorsorge. Es fanden sich insgesamt 6 Adenome (2x Rektum à 4mm, 1x Colon ascendens 8mm, 2x Colon transversum je 7mm, sowie 1 Polyp im Sigmoid von 13mm mit breiter Basis), alle Paristyp Is, JNET 2A, entfernt mit EMR (im Sigmoid Piecemeal-Technik, Rest als Loop-Resektion). Keine weiteren Zeichen einer Neoplasie. befund zügig dokumentiert. Beurteilung/Empfehlung: Wegen >5 Adenomen und Piecemeal-Resektion des größten Polypen Kontrolle in 6 Monaten empfohlen.",
+    "pathology report": "Im größten Polypen Nachweis eines tubulovillösen Adenoms mit low-grade-IEN. Keine Hinweise auf Adenokarzinom.",
+    "follow up?": "6 Monate"
+  }
+}

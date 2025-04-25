@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Herrn Dr. Siegfried Brauchle wurde im transversen Kolon ein 10 mm großer Polyp mit breiter Basis entdeckt. Dieser Polyp zeigte eine malignitätsverdächtige Oberfläche und wurde mittels endoskopischer Mukosaresektion (EMR) vollständig entfernt. Weitere Auffälligkeiten wie M. Crohn oder Colitis ulcerosa waren nicht zu erkennen. Beurteilung: Komplikationslose Resektion des Polypen. Histologie steht noch aus.",
+    "pathology report": "Histologie: tubulovillöses Adenom mit hochgradiger intraepithelialer Neoplasie (IEN), kein invasives Karzinom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Elfriede Müller wurde eine Koloskopie durchgeführt. Im Colon ascendens fanden sich zwei Polypen von jeweils 5 mm Größe, die mittels Schlingenabtragung entfernt wurden. Kein Hinweis auf Dysplasie beim ersten Polypen, der zweite Polyp zeigte einen verdächtigen Oberflächenaspekt. Es lagen keine Hinweise auf M. Crohn oder Colitis ulcerosa vor. Beurteilung: Beide Polypen wurden vollständig entfernt. Histologie steht noch aus.",
+    "pathology report": "Histologie: Tubuläre Adenome, kein Anhalt für Malignität.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Klaus-Dieter Wolkenstein stellte sich zur Koloskopie vor. Im Rektum fand sich ein 20 mm großer Polyp mit breiter Basis und malignitätsverdächtiger Oberfläche, der in Piecemeal-Technik reseziert wurde. Kein Hinweis auf M. Crohn oder Colitis ulcerosa. Beurteilung: Der Polyp wurde in Piecemeal-Technik erfolgreich entfernt. Histologie steht noch aus.",
+    "pathology report": "Histologie: Adenom mit hochgradiger intraepithelialer Neoplasie (IEN), kein invasives Karzinom.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Prof. Dr. Gertrud Mohnberg unterzog sich einer Koloskopie, bei der im Colon sigmoideum ein 15 mm großer Polyp mit malignitätsverdächtiger Oberfläche entdeckt wurde. Der Polyp wurde mittels EMR erfolgreich abgetragen. Kein Hinweis auf M. Crohn oder Colitis ulcerosa. Beurteilung: Der Polyp wurde komplikationslos entfernt. Histologie steht noch aus.",
+    "pathology report": "Histologie: Tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie (IEN), kein invasives Karzinom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Günther Traugott Holzinger wurde zur Vorsorgekoloskopie vorgestellt. Dabei fanden sich im Colon descendens insgesamt sechs Polypen zwischen 3 mm und 8 mm. Diese wurden mit der Schlingentechnik entfernt. Kein Hinweis auf Dysplasie oder entzündliche Darmerkrankungen wie M. Crohn oder Colitis ulcerosa. Beurteilung: Die Polypen wurden komplikationslos reseziert. Histologie steht noch aus.",
+    "pathology report": "Histologie: Tubuläre Adenome ohne Anhalt für Malignität.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

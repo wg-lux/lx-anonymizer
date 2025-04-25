@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Dr. Daryoush Hosseini, 58 Jahre, wurde zur Vorsorge-Koloskopie vorgestellt. Der Kolon war vollständig insuffliert und wurde bis zum Caecum inspiziert. Im Colon ascendens fanden sich multiple kleine Adenome mit einer Größe von < 5 mm. Zusätzlich wurde eine Paris 0-Ip Läsion von 8 mm Größe entdeckt. Das aufsteigende Colon war reizlos. Alle Adenome wurden mit einer kalten Schlinge abgetragen.",
+    "pathology report": "Histologie zeigt tubuläre Adenome ohne Anzeichen einer malignen Transformation. Keine Anzeichen einer hochgradigen intraepithelialen Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Amir Reza Tabatabaei, 64 Jahre, wird aufgrund positiver Familienanamnese kontrolliert. Der Kolon war vollständig insuffliert. Im Colon ascendens wurden multiple flache Adenome (< 5 mm) entdeckt und entfernt, darunter eine Paris 0-Ip Läsion von 6 mm Größe. Eine zusätzliche 12 mm große Läsion im Transversum wurde als tubuläres Adenom vermutet und vollständig mit der Schlinge entfernt.",
+    "pathology report": "Die Biopsie der 12 mm Läsion zeigt ein tubuläres Adenom ohne Zeichen von hoher Dysplasie. Die kleineren Adenome waren ebenfalls tubulär und ohne Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Shireen Yazdani, 47 Jahre, mit intermittierenden abdominellen Schmerzen. Kolon wurde vollständig insuffliert und keine spezifischen Reizzeichen im Colon ascendens gefunden. Es wurden sechs Polypen entdeckt, alle < 5 mm und flach im Colon ascendens verteilt. Eine Paris 0-Ip Läsion von 5 mm wurde ebenfalls mit Elektroschlinge reseziert.",
+    "pathology report": "Histologie zeigte 5 von 6 Polypen als tubuläre Adenome. Keine hochgradige intraepitheliale Neoplasie erkannt.",
+    "follow up?": "Unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Professor Mehran Zand, 72 Jahre, kam zur Routineuntersuchung. Kolon war vollständig insuffliert. Im Colon ascendens wurden fünf flache Adenome, alle < 5 mm, lokalisiert. Eine Paris 0-Ip Läsion von 10 mm wurde mit einer Piecemeal-Technik reseziert.",
+    "pathology report": "Die histologische Analyse der 10 mm Läsion ergab tubulovillöse Adenome mit mäßiger Dysplasie, jedoch keine hochgradige Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Farhad Kamkar, 54 Jahre, führte eine Kontroll-Koloskopie durch. Der Kolon war vollständig insuffliert, das aufsteigende Colon reizlos. Mehrere kleine, < 5 mm messende Adenome im Colon ascendens wurden mit der kalten Biopsiezange entfernt. Eine 15 mm große Paris 0-Ip Läsion wurde im Colon transversum entdeckt und mit der EMR-Technik entfernt.",
+    "pathology report": "Histologie zeigt eine 15 mm große Läsion mit tubulärem Adenom und niedriggradiger Dysplasie. Die kleinen Adenome waren alle tubulär.",
+    "follow up?": "3 Jahre"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Feroz Khattak, 65 J., Z.n. Radiatio des Rektums, war die Koloskopie technisch problemlos. Im Bereich des aufsteigende Colon reizlos, keine Auffälligkeit. Im Sigma fand sich eine Clip-induzierte Veränderung, kein Tumor, die Mukosa dort narbig verändert, kein Hinweis auf Malignität. Im Colon transversum fanden sich multiple flache Adenome (Paris 0-IIa), alle <5mm, max. 4mm groß, insgesamt 3 Stück, abgetragen mittels Kaltzange. Im absteigenden Colon ein sessiler serratierter Polyp (Paris 0-Is), 7mm, abgetragen mit Schlinge. Im rektalen Bereich mehrere Teleangiektasien sichtbar, passend zu Z.n. Radiatio. Keine Blutung, kein Tumor.",
+    "beurteilung": "Komplikationslose Polypektomie, keine Anzeichen für ein Karzinom. Empfehlung: Kontrolle nach 3 Jahren.",
+    "pathology report": "Tubuläres Adenom mit low-grade intraepithelialer Neoplasie (Adenome), serratierter Polyp ohne Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Frau Farhana Hussain, 58 J., Koloskopie wegen positiver Familienanamnese. Aufsteigendes Colon reizlos. Im Bereich des absteigenden Colon fand sich eine Clip-induzierte Veränderung, kein Tumor, kein weiteres Auffälligkeit. Im Colon transversum 2 flache Adenome (Paris 0-IIa), jeweils 4mm und 3mm, mit Kaltzange abgetragen. Im Rektum Teleangiektasien nach vorangegangener Radiatio, sonst unauffällig. Kein sessiler serratierter Polyp.",
+    "beurteilung": "Unauffällige Koloskopie mit Entfernung zweier kleiner Adenome. Empfehlung: Kontrolle in 5 Jahren.",
+    "pathology report": "Histologie: Zwei tubuläre Adenome mit low-grade intraepithelialer Neoplasie, kein Anhalt für Malignität.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Koloskopie bei Herrn Prof. Dr. Sajid Rehman, 74j., Z.n. Radiatio Prostata. Aufsteigendes Colon reizlos. Im Bereich des Colon descendens eine blasse Clip-induzierte Veränderung, keinTumor. Im Colon ascendens vier flache Adenome Paris 0-IIa, alle <5mm (max 4mm). Abtragung mit Schlinge. Im Rektum mukosale Teleangiektasien, kein aktives Bluten, passend zur Strahlenschädigung. Im Colon transversum ein sessiler serratierter Polyp, 8mm, abgetragen in Piecemeal-Technik.",
+    "beurteilung": "Polypektomie komplikationslos. Empfehlung: Kontrolle in 2–6 Monaten wegen Piecemeal-Abtragung.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Bashir Jamil, 61 J., Koloskopiekontrolle nach Polypektomie. Aufsteigendes Colon reizlos. Keine weiteren Veränderungen, jedoch im Bereich des rektosigmoid eine ältere Clip-induzierte Veränderung ohne Tumor. Im Colon descendens 6 flache Adenome, Paris 0-IIa, alle max. 4mm, mit Kaltzange entfernt. Zusätzlich im Colon transversum ein kleiner sessiler serratierter Polyp, 5mm, mit Schlinge abgetragen. Im Rektum nach Radiatio zahlreiche Teleangiektasien, keine aktive Blutung.",
+    "beurteilung": "Resektion mehrerer kleiner Adenome und eines serratierten Polypen, keine akuten Komplikationen. Empfehlung: Kontrolle unter 3 Jahren.",
+    "pathology report": "Fünf tubuläre Adenome mit low-grade Neoplasie, ein serratierter Polyp ohne Dysplasie.",
+    "follow up?": "<3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Saira Yousaf, 69 Jahre, Koloskopie wegen rektaler Blutung. Aufsteigendes Colon reizlos. Sigmoid keine Pathologie, im Colon transversum eine Clip-induzierte Veränderung, kein Tumor. Im Colon ascendens ein sessiler serratierter Polyp, 6mm, Schlingenabtragung. Im Rektum zahlreiche Teleangiektasien nach Radiatio, punktförmige Blutung (endoskopisch gestillt). Außerdem fanden sich 2 flache Adenome, je 3mm, Paris 0-IIa, im Colon descendens, entfernt mit Kaltzange.",
+    "beurteilung": "Unauffälliger Verlauf, alle Läsionen entfernt. Empfehlung: Kontrollein 5 Jahren.",
+    "pathology report": "Tubuläres Adenom mit low-grade intraepithelialer Neoplasie. Serratierter Polyp ohne Dysplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

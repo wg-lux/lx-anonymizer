@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Die vollständige Koloskopie zeigte eine auffällige Pigmentierung im Colon ascendens, Differentialdiagnose: Melanose. Kein pathologischer Befund im Colon irritabile. Ein frischer Koagel wurde im Colon transversum entdeckt, jedoch keine aktiven Blutungen. Der anastomotische Ring im terminalen Ileum ist vollständig. Es wurde ein 12 mm großes polypoides Adenom im Rektum (Paris IIa) entdeckt und mittels Schlinge entfernt. Beurteilung: Komplikationslose Resektion, Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Tubuläres Adenom mit fokaler hochgradiger intraepithelialer Neoplasie (IEN).",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Mikael Löfgren zeigte die Koloskopie einen frischen Koagel im Colon transversum, jedoch keine aktiven Blutungen. Im Colon irritabile kein pathologischer Befund. Die Schleimhaut zeigte eine auffällige Pigmentierung im Bereich des Colon sigmoideum, DD: Melanose. Der anastomotische Ring ist vollständig. Zwei Polypen von je 5 mm Größe wurden im Colon descendens entdeckt und mittels bioptischer Zange problemlos entfernt. Beurteilung: Komplikationslose Resektion. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Die Koloskopie bei Frau Svea Björkman zeigte im Colon transversum einen frischen Koagel ohne aktive Blutung. Kein pathologischer Befund im Colon irritabile. Auffällige Pigmentierung im Colon ascendens, Differentialdiagnose: Melanose. Der anastomotische Ring ist vollständig. Insgesamt wurden sechs Polypen zwischen 4 und 8 mm im Colon sigmoideum entdeckt und in Piecemeal-Technik entfernt. Beurteilung: Inkomplette Resektion bei einem Polypen mit >5 mm. Empfehlung der nächsten Koloskopie in 6 Monaten.",
+    "pathology report": "Tubuläre Adenome ohne Anzeichen von Malignität.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Lars Svensson wurde im Colon transversum ein frischer Koagel gesehen, jedoch keine aktiven Blutungen. Der anastomotische Ring ist vollständig. Es zeigte sich eine auffällige Pigmentierung im Colon sigmoideum, DD: Melanose. Kein pathologischer Befund im Colon irritabile. Ein 18 mm großer sessiler Polyp (Paris Is) im Colon ascendens wurde mit der Kaltpolypektomie-Technik entfernt. Beurteilung: Komplikationslose Resektion. Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Tubulovillöses Adenom mit mittelgradiger Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Die Koloskopie bei Frau Elin Åkesson zeigte einen frischen Koagel im Colon transversum, keine aktiven Blutungen. Der anastomotische Ring ist vollständig. Im Colon irritabile kein pathologischer Befund. Eine auffällige Pigmentierung im Colon sigmoideum wurde festgestellt, DD: Melanose. Kein Polyp entdeckt. Beurteilung: Keine Auffälligkeiten. Empfehlung der nächsten Koloskopie in 10 Jahren.",
+    "pathology report": "Nicht zutreffend.",
+    "follow up?": "10 Jahre"
+  }
+}

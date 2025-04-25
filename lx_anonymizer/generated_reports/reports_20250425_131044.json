@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Dr. Amir Hosseini, 58 Jahre alt, stellte sich zur Koloskopie nach einem Schub seiner bekannten Colitis ulcerosa vor. Im Colon descendens und Colon sigmoideum fanden sich abheilende Ulzera nach Colitis, die von erythematösen Arealen umgeben waren – DD: Entzündung. Zudem wurden im gesamten Colon vereinzelt gestörte Zottenstrukturen beobachtet, woraus Biopsien entnommen wurden. Weiterhin keine pathologischen Veränderungen sichtbar. Keine Polypektomie erforderlich. Beurteilung: Keine Auffälligkeiten bis auf die bekannten Befunde der Colitis ulcerosa, keine Komplikationen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Leyla Mirzadeh, 45 Jahre, wurde aufgrund von intermittierendem Durchfall zur Abklärung vorgestellt. Bei der Koloskopie zeigten sich im Colon transversum mehrere erythematöse Areale – DD: Entzündung. Im Colon ascendens wurde ein 7 mm großer Polyp nach Paris Typ Is, JNET 2A gefunden und mit der Schlinge reseziert. Im Rectum fanden sich gestörte Zottenstrukturen, aus denen Biopsien entnommen wurden. Beurteilung: Komplikationslose Resektion eines Polypen, keine weiteren pathologischen Veränderungen sichtbar.",
+    "pathology report": "Tubuläres Adenom mit low-grade IEN nach Resektion ohne Hinweis auf Karzinom. Histologie der Biopsien steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Reza Ghaemmaghami, 67 Jahre, mit Verdacht auf mikroskopische Colitis. Bei der Untersuchung zeigte sich im Colon descendens eine Plaque mit abheilenden Ulzera. Im Gesamtkolon fanden sich gestörte Zottenstrukturen, weshalb PE z.A. mikroskopische Colitis entnommen wurde. Keine pathologischen Veränderungen sichtbar. Beurteilung: Kein Hinweis auf makroskopische Veränderungen, Histologie ist erforderlich zur weiteren Abklärung.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Azadeh Zanjani, 52 Jahre alt, zur Routineuntersuchung. Die Koloskopie zeigte im Colon sigmoideum einen einzelnen 15 mm großen Polyp nach Paris Typ Is, JNET 2A. Er wurde komplett mit der Schlinge abgetragen. Die restliche Koloskopie zeigte keine pathologischen Veränderungen, jedoch mehrere erythematöse Areale im Colon ascendens – DD: Entzündung. Beurteilung: Polyp erfolgreich und komplikationslos reseziert, keine weiteren pathologischen Befunde.",
+    "pathology report": "Tubuläres Adenom mit high-grade IEN, keine Invasion.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Kourosh Yazdani, 60 Jahre, mit chronischem Durchfall in der Anamnese. Bei der Koloskopie fanden sich im gesamten Colon erythematöse Areale – DD: Entzündung, und im Colon ascendens abheilende Ulzera nach Colitis. Im Colon sigmoideum wurde ein 4 mm großer Polyp nach Paris Typ Is, JNET 2A gefunden und mit Kaltbiopsie entnommen. Keine gestörten Zottenstrukturen sichtbar. Beurteilung: Kein Hinweis auf makroskopische Neoplasie, unkomplizierte Polypektomie.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  }
+}

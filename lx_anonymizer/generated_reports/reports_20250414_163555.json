@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Dr. Johannes Niedermayer, 52 Jahre, mit bekannter Z.n. Hartmann-Operation aufgrund eines Kolonkarzinoms wird zur Vorsorgekoloskopie vorgestellt. Das Kolon konnte vollständig insuffliert werden. Die Ileozökalklappe war aufgrund von Stenosezeichen nicht passierbar. Im distalen Colon descendens wurde ein größeres Adenom von 15 mm (Paris IIa, JNET 2A) identifiziert und mit Schlinge abgetragen. Zudem wurden drei kleinere Adenome (<5 mm, Paris Is) reseziert.",
+    "pathology report": "Histologisch handelt es sich beim größeren Adenom um ein tubulär-villöses Adenom mit low-grade IEN. Die kleineren Polypen waren tubuläre Adenome ohne Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Mag. Anna-Maria Hauser, 40 Jahre, mit anamnestischem V.a. M. Crohn. Histologie der Ileozökalklappe ergab keine granulomatösen Entzündungen. Das Kolon konnte vollständig insuffliert werden. Im Colon sigmoideum zeigte sich ein Adenom von 20 mm (Paris Is, JNET 2A), das mittels Piecemeal-Technik reseziert wurde.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Fritz Müller, 67 Jahre, wird nach Z.n. Hartmann-Operation zur Kontrolle einbestellt. Das Kolon wurde vollständig insuffliert, die Ileozökalklappe konnte jedoch nicht passiert werden. Es wurden sechs Polypen (je <10 mm, Paris Is) im Colon transversum gefunden und in einer Sitzung entfernt.",
+    "pathology report": "Histologisch zeigen alle Polypen das Bild eines tubulären Adenoms ohne Dysplasie.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Dr. Sabine Angerer, 58 Jahre, mit bekannter Divertikulose. Das Kolon konnte vollständig insuffliert werden. Im Colon ascendens fanden sich zwei Polypen, jeweils 5 mm (Paris Is), die mit der Klammertechnik entfernt wurden. Die Ileozökalklappe zeigte sich nicht passierbar aufgrund einer scharfen Biegung.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Ing. Karl Plank, 55 Jahre. Anamnestisch Z.n. Hartmann-Operation und Verdacht auf M. Crohn. Während der Koloskopie war die Ileozökalklappe nicht passierbar. Das Kolon wurde vollständig insuffliert. Es fand sich ein 25 mm großes Adenom im Colon sigmoideum (Paris Ip, JNET 2B), das in Piecemeal-Technik entfernt wurde. Keine weiteren Auffälligkeiten.",
+    "pathology report": "Histologisch zeigt sich ein tubuläres Adenom mit high-grade IEN.",
+    "follow up?": "3 Jahre"
+  }
+}

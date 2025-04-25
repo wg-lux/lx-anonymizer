@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Frau Dr. Sari Koskinen, 53 Jahre alt, zeigte die Mukosa im Colon transversum einen ödematösen Aspekt. Insgesamt wurden drei Polypen entdeckt: Im Colon ascendens fand sich ein villöses Adenom von 12 mm Größe (Paris IIa), im Colon transversum ein tubuläres Adenom von 6 mm (Paris Is), und im Sigma ein weiterer Polyp von 8 mm (Paris Is). Die Polypektomie wurde mit Schlingenresektion und anschließendem Clip-Verschluss durchgeführt. Kein Blutnachweis. Beurteilung: Komplikationslose Resektion. Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Histologisch zeigte sich im villösen Adenom des Colon ascendens eine niedriggradige IEN. Die anderen Polypen zeigten kein Anzeichen von IEN.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Jussi Virtanen, 60 Jahre alt, stellte sich zur Routinekoloskopie vor. Die Mukosa im Colon transversum wies einen ödematösen Aspekt auf. Ein einzelner Polyp von 9 mm Größe (Paris IIa) wurde im Rektum entdeckt und mittels Kaltpolypektomie entfernt. Kein Blutnachweis. Eine PE zur Abklärung einer mikroskopischen Colitis wurde ebenfalls aus der ödematösen Mukosa entnommen. Beurteilung: Komplikationslose Entfernung, Histologie des Polypen steht noch aus, ebenso die PE. Empfehlung der nächsten Koloskopie in 5 Jahren, abhängig von der Histologie.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Prof. Heikki Lahti, 68 Jahre alt, präsentierte mit gastrointestinalen Beschwerden. Bei der Koloskopie zeigte sich die Mukosa im Colon transversum ödematös. Im Colon descendens fand sich ein Polyp (Paris IIa) von 15 mm, der mittels EMR in Piecemeal-Technik entfernt wurde. Kein Blutnachweis. Beurteilung: Aufgrund der Resektion in Piecemeal-Technik wird eine Kontrollkoloskopie in 3 Monaten empfohlen.",
+    "pathology report": "Der Polyp zeigte histologisch ein tubuläres Adenom mit niedriggradiger IEN.",
+    "follow up?": "3 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Ulla Mäkelä, 58 Jahre alt, stellte sich mit Verdacht auf Blutungen vor. In der Koloskopie zeigte sich die Mukosa im Colon transversum ödematös. Es wurde ein einzelnes villöses Adenom von 18 mm (Paris IIa) im Colon sigmoideum gefunden, welches mit einer Heißschlingenpolypektomie entfernt wurde. Kein Blutnachweis. Beurteilung: Komplikationslose Entfernung, nächste Koloskopie in 3 Jahren empfohlen.",
+    "pathology report": "Histologisch lag im Adenom eine niedriggradige IEN vor.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Tuomas Nieminen, 54 Jahre alt, zur Routinekoloskopie. Die Mukosa im Colon transversum zeigte einen ödematösen Aspekt. Es wurden sechs Polypen entdeckt: Zwei tubuläre Adenome von je 5 mm im Colon ascendens und vier villöse Adenome von 7, 8, 6, und 9 mm im Colon descendens. Alle Polypen wurden mittels Schlingenresektion entfernt. Kein Blutnachweis. Beurteilung: Komplikationslose Resektion der multiplen Adenome. Aufgrund der Anzahl von Polypen ist eine Kontrolluntersuchung in unter 3 Jahren erforderlich.",
+    "pathology report": "Histologie ergab tubuläre Adenome mit niedriggradiger IEN.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

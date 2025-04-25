@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Egon Müller aus Meißen zeigte sich eine reizte Mukosa im Rektosigmoid, die ansonsten unauffällig blieb. Im aufsteigenden Kolon wurde ein sessiler serratierter Polyp von ca. 9mm Grösse (Paris Is, JNET Typ 2) vorgefunden und mittels Kaltzangenresektion entfernt. Mukosabiopsien aus dem Sigma wurden entnommen, zeigten makroskopisch normale kryptenreiche Mukosa. Keine weiteren Polypen. Unauffällige Kontrolle nach EMR im transversum. Beurteilung: Komplikationslose Entfernung des sessilen serratierten Polypen, keine Hinweise auf Malignität. Empfehlung: erneute Koloskopie in 5 Jahren.",
+    "pathology report": "Histologie: Sessiler serratierter Polyp, keine Dysplasie. Mukosabiopsien: Normale kryptenreiche Mukosa.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Anna-Sophie Scholz, Leipzig, stellte sich zur Vorsorgekoloskopie vor. Im Sigma zeigte sich eine Reizung der Mukosa ohne Ulzerationen. Es wurden zur Abklärung Mukosabiopsien entnommen. Im Rektum kein Befund. Ein 20mm großer, breitbasiger Polyp (sessiler serratierter Polyp, Paris Is, JNET Typ 2B) im Colon descendens wurde in Piecemeal-Technik mittels Schlinge abgetragen. Die Kontrollstelle nach EMR im Colon transversum war unauffällig. Beurteilung: Komplikationslose Piecemeal-Resektion eines großen sessilen serratierten Polypen, Empfehlung zur Kontrollkoloskopie in 3 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "3 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Günther Zschopau, 67 J., präsentierte sich mit vorausgegangener EMR, deren Kontrollstelle unauffällig war. Im Rektosigmoid wurde eine Reizung der Mukosa gesehen, biopsiert. Im Colon ascendens fand sich ein 6mm sessiler serratierter Polyp (Paris Is), der mittels Kaltzange abgetragen wurde. Mukosabiopsien aus Sigma zeigen normale kryptenreiche Mukosa. Sonst keine weiteren Auffälligkeiten. Beurteilung: Komplikationslose Polypektomie, kein Anhalt für Malignität. Empfehlung: Kontrollkoloskopie in 5 Jahren.",
+    "pathology report": "Histologie: Sessiler serratierter Polyp, keine Dysplasie. Mukosa: Normale kryptenreiche Schleimhaut.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Olaf Reichardt, Dresden, wurde zur Nachsorge vorgestellt. Die Kontrollstelle nach früherer EMR war unauffällig. Im Sigma wurde eine auffällige Reizung der Mukosa beobachtet, weshalb Mukosabiopsien entnommen wurden. Weiterhin fand sich eine normale kryptenreiche Mukosa in den übrigen Darmabschnitten. Kein Polyp nachweisbar. Beurteilung: Keine Polypen, Mukosabiopsien wegen Reizung. Empfehlung: Nächste Vorsorgekoloskopie in 10 Jahren.",
+    "pathology report": "Histologie: Normale kryptenreiche Mukosa.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Ingeborg Brandt-Winkler aus Freiberg, 74 J., stellte sich mit unklaren Blutabgang vor. Im Rektosigmoid leicht gereizte Mukosa, Mukosabiopsien entnommen. Im Colon ascendens wurde ein sessiler serratierter Polyp von 12mm (JNET 2, Paris Is) gefunden und mit heißer Schlinge komplett entfernt, Resektionsrand mit Clip versorgt. Die unauffällige Kontrolle nach EMR im Colon transversum wurde durchgeführt. Übrige Abschnitte mit normaler kryptenreicher Mukosa. Beurteilung: Komplikationslose Resektion eines sessilen serratierten Polypen >10mm, Empfehlung Kontrollkoloskopie in 3 Jahren.",
+    "pathology report": "Histologie: Sessiler serratierter Polyp, low-grade Dysplasie. Mukosabiopsien: Normale kryptenreiche Mukosa.",
+    "follow up?": "3 Jahre"
+  }
+}

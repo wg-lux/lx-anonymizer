@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Dr. Nikolay Petrov, 58 Jahre. Die Koloskopie wurde aufgrund von intermittierenden abdominellen Schmerzen und Änderungen des Stuhlgangs durchgeführt. Die Untersuchung zeigte eine normale kryptenreiche Mukosa im Rektum und Colon sigmoideum. Ein frischer Koagel wurde im Colon transversum entdeckt, was auf eine submuköse Einblutung hindeutete. Im Colon ascendens wurde ein 12 mm großes villöses Adenom entdeckt (Paris IIa, JNET Typ 2B), welches mittels Schlingentechnik erfolgreich polypektomiert wurde.",
+    "pathology report": "Das villöse Adenom zeigte eine hochgradige intraepitheliale Neoplasie (IEN).",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Maria Stefanova, 65 Jahre. Koloskopie wegen positiver Familienanamnese für Kolorektalkarzinom. Die Untersuchung zeigt überwiegend normale kryptenreiche Mukosa. Im Colon descendens wurde ein kleinerer Polyp (5 mm, Paris Iso, JNET Typ 1) gefunden, welcher mit einer Biopsiezange entfernt wurde. Kein weiterer pathologischer Befund, lediglich Hinweise auf Colon irritabile.",
+    "pathology report": "Histologie ergab ein tubuläres Adenom ohne IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Ivo Dimitrov, 49 Jahre. Koloskopie aufgrund von rezidivierenden Diarrhoen. Die Untersuchung zeigte eine normale kryptenreiche Mukosa. Im Colon transversum wurde ein frischer Koagel über einer submukösen Einblutung gefunden. Des Weiteren zeigte sich ein 8 mm tubuläres Adenom im Colon ascendens (Paris Is, JNET Typ 2A), welches mittels Schlinge entfernt wurde.",
+    "pathology report": "Das tubuläre Adenom war ohne Zeichen von Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Prof. Kamen Georgiev, 72 Jahre. Koloskopie wegen anhaltender Anämie. Im Colon transversum fanden sich ein frischer Koagel und eine submuköse Einblutung. Ein 20 mm großes villöses Adenom im Rektum (Paris IIa+Is, JNET Typ 2B) wurde entdeckt und in Piecemeal-Technik entfernt.",
+    "pathology report": "Das villöse Adenom zeigte fokale hochgradige intraepitheliale Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Georgi Vasilev, 55 Jahre. Die Koloskopie wurde als Kontrolle nach früherer Polypenentfernung durchgeführt. Es wurde keine neue Polypenbildung festgestellt, die Mukosa war kryptenreich und unauffällig. Bei der Untersuchung fanden sich keine Hinweise auf eine submuköse Einblutung oder frische Koagel.",
+    "pathology report": "Kein histologischer Befund erforderlich.",
+    "follow up?": "10 Jahre"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Boris Ivanov, Z.n. Hemikolektomie vor 5 Jahren wegen Kolonkarzinom, wurde eine Kontrollkoloskopie durchgeführt. Die unauffällige Anastomose zeigte sich reizlos. Eine hochgradige IEN wurde in einem 12-mm tubulären Adenom im Colon transversum entdeckt. Polypektomie erfolgte mittels Schlinge, vollständige Resektion wurde erreicht. Kleine Stenose im Bereich der Anastomose wurde ohne Ballondilatation passiert. Biopsien aus unauffälligen Segmenten entnommen.\nBeurteilung: Komplikationslose Resektion des Adenoms, erneute Koloskopie in 3 Jahren empfohlen.",
+    "pathology report": "Histologie: Hochgradige intraepitheliale Neoplasie (IEN) in tubulärem Adenom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Prof. Elitsa Petrovna, Z.n. Hemikolektomie, vorgestellt zur Nachsorge. Die Anastomosenregion war reizlos, jedoch zeigte sich eine Stenose, die den Durchtritt des Koloskops erschwerte. Im Colon descendens fand sich ein 9-mm Adenom, welches mittels Kaltbiopsiezange vollständig entfernt wurde. Keine weiteren Auffälligkeiten.\nBeurteilung: Keine Komplikationen, Kontrolle in 5 Jahren empfohlen.",
+    "pathology report": "Histologie: Tubuläres Adenom, keine IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Stoyan Velkov, Z.n. Hemikolektomie, zeigte während der Untersuchung eine unauffällige Anastomose. Eine 8-mm große Stenose im Bereich der Anastomose war nach Ballondilatation passierbar. Im Colon ascendens wurde ein 15-mm Polyp nach Paris-Klassifikation Is entdeckt, der mittels endoskopischer Mukosaresektion (EMR) nur inkomplett entfernt werden konnte. Erneute Kontrolle empfohlen.\nBeurteilung: Inkomplette EMR, Kontrolle in 6 Monaten erforderlich.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Kiril Dimitrov, Langzeitnachsorge nach Hemikolektomie, zeigte bei der aktuellen Untersuchung eine reizlose Anastomose. Ein 20-mm Polyp im Rektum wurde mittels Schlinge und Klammertechnik in Piecemeal-Technik abgetragen. Keine Stenosen oder weiteren Polypen sichtbar.\nBeurteilung: Komplikationslose Resektion in Piecemeal-Technik, erneute Kontrolle in 6 Monaten empfohlen.",
+    "pathology report": "Histologie: Tubuläres Adenom mit fokaler hochgradiger IEN.",
+    "follow up?": "6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Aneta Stoianova hatte eine Koloskopie zur Nachsorge, Z.n. Hemikolektomie. Die Anastomose war reizlos, ohne Auffälligkeiten. Ein 5-mm großer Polyp im Sigma wurde mittels Kaltzange vollständig entfernt. Die übrige Kolonmukosa zeigte keine weiteren Auffälligkeiten.\nBeurteilung: Keine Komplikationen, Kontrolle in 10 Jahren empfohlen.",
+    "pathology report": "Histologie: Tubuläres Adenom, keine dysplastischen Veränderungen.",
+    "follow up?": "10 Jahre"
+  }
+}

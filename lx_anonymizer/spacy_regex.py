@@ -10,129 +10,168 @@ from .determine_gender import determine_gender
 class PatientDataExtractorLg:
     def __init__(self):
         self.nlp = spacy.load("de_core_news_lg")
-        self.ruler = self.nlp.add_pipe("entity_ruler", before="ner")
+        # Initialize ruler here and add it to the pipeline
+        # overwrite_ents=True allows the ruler to overwrite existing entities if needed
+        if "entity_ruler" not in self.nlp.pipe_names:
+            self.ruler = self.nlp.add_pipe("entity_ruler", config={"overwrite_ents": True}, before="ner")
+        else:
+            self.ruler = self.nlp.get_pipe("entity_ruler")
+        self.matcher = Matcher(self.nlp.vocab) # Initialize matcher here
         self.setup_matcher()
-    
+
     def setup_matcher(self):
-        """Setup the SpaCy Matcher with patient information patterns"""
-        self.matcher = Matcher(self.nlp.vocab)
-        
-        # Define patterns
-        pattern1 = [
-            {"LOWER": "patient"}, 
-            {"LOWER": ":"}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"TEXT": ","}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"LOWER": "geb"}, 
-            {"TEXT": "."}, 
-            {"SHAPE": "dd.dd.dddd", "OP": "?"},
-            {"LOWER": "fallnummer"}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dddddddd"}
+        """Setup the SpaCy Matcher and Ruler with robust patient information patterns"""
+        # Define pattern components using token attributes
+        pat_header = [
+            # Matches "Pat.", "Patient", "Patientin" at the start of the token, case-insensitive
+            {"LOWER": {"REGEX": r"^pat(?:ient|ientin|\.?)$"}},
+            # Optional colon directly after
+            {"TEXT": ":", "OP": "?"}
         ]
-        pattern2 = [
-            {"LOWER": "patient"}, 
-            {"LOWER": ":"}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"TEXT": ","}, 
-            {"POS": "PROPN", "OP": "+"}, 
-            {"LOWER": "geboren"}, 
-            {"LOWER": "am"}, 
-            {"TEXT": ":"}, 
-            {"SHAPE": "dd.dd.dddd", "OP": "?"}
+        name_block = [
+            # One or more capitalized words (likely last name)
+            {"IS_TITLE": True, "OP": "+"},
+            # Comma separator
+            {"TEXT": ","},
+            # One or more capitalized words (likely first name)
+            {"IS_TITLE": True, "OP": "+"}
+        ]
+        geb_block = [
+            # Matches "geb", "geb.", "geboren"
+            {"LOWER": {"IN": ["geb", "geb.", "geboren"]}},
+            # Optional "am"
+            {"LOWER": "am", "OP": "?"},
+             # Optional colon
+            {"TEXT": ":", "OP": "?"},
+            # Date in dd.dd.dddd format
+            {"TEXT": {"REGEX": r"^\d{1,2}\.\d{1,2}\.\d{4}$"}}
+        ]
+        fall_block = [
+            # Matches "Fallnr", "Fallnr.", "Fallnummer"
+            {"LOWER": {"REGEX": r"^fall(?:nr\.?|nummer)$"}},
+            # Optional colon
+            {"TEXT": ":", "OP": "?"},
+            # One or more digits
+            {"TEXT": {"REGEX": r"^\d+$"}}
         ]
 
-        # Add patterns to the matcher
-        self.matcher.add("PATIENT_INFO_1", [pattern1])
-        self.matcher.add("PATIENT_INFO_2", [pattern2])
+        # Combine components into the full pattern
+        # Structure: Header + Name + Optional(Geb) + Optional(Fall)
+        # Using {"OP": "*", "IS_SPACE": True} to allow optional spaces/newlines between blocks
+        spacer = {"OP": "*", "IS_SPACE": True} # Allows zero or more spaces/newlines
+        pattern = pat_header + spacer + name_block + spacer + \
+                  [{"OP": "?"}] + geb_block + spacer + \
+                  [{"OP": "?"}] + fall_block
 
-        # Add patterns to the EntityRuler
-        patterns = [
-            {"label": "PATIENT_INFO", "pattern": pattern1},
-            {"label": "PATIENT_INFO", "pattern": pattern2}
-        ]
-        self.ruler.add_patterns(patterns)
+        # Add the combined pattern to Matcher and Ruler
+        self.matcher.add("PATIENT_LINE", [pattern])
+        self.ruler.add_patterns([{"label": "PATIENT_INFO", "pattern": pattern}])
 
         # Debugging: Check if patterns are loaded
+        if not self.matcher:
+             raise ValueError("Matcher patterns were not added.")
         if len(self.ruler.patterns) == 0:
-            raise ValueError("No patterns were added to the EntityRuler.")
-    
+            warnings.warn("No patterns were added to the EntityRuler in setup_matcher.")
+
+
     def patient_data_extractor(self, text):
-        """Extract patient data using entity ruler"""
-        doc = self.nlp(text)
-        ruler = EntityRuler(self.nlp)
-        
-        patterns = [
-            r"Patient: (?P<last_name>[\w\s-]+) ,(?P<first_name>[\w\s-]+) geb\. (?:(?P<birthdate>\d{2}\.\d{2}\.\d{4}))? *Fallnummer: (?P<casenumber>\d+)",
-            r"Patient: (?P<last_name>[\w\s-]+),\s?(?P<first_name>[\w\s-]+) geboren am: (?:(?P<birthdate>\d{2}\.\d{2}\.\d{4}))?"
-        ]
-        
-        self.ruler.add_patterns(patterns)
-        self.nlp.add_pipe(ruler, before="ner")
-        for ent in doc.ents:
-            if ent.label_ == "PER":
-                return ent.text
-        return None
-        
+        # This method seems redundant if extract_patient_info uses the matcher/ruler correctly.
+        # Kept for compatibility if called elsewhere, but relies on extract_patient_info.
+        warnings.warn("patient_data_extractor is deprecated, use extract_patient_info", DeprecationWarning)
+        return self.extract_patient_info(text)
+
     def extract_patient_info(self, text):
         """
-        Extract patient information using SpaCy's matcher
-        
-        Parameters:
-        - text: str
-            Text containing patient information
-            
-        Returns:
-        - dict or None
-            Dictionary with patient information if found, None otherwise
+        Extract patient information using SpaCy's matcher based on token patterns.
         """
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
+        # Find the longest match if multiple overlap
+        best_match = None
+        longest_len = 0
         for match_id, start, end in matches:
+             if end - start > longest_len:
+                 longest_len = end - start
+                 best_match = (match_id, start, end)
+
+        if best_match:
+            match_id, start, end = best_match
             span = doc[start:end]
-            pattern_name = self.nlp.vocab.strings[match_id]
+            # Initialize default values
+            first_name, last_name, birthdate, casenumber = "NOT FOUND", "NOT FOUND", "NOT FOUND", "NOT FOUND"
 
-            # Extraktion basierend auf dem erkannten Muster
-            last_name, first_name, birthdate, casenumber = None, None, None, None
-            tokens = list(span)
+            # --- Extract based on token properties within the span ---
+            comma_indices = [i for i, token in enumerate(span) if token.text == ","]
+            geb_indices = [i for i, token in enumerate(span) if token.lower_ in ["geb", "geb.", "geboren"]]
+            fall_indices = [i for i, token in enumerate(span) if token.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
+            date_indices = [i for i, token in enumerate(span) if re.match(r"^\d{1,2}\.\d{1,2}\.\d{4}$", token.text)]
+            case_num_indices = [i for i, token in enumerate(span) if re.match(r"^\d+$", token.text) and i > 0 and span[i-1].lower_ in [":", "fallnr", "fallnr.", "fallnummer"]]
 
-            if pattern_name in ["PATIENT_INFO_1", "PATIENT_INFO_3", "PATIENT_INFO_5"]:
-                last_name = " ".join([t.text for t in tokens[2:tokens.index(tokens[3])]])
-                first_name = " ".join([t.text for t in tokens[tokens.index(tokens[3]) + 1:tokens.index(tokens[5])]])
-                birthdate = tokens[-3].text if tokens[-3].shape_ == "dd.dd.dddd" else None
-                casenumber = tokens[-1].text if tokens[-1].shape_ == "dddddddd" else None
+            # Extract Name (assuming structure: Header, Lastname, Comma, Firstname)
+            if comma_indices:
+                comma_idx = comma_indices[0]
+                # Find the start of the name block (after header and optional colon)
+                name_start_idx = 1
+                if span[1].text == ':':
+                    name_start_idx = 2
+                # Last name is between header and comma
+                last_name_tokens = [t.text for t in span[name_start_idx:comma_idx] if t.is_title]
+                if last_name_tokens:
+                    last_name = " ".join(last_name_tokens)
 
-            elif pattern_name in ["PATIENT_INFO_2", "PATIENT_INFO_4", "PATIENT_INFO_6"]:
-                last_name = " ".join([t.text for t in tokens[2:tokens.index(tokens[3])]])
-                first_name = " ".join([t.text for t in tokens[tokens.index(tokens[3]) + 1:tokens.index(tokens[5])]])
-                birthdate = tokens[-3].text if tokens[-3].shape_ == "dd.dd.dddd" else None
-                casenumber = tokens[-1].text if tokens[-1].shape_ == "dddddddd" else None
+                # First name is after comma until the next block (geb or fall) or end
+                name_end_idx = min(geb_indices + fall_indices + [len(span)])
+                first_name_tokens = [t.text for t in span[comma_idx + 1 : name_end_idx] if t.is_title]
+                if first_name_tokens:
+                    first_name = " ".join(first_name_tokens)
 
-            elif pattern_name == "PATIENT_INFO_7":
-                last_name = tokens[2].text
-                first_name = tokens[5].text
-                birthdate = tokens[-1].text
+            # Extract Birthdate
+            if date_indices:
+                # Find the date that likely follows a 'geb' keyword
+                date_idx = -1
+                if geb_indices:
+                    geb_idx = geb_indices[0]
+                    possible_dates = [d_idx for d_idx in date_indices if d_idx > geb_idx]
+                    if possible_dates:
+                        date_idx = min(possible_dates) # Take the first date after 'geb'
+                elif date_indices: # If no 'geb' but date exists
+                     date_idx = date_indices[0]
 
-            # Formatierung des Geburtsdatums
-            if birthdate:
-                try:
-                    birthdate = datetime.strptime(birthdate, "%d.%m.%Y").strftime("%Y-%m-%d")
-                except ValueError:
-                    birthdate = None
+                if date_idx != -1:
+                    birthdate_str = span[date_idx].text
+                    try:
+                        birthdate = datetime.strptime(birthdate_str, "%d.%m.%Y").strftime("%Y-%m-%d")
+                    except ValueError:
+                        birthdate = "INVALID DATE FORMAT" # Mark as invalid
 
-            # Rückgabe der extrahierten Informationen
-            if first_name and last_name:
-                return {
-                    "patient_first_name": first_name,
-                    "patient_last_name": last_name,
-                    "patient_dob": birthdate,
-                    "casenumber": casenumber,
-                    "patient_gender": determine_gender(first_name)
-                }
+            # Extract Casenumber
+            if case_num_indices:
+                # Find the number that likely follows a 'fall' keyword
+                num_idx = -1
+                if fall_indices:
+                    fall_idx = fall_indices[0]
+                    possible_nums = [c_idx for c_idx in case_num_indices if c_idx > fall_idx]
+                    if possible_nums:
+                        num_idx = min(possible_nums) # Take the first number after 'fall'
+                elif case_num_indices: # If no 'fall' but number exists (less reliable)
+                    num_idx = case_num_indices[-1] # Take the last number found
 
-        # Standardwerte, wenn keine Daten gefunden wurden
+                if num_idx != -1:
+                    casenumber = span[num_idx].text
+
+            # Determine Gender
+            gender = determine_gender(first_name) if first_name != "NOT FOUND" else "NOT FOUND"
+
+            return {
+                "patient_first_name": first_name,
+                "patient_last_name": last_name,
+                "patient_dob": birthdate,
+                "casenumber": casenumber,
+                "patient_gender": gender
+            }
+
+        # Fallback if no match found by the matcher
         return {
             "patient_first_name": "NOT FOUND",
             "patient_last_name": "NOT FOUND",
@@ -140,92 +179,38 @@ class PatientDataExtractorLg:
             "casenumber": "NOT FOUND",
             "patient_gender": "NOT FOUND"
         }
-    
+
     def _extract_using_entity_ruler(self, text):
-        """Helper method to extract patient information using entity ruler patterns"""
-        nlp = spacy.load("de_core_news_lg")
-        patterns = [
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z]." + "\s[A-z]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnummer: [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Pat.: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"}, 
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4} Fallnr. [0-9]+"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ [A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
-            {"label": "PER", "pattern": "Patientin: [A-Z][a-z]+,[A-Z][a-z]+ [A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
-            {"label": "PER", "pattern": "Patient: [A-Z][a-z]+,[A-Z][a-z]+ [A-Z][a-z]+ geb. [0-9]{2}\.[0-9]{2}\.[0-9]{4}"},
-            ]
-        ruler = EntityRuler(nlp)
-        ruler.add_patterns(patterns)
-        nlp.add_pipe(ruler, before="ner")
-        doc = nlp(text)
-        
-        for ent in doc.ents:
-            if ent.label_ == "PER":
-                # Try to extract first and last name from entity text
-                parts = ent.text.split()
-                if len(parts) >= 3:  # "Patient:" + first_name + last_name
-                    first_name = parts[1]
-                    last_name = parts[2]
-                    gender = determine_gender(first_name)
-                    return {
-                        'patient_first_name': first_name,
-                        'patient_last_name': last_name,
-                        'birthdate': None,
-                        'casenumber': None,
-                        'patient_gender': gender
-                    }
-                elif len(parts) == 2:  # Nur 2 Teile gefunden
-                    first_name = parts[1]
-                    last_name = "UNKNOWN"
-                    gender = determine_gender(first_name)
-                    if gender == "male":
-                        gender = "Männlich"
-                    elif gender == "female":
-                        gender = "Weiblich"
-                    else:
-                        gender = "Unknown"
-                    
-                    return {
-                        'patient_first_name': first_name,
-                        'patient_last_name': last_name,
-                        'birthdate': None,
-                        'casenumber': None,
-                        'patient_gender': gender
-                    }
-        
-        # Wenn nichts gefunden wurde, geben wir sinnvolle Standardwerte zurück
+        """
+        Helper method potentially using entity ruler results.
+        NOTE: The string patterns previously here were problematic.
+        This method might need redesign or removal depending on usage.
+        It currently relies on the ruler patterns set in setup_matcher.
+        """
+        doc = self.nlp(text)
+        patient_info_ents = [ent for ent in doc.ents if ent.label_ == "PATIENT_INFO"]
+
+        if patient_info_ents:
+            # Process the found entities if needed, e.g., extract details
+            # This logic would be similar to the extraction in extract_patient_info
+            # For now, just return a placeholder indicating an entity was found
+            return {"status": "PATIENT_INFO entity found by ruler"}
+        else:
+            # Fallback or further processing if no PATIENT_INFO entity found
+            # Example: Look for general PER entities (less reliable)
+            person_ents = [ent.text for ent in doc.ents if ent.label_ == "PER"]
+            if person_ents:
+                 return {"status": "PER entities found", "persons": person_ents}
+
         return {
+            'status': "No relevant entities found by ruler",
             'patient_first_name': "Unknown",
             'patient_last_name': "Unknown",
             'birthdate': None,
             'casenumber': None,
             'patient_gender': "Unknown"
         }
-        
+
     def examiner_data_extractor(self, text):
         nlp = spacy.load("de_core_news_lg")
         doc = nlp(text)
