@@ -3,83 +3,77 @@ from logging import root
 from pathlib import Path
 import requests
 from .custom_logger import get_logger
-import subprocess
-import time
-import subprocess
+import subprocess, time, logging, shutil, sys
 import os
 logger = get_logger(__name__)
 
 class OllamaService:
     """Service to interact with a locally running Ollama instance."""
     
-    def __init__(self, base_url="http://127.0.0.1:11434", model_name="deepseek-r1:1.5b"):
+    OLLAMA_BIN = shutil.which("ollama") or "ollama"
 
-        self.base_url = base_url
+    def __init__(self,
+                 base_url: str = "http://127.0.0.1:11434",
+                 model_name: str = "deepseek-r1:1.5b"):
+        self.base_url = base_url.rstrip("/")
         self.model_name = model_name
-        self.ensure_model_is_running()  # Ensure the model is running during initialization
-        logger.info(f"Initialized OllamaService with base_url: {self.base_url}, model: {self.model_name}")
-        
-    def correct_ocr_with_ollama(self, text):
-        """Convenience function to correct OCR text using the DeepSeek model.
-        
-        It first checks if the Ollama server is running and, if not, starts it using
-        the 'devenv up -d' command. The function then proceeds to perform OCR text correction.
-        """
-        # First check if the server is running
-        if not self.is_server_running():
-            logger.info("Ollama service is not running. Starting with 'devenv up -d'...")
-            try:
-                anon_env = os.environ.copy()
-                anon_env["DEVENV_RUNTIME"] = "./lx-anonymizer"          
-                subprocess.run(["devenv", "up", "-d"], env=anon_env, check=True)
-                # Wait for the service to properly start (adjust sleep time as needed)
-                time.sleep(10)
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to start devenv: {e}")
-                # Optionally, return the original text if the service fails to start
-                return text
+        self._logger = get_logger(__name__)
+        #self.start_server_with_devenv()
 
-        return self.correct_ocr_text(text)
 
-    def is_server_running(self):
-        """Check if the Ollama server is accessible."""
+        if not self.probe_server():
+            self.wait_until_ready()           # <- BLOCKS until the API replies
+
+        self.ensure_model_is_running()        # <- lightweight, non-blocking
+        self._logger.info("Ollama ready on %s", self.base_url)
+
+    # --------------------------------------------------------------------- #
+    # 1) Probe   — return True/False,   NO side effects
+    # --------------------------------------------------------------------- #
+    def probe_server(self, timeout: float = 2.0) -> bool:
         try:
-            response = requests.get(f"{self.base_url}/api/version")
-            if response.status_code == 200:
-                logger.info("Ollama server is running")
-                return True
-            else:
-                logger.error(f"Ollama server is not running. Status code: {response.status_code}")
-                return False
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Ollama server is not running: {e}")
+            r = requests.get(f"{self.base_url}/api/version", timeout=timeout)
+            return r.status_code == 200
+        except requests.exceptions.ConnectionError:
             return False
 
-    def ensure_model_is_running(self):
-        """Ensure the specified model is running using subprocess."""
-        try:
-            # Check if the model is already running
-            process = subprocess.run(["ollama", "ps"], capture_output=True, text=True)
-            if self.model_name in process.stdout:
-                logger.info(f"Model {self.model_name} is already running.")
-                return True
+    # --------------------------------------------------------------------- #
+    # 2) Start   — only start,          NO polling / waiting
+    # --------------------------------------------------------------------- #
+    def start_server_with_devenv(self) -> None:
+        self._logger.info("Starting Ollama daemon via `devenv up -d` …")
+        env = os.environ.copy()
+        env["DEVENV_RUNTIME"] = "./lx-anonymizer"
+        subprocess.run(["devenv", "up", "-d"], env=env, check=True)  # raises on failure
 
-            # Run the model using subprocess
-            logger.info(f"Starting model {self.model_name} in background...")
-            subprocess.Popen(["ollama", "run", self.model_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # --------------------------------------------------------------------- #
+    # 3) Wait    — poll until probe succeeds (max_wait seconds)
+    # --------------------------------------------------------------------- #
+    def wait_until_ready(self, interval: int = 2, max_wait: int = 60) -> None:
+        deadline = time.time() + max_wait
+        while time.time() < deadline:
+            if self.probe_server():
+                return
+            self._logger.info("Waiting for Ollama …")
+            time.sleep(interval)
+        raise TimeoutError("Ollama did not start within %ss" % max_wait)
 
-            # Wait for a short time to allow the model to start
-            time.sleep(5)  # Adjust the waiting time as needed
+    # --------------------------------------------------------------------- #
+    # 4) Ensure model is loaded (unchanged logic, but idempotent)
+    # --------------------------------------------------------------------- #
+    def ensure_model_is_running(self) -> None:
+        out = subprocess.run([self.OLLAMA_BIN, "ps"],
+                             capture_output=True, text=True, check=True).stdout
+        if self.model_name in out:
+            return                                  # already there
 
-            logger.info(f"Model {self.model_name} started in background.")
-            return True
-        except Exception as e:
-            logger.error(f"Error starting model {self.model_name}: {e}")
-            return False
+        self._logger.info("Launching model %s …", self.model_name)
+        subprocess.Popen([self.OLLAMA_BIN, "run", self.model_name],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
     def generate_text(self, prompt, max_tokens=1000, temperature=0.3):
         """Generate text using the specified model."""
-        if not self.is_server_running():
+        if not self.probe_server():
             logger.error("Ollama server is not running")
             return None
 
@@ -127,7 +121,7 @@ class OllamaService:
 
     def correct_ocr_text(self, text):
         """Correct OCR text using an Ollama model."""
-        if not self.is_server_running():
+        if not self.probe_server():
             logger.error("Ollama server is not running")
             return text
 
@@ -167,7 +161,7 @@ Korrigierter Text:"""
 
     def correct_ocr_text_in_chunks(self, text):# -> Any | Any:
         """Correct OCR text using an Ollama model."""
-        if not self.is_server_running():
+        if not self.probe_server():
             logger.error("Ollama server is not running")
             return text
 
@@ -204,10 +198,33 @@ Korrigierter Text:"""
         corrected_text = " ".join(corrected_chunks)
         logger.info("OCR text correction completed.")
         return corrected_text
+    
+    def extract_report_meta(self, text):
+        """Extract metadata from the report text."""
+        prompt = f"""Bitte extrahiere die Patientendaten aus dem folgenden Text. Gib als Antwort **nur** die extrahierten Daten zurück, ohne Erklärungen oder Kommentare.
+Hier ist der Text:
+{text}
+Extrahierte Daten:"""
+        try:
+            data = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+            }
+            response = requests.post(f"{self.base_url}/api/generate", json=data)
+
+            if response.status_code == 200:
+                result = response.json()
+                return result["response"]
+            else:
+                logger.error(f"Error extracting report metadata: {response.status_code} - {response.text}")
+                return None  # Return None on error
+        except Exception as e:
+            logger.error(f"Error extracting report metadata: {e}")
+            return None
 
 # Global instance of the service for convenience.
 ollama_service = OllamaService()
 
-def correct_ocr_with_ollama(text):
-    """Convenience function to correct OCR text using the DeepSeek model."""
-    return ollama_service.correct_ocr_text(text)
+

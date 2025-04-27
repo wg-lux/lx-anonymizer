@@ -187,7 +187,7 @@ class ModelService:
         ollama_service.model_name = model_path  # Update the model_name attribute
         logger.info(f"Ollama model path set to: {model_path}")
         
-        if not ollama_service.is_server_running():
+        if not ollama_service.probe_server():
             logger.error("Ollama server is not running")
             return False
         else:
@@ -210,11 +210,11 @@ class ModelService:
                 return ""
                 
         # Use the ollama service to correct the text
-        return ollama_service.correct_ocr_with_ollama(text)
+        return ollama_service.correct_ocr_text(text)
    
     def correct_text_with_ollama_in_chunks(self, text, chunk_size=2048):
         """Use Ollama with current model to correct text in smaller chunks"""
-        if not ollama_service.is_server_running():
+        if not ollama_service.probe_server():
             logger.error("Ollama server is not running")
             return text
         if not text:

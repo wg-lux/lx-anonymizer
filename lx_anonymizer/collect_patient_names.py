@@ -14,11 +14,18 @@ If --llm-extractor is not provided, SpaCy/Regex extraction is used.
 """
 
 from __future__ import annotations
+import subprocess, time, logging, shutil, sys
+
 
 import argparse
 import json
+import hashlib
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Any, Optional
+# Import tqdm
+from tqdm import tqdm
+
+from torch.utils.hipify.hipify_python import TrieNode
 
 from .report_reader import ReportReader        # <- your class
 from .custom_logger import get_logger
@@ -27,6 +34,7 @@ logger = get_logger(__name__)
 # --------------------------------------------------------------------------- #
 # helpers for JSON Lines handling
 # --------------------------------------------------------------------------- #
+
 
 def load_existing_ids_jsonl(output_file: Path) -> Set[Tuple[str, str]]:
     """Loads existing (file, report_id) tuples from a JSON Lines file."""
@@ -67,6 +75,70 @@ def append_result_to_jsonl(output_file: Path, result: Dict):
 # --------------------------------------------------------------------------- #
 # Processing functions
 # --------------------------------------------------------------------------- #
+
+def calculate_pdf_hash(report_file_path: Path) -> Optional[str]:
+    """Calculates the SHA256 hash of a PDF file."""
+    # Construct the path to the corresponding PDF file
+    pdf_file_path = report_file_path.with_suffix(".pdf")
+    try:
+        if not pdf_file_path.is_file():
+            logger.error(f"Corresponding PDF file not found for {report_file_path.name}: {pdf_file_path}")
+            return None
+        hasher = hashlib.sha256()
+        with pdf_file_path.open("rb") as pdf_file:
+            while chunk := pdf_file.read(8192):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except FileNotFoundError:
+        # This specific error message was requested by the user prompt, keep it for clarity
+        logger.error(f"Could not calculate PDF hash for {report_file_path.name}: [Errno 2] No such file or directory: '{pdf_file_path}'")
+        return None
+    except Exception as e:
+        logger.error(f"Error calculating hash for {pdf_file_path}: {e}")
+        return None
+
+def process_report_file(report_file_path: Path, reader: ReportReader) -> List[Dict[str, Any]]:
+    """Processes a single JSON report file and extracts patient names."""
+    results = []
+    try:
+        with report_file_path.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Calculate PDF hash using the full path
+        pdf_hash = calculate_pdf_hash(report_file_path)
+
+        if isinstance(data, list): # Handle cases where the JSON root is a list
+            reports = data
+        elif isinstance(data, dict) and "reports" in data: # Handle cases where reports are under a "reports" key
+             reports = data["reports"]
+        else:
+             logger.warning(f"Unexpected JSON structure in {report_file_path.name}. Expected list or dict with 'reports' key.")
+             return []
+
+
+        for report_data in reports:
+            report_id = report_data.get("id", "UnknownID") # Get report ID or use a default
+            header_line = reader.find_header_line(report_data.get("text", ""))
+            if header_line:
+                patient_info = reader.extract_patient_data(header_line)
+                if patient_info.get("patient_last_name") or patient_info.get("patient_first_name"):
+                    results.append({
+                        "file": report_file_path.name, # Store only the filename
+                        "report_id": report_id,
+                        "first_name": patient_info.get("patient_first_name"),
+                        "last_name": patient_info.get("patient_last_name"),
+                        # Add pdf_hash if needed in the output
+                        # "pdf_hash": pdf_hash
+                    })
+            else:
+                 logger.debug(f"No header line found in report {report_id} of file {report_file_path.name}")
+
+
+    except json.JSONDecodeError:
+        logger.error(f"Error decoding JSON from file: {report_file_path}")
+    except Exception as e:
+        logger.error(f"Error processing file {report_file_path}: {e}")
+    return results
 
 def _process_json_file(
     rr: ReportReader,
@@ -115,7 +187,9 @@ def _process_json_file(
         extracted_meta = {}
         if llm_extractor:
             logger.info(f"Using LLM extractor '{llm_extractor}' for JSON report {report_id}")
+            
             if llm_extractor == 'deepseek':
+
                 extracted_meta = rr.extract_report_meta_deepseek(raw_text, fp)
             elif llm_extractor == 'medllama':
                 extracted_meta = rr.extract_report_meta_medllama(raw_text, fp)
@@ -211,11 +285,11 @@ def collect_names(folder: Path, output_file: Path, llm_extractor: str | None) ->
     else:
         logger.info("Using default SpaCy/Regex extractor.")
 
-    for fp in folder.iterdir():
-        if not fp.is_file():
-            continue
+    # Get list of files to process for tqdm
+    files_to_process = [fp for fp in folder.iterdir() if fp.is_file()]
 
-        logger.info(f"Processing file: {fp.name}")
+    # Wrap the loop with tqdm for progress bar
+    for fp in tqdm(files_to_process, desc="Processing files", unit="file"):
         newly_added_count = 0
         try:
             if fp.suffix.lower() == ".json":
@@ -227,7 +301,6 @@ def collect_names(folder: Path, output_file: Path, llm_extractor: str | None) ->
 
             if newly_added_count > 0:
                 total_new_results += newly_added_count
-                logger.info(f"Added {newly_added_count} new records from {fp.name}")
 
         except Exception as e:
             logger.error(f"Failed to process file {fp.name}: {e}", exc_info=True)

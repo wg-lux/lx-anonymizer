@@ -1,18 +1,22 @@
 import spacy
 from spacy.matcher import Matcher
-from spacy.pipeline import EntityRuler
 from datetime import datetime
 import re
 from .determine_gender import determine_gender
 from .custom_logger import get_logger
-# Remove subprocess import
-# import subprocess
 # Import spacy's download function
 import spacy.cli
 
 logger = get_logger(__name__)
 # import spacy language model
 from spacy.language import Language
+
+# Define a set of title words to ignore (lowercase)
+TITLE_WORDS = {
+    "herr", "herrn", "frau", "f", "fru", "fruis", "fruharuka",  # 'fruis', 'fruharuka' likely OCR errors
+    "dr.", "dr", "doctor", "prof.", "prof", "professor", "ing.", "ing",
+    "señor", "señorita", "monsieur", "mr.", "mrs.", "sir", "mag.", "baron"
+}
 
 def load_spacy_model(model_name:str="de_core_news_lg") -> "Language":
     try:
@@ -92,12 +96,11 @@ def _clean_date(date_str: str) -> str | None:
 class PatientDataExtractor:
     """
     Rule-based header line extractor for German medical reports.
-    Uses SpaCy Matcher and EntityRuler with token-based patterns.
+    Uses SpaCy Matcher with token-based patterns.
     Loads the SpaCy model once and reuses it.
     """
 
     _nlp: Language | None = None
-    _ruler: EntityRuler | None = None
     _matcher: Matcher | None = None
     _rules_built = False
 
@@ -106,59 +109,57 @@ class PatientDataExtractor:
              PatientDataExtractor._nlp = load_spacy_model("de_core_news_lg")
 
         if not PatientDataExtractor._rules_built:
-            if "entity_ruler" not in PatientDataExtractor._nlp.pipe_names:
-                 PatientDataExtractor._ruler = PatientDataExtractor._nlp.add_pipe(
-                    "entity_ruler", before="ner", config={"overwrite_ents": True}
-                 )
-            else:
-                 PatientDataExtractor._ruler = PatientDataExtractor._nlp.get_pipe("entity_ruler")
-
             PatientDataExtractor._matcher = Matcher(PatientDataExtractor._nlp.vocab)
             self._build_rules()
             PatientDataExtractor._rules_built = True
 
         self._nlp = PatientDataExtractor._nlp
         self._matcher = PatientDataExtractor._matcher
-        self._ruler = PatientDataExtractor._ruler
 
     def _build_rules(self) -> None:
         """Builds the token-based patterns including OCR variants."""
-        # Include OCR variants "pationt" and potential anonymizer output "patbien"
         HEADER_VARIANTS = [
-            r"^pat(?:ient|ientin|\.?)$",   # original: Pat./Patient/Patientin
-            r"^pationt$",                  # common OCR slip: Pationt
-            r"^patbien$",                  # potential anonymizer output: PatBien
+            r"^pat(?:ient|ientin|\.?)$",
+            r"^pationt$",
+            r"^patbien$",
         ]
         pat_header = [
-            {"LOWER": {"REGEX": "(" + "|".join(HEADER_VARIANTS) + ")"}}, # Combined regex
+            {"LOWER": {"REGEX": "(" + "|".join(HEADER_VARIANTS) + ")"}},
             {"TEXT": ":", "OP": "?"}
         ]
         name_tokens = [
-            {"IS_TITLE": True, "OP": "+"},
-            {"TEXT": ","},
-            {"IS_TITLE": True, "OP": "+"}
+             {"OP": "+", "IS_TITLE": True}
         ]
+        comma_sep = {"TEXT": ","}
+
         geb_block = [
             {"LOWER": {"IN": ["geb", "geb.", "geboren"]}},
             {"LOWER": "am", "OP": "?"},
             {"TEXT": ":", "OP": "?"},
-            # Use the updated DATE_RE pattern allowing optional dots/spaces OR 8 digits
             {"TEXT": {"REGEX": DATE_RE.pattern}}
         ]
         fall_block = [
             {"LOWER": {"REGEX": r"^fall(?:nr\.?|nummer)$"}},
             {"TEXT": ":",  "OP": "?"},
-            {"TEXT": {"REGEX": r"\d+"}}
+            {"TEXT": {"REGEX": r"[\w/-]+"}}
         ]
         space = {"IS_SPACE": True, "OP": "*"}
 
-        full_pattern = pat_header + [space] + name_tokens + \
-                       [space] + [{"OP": "?"}] + geb_block + [space] + \
+        full_pattern = pat_header + [space] + \
+                       name_tokens + [comma_sep] + [space] + \
+                       name_tokens + [space] + \
+                       [{"OP": "?"}] + geb_block + [space] + \
                        [{"OP": "?"}] + fall_block
 
-        PatientDataExtractor._matcher.add("PATIENT_LINE", [full_pattern])
-        PatientDataExtractor._ruler.add_patterns([{"label": "PATIENT_INFO", "pattern": full_pattern}])
-        logger.debug("SpaCy rules for PatientDataExtractor built (with OCR variants).")
+        name_part = {"POS": {"IN": ["PROPN", "NOUN"]}, "IS_TITLE": True, "OP": "+"}
+        simpler_pattern = pat_header + [space] + \
+                          [name_part] + [space, {"TEXT": ",", "OP": "?"}, space] + \
+                          [name_part] + [space] + \
+                          [{"OP": "?"}] + geb_block + [space] + \
+                          [{"OP": "?"}] + fall_block
+
+        PatientDataExtractor._matcher.add("PATIENT_LINE", [simpler_pattern])
+        logger.debug("SpaCy rules for PatientDataExtractor built (Matcher only).")
 
     def __call__(self, text: str) -> dict[str, str | None]:
         if not self._nlp or not self._matcher:
@@ -173,79 +174,111 @@ class PatientDataExtractor:
 
         match_id, start, end = max(matches, key=lambda m: m[2] - m[1])
         span = doc[start:end]
+        logger.debug(f"Matched span: '{span.text}'")
 
         tokens = list(span)
-        first_name, last_name, birthdate, case_num = "NOT FOUND", "NOT FOUND", "NOT FOUND", "NOT FOUND"
+        first_name, last_name, birthdate, case_num = None, None, None, None
 
         comma_indices = [i for i, t in enumerate(tokens) if t.text == ","]
+        header_end_idx = 0
+        for i, token in enumerate(tokens):
+            if token.lower_ in ["patient", "patientin", "pat.", "pationt", "patbien", ":"]:
+                 header_end_idx = i + 1
+            else:
+                 if tokens[header_end_idx-1].text != ':':
+                     break
+
         if comma_indices:
             comma_idx = comma_indices[0]
-            name_start_idx = 1
-            if len(tokens) > 1 and tokens[1].text == ':':
-                name_start_idx = 2
-
-            last_name_tokens = [t.text for t in tokens[name_start_idx:comma_idx] if t.is_title]
-            if last_name_tokens:
-                last_name = " ".join(last_name_tokens)
-
+            last_name_candidates = [t for t in tokens[header_end_idx:comma_idx] if t.is_alpha or t.like_num]
             geb_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["geb", "geb.", "geboren"]]
             fall_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
-            next_block_start = min(geb_indices + fall_indices + [len(tokens)])
-            first_name_tokens = [t.text for t in tokens[comma_idx + 1 : next_block_start] if t.is_title]
-            if first_name_tokens:
-                first_name = " ".join(first_name_tokens)
+            non_name_start_idx = min(geb_indices + fall_indices + [len(tokens)])
 
-        # Extract birth date using the updated DATE_RE
-        date_token = next((t for t in tokens if DATE_RE.fullmatch(t.text)), None)
-        if date_token:
-            birthdate_cleaned = _clean_date(date_token.text) # Use updated function
-            birthdate = birthdate_cleaned if birthdate_cleaned is not None else "INVALID DATE FORMAT"
+            first_name_candidates = [t for t in tokens[comma_idx + 1 : non_name_start_idx] if t.is_alpha or t.like_num]
+
+            last_name_filtered = [t.text for t in last_name_candidates if t.lower_ not in TITLE_WORDS]
+            first_name_filtered = [t.text for t in first_name_candidates if t.lower_ not in TITLE_WORDS]
+
+            if last_name_filtered:
+                last_name = " ".join(last_name_filtered)
+            if first_name_filtered:
+                first_name = " ".join(first_name_filtered)
         else:
-             birthdate = None
+            logger.warning(f"No comma found in matched span: '{span.text}'. Name splitting might be inaccurate.")
+            geb_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["geb", "geb.", "geboren"]]
+            fall_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
+            non_name_start_idx = min(geb_indices + fall_indices + [len(tokens)])
+            name_candidates = [t for t in tokens[header_end_idx:non_name_start_idx] if t.is_alpha or t.like_num]
+            name_filtered = [t.text for t in name_candidates if t.lower_ not in TITLE_WORDS]
+            if len(name_filtered) >= 2:
+                 last_name = " ".join(name_filtered)
+            elif len(name_filtered) == 1:
+                 last_name = name_filtered[0]
+
+        date_match = DATE_RE.search(span.text)
+        if date_match:
+            raw_date_str = date_match.group(0)
+            date_token = next((t for t in tokens if t.idx >= span.start_char + date_match.start() and t.idx < span.start_char + date_match.end() and DATE_RE.fullmatch(t.text)), None)
+            if date_token:
+                 prev_token_idx = date_token.i - span.start -1
+                 if prev_token_idx >= 0:
+                     prev_token = tokens[prev_token_idx]
+                     if prev_token.lower_ in ["geb", "geb.", "geboren", "am", ":"]:
+                         birthdate_cleaned = _clean_date(date_token.text)
+                         birthdate = birthdate_cleaned if birthdate_cleaned is not None else None
+                     else:
+                          logger.debug(f"Date '{date_token.text}' found but not preceded by expected keyword.")
+                 else:
+                      birthdate_cleaned = _clean_date(date_token.text)
+                      birthdate = birthdate_cleaned if birthdate_cleaned is not None else None
+            else:
+                 logger.debug(f"Regex matched date '{raw_date_str}' but no corresponding token found or context mismatch.")
 
         case_token = None
-        for i, t in enumerate(tokens):
-            if t.like_num and i > 0:
-                prev_token = tokens[i-1]
-                if prev_token.lower_ in ("fallnr", "fallnr.", "fallnummer", ":"):
-                     if prev_token.text == ":" and i > 1 and \
-                        tokens[i-2].lower_ in ("fallnr", "fallnr.", "fallnummer"):
-                         case_token = t
-                         break
-                     elif prev_token.lower_ in ("fallnr", "fallnr.", "fallnummer"):
-                         case_token = t
-                         break
+        fall_keyword_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
+        if fall_keyword_indices:
+            keyword_idx = fall_keyword_indices[0]
+            if keyword_idx + 1 < len(tokens):
+                next_token = tokens[keyword_idx + 1]
+                if next_token.text == ":" and keyword_idx + 2 < len(tokens):
+                    potential_case_token = tokens[keyword_idx + 2]
+                    if re.fullmatch(r"[\w/-]+", potential_case_token.text):
+                        case_token = potential_case_token
+                elif re.fullmatch(r"[\w/-]+", next_token.text):
+                     case_token = next_token
+
         if case_token:
             case_num = case_token.text
+        else:
+             geb_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["geb", "geb.", "geboren"]]
+             fall_indices = [i for i, t in enumerate(tokens) if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
+             non_name_start_idx = min(geb_indices + fall_indices + [len(tokens)])
+             potential_case_tokens = [t for i, t in enumerate(tokens) if i >= non_name_start_idx and re.fullmatch(r"[\w/-]+", t.text) and t.text != birthdate]
+             if potential_case_tokens:
+                  case_num = potential_case_tokens[0].text
 
-        gender = determine_gender(first_name) if first_name and first_name != "NOT FOUND" else "NOT FOUND"
-
-        # Map internal "NOT FOUND" for names to None before returning
-        if first_name == "NOT FOUND": first_name = None
-        if last_name == "NOT FOUND": last_name = None
-        if gender == "NOT FOUND": gender = None
-
-        # Ensure invalid dates become None
-        if birthdate == "INVALID DATE FORMAT": birthdate = None
+        gender = determine_gender(first_name) if first_name else None
 
         result = {
             "patient_first_name": first_name,
             "patient_last_name":  last_name,
             "patient_dob":        birthdate,
-            "casenumber":         case_num, # Already None if not found
+            "casenumber":         case_num,
             "patient_gender":     gender
         }
+        logger.debug(f"Extracted patient data: {result}")
         return result
 
     @staticmethod
     def _blank() -> dict[str, str | None]:
         """Returns a dictionary with default None values."""
         return {
-            "patient_first_name": None, # Default to None
-            "patient_last_name":  None, # Default to None
+            "patient_first_name": None,
+            "patient_last_name":  None,
             "patient_dob":        None,
             "casenumber":         None,
-            "patient_gender":     None  # Default to None or "Unknown"
+            "patient_gender":     None
         }
 
 class ExaminerDataExtractor:

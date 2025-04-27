@@ -48,7 +48,7 @@ def _process_json_file(rr: ReportReader, fp: Path) -> List[Dict[str, str]]:
             logger.info("Skip %s › %s: no usable 'report' field.", fp.name, report_id)
             continue
 
-        extracted = rr.extract_report_meta(raw_text)
+        extracted = rr.extract_report_meta(raw_text, fp.name)
         rows.append(
             {
                 "file": fp.name,

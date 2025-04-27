@@ -30,6 +30,8 @@ dependencies = [
     "django>=5.2",
     "faker>=37.1.0",
     "tenacity>=9.1.2",
+    "de-core-news-lg",
+    "rapidfuzz>=3.13.0",
 ]
 
 [build-system]
@@ -38,3 +40,6 @@ build-backend = "hatchling.build"
 
 [tool.setuptools]
 packages = ["lx_anonymizer"]
+
+[tool.uv.sources]
+de-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
