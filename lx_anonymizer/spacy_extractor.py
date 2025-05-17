@@ -118,6 +118,7 @@ class PatientDataExtractor:
 
     def _build_rules(self) -> None:
         """Builds the token-based patterns including OCR variants."""
+        assert PatientDataExtractor._matcher is not None, "PatientDataExtractor._matcher should be initialized before building rules" # Added assertion
         HEADER_VARIANTS = [
             r"^pat(?:ient|ientin|\.?)$",
             r"^pationt$",

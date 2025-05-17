@@ -241,7 +241,7 @@ def process_text(extracted_text):
     cleaned_text = cleaned_text.replace("\n", " ")
     return cleaned_text
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional # Added Optional
 
 def process_ocr_results(
     image_path: str,
@@ -253,8 +253,8 @@ def process_ocr_results(
     device: str,
     modified_images_map: Dict[Tuple[str, str], str],
     combined_boxes: List[Tuple[int, int, int, int]],
-    first_name_box: Tuple[int, int, int, int] = None,
-    last_name_box: Tuple[int, int, int, int] = None
+    first_name_box: Optional[Tuple[int, int, int, int]] = None, # Changed here
+    last_name_box: Optional[Tuple[int, int, int, int]] = None # Changed here
 ) -> Tuple[str, Dict[Tuple[str, str], str], List[Tuple[str, Tuple[int, int, int, int], float, List[Tuple[str, str]]]], List[str]]:
     processed_text = process_text(phrase)
     entities = split_and_check(processed_text)

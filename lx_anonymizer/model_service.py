@@ -1,7 +1,7 @@
 import subprocess
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, TrOCRProcessor, VisionEncoderDecoderModel
+from typing import Optional, Any # Added Any for pipeline, consider specific type if known
 import gc
 import os
 from pathlib import Path
@@ -18,15 +18,15 @@ class ModelService:
     _instance = None
     
     # Phi-4 LLM Modell
-    phi4_model = None
-    phi4_tokenizer = None
-    phi4_pipe = None
+    phi4_model: Optional[AutoModelForCausalLM] = None
+    phi4_tokenizer: Optional[AutoTokenizer] = None
+    phi4_pipe: Optional[Any] = None # Using Any for pipeline, replace with specific type if available e.g. TextGenerationPipeline
     
     # TrOCR Modell
-    trocr_processor = None
-    trocr_model = None
-    trocr_tokenizer = None
-    trocr_device = None
+    trocr_processor: Optional[TrOCRProcessor] = None
+    trocr_model: Optional[VisionEncoderDecoderModel] = None
+    trocr_tokenizer: Optional[AutoTokenizer] = None # TrOCRProcessor.tokenizer is often a standard tokenizer
+    trocr_device: Optional[torch.device] = None
     
     def __new__(cls):
         """Implementierung des Singleton-Patterns"""

@@ -2,9 +2,10 @@ import random
 import gender_guesser.detector as gender
 import os
 from .names_adder import add_name_to_image, add_full_name_to_image, add_device_name_to_image
-from .directory_setup import create_temp_directory 
+from .directory_setup import create_temp_directory
 from .custom_logger import get_logger
 from pathlib import Path
+from typing import Tuple # Added Tuple
 
 
 logger = get_logger(__name__)
@@ -74,7 +75,7 @@ def get_random_full_name(name) -> str:
         name = f"{neutral_first_name} {neutral_last_name}"
     return name
 
-def person_meta(name) -> str:
+def person_meta(name) -> Tuple[str, str, Tuple[int, int, int], str]: # Corrected return type hint
     d = gender.Detector()
     gender_guess = d.get_gender(name)
     if gender_guess in ['male', 'mostly_male']:

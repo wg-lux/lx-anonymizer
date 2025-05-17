@@ -14,6 +14,7 @@ import numpy as np
 from .custom_logger import get_logger
 from .craft_text_detection import craft_text_detection  # Neuer Import für CRAFT
 from .model_service import model_service
+from typing import List, Tuple, Any # Added List, Tuple, Any
 
 logger = get_logger(__name__)
 # At the start of your script
@@ -164,7 +165,7 @@ def trocr_full_image_ocr_on_boxes(image_path):
     
     return final_text
 
-def trocr_on_boxes(image_path, boxes)->list:
+def trocr_on_boxes(image_path, boxes) -> Tuple[List[Tuple[str, Tuple[int, int, int, int]]], List[float]]: # Corrected return type hint
     try:
         if hasattr(image_path, "convert"):
             image = image_path.convert("RGB")
@@ -253,6 +254,7 @@ def trocr_on_boxes(image_path, boxes)->list:
     except Exception as e:
         logger.error(f"Error in TrOCR processing: {e}")
         cleanup_gpu()
+        return [], [] # Added return for this exception path
     finally:
         cleanup_gpu()
 

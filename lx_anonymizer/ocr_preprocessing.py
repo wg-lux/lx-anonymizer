@@ -4,7 +4,7 @@ import cv2
 from typing import List, Tuple, Union, Optional
 
 
-def preprocess_image(image: Image.Image, methods: List[str] = None) -> Image.Image:
+def preprocess_image(image: Image.Image, methods: Optional[List[str]] = None) -> Image.Image:
     """
     Preprocess the image for OCR with multiple enhancement techniques.
     
@@ -42,12 +42,12 @@ def preprocess_image(image: Image.Image, methods: List[str] = None) -> Image.Ima
             
         elif method == 'contrast':
             # Enhance contrast
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.5)  # Increase contrast by 50%
-            
+            contrast_enhancer = ImageEnhance.Contrast(image)
+            image = contrast_enhancer.enhance(1.5)  # Increase contrast by 50%
+
             # Enhance brightness
-            enhancer = ImageEnhance.Brightness(image)
-            image = enhancer.enhance(1.2)  # Increase brightness by 20%
+            brightness_enhancer = ImageEnhance.Brightness(image)
+            image = brightness_enhancer.enhance(1.2)  # Increase brightness by 20%
             
         elif method == 'threshold':
             # Apply adaptive thresholding
@@ -67,7 +67,7 @@ def preprocess_image(image: Image.Image, methods: List[str] = None) -> Image.Ima
             width, height = image.size
             scale_factor = 2.0  # Adjust based on your image resolution needs
             new_size = (int(width * scale_factor), int(height * scale_factor))
-            image = image.resize(new_size, Image.LANCZOS)
+            image = image.resize(new_size, Image.Resampling.LANCZOS)  # Changed here
             
         elif method == 'autocontrast':
             # Auto-adjust contrast

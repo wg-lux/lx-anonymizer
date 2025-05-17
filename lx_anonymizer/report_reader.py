@@ -1,7 +1,7 @@
 from pyexpat import model
 from faker import Faker
 import gender_guesser.detector as gender_detector
-from typing import List
+from typing import List, Optional, Dict, Any # Added Optional, Dict, Any
 import os
 import warnings
 import hashlib
@@ -26,12 +26,12 @@ from .llm_ollama import extract_with_fallback
 class ReportReader:
     def __init__(
             self,
-            report_root_path:str = None, # DEPRECEATED
-            locale:str = DEFAULT_SETTINGS["locale"],
-            employee_first_names:List[str] = None,
-            employee_last_names:List[str] = None,
-            flags:dict = None,
-            text_date_format:str = DEFAULT_SETTINGS["text_date_format"]
+            report_root_path: Optional[str] = None, # Changed here
+            locale: str = DEFAULT_SETTINGS["locale"], # Changed here, assuming DEFAULT_SETTINGS[\"locale\"] is str
+            employee_first_names: Optional[List[str]] = None, # Changed here
+            employee_last_names: Optional[List[str]] = None, # Changed here
+            flags: Optional[Dict[Any, Any]] = None, # Changed here
+            text_date_format: str = DEFAULT_SETTINGS["text_date_format"] # Changed here, assuming DEFAULT_SETTINGS[\"text_date_format\"] is str
     ):
         self.report_root_path = report_root_path
 

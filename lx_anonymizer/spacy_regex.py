@@ -215,16 +215,16 @@ class PatientDataExtractorLg:
         nlp = spacy.load("de_core_news_lg")
         doc = nlp(text)
         patterns = [
-            {"label": "PER", "pattern": "Dr\.\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\med\.\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\med\.\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": "Dr\.\med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},  
+            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
+            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},  
         ]
         ruler = EntityRuler(nlp)
         nlp.add_pipe(ruler)

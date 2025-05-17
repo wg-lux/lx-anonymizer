@@ -6,9 +6,9 @@ from .custom_logger import logger
 from .ocr_preprocessing import preprocess_image
 
 
-def pyramid_ocr(image: Image.Image, 
-               scales: List[float] = None,
-               preprocessing_methods: List[str] = None) -> Tuple[str, Dict]:
+def pyramid_ocr(image: Image.Image,
+               scales: Optional[List[float]] = None,
+               preprocessing_methods: Optional[List[str]] = None) -> Tuple[str, Dict]:
     """
     Process an image at multiple scales and combine results for best OCR output.
     
@@ -29,16 +29,16 @@ def pyramid_ocr(image: Image.Image,
     
     results = []
     confidences = []
-    metadata = {"scale_results": {}}
-    
+    metadata: Dict[str, Any] = {"scale_results": {}}
+
     for scale in scales:
         logger.info(f"Processing image at scale {scale}")
         width, height = image.size
         new_size = (int(width * scale), int(height * scale))
         
         # Resize image to current scale
-        resized_image = image.resize(new_size, Image.LANCZOS)
-        
+        resized_image = image.resize(new_size, Image.Resampling.LANCZOS)
+
         # Apply preprocessing
         processed_image = preprocess_image(resized_image, preprocessing_methods)
         
@@ -94,7 +94,7 @@ def pyramid_ocr(image: Image.Image,
 
 def segment_and_ocr(image: Image.Image,
                    segmentation_mode: str = 'blocks',
-                   preprocessing_methods: List[str] = None) -> str:
+                   preprocessing_methods: Optional[List[str]] = None) -> str:
     """
     Segment the image into logical blocks and apply OCR to each segment.
     
@@ -123,9 +123,9 @@ def segment_and_ocr(image: Image.Image,
     if segmentation_mode == 'blocks':
         # Use Tesseract to find text blocks
         data = pytesseract.image_to_data(processed_image, output_type=pytesseract.Output.DICT)
-        
+
         # Group words into blocks based on block_num
-        blocks = {}
+        blocks: Dict[int, List[Dict[str, Any]]] = {}
         for i in range(len(data['text'])):
             if data['text'][i].strip():
                 block_num = data['block_num'][i]

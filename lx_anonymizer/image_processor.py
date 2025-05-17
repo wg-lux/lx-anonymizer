@@ -4,6 +4,7 @@ from .custom_logger import get_logger
 from .image_reassembly import reassemble_image
 from .pipeline_manager import process_images_with_OCR_and_NER
 from .gpu_management import clear_gpu_memory
+import cv2
 
 logger = get_logger(__name__)
 
@@ -122,7 +123,7 @@ def resize_image(image_path: Path, max_width=1024, max_height=1024):
             logger.error(f"Failed to read image: {image_path}")
             # Handle the error or return gracefully
         else:
-            image=cv2.imread(str(image_path)))
+            image=cv2.imread(str(image_path))
     except Exception as e:
         logger.error(f"Error copying processed image: {e}")
         # Handle the exception or return gracefully    if image is None:
