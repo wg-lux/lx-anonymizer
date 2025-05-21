@@ -169,7 +169,7 @@ class OllamaService:
         Note: This is not guaranteed to run, use stop() explicitly.
         """
         try:
-            self.stop()                     ^^^^^^^^^^^^^^^
+            self.stop()
         except Exception as e:
             # Avoid raising exceptions in destructor
             self._logger.error(f"Error in __del__: {e}")

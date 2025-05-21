@@ -55,6 +55,8 @@ in
       with pkgs;
       lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+    export OLLAMA_BIN=/nix/store/nrcs8aijwjwq450chf1qlm9xxcp8n0iw-ollama-0.6.5/bin/ollama
+
   '';
 
   processes = {
