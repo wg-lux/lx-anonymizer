@@ -9,6 +9,7 @@ import logging
 import shutil
 import subprocess
 import urllib3
+import sys
 from pathlib import Path
 from functools import lru_cache
 from .custom_logger import get_logger
@@ -44,16 +45,22 @@ class OllamaService:
     LOG_LEVEL = getattr(logging, os.environ.get("OLLAMA_LOG_LEVEL", "INFO"))
     # Log file path
     OLLAMA_LOG_FILE = os.environ.get("OLLAMA_LOG_FILE", "ollama_service.log")
+    # Maximum time to wait for Ollama to start (in seconds)
+    MAX_WAIT_TIME = int(os.environ.get("OLLAMA_MAX_WAIT_TIME", "30"))
+    # Enable debug mode
+    DEBUG = os.environ.get("OLLAMA_DEBUG", "False").lower() in ("true", "1", "yes")
     
     def __init__(self,
                  base_url: str = None,
-                 model_name: str = None):
+                 model_name: str = None,
+                 auto_start: bool = True):
         """
         Initialize the OllamaService.
         
         Args:
             base_url: Override the default base URL (normally read from OLLAMA_PORT)
             model_name: Override the default model name (normally read from OLLAMA_MODEL)
+            auto_start: Whether to automatically start Ollama (default: True)
         """
         # Use environment variables if not explicitly provided
         if base_url is None:
@@ -70,22 +77,44 @@ class OllamaService:
         self._ollama_process = None
         self._log_file = None
         
+        # Print initial debug info to stdout for Django to capture
+        self._stdout_log(f"Initializing OllamaService with model={self.model_name}, url={self.base_url}")
+        self._stdout_log(f"Using OLLAMA_BIN={self.OLLAMA_BIN}")
+        if self.DEBUG:
+            self._stdout_log(f"Ollama binary exists: {Path(self.OLLAMA_BIN).exists() if shutil.which(self.OLLAMA_BIN) else False}")
+        
         # Configure HTTP session with retries
         self._setup_http_session()
         
         self._model_checked = False
         
-        # First check if server is already running
-        if not self.probe_server():
-            self._logger.info("Ollama server not running, starting it...")
-            self.start_server()
+        if auto_start:
+            # First check if server is already running
+            self._stdout_log("Checking if Ollama is already running...")
+            if not self.probe_server():
+                self._stdout_log("Ollama server not running, will start it")
+                self.start_server()
 
-        # Wait for it to be ready
-        if not self.probe_server():
-            self.wait_until_ready()
+                # Wait for it to be ready
+                if not self.probe_server():
+                    self._stdout_log("Waiting for Ollama to become ready...")
+                    self.wait_until_ready()
+            else:
+                self._stdout_log("Ollama is already running")
+        else:
+            self._stdout_log("Auto-start is disabled, skipping Ollama startup")
         
         # Register shutdown handler
         atexit.register(self.stop)
+
+    def _stdout_log(self, message, level="INFO"):
+        """
+        Print a message to stdout with a timestamp so Django can capture it.
+        This helps debug Ollama startup issues in management commands.
+        """
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] {level} lx_anonymizer.ollama_service: {message}", file=sys.stdout)
+        sys.stdout.flush()  # Ensure output is flushed immediately
 
     def _setup_logging(self):
         """Configure enhanced logging for the Ollama service."""
@@ -128,9 +157,13 @@ class OllamaService:
                     line = line.strip()
                     if line:
                         self._logger.log(log_level, "Ollama: %s", line)
+                        self._stdout_log(f"Ollama subprocess: {line}")
             self._logger.debug("Ollama process stream closed")
+            self._stdout_log("Ollama process stream closed", "DEBUG")
         except Exception as e:
-            self._logger.error("Error reading from Ollama process pipe: %s", e)
+            error_msg = f"Error reading from Ollama process pipe: {e}"
+            self._logger.error(error_msg)
+            self._stdout_log(error_msg, "ERROR")
 
     # --------------------------------------------------------------------- #
     # 1) Lifecycle Management                                                #
@@ -141,7 +174,9 @@ class OllamaService:
         """
         if self._ollama_process:
             try:
+                self._stdout_log("Stopping Ollama process group...")
                 self._logger.info("Stopping Ollama process group...")
+                
                 pgid = os.getpgid(self._ollama_process.pid)
                 os.killpg(pgid, signal.SIGTERM)
                 
@@ -150,13 +185,17 @@ class OllamaService:
                 
                 # Check if it's still running and force kill if needed
                 if self._ollama_process.poll() is None:
+                    self._stdout_log("Ollama process didn't terminate gracefully, forcing kill...", "WARNING")
                     self._logger.warning("Ollama process didn't terminate gracefully, forcing kill...")
                     os.killpg(pgid, signal.SIGKILL)
                     
                 self._ollama_process = None
+                self._stdout_log("Ollama process group stopped")
                 self._logger.info("Ollama process group stopped.")
             except Exception as e:
-                self._logger.error(f"Error shutting down Ollama process: {e}")
+                error_msg = f"Error shutting down Ollama process: {e}"
+                self._stdout_log(error_msg, "ERROR")
+                self._logger.error(error_msg)
         
         # Close log file if open
         if self._log_file and not self._log_file.closed:
@@ -188,9 +227,16 @@ class OllamaService:
             True if server is responding, False otherwise
         """
         try:
+            self._stdout_log(f"Probing Ollama server at {self.base_url}...", "DEBUG")
             r = self._http.get(f"{self.base_url}/api/version", timeout=timeout)
-            return r.status_code == 200
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            success = r.status_code == 200
+            if success:
+                self._stdout_log(f"Ollama server is responding (version {r.json().get('version', 'unknown')})", "DEBUG")
+            else:
+                self._stdout_log(f"Ollama server returned status code {r.status_code}", "DEBUG")
+            return success
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            self._stdout_log(f"Ollama server probe failed: {e}", "DEBUG")
             return False
 
     # --------------------------------------------------------------------- #
@@ -203,13 +249,25 @@ class OllamaService:
         Raises:
             Unavailable: If Ollama server fails to start.
         """
+        self._stdout_log("Starting Ollama daemon...")
         self._logger.info("Starting Ollama daemon...")
         
         try:
+            # Check if Ollama binary exists and is executable
+            ollama_path = shutil.which(self.OLLAMA_BIN)
+            if not ollama_path:
+                error_msg = f"Ollama binary not found at {self.OLLAMA_BIN}"
+                self._stdout_log(error_msg, "ERROR")
+                self._logger.error(error_msg)
+                raise self.Unavailable(error_msg)
+            
+            self._stdout_log(f"Found Ollama binary at {ollama_path}")
+            
             # Setup log file for Ollama process output
             self._log_file = open(self.OLLAMA_LOG_FILE, "ab", 0)  # Open in unbuffered append mode
             
             # Run ollama serve as a background process
+            self._stdout_log(f"Running: {self.OLLAMA_BIN} serve")
             self._logger.info(f"Running: {self.OLLAMA_BIN} serve")
             
             # Create a detached process that won't be killed when the parent exits
@@ -234,41 +292,54 @@ class OllamaService:
             # Check if process is still running
             if self._ollama_process.poll() is not None:
                 error_message = f"Failed to start Ollama. Exit code: {self._ollama_process.returncode}"
+                self._stdout_log(error_message, "ERROR")
                 self._logger.error(error_message)
                 raise self.Unavailable(error_message)
                 
+            self._stdout_log(f"Ollama server process started with PID {self._ollama_process.pid}")
             self._logger.info(f"Ollama server process started with PID {self._ollama_process.pid}")
             
         except Exception as e:
-            self._logger.error(f"Error starting Ollama: {e}")
-            raise self.Unavailable(f"Failed to start Ollama: {e}")
+            error_msg = f"Error starting Ollama: {e}"
+            self._stdout_log(error_msg, "ERROR")
+            self._logger.error(error_msg)
+            raise self.Unavailable(error_msg)
 
     # --------------------------------------------------------------------- #
     # 4) Wait    — poll until probe succeeds (max_wait seconds)             #
     # --------------------------------------------------------------------- #
-    def wait_until_ready(self, interval: int = 2, max_wait: int = 60) -> None:
+    def wait_until_ready(self, interval: int = 2, max_wait: int = None) -> None:
         """
         Wait until the Ollama server is responsive.
         
         Args:
             interval: Seconds between probe attempts
-            max_wait: Maximum seconds to wait
+            max_wait: Maximum seconds to wait (defaults to MAX_WAIT_TIME class attribute)
             
         Raises:
             Unavailable: If Ollama doesn't start within max_wait seconds
         """
+        if max_wait is None:
+            max_wait = self.MAX_WAIT_TIME
+            
+        self._stdout_log(f"Waiting up to {max_wait}s for Ollama to become responsive...")
+        
         deadline = time.time() + max_wait
         while time.time() < deadline:
             if self.probe_server():
+                self._stdout_log("Ollama server is now responding")
                 self._logger.info("Ollama server is now responding")
                 return
+            self._stdout_log(f"Waiting for Ollama... (timeout in {int(deadline - time.time())}s)")
             self._logger.info("Waiting for Ollama...")
             time.sleep(interval)
         
         # If we get here, it timed out
         # If we started the process, kill it before raising timeout
         if self._ollama_process:
-            self._logger.error("Ollama server failed to start in time, terminating process")
+            error_msg = f"Ollama server failed to start within {max_wait}s, terminating process"
+            self._stdout_log(error_msg, "ERROR")
+            self._logger.error(error_msg)
             self.stop()
             
         raise self.Unavailable(f"Ollama did not start within {max_wait}s")
@@ -717,25 +788,55 @@ class OllamaService:
 
 # Thread-safe lazy initialization of a global singleton
 @lru_cache(maxsize=1)
-def get_ollama_service():
+def get_ollama_service(auto_start=True):
     """
     Get or create the OllamaService instance in a thread-safe manner.
+    
+    Args:
+        auto_start: Whether to automatically start Ollama (default: True)
+                    Set to False in management commands to control startup
     """
     with _lock:
-        return OllamaService()
+        return OllamaService(auto_start=auto_start)
 
-# For backward compatibility
-try:
-    ollama_service = get_ollama_service()
-except Exception as e:
-    logger.error(f"Failed to initialize OllamaService: {e}")
-    # Create a dummy service that will raise Unavailable when methods are called
-    class DummyOllamaService:
-        def __getattr__(self, name):
-            def _unavailable(*args, **kwargs):
-                raise OllamaService.Unavailable("OllamaService failed to initialize")
-            return _unavailable
+# For backward compatibility, but don't auto-initialize
+# This prevents the module from blocking on import
+ollama_service = None
+
+def init_ollama_service(auto_start=True):
+    """
+    Initialize the global ollama_service instance.
+    Call this explicitly when you're ready to use the service.
     
-    ollama_service = DummyOllamaService()
+    Args:
+        auto_start: Whether to automatically start Ollama (default: True)
+    
+    Returns:
+        Initialized OllamaService instance
+    """
+    global ollama_service
+    
+    print("[lx_anonymizer.ollama_service] Initializing OllamaService...")
+    sys.stdout.flush()
+    
+    try:
+        ollama_service = get_ollama_service(auto_start=auto_start)
+        print("[lx_anonymizer.ollama_service] OllamaService initialized successfully")
+        sys.stdout.flush()
+        return ollama_service
+    except Exception as e:
+        error_msg = f"Failed to initialize OllamaService: {e}"
+        print(f"[lx_anonymizer.ollama_service] ERROR: {error_msg}")
+        sys.stdout.flush()
+        
+        # Create a dummy service that will raise Unavailable when methods are called
+        class DummyOllamaService:
+            def __getattr__(self, name):
+                def _unavailable(*args, **kwargs):
+                    raise OllamaService.Unavailable("OllamaService failed to initialize")
+                return _unavailable
+        
+        ollama_service = DummyOllamaService()
+        return ollama_service
 
 
