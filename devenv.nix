@@ -60,7 +60,6 @@ in
   '';
 
   processes = {
-    ollama-serve.exec = "export OLLAMA_DEBUG=1 && ollama serve";
     #ollama-pull-llama.exec = "ollama pull llama3.3";
     #ollama-run-llama.exec = "ollama run llama3.3";
     ollama-pull-deepseek-model.exec = "ollama pull deepseek-r1:1.5b&";
@@ -71,6 +70,8 @@ in
     };
 
   tasks = {
+    "ollama:serve".exec = "export OLLAMA_DEBUG=1 && ollama serve";
+
   };
 
 

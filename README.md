@@ -116,7 +116,7 @@ Configure Settings: Adjust the settings in the configuration file (if applicable
 Run the Module: Execute the main script to process the images.
 
 ```bash
-python main.py --image images/your_image.jpg  --device="lympus_cv_1500" --validation=true --width=320 --height=320
+python main.py --image images/your_image.jpg  --device="olympus_cv_1500" --validation=true --width=320 --height=320
 ```
 
 Arguments can be set through flags or the system call to change the module settings.
