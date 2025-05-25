@@ -1,4 +1,4 @@
-{ pkgs, lib, config, inputs, ... }:
+{ pkgs, lib, config, inputs, buildInputs, ... }:
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
@@ -8,6 +8,10 @@ let
     direnv
     glib
     ollama
+    cmake          # build system
+    gcc            # C/C++ compiler tool-chain
+    pkg-config
+    protobuf
   ];
 
   customTasks = (
@@ -29,6 +33,11 @@ in
     tesseract
     ollama
     python3Packages.pip
+    cmake
+    gcc
+    pkg-config
+    protobuf
+    python312Packages.sentencepiece
   ];
 
   env = {
@@ -71,9 +80,7 @@ in
 
   tasks = {
     "ollama:serve".exec = "export OLLAMA_DEBUG=1 && ollama serve";
-
   };
-
 
   enterShell = ''
     . .devenv/state/venv/bin/activate
