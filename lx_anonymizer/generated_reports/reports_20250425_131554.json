@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Driss El Haddadi, 58 Jahre, erfolgte die Koloskopie im Rahmen der Nachsorge eines bekannten Adenoms im Colon descendens. Einzelne flache Erosionen wurden im absteigenden Colon nachgewiesen. Bei ca. 60 cm ab ano zeigte sich eine flache, ca. 8 mm große Läsion (Paris 0-IIa, JNET Typ 2A), Verdacht auf Rezidiv eines Adenoms. Im Bereich der Bauhin-Klappe zeigte sich zudem eine suspekte, leicht erhabene Läsion (ca. 5 mm), ohne eindeutige Zeichen einer Neoplasie. Auffällige tiefe Ulzeration bei 75 cm ab ano, Biopsien wurden entnommen. Im Rektum sowie übrigen Colons keine weiteren Auffälligkeiten. Die Resektion des Adenomrezidivs erfolgte mittels Schlinge, keine Blutungskomplikation.",
+    "beurteilung": "Komplikationslose Entfernung eines Adenomrezidivs. Tiefe Ulzeration biopsiert, hier Verdacht auf entzündlichen Prozess, Malignitätsverdacht gering. Empfehlung: Da 1 Adenom <10 mm entfernt wurde, nächste Nachsorge in 5 Jahren, sofern Histologie unauffällig ausfällt.",
+    "pathology report": "Histologisch ergab sich ein tubuläres Adenom mit low-grade IEN, vollständig reseziert. Die Biopsien der Ulzeration zeigten unspezifische Entzündung, kein Anhalt für Malignität.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Koloskopie bei Frau Sabah Ben Amar, 64 Jahre, aufgrund von intermittierenden Blutabgängen. In der Descendens-Schleimhaut fanden sich vereinzelte Erosionen, kein aktiver Blutabfluss. Bei der Bauhin-Klappe zeigte sich eine ca. 1 cm große, suspekte polypoide Läsion (Paris 0-Is, JNET Typ 2B), ohne eindeutige Zeichen einer Neoplasie. Zusätzlich fiel eine tiefe Ulzeration im Bereich des terminalen Ileums auf, von der Biopsien entnommen wurden. Kein Nachweis weiterer Polypen oder Tumoren im gesamten Colon. Keine Neoplasiezeichen im übrigen Verlauf.",
+    "beurteilung": "Suspekte Bauhin-Klappen-Läsion, genaue Dignität unklar, Biopsien tiefer Ulzeration und der Bauhin-Klappen-Läsion entnommen. Nachsorgeintervall wird nach Vorliegen der Histologie festgelegt.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Abhängig vom histologischen Befund"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Abdelmajid Bouchaib, 72 Jahre, erfolgte eine Kontrollkoloskopie nach Abtragung multipler Adenome vor 3 Jahren. Im absteigenden Colon Nachweis einzelner Erosionen. Bei 35 cm ab ano zeigt sich eine ca. 14 mm große, breitbasige Läsion (Paris 0-Is, JNET Typ 2B), Verdacht auf Rezidiv eines Adenoms. Zusätzlich auffällige tiefe Ulzeration mit fester Oberfläche in unmittelbarer Nähe; Biopsien wurden entnommen. Bei der Bauhin-Klappe eine flache, ca. 4 mm große suspekt erscheinende Läsion, keine Zeichen einer Neoplasie. Die Polypenabtragung erfolgte en-bloc mittels Elektroschlinge und anschließender Clipversorgung der Resektionsstelle.",
+    "beurteilung": "Ein größeres Adenom (>10 mm) wurde komplikationslos entfernt, Biopsien der Ulzeration unauffällig. Verdacht auf Adenomrezidiv bestätigt.",
+    "pathology report": "Histologisch: tubulovillöses Adenom mit low-grade intraepithelialer Neoplasie (keine high-grade IEN), vollständige Resektion. Biopsien der Ulzeration: unspezifische chronische Veränderungen.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei M. Prof. Souad El Kharraz, 69 Jahre, wurde die Koloskopie als Vorsorgeuntersuchung durchgeführt. Im absteigenden Colon einzelne, flache Erosionen, kein aktives Blut. Keine Polypen oder Tumoren detektiert. Die Bauhin-Klappe zeigt eine unregelmäßig konfigurierten Läsion von 6 mm Durchmesser, makroskopisch kein Anhalt für eine Neoplasie. Im Bereich des Colon sigmoideum tiefe, mit Fibrin belegte Ulzeration; Biopsien hiervon entnommen.",
+    "beurteilung": "Keine Neoplasie des Colons, suspekt wirkende, aber makroskopisch nicht neoplastische Bauhin-Klappen-Läsion. Weitere Abklärung nach Histologie der Ulzeration.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre (sofern Histologie unauffällig bleibt)"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Koloskopie bei Herrn Hamid El Ghazali, 56 Jahre, wegen positiver Familienanamnese für Darmkrebs. Im Colon descendens vereinzelte Erosionen der Schleimhaut. Bei 50 cm ab ano fand sich eine 9 mm große, gestielte Läsion (Paris 0-Ip, JNET Typ 2A), Verdacht auf Rezidiv eines Adenoms, diese wurde mithilfe einer Schlinge komplett abgetragen. Bei der Bauhin-Klappe zeigte sich eine flache, suspekt erscheinende Läsion von 3 mm, kein Tumornachweis. Zusätzlich eine tiefe Ulzeration im Bereich des Caecums, Biopsien wurden entnommen. Insgesamt kein Nachweis einer Neoplasie.",
+    "beurteilung": "Einzige relevante Läsion war ein einzelnes Adenom <10 mm, komplikationslos reseziert. Ulzeration biopsiert, Malignitätsverdacht gering.",
+    "pathology report": "Histologie: Tubuläres Adenom mit low-grade IEN, keine high-grade Dysplasie. Biopsien der Ulzeration: Chronisch-entzündliche Schleimhautveränderungen.",
+    "follow up?": "5 Jahre"
+  }
+}

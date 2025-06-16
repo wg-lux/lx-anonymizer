@@ -1,12 +1,12 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline 
 import torch
-from custom_logger import get_logger
+from .custom_logger import get_logger
 from PIL import Image
 import pytesseract
 from pathlib import Path
 import uuid
 import csv
-from ocr import cleanup_gpu
+from .ocr import cleanup_gpu
 
 logger = get_logger(__name__)
 

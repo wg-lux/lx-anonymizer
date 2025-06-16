@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Dr. Minna Aaltonen wurde eine Koloskopie aufgrund rezidivierender Durchfälle und Abdomenschmerzen durchgeführt. Die Mukosa im Colon transversum zeigte einen ödematösen Aspekt, was den Verdacht auf eine kollagene Colitis erhärtet. Im Colon transversum wurde ein frischer Koagel festgestellt, der unspezifisch und ohne Hinweis auf eine Blutungsquelle war. Die Darmreinigung war mangelhaft, weshalb eine erneute Untersuchung erforderlich ist. Beurteilung: Die Untersuchung war insgesamt unzureichend. Eine erneute Koloskopie bei besserer Vorbereitung ist in naher Zukunft geplant.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "In 3 Monaten bei angemessener Darmreinigung"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Prof. Dr. Eero Virtanen präsentierte sich zur Vorsorgekoloskopie. Im Colon transversum zeigte sich die Mukosa ebenfalls ödematös, erneut mit dem Verdacht auf kollagene Colitis. Es wurden keine präkanzerösen Läsionen entdeckt. Beurteilung: Unauffällige Koloskopie ohne Komplikationen. Empfehlung einer Nachkontrolle in 10 Jahren.",
+    "pathology report": "Keine Histologie erforderlich.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Jussi Korhonen kam aufgrund positiver Familienanamnese eines Kolorektalkarzinoms zur Koloskopie. Im Colon transversum wurde ein 15 mm Polyp Paris 0-Is, JNET Typ 2 entdeckt. Nach Entfernung mit der Schlinge wurde ein frischer Koagel festgestellt. Beurteilung: Komplikationslose Resektion des Polypen. Empfehlung zur Nachsorge in 3 Jahren.",
+    "pathology report": "Tubuläres Adenom mit geringgradiger Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Aino Mäkinen stellte sich mit abdominellen Schmerzen vor. Im gesamten Colon zeigte sich eine ödematöse Mukosa. Im Colon transversum wurde ein sessiler Polyp von 6 mm (Paris 0-Is, JNET Typ 2A) entdeckt und mit der Schlinge entfernt. Keine weiteren Läsionen oder präkanzerösen Veränderungen. Beurteilung: Komplikationslose Polypektomie, keine weiteren Auffälligkeiten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Je nach histologischem Ergebnis"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Hanna Rantanen wurde zur Koloskopie aufgrund von positivem Okkultbluttest vorgestellt. Die Mukosa im Colon transversum zeigte einen ödematösen Aspekt. Es wurde ein Polyp von 7 mm (Paris 0-Is, JNET Typ 2A) im Colon ascendens entdeckt und mittels Schlingenresektion entfernt. Beurteilung: Unkomplizierte Resektion. Empfehlung zur Nachsorge in 5 Jahren.",
+    "pathology report": "Tubuläres Adenom mit geringgradiger Dysplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

@@ -1,9 +1,9 @@
 # Device reader module to parse JSON configurations
 import json
 import cv2
-from box_operations import make_box_from_device_list
+from .box_operations import make_box_from_device_list
 from pathlib import Path
-from custom_logger import get_logger
+from .custom_logger import get_logger
 
 logger=get_logger(__name__)
 

@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei dem 57-jährigen tunesischen Patienten Nizar Ben Mokhtar erfolgte die Koloskopie als Kontrolle nach transanaler Polypabtragung im Rektum. Die Untersuchung gestaltete sich aufgrund eines eingeschränkt insufflationstoleranten Patienten erschwert. Ein Zugang ins terminale Ileum war nicht möglich. Im Colon descendens fand sich eine Paris 0-Ip Läsion (gestielt, 8 mm) ohne Zeichen einer Malignität. Zudem wurde im Colon transversum ein Polyp mit breiter Basis (12 mm, Paris 0-Is) identifiziert und unter EMR-Technik abgetragen. Die Schleimhaut sonst unauffällig, keine weiteren Auffälligkeiten.",
+    "pathology report": "Histologiebefund: Im Colon descendens tubuläres Adenom mit low-grade intraepithelialer Neoplasie. Im Colon transversum tubuläres Adenom mit low-grade intraepithelialer Neoplasie. Kein Hinweis auf Invasion.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Koloskopie bei dem 63-jährigen tunesischen Patienten Samir El-Ayachi im Rahmen einer Nachsorge nach transanaler Polypabtragung. Die Untersuchung war erschwert durch die eingeschränkte Insufflationstoleranz des Patienten; ein Zugang ins terminale Ileum konnte nicht erzielt werden. Im Rektum zeigte sich eine ca. 16 mm große Paris 0-Ip Läsion (gestielter Polyp), welcher mittels Schlinge abgetragen wurde. Zusätzlich wurde ein breitbasiger Polyp im Sigma (11 mm, Paris 0-Is) entdeckt, an dem eine EMR erfolgte. Keine weiteren Läsionen.",
+    "pathology report": "Histologiebefund: Rektum-Polyp: tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie (High-grade IEN). Sigmapolyp: tubuläres Adenom mit low-grade intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Patientin Dr. Yasmine Khedira, 54 Jahre, wurde die Koloskopie als Kontrolle nach kürzlich erfolgter transanaler Polypabtragung durchgeführt. Sie zeigte sich als eingeschränkt insufflationstolerant, daher kein Zugang ins terminale Ileum. Im Colon ascendens entdeckte man eine Paris 0-Ip Läsion, 6 mm, die problemlos mit der Schlinge entfernt wurde. Im Bereich des rektosigmoidalen Übergangs fand sich ein Polyp mit breiter Basis (15 mm), welcher in Piecemeal-Technik mittels EMR entfernt wurde. Die übrige Kolonmukosa war makroskopisch unauffällig.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei dem 68-jährigen Patienten Mourad Chouchane wurde die Koloskopie im Rahmen der Kontrolle nach transanaler Polypabtragung durchgeführt. Die Untersuchung war erschwert durch eine eingeschränkte Insufflationstoleranz. Ein Zugang ins terminale Ileum war nicht möglich. Im absteigenden Colon fand sich ein großer Polyp mit breiter Basis (Paris 0-Is, 24 mm), an dem eine EMR in Piecemeal-Technik erfolgte. Im Sigmoid wurde zusätzlich eine Paris 0-Ip Läsion (7 mm) vollständig entfernt. Keine weiteren Polypen.",
+    "pathology report": "Histologiebefund: Großflächiger Polyp: tubulo-villöses Adenom mit low-grade intraepithelialer Neoplasie. Sigmapolyp: tubuläres Adenom mit low-grade intraepithelialer Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Koloskopie bei Patientin Amani Bouzaiene (59 Jahre) zur Kontrolle nach transanaler Polypabtragung aufgrund von positiver Familienanamnese. Die Patientin zeigte eine eingeschränkte Insufflationstoleranz, Zugang ins terminale Ileum war nicht möglich. Im Colon transversum zeigte sich eine Paris 0-Ip Läsion (5 mm), die problemlos mittels Schlinge entfernt wurde. Im Colon ascendens fand sich ein Polyp mit breiter Basis (9 mm, Paris 0-Is), welcher mittels EMR entfernt werden konnte. Keine weiteren Auffälligkeiten.",
+    "pathology report": "Histologiebefund: Colon transversum: tubuläres Adenom mit low-grade intraepithelialer Neoplasie. Colon ascendens: tubuläres Adenom mit low-grade intraepithelialer Neoplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

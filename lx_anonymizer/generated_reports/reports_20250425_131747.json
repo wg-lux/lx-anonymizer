@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Mbuyi Lukusa (54 Jahre) stellt sich zur Vorsorgekoloskopie vor. Anamnese ohne spezielle Vorerkrankungen. Die Koloskopie wurde bis zum terminalen Ileum durchgeführt. Im Sigma zeigte sich ein gestielter Polyp mit langem Pedunkel (Paris Ip, JNET 2A), Größe 12 mm. Polypektomie mittels Schlinge erfolgte komplikationslos, eine Klammer zur Blutungsprophylaxe wurde platziert. Im Rektum zeigte sich eine submuköse Raumforderung von ca. 15 mm, welche biopsiert wurde. Keine aktiven Blutungen. Im Bereich des Colon transversum fanden sich flächige Schleimhautveränderungen mit Koagulationsartefakten – hier ist keine Aussage möglich. Weiterhin kein Hinweis auf aktive Blutungen oder weitere Polypen. Im gesamten Colon ansonsten reizlose Schleimhaut, kein pathologischer Befund im Sinne eines Colon irritabile. \nBeurteilung: Komplikationslose Polypektomie. Biopsie zur Diagnostik der submukösen Raumforderung im Rektum entnommen. Keine weiteren Auffälligkeiten.",
+    "pathology report": "Polyp: tubuläres Adenom mit low-grade IEN, R0-Resektion. Submuköse Raumforderung: Histologie steht noch aus.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Mama-Koko Mwamba (47 Jahre) mit unklaren, wechselnden Stuhlgewohnheiten. Koloskopie bis zum Coecum ohne technische Probleme. Im Colon descendens fand sich ein gestielter Polyp mit langem Stiel (Paris Ip, JNET 2A), Durchmesser 9 mm. Entfernung mittels Schlinge. Im Rektum wird eine submuköse Raumforderung von 20 mm Durchmesser identifiziert, welche direkt ultraschallgestützt punktiert und biopsiert wurde. Keine aktiven Blutungen. Mehrere Koagulationsartefakte im Bereich des Colon ascendens nach vorausgegangener Entfernung kleinerer Polypen – hier ist keine Aussage möglich. Im übrigen Colon unauffällige Schleimhaut, Colon irritabile – kein pathologischer Befund.",
+    "pathology report": "Polyp: tubuläres Adenom ohne IEN, vollständig entfernt. Submuköse Raumforderung: Benigne Lipom (histologisch bestätigt).",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Prof. Dr. Luvumbu Basitu (65 Jahre), Koloskopie aufgrund positiver Familienanamnese für Darmkrebs. Bis zum Coecum vollständige Inspektion. Im Sigma und im Colon transversum je ein gestielter Polyp mit langem Pedunkel (Paris Ip, JNET 2A), je ca. 6 mm groß. Beide wurden mittels Schlinge entfernt. Im Bereich des Rektums zeigt sich eine prominente submuköse Raumforderung von ca. 18 mm mit ulzerierter Oberfläche, Biopsie entnommen. Im Bereich des Colon descendens finden sich Areale mit Koagulationsartefakten – keine Aussage möglich. Keine aktiven Blutungen während des Eingriffs. Colon irritabile – kein pathologischer Befund.",
+    "pathology report": "Beide Polypen: tubuläres Adenom mit low-grade IEN, komplett entfernt. Submuköse Raumforderung: Adenokarzinom, Biopsiebefund bestätigt Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Bintu Kanza (38 Jahre) mit abdominellen Beschwerden, Koloskopie zur Abklärung. Im Colon descendens wurde eine submuköse Raumforderung (ca. 22 mm) glatt und unauffällig imponierend, Biopsie durchgeführt. Im Colon sigmoideum ein gestielter Polyp mit langem Pedunkel (Paris Ip, JNET 2A), Größe 10 mm, mittels Schlinge abgetragen und Endoloop zur Stielabschnürung appliziert. Keine aktiven Blutungen. Im Colon ascendens flächige Koagulationsartefakte nach früherer Zangenbiopsie – keine Aussage möglich. Im übrigen Colon keine pathologischen Veränderungen, Colon irritabile – kein pathologischer Befund.",
+    "pathology report": "Polyp: tubuläres Adenom ohne Nachweis von IEN, vollständig entfernt. Submuköse Raumforderung: Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Lukenga Tshibasu (59 Jahre), Koloskopie als Nachsorge bei bekanntem Colon irritabile. Im Rektum imponiert eine submuköse Raumforderung von ca. 12 mm, Biopsie entnommen. Im Colon transversum ein gestielter Polyp mit langem Pedunkel (Paris Ip, JNET 2A), Größe 18 mm, abgetragen mittels Schlinge, Resektion in Piecemeal-Technik erforderlich aufgrund Größe. Keine aktiven Blutungen, Blutstillung mit Clip. Im Colon ascendens finden sich Koagulationsartefakte – keine Aussage möglich. Im übrigen Colon keine pathologischen Veränderungen.",
+    "pathology report": "Polyp: tubulovillöses Adenom mit fokaler hochgradiger IEN, Resektion in Piecemeal-Technik (Histologie steht noch aus, Resektionsrand nicht sicher beurteilbar). Submuköse Raumforderung: Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  }
+}

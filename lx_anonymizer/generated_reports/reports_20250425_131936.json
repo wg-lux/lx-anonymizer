@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei dem 57-jährigen Herrn Marek Nowak, Zustand nach Rektumresektion, zeigte sich im aboralen Kolon kein pathologischer Befund. Im Sigma wurde eine flache Paris 0-Is Läsion von 8mm entdeckt. Nach positivem Injektionslifting wurde die Läsion en bloc mittels Schlinge (snare) reseziert. Dysplasiekontrolle nach IBD unauffällig, Mukosabiopsien aus Sigma ebenfalls entnommen.\nBeurteilung: Komplikationslose Resektion der 0-Is Läsion, keine Auffälligkeiten im Bereich der Rektumresektion.",
+    "pathology report": "Histologie: Tubuläres Adenom mit low-grade intraepithelialer Neoplasie, Mukosabiopsien aus Sigma ohne Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Ewa Zielinska, bekannt mit Colitis ulcerosa, kam zur Dysplasiekontrolle nach IBD. Im gesamten Kolon unauffällig. Im Colon descendens  fand sich eine Paris 0-Is Läsion (12mm), die nach Injektionslifting problemlos snare reseziert werden konnte. Bereich der Z.n. Rektumresektion ohne pathologischen Befund. Mukosabiopsien aus Sigma ebenfalls entnommen. keine weiteren Polypen.\nBeurteilung: komplette Abtragung der Läsion, keine Komplikationen.",
+    "pathology report": "Histologie: Tubuläres Adenom mit fokaler hochgradiger intraepithelialer Neoplasie (IEN). Mukosabiopsien ohne Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: 63-jährige Patientin, Frau Jolanta Kowalczyk, Zustand nach Rektumresektion – keine Auffälligkeiten. Dysplasiekontrolle nach IBD (Colitis Crohn): Die Mukosabiopsien aus Sigma wurden entnommen. Im Colon transversum zeigte sich eine 5mm große Paris 0-Is Läsion, snare-resiziert nach positivem Injektionslifting. sonst kein Polyp.\nBeurteilung: Unerwartet unkomplizierte Resektion, keine Blutung.",
+    "pathology report": "Histologie: Tubuläres Adenom mit low-grade IEN. Mukosabiopsien ohne Nachweis von Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Wojciech Szymanski, 69 Jahre, präsentierte sich zum Screening. Früher Rektumresektion, aktuell keine Auffälligkeiten in diesem Areal. Dysplasiekontrolle nach IBD ohne Besonderheiten. Im Sigma Paris 0-Is Läsion von 14mm sichtbar, nach Injektionslifting problemlos snare-reseziert, Mukosabiopsien aus Sigma entnommen. leichte Blutung, durch Clip gestillt.\nBeurteilung: Piecemeal-Resektion der 0-Is Läsion, Histologie steht noch aus.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Stanislaw Witkowski (72j) stellte sich zur Dysplasiekontrolle nach IBD und Verlaufsbeurteilung nach Rektumresektion vor. im restlichen Kolon kein Hinweis auf Tumor. Im Sigma kleine Paris 0-Is Läsion (7mm), snare-reseziert nach positivem Injektionslifting. Mukosabiopsien aus Sigma entnommen. Keine Komplikation bemerkbar. restliche Schleimhaut unauffälig.\nBeurteilung: komplikationslose Polypektomie; keine Auffälligkeiten nach Z.n. Rektumresektion.",
+    "pathology report": "Histologie: Tubulovillöses Adenom mit low-grade IEN. Mukosabiopsien: chronische unspezifische Entzündung, keine Dysplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

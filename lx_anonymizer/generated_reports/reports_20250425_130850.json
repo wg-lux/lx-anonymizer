@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 54-jährige Señor Juan Fernández stellte sich zur Koloskopie nach positiver Familienanamnese von kolorektalen Polypen vor. Es wurden multiple flache Adenome (< 5 mm) im Colon ascendens festgestellt. Die Ileozökalklappe war aufgrund von anatomischen Besonderheiten nicht passierbar. Eine inkomplette endoskopische Mukosaresektion (EMR) wurde bei einem 8 mm großen Adenom im Colon descendens durchgeführt und nur teilweise reseziert. Beurteilung: Da die Resektion eines Adenoms nicht vollständig war, wird eine erneute Kontrolle in 6 Monaten empfohlen, um eine komplette Abtragung zu gewährleisten.",
+    "pathology report": "Das teilweise entnommene Adenom zeigte eine tubuläre Architektur mit niedriggradiger Dysplasie.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 67-jährige Dr. Ricardo Martínez de la Vega präsentierte sich zur routinemäßigen Koloskopie. Es wurden mehrere gestielte Adenome im Colon transversum identifiziert, von denen zwei (jeweils 6 mm und 10 mm) erfolgreich mit der Schlinge reseziert wurden. Ein weiterer größeres gestieltes Adenom (15 mm) mit langem Pedunkel wurde ebenfalls vollständig abgetragen. Beurteilung: Komplikationslose Resektion der gestielten Adenome. Eine erneute Koloskopie wird in 3 Jahren empfohlen.",
+    "pathology report": "Histologie bestätigt bei den resezierten Polypen ein tubuläres Adenom mit niedriggradiger Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Felipe González, 60 Jahre alt, wurde aufgrund von positiver Familienanamnese und einem früheren Befund von Adenomen zur Koloskopie vorgestellt. Bei der Untersuchung fanden sich im Rectosigmoid fünf flache Adenome (< 5 mm), die teilweise mit der Kaltbiopsiezange entfernt wurden. Auf eine totale Resektion wurde vorerst verzichtet, da histologische Ergebnisse abgewartet werden sollen. Beurteilung: Da mehrere Adenome gefunden wurden, muss eine erneute Untersuchung unter 3 Jahren stattfinden.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Carmen Esmeralda López, 72 Jahre alt, kam zur Vorsorgekoloskopie. Dabei wurde ein Stielpolyp mit langem Pedunkel im Colon sigmoideum entdeckt und vollständig mit der Schlinge reseziert. Weitere kleinere Polypen oder Adenome wurden nicht identifiziert. Beurteilung: Komplette und komplikationslose Entfernung des gestielten Polypen. Die nächste Koloskopie ist in 5 Jahren fällig.",
+    "pathology report": "Der resezierte Polyp war ein hyperplastischer Polyp ohne dysplastische Veränderungen.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 45-jährige Señor José Manuel Castillo wurde aufgrund von Blut im Stuhl zur Koloskopie überwiesen. Im Colon ascendens fanden sich drei flache Adenome (jeweils 4 mm, 5 mm und 6 mm), die jeweils mittels Heißbiopsiezange abgetragen wurden. Die Ileozökalklappe war nicht passierbar. Beurteilung: Komplikationslose Abtragung der Adenome. Empfehlung zur erneuten Koloskopie in 3 Jahren.",
+    "pathology report": "Histologie zeigt bei den entnommenen Proben tubuläre Adenome mit niedriggradiger Dysplasie.",
+    "follow up?": "3 Jahre"
+  }
+}

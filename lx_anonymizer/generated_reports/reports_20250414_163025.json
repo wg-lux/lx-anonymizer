@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Kim Dong-Hyun, 52 Jahre alt. Indikation: Kontrollkoloskopie nach vorangegangener ESD im Colon ascendens. Befund: Die Mukosa im Colon transversum zeigt einen ödematösen Aspekt. Im Bereich des Rektosigmoids ist eine deutliche Reizung der Mukosa zu erkennen. Im Colon descendens wurde ein Polyp (Paris IIa) mit malignitätsverdächtiger Oberfläche gesichtet, Größe ca. 18 mm. Im Bereich der ehemaligen ESD im Colon ascendens zeigte sich ein Verdacht auf ein Rezidiv eines Adenoms. Eine Polypektomie wurde mittels Schlinge durchgeführt. Der Lifting-Test war negativ, wodurch kein vollständiger Befund möglich war.",
+    "pathology report": "Histologiebefund: Tubulovillöses Adenom mit hochgradiger intraepithelialer Neoplasie (IEN), unvollständige Resektion des Polypen.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Dr. Lee Ji-Yeon, 45 Jahre alt. Indikation: Abklärung unklarer abdomineller Beschwerden. Befund: Die Mukosa im Colon transversum ist ödematös. Im Rektosigmoid zeigt sich eine leichte Reizung der Mukosa. Es wurden insgesamt fünf Polypen im Colon descendens entdeckt, zwei davon waren sessil (Paris Is) und ca. 8 mm groß. Ein weiterer Polyp im Colon sigmoideum (Paris IIa) hatte eine Größe von 12 mm und eine malignitätsverdächtige Oberfläche. Alle Polypen wurden mittels Schlinge abgetragen.",
+    "pathology report": "Histologiebefund: Vier tubuläre Adenome und ein tubulovillöses Adenom mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Park Min-Soo, 60 Jahre alt. Indikation: Vorsorgeuntersuchung. Befund: Die Mukosa im Colon transversum zeigt einen leicht ödematösen Aspekt. Im Rektosigmoid ist eine moderate Reizung der Mukosa zu beobachten. Ein einzelner Polyp (Paris Is) von 5 mm Größe wurde im Colon sigmoideum entdeckt und mittels Kaltpolypektomie entfernt.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom ohne Anzeichen von Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Yoo Mi-Young, 58 Jahre alt. Indikation: Kontrolluntersuchung nach Polypektomie. Befund: Die Mukosa im Colon transversum weist einen ödematösen Aspekt auf. Im Rektosigmoid ist eine leichte Reizung festzustellen. Ein 20 mm großer Polyp (Paris Ip) wurde im Colon ascendens entdeckt und mittels Schlinge entfernt. Der Lifting-Test war negativ, was die unvollständige Resektion des Polypen zur Folge hatte.",
+    "pathology report": "Histologiebefund: Tubulovillöses Adenom mit hochgradiger IEN, der Polyp konnte nicht vollständig entfernt werden.",
+    "follow up?": "6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Choi Sung-Jin, 65 Jahre alt. Indikation: Nachsorge nach Tumorresektion. Befund: Die Mukosa des Colon transversum ist ödematös. Im Rektosigmoid sind keine Auffälligkeiten zu verzeichnen. Im Bereich der Resektion zeigte sich kein Hinweis auf ein Rezidiv. Es wurden jedoch drei neue Polypen im Colon ascendens entdeckt, (Paris IIa), alle unter 10 mm. Diese wurden erfolgreich mittels Kaltpolypektomie entfernt.",
+    "pathology report": "Histologiebefund: Alle drei Polypen waren tubuläre Adenome mit niedriger IEN.",
+    "follow up?": "3 Jahre"
+  }
+}

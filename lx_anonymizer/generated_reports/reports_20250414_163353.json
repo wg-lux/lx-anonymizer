@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der Patient Herr Dr. Rajesh Mehta, 62 Jahre alt, stellte sich zur Koloskopie aufgrund von intermittierenden Blutungen und familiärer Vorbelastung mit kolorektalen Karzinomen vor. Bei der Untersuchung fand sich im Colon transversum ein gestielter Polyp von 25 mm (Paris Isp). Der Polyp wurde mittels Schlinge entfernt. In der Sigmaschleife fand sich eine Restläsion nach Piecemeal-Resektion von 8 mm, welche mittels Piecemeal-Resektion mit Clip-Versorgung vollständig entfernt wurde. Keine Zeichen einer Neoplasie in den restlichen Kolonabschnitten.",
+    "pathology report": "Der gestielte Polyp zeigte sich als Karzinom. Die Restläsion in der Sigmaschleife erwies sich pathologisch als tubuläres Adenom.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Anita Chatterjee, 55 Jahre alt, wurde aufgrund von Völlegefühl und positiver Stuhluntersuchung zur Koloskopie überwiesen. Im Rektum fand sich ein 15 mm sessiler Polyp (Paris Is). Der Polyp wurde mittels Schlinge vollständig entfernt. Weiter proximal im Colon descendens fand sich eine kleine Restläsion nach Piecemeal-Resektion von 5 mm, die mit Clip versorgt wurde. Kein Nachweis von Neoplasien im übrigen Kolon.",
+    "pathology report": "Der Polyp im Rektum zeigte eine hochgradige intraepitheliale Neoplasie. Die Restläsion erwies sich als tubuläres Adenom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Ravi Kumar, 48 Jahre alt, stellte sich als Vorsorgemaßnahme zur Koloskopie vor. Es wurden zwei Polypen von jeweils 6 mm Durchmesser (Paris IIa) im Colon ascendens entdeckt. Beide Polypen wurden mittels Kaltbiopsiezange abgetragen. Keine weiteren Auffälligkeiten oder Zeichen einer Neoplasie.",
+    "pathology report": "Beide Polypen wurden histologisch als tubuläre Adenome klassifiziert.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Dr. Vishal Kapoor, 67 Jahre alt, stellte sich mit Gewichtsverlust und Anämie zur Koloskopie vor. Es wurde ein 30 mm großer flacher Polyp (Paris IIa + IIc) im Colon sigmoideum entdeckt. Die Resektion erfolgte in Piecemeal-Technik mit Clip-Versorgung. Im Colon descendens war keine Restläsion zu beobachten, jedoch wurden insgesamt fünf Polypen von 4 bis 7 mm Durchmesser abgetragen.",
+    "pathology report": "Der große flache Polyp zeigte ein tubuläres Adenom mit fokaler hochgradiger intraepithelialer Neoplasie. Die kleinen Polypen erwiesen sich ebenfalls als tubuläre Adenome.",
+    "follow up?": "6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Frau Priya Desai, 58 Jahre alt, wurde aufgrund von Bauchschmerzen zur Koloskopie überwiesen. Im Zökum wurde ein 12 mm sessiler Polyp (Paris Is) entdeckt und mittels Schlinge vollständig abgetragen. Im Colon transversum fanden sich drei kleine Polypen mit einem Durchmesser von 5 mm, die mittels Kaltzange entfernt wurden. Keine weiteren Hinweise auf Neoplasien.",
+    "pathology report": "Der Polyp im Zökum zeigte ein tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie. Die kleineren Polypen waren tubuläre Adenome.",
+    "follow up?": "3 Jahre"
+  }
+}

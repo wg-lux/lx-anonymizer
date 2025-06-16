@@ -2,8 +2,8 @@ import cv2
 import pytesseract
 from pytesseract import Output
 import json
-from box_operations import extend_boxes_if_needed
-from custom_logger import get_logger
+from .box_operations import extend_boxes_if_needed
+from .custom_logger import get_logger
 
 logger=get_logger(__name__)
 
