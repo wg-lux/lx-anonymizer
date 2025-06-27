@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: pat. Herr Xaver Huber, 61 Jahre, kommt zur Vorsorge. Das Kolon wurde vollständig insuffliert. Im Rektosigmoid zeigt sich eine Reizung der Mukosa, keine Blutung sichtbar. Bei 35cm ab ano fand sich ein sessiler serratierter Polyp, Paris Is, Durchmesser ca. 8mm. Auffällige Pigmentierung im Colon transversum, DD: Melanose coli, sonst keine weiteren pathologischen Veränderungen sichtbar. Polypektomie erfolgte mittels Kaltzange. Keine Komplikationen.",
+    "Beurteilung": "Unauffälliger Verlauf, Polyp entfernt. Empfehlung: Nächste Kontrolle in 5 Jahren.",
+    "pathology report": "Histologie: Sessiler serratierter Polyp ohne Dysplasie, kein Hinweis auf Malignität.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Rosa Maier-Lindinger, 69 Jahre. Kolon war vollständig insuffliert, Schleimhaut gut beurteilbar. Reizung der Mukosa im Rektosigmoid, vermutlich durch Obstipation. In der linken Flexur zeigt sich auffällige Pigmentierung, DD: Melanose, keine Ulzerationen. Es finden sich keine pathologischen Veränderungen sichtbar. Kein Polyp nachweisbar.",
+    "Beurteilung": "Unauffälliger Befund, keine Polypektomie, keine Biopsie.",
+    "pathology report": "—",
+    "follow up?": "10 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Dr. Alois Lechleitner, 54 J., Anamnese von wiederholten Blutauflagerungen. Kolon konnte vollständig insuffliert werden, jedoch fand sich im Rektosigmoid eine auffällige Reizung der Mukosa. Es bestand eine dunkle Pigmentierung, DD: Melanose. Am aboralen Colon ascendens zeigte sich ein 13mm großer sessiler Polyp (Paris Is, JNET 2A). Polypektomie erfolgte in Piecemeal-Technik mittels Schlinge. Keine weiteren pathologischen Veränderungen sichtbar.",
+    "Beurteilung": "Komplikationslose Polypektomie. Histologie steht noch aus. Kontrollkoloskopie in 2-6 Monaten empfohlen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2-6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Georg Plankenbichl, 77 J. Kolon vollständig insuffliert, Übersicht bestens. Rektosigmoidal deutliche Reizung der Mukosa, vermutlich durch vorbestehende Divertikulitis. In der Ansicht sigmoid findet sich eine auffällige Pigmentierung (DD: Melanose). Im Colon transversum ein kleiner, 5mm sessiler Polyp, Paris Is, JNET 1. Entfernung mittels Kaltzange. Weiter keine pathologischen Veränderungen sichtbar.",
+    "Beurteilung": "Komplikationslose Resektion des Polypen. Kontrollkoloskopie in 5 Jahren empfohlen.",
+    "pathology report": "Histologie: Hyperplastischer Polyp ohne Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Monika Bamberger aus Regensburg, 63 Jahre. Kolon vollständiginsuffliert, Übersicht gut. Im Rektosigmoid Schleimhautreizung (leichte Kontaktblutung). Insgesamt auffällige Pigmentierung des Colon descendens, DD: Melanose. Keine pathologischen Veränderungen sichtbar, kein Polypen, keine Tumoren.",
+    "Beurteilung": "Unauffälliger Befund, keine Intervention notwendig.",
+    "pathology report": "—",
+    "follow up?": "10 Jahre"
+  }
+}

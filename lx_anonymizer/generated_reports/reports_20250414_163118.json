@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Takeshi Yamamoto, 58 Jahre. Indikation: Vorsorgeuntersuchung. Befund: Im Colon sigmoideum fand sich ein Polyp von 15 mm Größe, gestielt (Paris 0-Is), der mit der Schlinge abgetragen wurde. Histologie ergab ein tubuläres Adenom ohne Hinweis auf Dysplasie. Bei der Bauhin-Klappe zeigte sich eine suspekte Läsion, die biopsiert wurde. Im Colon descendens wurden mehrere Divertikel, jedoch ohne Entzündungszeichen, festgestellt. Postoperative Nachblutung nach Polypektomie, die mit Klammern gestillt wurde.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom im Colon sigmoideum, biopsierte Läsion an der Bauhin-Klappe zeigt keine Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Haruka Tsunoda, 64 Jahre. Indikation: Anämie unklarer Genese. Befund: Im Colon ascendens fand sich ein 10 mm großer Polyp (Paris 0-IIa), der mit der Kaltbiopsie-Schlinge entfernt wurde. Im Colon sigmoideum wurden zwei Polypen (je 8 mm, Paris 0-IIa) abgetragen. Histologie ergab bei allen ein tubuläres Adenom, kein Hinweis auf Dysplasie. Im Colon descendens eine ausgeprägte Divertikulose ohne akute Entzündung.",
+    "pathology report": "Histologiebefund: Tubuläre Adenome ohne Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Dr. Kenjiro Sugimoto, 70 Jahre. Indikation: Kontrolle nach Polypektomie. Befund: Im Colon transversum fanden sich zwei suspekte Läsionen, die beide ca. 12 mm groß waren (Paris 0-IIa). Beide wurden mit der Schlinge entfernt, eine Inkomplettresektion wurde bei einer Läsion festgestellt. Bei der Bauhin-Klappe fand sich eine auffällige Läsion, die biopsiert wurde. Histologie ergab ein Adenom mit hochgradiger IEN.",
+    "pathology report": "Histologiebefund: Adenom mit hochgradiger intraepithelialer Neoplasie im Colon transversum, keine Malignität in der biopsierten Läsion an der Bauhin-Klappe.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Noriaki Tetsuo, 55 Jahre. Indikation: Blut im Stuhl. Befund: Im Colon sigmoideum wurde ein 20 mm großer, breitbasiger Polyp (Paris 0-Is) entdeckt und mittels EMR-Technik entfernt. Histologie ergab ein tubuläres Adenom mit fokaler Dysplasie. Weiterhin wurden im Colon descendens zahlreiche Divertikel entdeckt. Kein Hinweis auf Blutungsquellen.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom mit fokaler Dysplasie, keine Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Yuki Sakamoto, 62 Jahre. Indikation: Routine-Koloskopie wegen positiver Familienanamnese. Befund: Es fanden sich insgesamt fünf Polypen (3x 5 mm, 2x 7 mm, Paris 0-IIa) im Colon transversum und Colon sigmoideum, die alle mit der Schlinge abgetragen wurden. Histologie ergab tubuläre Adenome ohne Dysplasie. In keinem Kolonabschnitt fand sich eine suspekte Läsion. Es wurde zusätzlich eine nicht-entzündliche Divertikulose im Colon descendens festgestellt.",
+    "pathology report": "Histologiebefund: Tubuläre Adenome ohne Dysplasie.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

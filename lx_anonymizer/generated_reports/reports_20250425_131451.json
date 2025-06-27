@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Rafik Ben Hassen (52 J.) erfolgte die Koloskopie aufgrund von intermittierenden abdominellen Schmerzen und positiver familiärer Anamnese für kolorektale Karzinome. Die Bauhinsche Klappe war intakt, die Zökumdarstellung sowie die Intubation verliefen unauffällig. Im Bereich des absteigenden Kolons fand sich ein flaches, 13 mm großes Adenom (Paris 0-IIa, JNET 2A), das mittels Schlingentechnik reseziert werden sollte. Die Lifting-Injektion ergab jedoch ein negatives Lifting, so dass eine vollständige Abtragung nicht möglich war. Im Bereich des terminalen Ileums fanden sich keine Auffälligkeiten. Es konnte keine Blutungsquelle identifiziert werden. Dysplasiekontrolle nach IBD (Colitis ulcerosa, Remissionsstatus).",
+    "pathology report": "Histologisch: In den entnommenen Biopsien aus dem Adenom zeigte sich eine niedriggradige intraepitheliale Neoplasie (IEN). Inkomplette Abtragung eines flachen Adenoms (13 mm, Paris 0-IIa).",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Sabrine Gueddari, gebürtig aus Sfax (45 J.), erfolgte die Koloskopie im Rahmen der Dysplasiekontrolle nach IBD. Die Schleimhaut zeigte sich auf weiten Strecken unauffällig. Im Rektum und Colon sigmoideum fanden sich keine Hinweise auf aktive Entzündung. In der linken Flexur zeigte sich eine flache Läsion, 9 mm (Paris 0-IIb, JNET 2A), welche komplett mit Kaltschlinge abgetragen werden konnte. Keine Blutungsquelle identifizierbar. Histologie steht noch aus.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Professor Mounir Abdelkefi (63 J.) wurde zur Abklärung von okkulten Blutverlusten vorgestellt. Die Koloskopie ergab einen unauffälligen Befund bis auf eine flache, wenig prominente Läsion (6 mm, Paris 0-IIa, JNET 1) im ascendierenden Kolon. Diese wurde vollständig mittels kalter Schlinge abgetragen. Die Untersuchung musste jedoch im Bereich des Sigmas aufgrund eines negativen Liftings und schwer passierbarer Stenose abgebrochen werden – kein vollständiger Befund möglich. Keine Blutungsquelle identifizierbar.",
+    "pathology report": "Histologisch handelte es sich um ein tubuläres Adenom mit niedriggradiger IEN. Inkomplette Abtragung konnte ausgeschlossen werden.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Yassine Karray (38 J.), Dysplasiekontrolle nach bekannter Colitis ulcerosa. Im gesamten Kolon keine aktiven Entzündungszeichen. Im Colon transversum wurde ein flaches Adenom (12 mm, Paris 0-IIa, JNET 2A) entdeckt, welches mittels EMR-Technik (endoskopische Mukosaresektion) in Piecemeal-Technik abgetragen wurde. Bei Injektion Lifting negativ. Keine Blutungsquelle identifizierbar.",
+    "pathology report": "Histologisch: Tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie (IEN), inkomplette Abtragung eines flachen Adenoms.",
+    "follow up?": "6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Amira Gharbi (58 J.), tunesischer Abstammung, stellte sich zur Blutungsabklärung vor. Die Koloskopie zeigte bis zum terminalen Ileum keine relevante Pathologie. Es konnte keine Blutungsquelle identifiziert werden. Im Bereich des Rektums wurde eine Rötung als unspezifisch beurteilt. Dysplasiekontrolle nach IBD indiziert. Kein Polyp nachweisbar.",
+    "pathology report": "Keine Polypen, keine Dysplasie.",
+    "follow up?": "10 Jahre"
+  }
+}

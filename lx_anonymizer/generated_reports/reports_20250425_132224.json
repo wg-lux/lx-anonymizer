@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Herr Benedikt Zacherl, 61 Jahre, stellte sich zur Vorsorgekoloskopie vor. Die Untersuchung verlief unauffällig bis auf folgende Befunde: Im Sigma zeigten sich Blutauflagerungen auf der Mukosa ohne aktive Blutungsquelle. In der gesamten Kolonmukosa war eine auffällige Kryptenarchitektur sichtbar, jedoch kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon ascendens fanden sich multiple kleine Polypen (insg. 3), jeweils 4–6 mm groß, flach, nach Paris IIa klassifiziert (JNET Typ 2). Diese wurden mittels kalter Schlinge komplikationslos abgetragen. Keine weiteren Auffälligkeiten.",
+    "Beurteilung": "Komplikationslose Resektion multipler kleiner Adenome. Kein Anhalt für chronisch-entzündliche Darmerkrankung. Empfehlung: Kontrolle in 3 Jahren.",
+    "pathology report": "Histologie: 3x tubuläres Adenom ohne high-grade IEN, vollständig abgetragen.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Magdalene Oberreiterin (74) kam mit intermittierendem abdominalem Druckgefühl. Im Sigma fanden sich frische Blutauflagerungen, aber keine eindeutige Blutungsquelle. Die Schleimhaut zeigte insgesamt eine auffällige Kryptenarchitektur, jedoch kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon ascendens entdeckte ich 2 kleine, flache Läsionen nach Paris IIa (je 5 mm, JNET Typ 2A). Entfernung erfolgte mittels kalter Biopsiezange. Keine weiteren Pathologien.",
+    "Beurteilung": "Geringfügige Polypenentfernung, unklare Herkunft der Blutauflagerungen. Keine Anzeichen für CED. Kontrolle in 5 Jahren empfohlen.",
+    "pathology report": "Histologie: 2x tubuläres Adenom, niedriggradige intraepitheliale Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Herr Sepp Grünzlinger, 57 Jahre, zur Abklärung positiver Hämoccult. Im Sigma geringfügige Blutauflagerungen, evtl post-hämorrhoidal. Über das Kolon hinweg auffällige Kryptenarchitektur. Kein makroskopischer Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon ascendens fanden sich insgesamt 6 kleine Adenome (<5mm, Paris IIa), zwei davon direkt nebeneinanderliegend. Entfernung erfolgte mit kalter Schlinge, kein Blutungskomplikation.",
+    "Beurteilung": "Problemlose Abtragung multipler Adenome, kein Hinweis auf chronisch-entzündliche Darmerkrankung. Aufgrund Anzahl Nachsorge <3 Jahre empfohlen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Frau Xaveria Huber-Gänslein (66 Jahre), elektive Kontrollkoloskopie bei bekannter Polypen-Anamnese. Die Kolonmukosa zeigte eine diskrete, teils auffällige Kryptenarchitektur. Im Sigma fanden sich schmierig aufgelagerte Blutanhaftungen. Kein makroskopischer Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon ascendens flache Läsion (Paris IIa), 12 mm, JNET Typ 2B. Entfernung in Piecemeal-Technik mittels heißer Schlinge. Keine akute Komplikation.",
+    "Beurteilung": "Flache Läsion >10mm im Colon ascendens piecemeal abgetragen. Empfehlung: endoskopische Nachkontrolle in 2–6 Monaten zur Überprüfung der Resektionsstelle.",
+    "pathology report": "Histologie: tubulovillöses Adenom mit Hochgradiger intraepithelialer Neoplasie (IEN), Resektionsränder fraglich frei.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: patient Alois Baumgartner, 72, stellte sich mit rez. abdominellen Beschwerden vor. Sigma: Mehrere frische Blutauflagerungen, keine aktive Blutung. Über das Colon hinweg auffällige Kryptenarchitektur, aber KEIN Hinweis für M. Crohn oder Colitis ulcerosa. Im Colon ascendens multipel kleine, <5mm große Adenome (Paris IIa, JNET Typ 2), insgesamt 5 Stück, entfernt mit kalter Schlinge. Eine Läsion im Colon ascendens, flach, 9mm, wurde mit Heißbiopsie abgetragen.",
+    "Beurteilung": "Mehrfache kleine Adenome entfernt, Verlauf unkompliziert. Empfohlen wird erneute Koloskopie in unter 3 Jahren.",
+    "pathology report": "Histologie: 5x tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

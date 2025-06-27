@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Sepp Niedermeier, 67 J., stellte sich nach Nachblutung nach Polypektomie im Colon sigmoideum vor (Endoskopie vor 3 Tagen). In der aktuellen Untersuchung zeigt sich eine submuköse Einblutung an der alten Polypektomie-Stelle, keine aktive Blutung mehr sichtbar. Im gesamten Colon fanden sich multiple flache Adenome (< 5mm, Paris IIa, größtes 4mm, JNET Typ 2A), insgesamt 3 Stück.Diese wurden mittels kalter Schlinge entfernt. An einer Läsion im Colon ascendens wurde die EMR wegen schlechter Übersicht inkomplett durchgeführt; Teilstück ließ sich nicht entfernen. Zusätzlich wurden bei bekannter Colitis ulcerosa im Colon transversum 4 Quadranten-Biopsien zur Surveillance entnommen. ",
+    "beurteilung": "Komplizierte Verlauf nach Polypektomie mit submuköser Einblutung, keine aktive Blutung mehr. Inkomplette EMR im Colon ascendens, erneute Kontrolle in 6 Monaten empfohlen. Surveillance-Biopsien bei IBD durchgeführt.",
+    "pathology report": "Histologie: Tubuläres Adenom (sigmoideum & transversum), keine Dysplasie in den IBD-Biopsien. Reststück (Colon ascendens): Histologie steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Frau Dr. Hildegard Pflügl, 54, kam zur Surveillance bei bekannter Colitis ulcerosa. Im Colon descendens fanden sich 5 flache Adenome <5mm (Paris IIa, größtes 4mm, JNET 2A), die alle mit kalter Biopsiezange entfernt wurden. Im Bereich des Colon sigmoideum zeigte sich eine submuköse Einblutung vermutlich nach einer früheren Biopsie (unauffällig, keine Therapie notwendig). Biopsien zur Surveillance 4 Quadranten in Colon und Rectum entnommen. Keine Tumoren oder größere Polypen. Polypektomie verlief ohne Komplikationen.",
+    "beurteilung": "Multiple flache Adenome entfernt, Biopsien zur Surveillance bei IBD, submuköse Einblutung ohne Therapiebedarf. Kontrolle wegen >5 Adenome in unter 3 Jahren empfohlen.",
+    "pathology report": "Histologie: alle entfernten Polypen tubuläre Adenome mit leichter Dysplasie; IBD-Biopsien: keine Dysplasie.",
+    "follow up?": "2 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Xaver Holzhammer aus Garmisch (73 Jahre) nach Polypektomie im Colon ascendens – Vorstellung wegen Nachblutung. Bei der Untersuchung zeigte sich an der Polypektomiestelle eine submuköse Einblutung, zudem wurde eine inkomplette EMR eines 12mm großen flachen Polypen (Paris IIa, JNET 2B) im Colon descendens durchgeführt, da der Polyp aufgrund starker Blutung nicht vollständig entfernt werden konnte. Im restlichen Colon 2 weitere flache Adenome <5mm, entfernt mit kalter Zange. Biopsien zur Surveillance bei IBD im Colon transversum durchgeführt. Erneute Kontrolle wegen inkompletter EMR empfohlen.",
+    "beurteilung": "Nachblutung nach Polypektomie, inkomplette EMR (descendens), erneute Kontrolle in 6 Monaten empfohlen. Surveillance-Biopsien genommen.",
+    "pathology report": "Histologie: Tubuläres Adenom mit mittelgradiger Dysplasie (descendens), kleine Adenome: tubulär mit leichter Dysplasie. Histologie der Polypektomiereste steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Anna-Lena Sterzinger, 61, stellte sich zur Routinekoloskopie vor. Während der Untersuchung fanden sich multiple (6) flach-aufgebaute Adenome < 5 mm im Colon ascendens und transversum (Paris IIa, JNET 2A). Alle wurden mit kalter Schlinge entfernt. Keine Hinweise auf Nachblutung im Intervall oder submuköse Einblutung. Zusätzlich Biopsien im Colon descendens zur Surveillance bei bekannter Morbus Crohn. Keine weiteren Auffälligkeiten.",
+    "beurteilung": "Multiple flache Adenome entfernt; aufgrund der Anzahl (< 7), Nachsorge in unter 3 Jahren empfohlen. Surveillance-Biopsien bei IBD durchgeführt.",
+    "pathology report": "Histologie: Tubuläre Adenome mit niedriger Dysplasie; IBD-Biopsien: keine Dysplasie.",
+    "follow up?": "2 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Ludwig Wimmer, 78, wird zu Notfallkoloskopie eingewiesen nach persistierender Nachblutung nach Polypektomie im Sigmoid. Bei Inspektion zeigt sich eine ausgeprägte submuköse Einblutung um die Polypektomiestelle, aktive Blutung, gestoppt durch Applikation einer Klammer. Im Colon descendens inkomplette EMR eines 8mm flachen Adenoms (Paris IIa, JNET 2A), da Teile schlecht abgehoben. 2 weitere kleine flache Adenome (je <5mm) im Colon transversum, entfernt mit kalter Zange. Zusätzlich Biopsien zur Surveillance bei IBD (Pancolitis in der Vorgeschichte) entnommen. Erneute Kontrolle aufgrund der inkompletten EMR empfohlen.",
+    "beurteilung": "Nachblutung nach Polypektomie erfolgreich gestillt, inkomplette EMR im descendens, Kontrolle und ggf. Nachresektion in 6 Monaten empfohlen. Biopsien zur IBD-Surveillance entnommen.",
+    "pathology report": "Histologie: Sigmoidpolyp tubuläres Adenom mit hochgradiger IEN; descendens: Histologie steht noch aus; IBD-Biopsien: keine Dysplasie.",
+    "follow up?": "6 Monate"
+  }
+}
