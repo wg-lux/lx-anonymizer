@@ -6,6 +6,7 @@ LX Anonymizer package for anonymizing medical reports and images.
 from .report_reader import ReportReader
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .text_anonymizer import anonymize_text
+from . import frame_cleaner
 
 __all__ = [
     'ReportReader',
@@ -13,5 +14,6 @@ __all__ = [
     'ExaminerDataExtractor', 
     'EndoscopeDataExtractor',
     'ExaminationDataExtractor',
-    'anonymize_text'
+    'anonymize_text',
+    'frame_cleaner'
 ]
