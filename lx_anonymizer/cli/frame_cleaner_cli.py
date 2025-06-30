@@ -31,7 +31,7 @@ current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
 try:
-    from lx_anonymizer.frame_cleaner import clean_video
+    from lx_anonymizer.frame_cleaner import FrameCleaner
     from lx_anonymizer.report_reader import ReportReader
     from lx_anonymizer.custom_logger import logger, configure_global_logger
 except ImportError as e:
@@ -91,7 +91,7 @@ class FrameCleanerCLI:
             report_reader = self.create_report_reader()
             
             # Clean the video
-            cleaned_video_path = clean_video(video_path, report_reader)
+            cleaned_video_path = FrameCleaner.clean_video(video_path, report_reader)
             
             # Move to output directory if specified
             if output_dir:
