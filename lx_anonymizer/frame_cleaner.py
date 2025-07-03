@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
+from lx_anonymizer.report_reader import ReportReader
 import cv2
 import numpy as np
 import pytesseract
@@ -218,7 +219,7 @@ class FrameCleaner:
     def clean_video(
         self,
         video_path: Path,
-        report_reader,
+        report_reader=ReportReader(),
         tmp_dir: Optional[Path] = None
     ) -> Path:
         """
