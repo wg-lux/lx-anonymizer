@@ -164,8 +164,8 @@ class FrameCleaner:
             
             logger.debug(f"OCR text from {frame_path.name}: {ocr_text[:100]}...")
             
-            # Use the same name detection logic as report_reader
-            patient_info = report_reader.process_report(text=ocr_text)
+            # Use the same name detection logic as report_reader on process report
+            patient_info = report_reader.process_report(text=ocr_text, image_path=frame_path)
                         
             # Check if sensitive information was found
             sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
@@ -316,7 +316,7 @@ class FrameCleaner:
             
             if not sensitive_frame_indices:
                 for i, frame_path in enumerate(frame_paths):
-                    if self.detect_sensitive_on_frame_extended(frame_path):
+                    if self.detect_sensitive_on_frame_extended(frame_path, report_reader):
                         sensitive_frame_indices.append(i)
             
             if not sensitive_frame_indices:
