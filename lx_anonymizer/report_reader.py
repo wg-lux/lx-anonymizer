@@ -294,7 +294,7 @@ class ReportReader:
 
         return anonymized_text
         
-    def process_report(self, pdf_path=None, use_ensemble=False, verbose=True, use_llm_extractor=None, text=None):
+    def process_report(self, pdf_path=None, image_path=None, use_ensemble=False, verbose=True, use_llm_extractor=None, text=None):
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         If the normal pdfplumber extraction fails (or returns very little text), fallback to OCR.
@@ -302,15 +302,23 @@ class ReportReader:
         Optionally, specify an LLM extractor ('deepseek', 'medllama', 'llama3') to use INSTEAD of SpaCy/regex.
         """
         if text is None:
-            if not pdf_path:
-                raise ValueError("Either 'pdf_path' or 'text' must be provided.")
+            if not pdf_path and not image_path:
+                raise ValueError("Either 'pdf_path' 'image_path' or 'text' must be provided.")
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-            text = self.read_pdf(pdf_path)
+            if pdf_path:
+                text = self.read_pdf(pdf_path)
+            elif image_path:
+                # If image_path is provided, we assume it's a single image file
+                logger.info(f"Reading text from image file: {image_path}")
+                try:
+                    pil_image = Image.open(image_path)
+                    text, _ = tesseract_full_image_ocr(pil_image) # Use Tesseract OCR on the image
+                except Exception as e:
+                    logger.error(f"Error reading image {image_path}: {e}")
+                    return "", "", {}
+
         
-        if pdf_path is None:
-            # If no pdf_path is provided, we assume text is already extracted
-            logger.info("No PDF path provided, using provided text directly.")
         
         ocr_applied = False # Flag to track if OCR was used
 
@@ -320,7 +328,9 @@ class ReportReader:
             try:
                 logger.info(f"Short/No text detected by pdfplumber ({len(text.strip())} chars), applying OCR fallback.")
                 # ... (OCR logic remains the same as before) ...
-                images_from_pdf = convert_pdf_to_images(pdf_path)
+                if pdf_path:
+                    logger.info(f"Converting PDF to images for OCR: {pdf_path}")
+                    images_from_pdf = convert_pdf_to_images(pdf_path)
                 ocr_text = ""
 
                 for idx, pil_image in enumerate(images_from_pdf):
