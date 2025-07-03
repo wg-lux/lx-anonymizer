@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 import pytesseract
 from PIL import Image
+from tests.media import report
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,60 @@ class FrameCleaner:
             # Use the same name detection logic as report_reader
             patient_info = report_reader.patient_extractor(ocr_text)
             
+            patient_info += report_reader.patient_extractor(ocr_text, use_regex=True)
+            
+            # Check if sensitive information was found
+            sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
+            has_sensitive_data = any(
+                patient_info.get(field) not in [None, '', 'Unknown'] 
+                for field in sensitive_fields
+            )
+            
+            if has_sensitive_data:
+                logger.warning(f"Sensitive data detected in frame {frame_path.name}: {patient_info}")
+                return True
+            
+            # TODO: Add additional checks for DOB patterns, case numbers, etc.
+            # For now, rely on PatientDataExtractor's comprehensive detection
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error processing frame {frame_path}: {e}")
+            # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
+            return False
+
+    def detect_sensitive_on_frame_extended(self, frame_path: Path, report_reader) -> bool:
+        """
+        Detect if a frame contains sensitive information using OCR + name detection.
+        
+        Args:
+            frame_path: Path to frame image
+            report_reader: ReportReader instance with PatientDataExtractor
+            
+        Returns:
+            True if frame contains sensitive data, False otherwise
+        """
+        try:
+            # Load image and apply OCR
+            image = Image.open(frame_path)
+            
+            # Convert to grayscale for better OCR
+            if image.mode != 'L':
+                image = image.convert('L')
+            
+            # Apply OCR
+            ocr_text = pytesseract.image_to_string(image, lang='deu')
+            
+            if not ocr_text.strip():
+                logger.debug(f"No text detected in frame {frame_path.name}")
+                return False
+            
+            logger.debug(f"OCR text from {frame_path.name}: {ocr_text[:100]}...")
+            
+            # Use the same name detection logic as report_reader
+            patient_info = report_reader.process_report(text=ocr_text)
+                        
             # Check if sensitive information was found
             sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
             has_sensitive_data = any(
@@ -258,6 +313,17 @@ class FrameCleaner:
             for i, frame_path in enumerate(frame_paths):
                 if self.detect_sensitive_on_frame(frame_path, report_reader):
                     sensitive_frame_indices.append(i)
+            
+            if not sensitive_frame_indices:
+                for i, frame_path in enumerate(frame_paths):
+                    if self.detect_sensitive_on_frame_extended(frame_path):
+                        sensitive_frame_indices.append(i)
+            
+            if not sensitive_frame_indices:
+                logger.info("No sensitive frames detected, copying original video")
+                import shutil
+                shutil.copy2(video_path, output_video)
+                return output_video
             
             logger.info(f"Found {len(sensitive_frame_indices)} sensitive frames out of {len(frame_paths)}")
             

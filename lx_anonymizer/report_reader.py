@@ -294,14 +294,24 @@ class ReportReader:
 
         return anonymized_text
         
-    def process_report(self, pdf_path, use_ensemble=False, verbose=True, use_llm_extractor=None):
+    def process_report(self, pdf_path=None, use_ensemble=False, verbose=True, use_llm_extractor=None, text=None):
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         If the normal pdfplumber extraction fails (or returns very little text), fallback to OCR.
         Optionally, use an ensemble OCR method to improve output quality.
         Optionally, specify an LLM extractor ('deepseek', 'medllama', 'llama3') to use INSTEAD of SpaCy/regex.
         """
-        text = self.read_pdf(pdf_path)
+        if text is None:
+            if not pdf_path:
+                raise ValueError("Either 'pdf_path' or 'text' must be provided.")
+            if not os.path.exists(pdf_path):
+                raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+            text = self.read_pdf(pdf_path)
+        
+        if pdf_path is None:
+            # If no pdf_path is provided, we assume text is already extracted
+            logger.info("No PDF path provided, using provided text directly.")
+        
         ocr_applied = False # Flag to track if OCR was used
 
         # --- OCR Fallback ---
