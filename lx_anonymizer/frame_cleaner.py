@@ -13,12 +13,15 @@ Uses the same spaCy + regex logic from lx_anonymizer.report_reader for consisten
 import logging
 import subprocess
 import tempfile
+import json
+import os
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Union
 import cv2
 import numpy as np
 import pytesseract
 from PIL import Image
+
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.utils.ollama import ensure_ollama
 
