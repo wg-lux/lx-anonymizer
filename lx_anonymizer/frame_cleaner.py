@@ -15,11 +15,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
-from lx_anonymizer.report_reader import ReportReader
 import cv2
 import numpy as np
 import pytesseract
 from PIL import Image
+from lx_anonymizer.report_reader import ReportReader
+from lx_anonymizer.utils.ollama import ensure_ollama
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class FrameCleaner:
     """
     
     def __init__(self):
+        ollama_proc = ensure_ollama()
         pass  # Initialization logic if needed in the future
     
         
