@@ -294,7 +294,7 @@ class ReportReader:
 
         return anonymized_text
         
-    def process_report(self, pdf_path=None, image_path=None, use_ensemble=False, verbose=True, use_llm_extractor=None, text=None):
+    def process_report(self, pdf_path=None, image_path=None, use_ensemble=False, verbose=True, use_llm_extractor='deepseek', text=None):
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         If the normal pdfplumber extraction fails (or returns very little text), fallback to OCR.

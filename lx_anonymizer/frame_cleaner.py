@@ -111,60 +111,6 @@ class FrameCleaner:
             
             # Use the same name detection logic as report_reader
             patient_info = report_reader.patient_extractor(ocr_text)
-            
-            patient_info += report_reader.patient_extractor(ocr_text, use_regex=True)
-            
-            # Check if sensitive information was found
-            sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
-            has_sensitive_data = any(
-                patient_info.get(field) not in [None, '', 'Unknown'] 
-                for field in sensitive_fields
-            )
-            
-            if has_sensitive_data:
-                logger.warning(f"Sensitive data detected in frame {frame_path.name}: {patient_info}")
-                return True
-            
-            # TODO: Add additional checks for DOB patterns, case numbers, etc.
-            # For now, rely on PatientDataExtractor's comprehensive detection
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error processing frame {frame_path}: {e}")
-            # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
-            return False
-
-    def detect_sensitive_on_frame_extended(self, frame_path: Path, report_reader) -> bool:
-        """
-        Detect if a frame contains sensitive information using OCR + name detection.
-        
-        Args:
-            frame_path: Path to frame image
-            report_reader: ReportReader instance with PatientDataExtractor
-            
-        Returns:
-            True if frame contains sensitive data, False otherwise
-        """
-        try:
-            # Load image and apply OCR
-            image = Image.open(frame_path)
-            
-            # Convert to grayscale for better OCR
-            if image.mode != 'L':
-                image = image.convert('L')
-            
-            # Apply OCR
-            ocr_text = pytesseract.image_to_string(image, lang='deu')
-            
-            if not ocr_text.strip():
-                logger.debug(f"No text detected in frame {frame_path.name}")
-                return False
-            
-            logger.debug(f"OCR text from {frame_path.name}: {ocr_text[:100]}...")
-            
-            # Use the same name detection logic as report_reader on process report
-            patient_info = report_reader.process_report(text=ocr_text, image_path=frame_path)
                         
             # Check if sensitive information was found
             sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
@@ -186,7 +132,106 @@ class FrameCleaner:
             logger.error(f"Error processing frame {frame_path}: {e}")
             # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
             return False
+    
+    def _detect_sensitive_meta_llm(
+        self,
+        ocr_text: str,
+        report_reader: ReportReader,
+        llm_model: str = "deepseek"
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Detect sensitive metadata using LLM-powered extraction from ReportReader.
+        
+        Args:
+            ocr_text: OCR-extracted text from frame
+            report_reader: ReportReader instance with LLM extractors
+            llm_model: LLM model to use ('deepseek', 'medllama', 'llama3')
+            
+        Returns:
+            Tuple of (has_sensitive_data, metadata_dict)
+        """
+        try:
+            # Call ReportReader's process_report with LLM extractor
+            _, _, meta = report_reader.process_report(
+                text=ocr_text,
+                pdf_path=None,
+                image_path=None,
+                use_llm_extractor=llm_model,
+                verbose=False
+            )
+            
+            # Check for sensitive information in extracted metadata
+            sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
+            has_sensitive_data = False
+            
+            # Check standard sensitive fields
+            for field in sensitive_fields:
+                value = meta.get(field)
+                if value not in [None, '', 'Unknown']:
+                    has_sensitive_data = True
+                    break
+            
+            # Check for non-empty patient_dob
+            if not has_sensitive_data:
+                patient_dob = meta.get('patient_dob')
+                if patient_dob and patient_dob.strip():
+                    has_sensitive_data = True
+            
+            # Check for patient_gender that is not None
+            if not has_sensitive_data:
+                patient_gender = meta.get('patient_gender')
+                if patient_gender is not None:
+                    has_sensitive_data = True
+            
+            return has_sensitive_data, meta
+            
+        except Exception as e:
+            logger.error(f"LLM metadata extraction failed: {e}")
+            return False, {}
 
+    def detect_sensitive_on_frame_extended(self, frame_path: Path, report_reader) -> bool:
+        """
+        Detect if a frame contains sensitive information using OCR + LLM-powered metadata extraction.
+        
+        Args:
+            frame_path: Path to frame image
+            report_reader: ReportReader instance with LLM extractors
+            
+        Returns:
+            True if frame contains sensitive data, False otherwise
+        """
+        try:
+            # Load image and apply OCR
+            image = Image.open(frame_path)
+            
+            # Convert to grayscale for better OCR
+            if image.mode != 'L':
+                image = image.convert('L')
+            
+            # Apply OCR
+            ocr_text = pytesseract.image_to_string(image, lang='deu')
+            
+            if not ocr_text.strip():
+                logger.debug(f"No text detected in frame {frame_path.name}")
+                return False
+            
+            logger.debug(f"OCR text from {frame_path.name}: {ocr_text[:100]}...")
+            
+            # Use LLM-powered metadata extraction
+            has_sensitive, meta = self._detect_sensitive_meta_llm(
+                ocr_text, report_reader, llm_model="deepseek"
+            )
+            
+            if has_sensitive:
+                logger.warning(f"LLM detected sensitive data in frame {frame_path.name}: {meta}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error processing frame {frame_path}: {e}")
+            # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
+            return False
 
     def remove_frames_from_video(
         self,
