@@ -20,7 +20,6 @@ import cv2
 import numpy as np
 import pytesseract
 from PIL import Image
-from tests.media import report
 
 logger = logging.getLogger(__name__)
 
