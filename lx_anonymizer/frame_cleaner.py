@@ -34,7 +34,7 @@ class FrameCleaner:
     
     def __init__(self):
         ollama_proc = ensure_ollama()
-        pass  # Initialization logic if needed in the future
+        pass 
     
         
 
@@ -261,75 +261,217 @@ class FrameCleaner:
                 shutil.copy2(original_video, output_video)
                 return True
             
-            # Create temporary filter file for ffmpeg
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as filter_file:
-                # Build filter to skip specific frames
-                # For simplicity, we'll use a frame selection approach
-                # TODO: Optimize this for large videos with many frames to remove
-                
-                if total_frames:
-                    # Create list of frames to keep
-                    frames_to_keep = [i for i in range(total_frames) if i not in frames_to_remove]
-                    
-                    # Write frame selection filter
-                    select_expr = '+'.join([f'eq(n,{frame})' for frame in frames_to_keep[:100]])  # Limit for performance
-                    if len(frames_to_keep) > 100:
-                        logger.warning(f"Too many frames to process efficiently ({len(frames_to_keep)}), using simplified approach")
-                        select_expr = f'not(eq(n,{frames_to_remove[0]}))'  # Just remove first problematic frame
-                    
-                    filter_file.write(f"select='{select_expr}',setpts=N/FRAME_RATE/TB")
-                else:
-                    # Fallback: just remove first problematic frame
-                    filter_file.write(f"select='not(eq(n,{frames_to_remove[0]}))',setpts=N/FRAME_RATE/TB")
-                
-                filter_path = filter_file.name
+            logger.info(f"Removing {len(frames_to_remove)} frames from video: {frames_to_remove}")
             
-            try:
-                # Build ffmpeg command with frame filtering
-                cmd = [
-                    'ffmpeg', '-i', str(original_video),
-                    '-vf', f'select=not(eq(n,{frames_to_remove[0]})),setpts=N/FRAME_RATE/TB',
-                    '-af', 'aselect=concatdec_select,asetpts=N/SR/TB',  # Sync audio
-                    '-y',
-                    str(output_video)
-                ]
-                
-                logger.info(f"Re-encoding video without {len(frames_to_remove)} frames")
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                logger.debug(f"ffmpeg re-encode output: {result.stderr}")
-                
-                if output_video.exists() and output_video.stat().st_size > 0:
-                    logger.info(f"Successfully created cleaned video: {output_video}")
-                    return True
-                else:
-                    logger.error("Output video is empty or missing")
-                    return False
-                    
-            finally:
-                # Clean up filter file
-                Path(filter_path).unlink(missing_ok=True)
+            # Create properly escaped filter expression for multiple frames
+            # Escape commas in eq() expressions and join with + for OR logic
+            idx_list = '+'.join([f'eq(n\\,{idx})' for idx in frames_to_remove])
+            
+            # Build video filter: select frames NOT in the removal list
+            vf = f"select='not({idx_list})',setpts=N/FRAME_RATE/TB"
+            
+            # Build audio filter: keep audio in sync (or skip if no audio needed)
+            af = f"aselect='not({idx_list})',asetpts=N/SR/TB"
+            
+            # Build ffmpeg command with properly quoted filters
+            cmd = [
+                'ffmpeg', '-i', str(original_video),
+                '-vf', vf,
+                '-af', af,
+                '-y',  # Overwrite existing files
+                str(output_video)
+            ]
+            
+            logger.info(f"Re-encoding video without {len(frames_to_remove)} frames")
+            logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            logger.debug(f"ffmpeg re-encode output: {result.stderr}")
+            
+            if output_video.exists() and output_video.stat().st_size > 0:
+                logger.info(f"Successfully created cleaned video: {output_video}")
+                return True
+            else:
+                logger.error("Output video is empty or missing")
+                return False
                 
         except subprocess.CalledProcessError as e:
             logger.error(f"ffmpeg re-encoding failed: {e.stderr}")
-            return False
+            # Fallback: try without audio filter if audio processing failed
+            try:
+                logger.warning("Retrying without audio processing...")
+                cmd_no_audio = [
+                    'ffmpeg', '-i', str(original_video),
+                    '-vf', vf,
+                    '-an',  # No audio
+                    '-y',
+                    str(output_video)
+                ]
+                result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
+                logger.info("Successfully re-encoded video without audio")
+                return True
+            except subprocess.CalledProcessError as e2:
+                logger.error(f"ffmpeg re-encoding failed even without audio: {e2.stderr}")
+                return False
         except Exception as e:
             logger.error(f"Video re-encoding error: {e}")
             return False
+        
+    def _load_mask(self, device_name: str) -> Dict[str, Any]:
+        """
+        Load mask configuration for the specified endoscopy device.
+        
+        Args:
+            device_name: Name of the endoscopy device/processor
+            
+        Returns:
+            Dictionary containing mask configuration
+            
+        Raises:
+            FileNotFoundError: If mask file doesn't exist and can't be created
+        """
+        # Get the masks directory path
+        masks_dir = Path(__file__).parent / "masks"
+        mask_file = masks_dir / f"{device_name}_mask.json"
+        
+        try:
+            # Try to load existing mask file
+            if mask_file.exists():
+                with open(mask_file, 'r') as f:
+                    mask_config = json.load(f)
+                logger.info(f"Loaded mask configuration for {device_name} from {mask_file}")
+                return mask_config
+            else:
+                # Create masks directory if it doesn't exist
+                masks_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Create stub mask configuration
+                stub_config = {
+                    "image_width": 1920,
+                    "image_height": 1080,
+                    "endoscope_image_x": 640,
+                    "endoscope_image_y": 90,
+                    "endoscope_image_width": 640,
+                    "endoscope_image_height": 480,
+                    "description": f"Mask configuration for {device_name}. Adjust coordinates as needed."
+                }
+                
+                # Save stub configuration
+                with open(mask_file, 'w') as f:
+                    json.dump(stub_config, f, indent=2)
+                
+                logger.warning(f"Created stub mask configuration for {device_name} at {mask_file}. "
+                             f"Please adjust coordinates as needed for your device.")
+                return stub_config
+                
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to load/create mask configuration for {device_name}: {e}")
+            raise FileNotFoundError(f"Could not load or create mask configuration for {device_name}: {e}")
 
+    def _mask_video(self, input_video: Path, mask_config: Dict[str, Any], output_video: Path) -> bool:
+        """
+        Apply mask to video using FFmpeg to hide sensitive areas.
+        
+        Args:
+            input_video: Path to input video file
+            mask_config: Dictionary containing mask coordinates
+            output_video: Path for output masked video
+            
+        Returns:
+            True if masking succeeded, False otherwise
+        """
+        try:
+            endoscope_x = mask_config.get("endoscope_image_x", 0)
+            endoscope_y = mask_config.get("endoscope_image_y", 0)
+            endoscope_w = mask_config.get("endoscope_image_width", 640)
+            endoscope_h = mask_config.get("endoscope_image_height", 480)
+            
+            # Check if we can use simple crop (left strip masking)
+            if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
+                # Simple left crop case - crop everything to the right of the endoscope area
+                crop_filter = f"crop=in_w-{endoscope_x}:in_h:{endoscope_x}:0"
+                cmd = [
+                    'ffmpeg', '-i', str(input_video),
+                    '-vf', crop_filter,
+                    '-c:a', 'copy',  # Preserve audio
+                    '-y',
+                    str(output_video)
+                ]
+                logger.info(f"Using simple crop mask: {crop_filter}")
+            else:
+                # Complex masking using drawbox to black out sensitive areas
+                # Mask everything except the endoscope area
+                mask_filters = []
+                
+                # Left rectangle (0 to endoscope_x)
+                if endoscope_x > 0:
+                    mask_filters.append(f"drawbox=0:0:{endoscope_x}:{mask_config.get('image_height', 1080)}:color=black@1:t=fill")
+                
+                # Right rectangle (endoscope_x + endoscope_w to image_width)
+                right_start = endoscope_x + endoscope_w
+                image_width = mask_config.get('image_width', 1920)
+                if right_start < image_width:
+                    right_width = image_width - right_start
+                    mask_filters.append(f"drawbox={right_start}:0:{right_width}:{mask_config.get('image_height', 1080)}:color=black@1:t=fill")
+                
+                # Top rectangle (within endoscope x range, 0 to endoscope_y)
+                if endoscope_y > 0:
+                    mask_filters.append(f"drawbox={endoscope_x}:0:{endoscope_w}:{endoscope_y}:color=black@1:t=fill")
+                
+                # Bottom rectangle (within endoscope x range, endoscope_y + endoscope_h to image_height)
+                bottom_start = endoscope_y + endoscope_h
+                image_height = mask_config.get('image_height', 1080)
+                if bottom_start < image_height:
+                    bottom_height = image_height - bottom_start
+                    mask_filters.append(f"drawbox={endoscope_x}:{bottom_start}:{endoscope_w}:{bottom_height}:color=black@1:t=fill")
+                
+                # Combine all mask filters
+                vf = ','.join(mask_filters)
+                
+                cmd = [
+                    'ffmpeg', '-i', str(input_video),
+                    '-vf', vf,
+                    '-c:a', 'copy',  # Preserve audio
+                    '-y',
+                    str(output_video)
+                ]
+                logger.info(f"Using complex drawbox mask with {len(mask_filters)} regions")
+            
+            logger.info(f"Applying mask to video: {input_video} -> {output_video}")
+            logger.debug(f"FFmpeg masking command: {' '.join(cmd)}")
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            logger.debug(f"FFmpeg masking output: {result.stderr}")
+            
+            if output_video.exists() and output_video.stat().st_size > 0:
+                logger.info(f"Successfully created masked video: {output_video}")
+                return True
+            else:
+                logger.error("Masked video is empty or missing")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg masking failed: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Video masking error: {e}")
+            return False
 
     def clean_video(
         self,
         video_path: Path,
         report_reader=ReportReader(),
-        tmp_dir: Optional[Path] = None
+        tmp_dir: Optional[Path] = None,
+        device_name: Optional[str] = None
     ) -> Path:
         """
-        Clean video by removing frames with sensitive information.
+        Clean video by removing frames with sensitive information or masking persistent overlays.
         
         Args:
             video_path: Path to input video
             report_reader: ReportReader instance for sensitive data detection
             tmp_dir: Temporary directory for processing (optional)
+            device_name: Name of endoscopy device for mask configuration (optional)
             
         Returns:
             Path to cleaned video file (with "_anony" suffix)
@@ -339,6 +481,10 @@ class FrameCleaner:
         """
         if tmp_dir is None:
             tmp_dir = Path(tempfile.mkdtemp(prefix='frame_cleaner_'))
+        
+        # Default device name if not provided
+        if device_name is None:
+            device_name = "generic"
         
         try:
             # Create output path with _anony suffix
@@ -365,26 +511,62 @@ class FrameCleaner:
                     if self.detect_sensitive_on_frame_extended(frame_path, report_reader):
                         sensitive_frame_indices.append(i)
             
-            if not sensitive_frame_indices:
-                logger.info("No sensitive frames detected, copying original video")
-                import shutil
-                shutil.copy2(video_path, output_video)
-                return output_video
+            total_frames = len(frame_paths)
+            sensitive_ratio = len(sensitive_frame_indices) / total_frames if total_frames > 0 else 0
             
-            logger.info(f"Found {len(sensitive_frame_indices)} sensitive frames out of {len(frame_paths)}")
+            logger.info(f"Found {len(sensitive_frame_indices)} sensitive frames out of {total_frames} "
+                       f"({sensitive_ratio:.1%} ratio)")
             
-            # Re-encode video without sensitive frames
-            success = self.remove_frames_from_video(
-                video_path, 
-                sensitive_frame_indices, 
-                output_video,
-                total_frames=len(frame_paths)
-            )
-            
-            if not success:
-                logger.error("Failed to create cleaned video, using original")
-                import shutil
-                shutil.copy2(video_path, output_video)
+            # Decision: mask vs frame removal based on 10% threshold
+            if sensitive_ratio > 0.10:
+                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) exceeds 10% threshold. "
+                           f"Applying mask instead of removing frames.")
+                try:
+                    mask_config = self._load_mask(device_name)
+                    success = self._mask_video(video_path, mask_config, output_video)
+                    
+                    if not success:
+                        logger.error("Failed to create masked video, using original")
+                        import shutil
+                        shutil.copy2(video_path, output_video)
+                        
+                except Exception as e:
+                    logger.error(f"Masking failed: {e}. Falling back to frame removal.")
+                    # Fall back to frame removal if masking fails
+                    success = self.remove_frames_from_video(
+                        video_path, 
+                        sensitive_frame_indices, 
+                        output_video,
+                        total_frames=total_frames
+                    )
+                    
+                    if not success:
+                        logger.error("Failed to create cleaned video, using original")
+                        import shutil
+                        shutil.copy2(video_path, output_video)
+            else:
+                # Traditional frame removal for videos with < 10% sensitive content
+                if not sensitive_frame_indices:
+                    logger.info("No sensitive frames detected, copying original video")
+                    import shutil
+                    shutil.copy2(video_path, output_video)
+                    return output_video
+                
+                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) below 10% threshold. "
+                           f"Removing {len(sensitive_frame_indices)} sensitive frames.")
+                
+                # Re-encode video without sensitive frames
+                success = self.remove_frames_from_video(
+                    video_path, 
+                    sensitive_frame_indices, 
+                    output_video,
+                    total_frames=total_frames
+                )
+                
+                if not success:
+                    logger.error("Failed to create cleaned video, using original")
+                    import shutil
+                    shutil.copy2(video_path, output_video)
             
             return output_video
             

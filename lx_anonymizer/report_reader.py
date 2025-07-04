@@ -21,6 +21,7 @@ from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
 from .ocr_preprocessing import preprocess_image, optimize_image_for_medical_text
 from datetime import datetime, date
 import dateparser
+from .utils.ollama import ensure_ollama
 from .llm_ollama import extract_with_fallback
 
 class ReportReader:
@@ -48,6 +49,9 @@ class ReportReader:
         self.examiner_extractor = ExaminerDataExtractor()
         self.endoscope_extractor = EndoscopeDataExtractor()
         self.examination_extractor = ExaminationDataExtractor()
+        
+        # Initialize Ollama
+        self.ollama_proc = ensure_ollama()
     
     def read_pdf(self, pdf_path):
         '''
