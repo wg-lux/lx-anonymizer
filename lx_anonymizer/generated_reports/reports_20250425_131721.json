@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei eingeschränkt insufflationstolerantem Patienten Ahmad Dost Mohammadi erfolgte eine vorsichtige Dickdarmspiegelung. Im Bereich des Colon descendens zeigt sich eine erhabene, polypöse Läsion mit einem gestielten Polypen (Paris Ip), etwa 16 mm groß, der mittels Schlinge vollständig abgetragen werden konnte. Im Colon transversum fanden sich außerdem insgesamt drei multiple, flache, leicht gerötete Adenome (< 5 mm, Paris IIa, JNET 2A), die alle mittels kalter Schlinge reseziert wurden. Im Bereich des terminalen Ileums zeigt sich eine segmentale, unscharf begrenzte, erythematöse Schleimhaut mit zarten Erosionen, V.a. M. Crohn. Im Rektum wurde ein ulzeriertes, stenosierendes Tumorareal gesehen, das multipel biopsiert wurde (V.a. Adenokarzinom). Keine Perforation, keine Blutungskomplikationen.",
+    "beurteilung": "Komplette Resektion eines gestielten Karzinom-Polypen, multiple Adenome <5 mm. V.a. Adenokarzinom im Rektum, Biopsien entnommen. V.a. M. Crohn im terminalen Ileum. Empfehlung: Kontrollkoloskopie in 3 Jahren wegen insgesamt >3 Adenomen und Hochrisikopolyp, bei Tumorbestätigung individuelle Anpassung. Weitere Abklärung hinsichtlich M. Crohn empfohlen.",
+    "pathology report": "Pathologie: Gestielter Polyp – Adenokarzinom, frühinvasiv, R0 in der Resektionsfläche, keine Lymphgefäßinvasion. Flache Adenome – tubulovillöse, low grade intraepitheliale Neoplasie. Rektum-Tumor: Adenokarzinom, weitere Subtypisierung und Staging erforderlich.",
+    "follow up?": "3 Jahre, je nach Tumorbefund ggf. früher"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Der afghanische Patient Jawidullah Safi mit eingeschränkter Insufflationstoleranz wurde wegen anhaltender Diarrhoe und Verdacht auf M. Crohn koloskopiert. Im terminalen Ileum imponiert eine segmentale Ulzeration mit fleckigen Erythemen, V.a. M. Crohn. Im Colon ascendens wurden zwei flache Adenome von 3 mm und 4 mm Durchmesser (Paris IIa, JNET 2A) gefunden und mit Biopsiezange abgetragen. In der Flexura lienalis fand sich ein gestielter Polyp von 10 mm, der mit Diathermieschlinge entfernt wurde. Sonst unauffälliger Befund. Keine Tumoren, kein Hinweis auf akute Blutung oder Perforation.",
+    "beurteilung": "Komplikationslose Polypektomie, V.a. M. Crohn, histologische Sicherung ausstehend. Empfehlung: Kontrollkoloskopie in 5 Jahren (insgesamt 3 Adenome <10 mm). Verlaufskontrolle hinsichtlich Crohn-Symptomatik empfohlen, histologisches Ergebnis abwarten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der afghanischen Patientin Malalai Kakar, die nur eingeschränkt insufflationstolerant war, wurde eine endoskopische Untersuchung wegen Anämie durchgeführt. Im Rektosigmoid wurde ein stenosierend wachsender, polypoider Tumor (Paris IIIs, 25 mm) mit zentraler Ulzeration entdeckt, multipel biopsiert. Zusätzlich fanden sich im Colon descendens fünf multiple, flache Adenome (alle <5 mm, Paris IIa, JNET 2A), die mit kalter Schlinge entfernt wurden. Ein gestielter Polyp von 8 mm im Colon transversum wurde vollständig mittels Elektroschlinge abgetragen. Keine akute Blutung. Im terminalen Ileum makroskopisch kein Hinweis auf Crohn.",
+    "beurteilung": "Tumorverdacht im Rektosigmoid, Biopsien entnommen. Multiple kleine Adenome komplett abgetragen. Empfehlung: Nachsorgeintervall <3 Jahre wegen >5 Adenome. Bei Tumorbestätigung individuelle Therapieplanung. Histologie der Tumorbiopsien und Polypektomien steht aus.",
+    "pathology report": "Gestielte Polypen: tubuläres Adenom mit low grade IEN. Flache Adenome: tubuläre Adenome mit low grade IEN. Tumorbiopsien: Adenokarzinom mit Infiltration der Submukosa (histologische Subklassifizierung folgt).",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Der afghanische Patient Dr. Saidullah Rahimi wurde aufgrund positiver Familienanamnese und abdominellen Beschwerden koloskopiert. Aufgrund eingeschränkter Insufflationstoleranz wurde die Insufflation reduziert. Im Colon ascendens fanden sich vier flache, blassrote Adenome (jeweils <5 mm, Paris IIa, JNET 2A), entfernt mittels Schlinge. Im Colon sigmoideum wurde ein gestielter Polyp (12 mm, Paris Ip) entdeckt und komplikationslos reseziert. Im terminalen Ileum unspezifische aphthöse Erosionen, V.a. M. Crohn. Sonst kein Tumor nachweisbar.",
+    "beurteilung": "Unkomplizierte Polypektomien, V.a. M. Crohn, histologische Sicherung folgt. Empfehlung: Kontrollkoloskopie in 3 Jahren (4 Adenome <10 mm, 1 Polyp >10 mm). Gastroenterologische Verlaufskontrolle bezüglich Crohn-Symptomatik empfohlen. Keine Hinweise auf Karzinom makroskopisch sichtbar.",
+    "pathology report": "Gestielter Polyp: tubulovillöses Adenom mit low grade IEN, Resektionsrand im Gesunden. Flache Adenome: tubuläre Adenome mit low grade IEN. Ileumbiopsien: vereinbar mit frühem M. Crohn. Keine Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Patientin Parwana Siddiqi, eingeschränkt insufflationstolerant, wurde im Rahmen der Vorsorgekoloskopie im Sigma ein gestielter Polyp (Paris Ip, 18 mm) entdeckt und in Piecemeal-Technik entfernt (Komplettresektat, keine unmittelbare Komplikation). Daneben fanden sich zwei flache Adenome (<5 mm, Paris IIa) im Colon descendens, beide mit Biopsiezange entfernt. Im Ileum fanden sich multiple longitudinale Ulzerationen, V.a. M. Crohn. Kein makroskopisch sichtbarer Tumor.",
+    "beurteilung": "Piecemeal-Resektion eines größeren Polypen, zwei flache Adenome entfernt, V.a. M. Crohn. Empfehlung: Kontrollkoloskopie in 3 Monaten wegen Piecemeal-Resektion. Verlaufskontrolle gastroenterologisch hinsichtlich Crohn.",
+    "pathology report": "Pathologie: Gestielter Polyp – tubulovillöses Adenom mit fokaler low grade IEN, Piecemeal-Resektion, Resektionsrand nicht sicher beurteilbar. Flache Adenome: tubuläre Adenome mit low grade IEN. Ileumbiopsate: chronisch-entzündliche Veränderungen, vereinbar mit M. Crohn.",
+    "follow up?": "3 Monate"
+  }
+}

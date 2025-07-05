@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Fritz-Michael Geyersbach, 67 J., wurde eine Koloskopie wegen positiver iFOBT und rezenter abdominaler Beschwerden durchgeführt. Im Colon transversum zeigte sich eine ödematöse Mukosa sowie eine 15 mm große, flache Läsion nach Paris IIa-Klassifikation mit unregelmäßigen Randsaum. Zusätzlich fand sich im Colon ascendens eine polypöse Schleimhautveränderung (ca 8mm); hier erfolgte die Polypektomie mit Schlinge. Die Läsion im Transversum wurde mittels EMR nur inkomplett entfernt, da tiefere Anteile makroskopisch verblieben. Keine Blutung, keine Perforation.",
+    "beurteilung": "Inkomplette EMR einer flachen Läsion, pathologisch fraglich Adenom. Erneute Kontrolle dringend empfohlen in 6 Monaten zur Komplettierung der Resektion. Biopsien aus der Läsion sowie Polyp an Pathologie versendet.",
+    "pathology report": "Pathologie Colon ascendens: villöses Adenom, kein Anhalt für Karzinom. Histologie der inkomplett resezierten Läsion steht noch aus.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Monika Siebenhüner, 59 J., Vorsorgekoloskopie. Im Colon transversum diffus ödematöse Mukosa. Es zeigte sich eine polypöse Schleimhautveränderung mit 9 mm Größe, flaches Wachstum, Paris IIa, im aboralen Sigmabereich. Polypektomie wurde mit kalter Schlinge komplikationslos durchgeführt. Kein weiteres pathologisches Substrat.",
+    "beurteilung": "Komplikationslose Polypektomie eines flachen Polypen. Empfehlung: Kontrolle in 5 Jahren.",
+    "pathology report": "Pathologie: villöses Adenom, keine Hinweise auf hochgradige Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Vorsorgekoloskopie bei Herrn Torsten Leuschner, 66 J. Im Colon transversum deutliche ödematöse Mukosa. Im absteigenden Colon flache Läsion nach Paris IIa (ca 12mm) mit polypöser Komponente. EMR wurde versucht, jedoch inkomplett, da Teil der Basis knallhart erschienen ist. Erneutepolypektomie empfohlen. 2 weitere kleine Polypen <5mm entfernt.",
+    "beurteilung": "Inkomplette Entfernung (EMR) eines flachen, polypösen Adenoms. Nachresektion empfohlen in 6 Monaten. Keine Komplikationen.",
+    "pathology report": "Pathologie: Flache Läsion: villöses Adenom mit fokaler low-grade IEN. Kleinere Polypen: hyperplastische Polypen.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Prof. Dr. Hannelore Richter-Böhme, 72 Jahre, stellte sich mit wechselnden Stuhlgewohnheiten vor. In der gesamten Länge des Colon transversum ödematöse Mukosa. Im Sigma flache Läsion Paris IIa, gelappt, ca. 22 mm! Piecemeal-EMR erfolgte, jedoch wurde der größte Anteil entfernt, minimale Residuen verblieben. Erneute Kontrolle empfohlen. Zusätzlich polypöse Schleimhautveränderung (5 mm) im Rektum mittels kalter Schlinge entfernt.",
+    "beurteilung": "Resektion in Piecemeal-Technik bei großem flachem Adenom, Residualgewebe noch sichtbar, erneute Kontrolle zur Komplettierung in 3 Monaten ratsam, insbesondere wegen Größe!",
+    "pathology report": "Pathologie: villöses Adenom mit low-grade IEN (Sigma). Rektumpolyp: tubuläres Adenom. kein Karzinom.",
+    "follow up?": "3 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Roland Winkler, 63 Jahre. Koloskopie auf Grund positiver Familienanamnese. Colon transversum mit ödematösem Aspekt, sonst Schleimhaut blass. Im Colon descendens eine flache Läsion nach Paris IIa, 7mm, sowie zusätzlich polypöse Schleimhautveränderung im Colon ascendens, 6 mm. Beide Läsionen mit kalter Schlinge abgetragen, keine Komplikation. Keine weiteren Auffälligkeiten.",
+    "beurteilung": "Komplikationslose Entfernung von zwei Polypen, beide <10 mm. Histologie steht noch aus. Nachsorgeempfehlung je nach Befund, bei Adenom in 5 Jahren.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  }
+}

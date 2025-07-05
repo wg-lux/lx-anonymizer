@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der 58-jährige Herr Draganov stellt sich mit unklaren abdominellen Beschwerden vor. Bei der Koloskopie zeigt sich im Rektosigmoid eine Reizung der Mukosa mit vereinzelter Kontaktblutung. Es wird ein Stielpolyp mit langem Pedunkel entdeckt, der die Paris-Klassifikation 0-Ip erfüllt und eine Größe von etwa 15 mm aufweist. Eine Polypektomie wird mittels Schlingentechnik durchgeführt. Im Colon ascendens fällt eine auffällige Pigmentierung auf – DD: Melanose. Während des Eingriffs kommt es zu einer leichten Nachblutung nach der Polypektomie, die jedoch mittels Klammerung gestillt wird.",
+    "pathology report": "Histologisch zeigt der Polyp ein tubuläres Adenom ohne Anzeichen einer high-grade intraepithelialen Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Die 65-jährige Frau Ivanova wird zur Vorsorgekoloskopie vorstellig. Im Bereich des Rektums zeigt sich eine Paris 0-Ip Läsion mit einer Größe von 8 mm. Eine Polypektomie wird durchgeführt. Zusätzlich zeigen sich im Colon descendens vereinzelte Pigmentierungen, die an Melanose denken lassen. Keine weiteren Auffälligkeiten im Darmtrakt.",
+    "pathology report": "Die Biopsie ergibt ein tubuläres Adenom.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Der 72-jährige Herr Stoyanov präsentiert diffuse abdominale Schmerzen. Im Verlauf der Untersuchung wird im Sigmoid ein Paris 0-Ip Polyp mit einer Größe von 25 mm gesehen. Aufgrund der Größe wird die Resektion in der Piecemeal-Technik ausgeführt. Zusätzlich wird eine Reizung der Mukosa im Rektosigmoid festgestellt. Keine weiteren polypösen Strukturen oder Pigmentierungen.",
+    "pathology report": "Die Histologie bestätigt ein tubulovillöses Adenom mit fokalem high-grade IEN.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Kolev, 59 Jahre alt, wird aufgrund positiver Familienanamnese einer Darmkrebserkrankung unterzogen. In der Koloskopie zeigen sich sechs Polypen im gesamten Kolon, die alle unter 10 mm groß sind und der Paris-Klassifikation 0-Is entsprechen. Eine vollständige Abtragung erfolgt mit der Schlingentechnik.",
+    "pathology report": "Die histologische Untersuchung der Polypen zeigt tubuläre Adenome ohne Hinweise auf maligne Transformation.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Die hochbetagte Frau Petkova, 80 Jahre alt, klagt über chronische Obstipation. Die Koloskopie zeigt im Colon transversum eine Paris 0-Ip Läsion mit einer Größe von 12 mm, die mittels Schlingentechnik reseziert wird. Im Rektum wird eine Mukosareizung festgestellt. Postoperativ gibt es keine Hinweise auf Nachblutungen. Vereinzelte Pigmentierungen im Kolon, vereinbar mit Melanose colli.",
+    "pathology report": "Der Polyp wird als tubuläres Adenom mit low-grade intraepithelialer Neoplasie beurteilt.",
+    "follow up?": "3 Jahre"
+  }
+}

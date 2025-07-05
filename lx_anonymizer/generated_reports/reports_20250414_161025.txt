@@ -1,0 +1,34 @@
+```json
+{
+    "Report 1": {
+        "type": "colonoscopy",
+        "report": "Herr Dr. med. Maximilian von Schönhausen, 68 Jahre alt, stellte sich zur Vorsorgekoloskopie vor. In der Koloskopie zeigte sich eine Divertikulose im Colon descendens. In der Anastomosenregion waren keine Auffälligkeiten zu beobachten, sie war reizlos. Es fanden sich zwei Polypen im Colon transversum, beide nach Paris-Klassifikation Isp, Größe 8 mm und 9 mm. Beide Polypen wurden mittels Schlingentechnik vollständig abgetragen.",
+        "pathology report": "Histologisch zeigte sich in beiden Polypen ein tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie (IEN).",
+        "follow up?": "3 Jahre"
+    },
+    "Report 2": {
+        "type": "colonoscopy",
+        "report": "Frau Erika Müller, 72 Jahre alt, kam mit unklaren Bauchbeschwerden zur Koloskopie. Die Untersuchung zeigte eine ausgeprägte Divertikulose im Colon descendens. In der rechten Kolonflexur fand sich ein gestielter Polyp (Paris Ip) von 12 mm, der in Piecemeal-Technik abgetragen wurde. Die Anastomosenregion war reizlos.",
+        "pathology report": "Histologisch zeigte sich ein tubulo-villöses Adenom mit hochgradiger IEN.",
+        "follow up?": "2–6 Monate"
+    },
+    "Report 3": {
+        "type": "colonoscopy",
+        "report": "Herr Karl-Heinz Fischer, 60 Jahre alt, stellt sich wegen positiver Familienanamnese für kolorektale Karzinome vor. In der Koloskopie fand sich eine Divertikulose im Colon descendens, und es wurden insgesamt fünf Polypen detektiert, einer davon war sessil (Paris Is), mit einer Größe von 15 mm im Colon ascendens. Die anderen vier Polypen waren jeweils kleiner als 10 mm. Die Polypektomie wurde mittels Heißschlinge durchgeführt.",
+        "pathology report": "Die histologische Untersuchung ergab für den großen Polypen ein tubuläres Adenom mit fokal hochgradiger IEN, und für die kleineren Polypen tubuläre Adenome ohne IEN.",
+        "follow up?": "3 Jahre"
+    },
+    "Report 4": {
+        "type": "colonoscopy",
+        "report": "Frau Dr. rer. nat. Johanna Frey, 66 Jahre alt, kam zur Routinekontrolle. Die Koloskopie ergab eine markante Divertikulose im Colon descendens. In der Sigmoidschlinge fand sich ein kleiner Polyp von 5 mm, Paris Is, der mittels Kaltpolypektomie entfernt wurde. Die Anastomosenregion war reizlos.",
+        "pathology report": "Histologisch wurde ein mikrovesikulär serratiertes Adenom festgestellt.",
+        "follow up?": "10 Jahre"
+    },
+    "Report 5": {
+        "type": "colonoscopy",
+        "report": "Herr Gustav Littmann, 74 Jahre alt, stellte sich zur Koloskopie aufgrund von Blut im Stuhl vor. In der Koloskopie zeigte sich eine Divertikulose im Colon descendens. Es wurden insgesamt drei Polypen entdeckt: ein sessiler Polyp (Paris Is) von 10 mm und zwei kleinere, je 5 mm, im Colon sigmoideum. Der größere Polyp wurde mit der Schlingentechnik und die kleineren mittels Kaltbiopsie entfernt.",
+        "pathology report": "Alle drei Polypen wurden als tubuläre Adenome histologisch bestätigt, der größere zeigte hochgradige IEN.",
+        "follow up?": "3 Jahre"
+    }
+}
+```

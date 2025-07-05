@@ -1,11 +1,12 @@
 import requests
+from typing import Dict, Union  # Added Dict, Union
 
 base_url = 'https://www.namenforschung.net/dfd/woerterbuch/liste/'
 current_offset = 4  # Start from the offset provided
 limit = 20  # Hypothetical limit, you will need to adjust this based on the actual limit
 
 while True:
-    query_parameters = {
+    query_parameters: Dict[str, Union[str, int]] = {  # Changed here
         'tx_dfd_names[currentSelectedFacets]': '',
         'tx_dfd_names[query]': '',
         'tx_dfd_names[offset]': current_offset,

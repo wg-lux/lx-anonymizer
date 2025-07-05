@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Norbert Winkler, 64 Jahre, Vorstellung wegen rezidivierender Durchfälle. Die Passage ins terminale Ileum war unauffällig. In der terminalen Ileumschleimhaut zeigte sich eine stellenweise abgeflachte Architektur. Im Colon transversum bis descendens feinherdige, abheilende Ulzera nach Colitis, kein aktives Ulcus. Im Colon sigmoideum tiefe Ulzeration, von der multiple Biopsien entnommen wurden. Verdacht auf kollagene Colitis bei insgesamt blassen, teils papierdünnen Schleimhautarealen im gesamten Colon. Kein Polyp nachweisbar. Keine weiteren Läsionen.",
+    "Beurteilung": "Kein Anhalt für Neoplasie oder Polypen. Verdacht auf kollagene Colitis, Histologie steht noch aus. Kontrolle je nach histologischem Befund, ansonsten Koloskopie in 10 Jahren empfohlen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Andrea Schieblich, 57 Jahre, stellt sich vor mit V.a. entzündliche Darmerkrankung, seit Wochen Diarrhö. Unauffällige Passage ins terminale Ileum, allerdings diskrete abgeflachte Architektur der Schleimhaut im Ileum. Im Colon descendens abheilende Ulzera nach Colitis, kein Blut, sauber gereinigt. Im Sigmoid zwei Polypen (Paris 0-Is, JNET Typ 2A), 7 mm und 8 mm, mit Bipolarschlinge komplikationslos abgetragen. Tiefe Ulzeration im Rektum – Biopsien entnommen. Insgesamt unklare Veränderungen, Verdacht auf kollagene Colitis.",
+    "Beurteilung": "Komplikationslose Schlingenabtragung der beiden Polypen, Biopsieentnahme aus Ulzera und Schleimhaut. Empfehlung: Kontrolle der Koloskopie in 5 Jahren, je nach histologischem Befund früher.",
+    "pathology report": "Beide Polypen: tubuläres Adenom ohne IEN. Biopsate aus tiefer Ulzeration und abheilenden Ulzera: Zeichen der chronisch-entzündlichen Veränderung. Keine Malignität.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Siegfried Mutschekiepchen, 71 Jahre, bekannte Colitis ulcerosa in Remission, aktuell zur Routine-Koloskopie. Passage ins terminale Ileum unauffälig, minimale abgeflachte Architektur der terminalen Ileumschleimhaut. Im gesamten Colon wenige, abheilende Ulzera nach Colitis. Im Colon ascendens tiefe Ulzeration, von der Biopsien entnommen wurden (Tippfehler: Biopisien). Kein Verdacht auf kollagene Colitis, dennoch Probestanzen auch im Colon transversum, da Schleimhaut segmental papierdünn. Kein Polyp.",
+    "Beurteilung": "Komplikationslose Untersuchung, keine Neoplasie. Biopsien zur weiteren Abklärung der Ulzera. Nachsorgeempfehlung Koloskopie erneut in 10 Jahren oder nach histologischem Befund.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Mandy-Jasmin Goldhaub, 49 Jahre, kommt mit chronischem Stuhldrang. Die Passage ins terminale Ileum gelang unauffällig, dort abgeflachte Architektur sichtbar. Im Colon descendens diskrete, abheilende Ulzera nach Colitis. Im Colon sigmoideum tiefe Ulzeration, Biopsien entnommen. Sonst im Colon mehrere kleine Polypen (Paris 0-Is, je 5 mm, JNET 2A), insgesamt 4 Stück, mit Heißschlinge entfernt. Verdacht auf kollagene Colitis aufgrund typisch granulärer Schleimhautstruktur.",
+    "Beurteilung": "Alle Polypen vollständig entfernt, Biopsien aus auffälligen Veränderungen. Kontrolle Koloskopie in 3 Jahren empfohlen (wegen 4 Adenomen).",
+    "pathology report": "Polypen: tubuläres Adenom ohne Dysplasie. Biopsien aus sigmoidalem Ulkus: chronisch-entzündliche Veränderung, kein Malignitätsnachweis.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Prof. Dr. Hartmut Kühnel, 62 Jahre, Zuweisung wegen anhaltender Diarrhö. Unauffällige Passage ins terminale Ileum, dort jedoch abgeflachte Architektur der Schleimhaut. Im Colon transversum abheilende Ulzera nach Colitis, ansonsten unauffällig. Im Colon ascendens große tumoröse Raumforderung 22 mm, JNET 2B, tiefe Ulzeration zentral, Biopsien entnommen. Verdacht auf kollagene Colitis war sekundär, insgesamt dominant Raumforderung.",
+    "Beurteilung": "Großer Tumor im Colon ascendens, Biopsien entnommen. Kontrolle und weitere Abklärung nach histologischem Befund. Kein weiterer Polyp. Empfehlung zur operativen Abklärung. Nachsorgeintervall abhängig vom histologischen Ergebnis.",
+    "pathology report": "Biopsien aus der Raumforderung: Adenokarzinom des Kolons, kein Nachweis kollagener Colitis.",
+    "follow up?": "Intervall nach Tumorresektion gemäß onkologischem Protokoll"
+  }
+}
