@@ -321,51 +321,32 @@ class FrameCleaner:
             return False
         
     def _load_mask(self, device_name: str) -> Dict[str, Any]:
-        """
-        Load mask configuration for the specified endoscopy device.
-        
-        Args:
-            device_name: Name of the endoscopy device/processor
-            
-        Returns:
-            Dictionary containing mask configuration
-            
-        Raises:
-            FileNotFoundError: If mask file doesn't exist and can't be created
-        """
-        # Get the masks directory path
-        masks_dir = Path(__file__).parent / "masks"
-        mask_file = masks_dir / f"{device_name}_mask.json"
-        
+        masks_dir  = Path(__file__).parent / "masks"
+        mask_file  = masks_dir / f"{device_name}_mask.json"
+        stub       = {
+            "image_width": 1920,
+            "image_height": 1080,
+            "endoscope_image_x": 550,
+            "endoscope_image_y": 0,
+            "endoscope_image_width": 1350,
+            "endoscope_image_height": 1080,
+            "description": f"Mask configuration for {device_name}"
+        }
+
         try:
-            # Try to load existing mask file
-            if mask_file.exists():
-                with open(mask_file, 'r') as f:
-                    mask_config = json.load(f)
-                logger.info(f"Loaded mask configuration for {device_name} from {mask_file}")
-                return mask_config
-            else:
-                # Create masks directory if it doesn't exist
-                masks_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Create stub mask configuration
-                stub_config = {
-                    "image_width": 1920,
-                    "image_height": 1080,
-                    "endoscope_image_x": 640,
-                    "endoscope_image_y": 90,
-                    "endoscope_image_width": 640,
-                    "endoscope_image_height": 480,
-                    "description": f"Mask configuration for {device_name}. Adjust coordinates as needed."
-                }
-                
-                # Save stub configuration
-                with open(mask_file, 'w') as f:
-                    json.dump(stub_config, f, indent=2)
-                
-                logger.warning(f"Created stub mask configuration for {device_name} at {mask_file}. "
-                             f"Please adjust coordinates as needed for your device.")
-                return stub_config
+            with mask_file.open() as f:
+                return json.load(f)           # works if file is valid
+        except (FileNotFoundError, json.JSONDecodeError):
+            # create or overwrite with a fresh stub
+            masks_dir.mkdir(parents=True, exist_ok=True)
+            with mask_file.open("w") as f:
+                json.dump(stub, f, indent=2)
+            logger.warning(
+                "Created or repaired mask file %s – please verify coordinates.",
+                mask_file
+            )
+            return stub
+
                 
         except (json.JSONDecodeError, IOError) as e:
             logger.error(f"Failed to load/create mask configuration for {device_name}: {e}")
