@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Professor Kalle Kylmänen, 67 Jahre alt. Indikation: Z.n. Hartmann-Operation vor einem Jahr, unauffällige Kontrolle nach Koloskopie. Bei der Untersuchung zeigte sich eine normale kryptenreiche Mukosa im gesamten Kolon. Keine Hinweise auf erneute Divertikulose oder andere Pathologien. In der absteigenden Kolonwand wurde ein kleiner Polyp von 8 mm nach Paris-Klassifikation Is, JNET 2a entdeckt und mittels Schlingenpolypektomie vollständig reseziert.",
+    "pathology report": "Histologie: Tubuläres Adenom, keine Zeichen einer Malignität.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Inkeri Mäkinen, 58 Jahre alt. Indikation: PE z.A. mikroskopische Colitis. Die Koloskopie zeigte eine normale kryptenreiche Mukosa ohne Auffälligkeiten. Kein Hinweis auf mikroskopische Colitis oder andere entzündliche Veränderungen. Es wurden keine Polypen oder Tumoren entdeckt.",
+    "pathology report": "Nicht zutreffend, da keine Biopsien entnommen wurden.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Mikko Viinikka, 72 Jahre alt. Indikation: Kontrolle nach Z.n. TME – endoskopisches Bild regelrecht. Bei der Untersuchung fanden sich drei kleine Polypen im Sigma von je 6 mm Größe, Paris-Klassifikation Is, JNET 2a. Alle wurden mittels kalte Schlingenpolypektomie entfernt.",
+    "pathology report": "Histologie: Alle drei Polypen waren tubuläre Adenome, keine Hinweise auf hochgradige Neoplasien.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Timo Salminen, 55 Jahre alt. Indikation: Screening-Koloskopie. Es wurden zwei Polypen im Rektum gefunden, einer von 15 mm, Paris IIa, JNET 2a und einer von 5 mm, Paris Is, JNET 1. Der größere Polyp wurde in Piecemeal-Technik unter Verwendung einer Schlinge und Klammer reseziert, der kleinere mit einer kalten Schlingenpolypektomie.",
+    "pathology report": "Histologie: Der größere Polyp war ein tubuläres Adenom mit leichter Dysplasie, der kleinere ein hyperplastischer Polyp.",
+    "follow up?": "6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Jukka Lehtonen, 65 Jahre alt. Indikation: Unauffällige Kontrolle nach vorheriger Koloskopie. Es wurden sechs kleine Polypen von je 4-8 mm Größe im transversalen Kolon gefunden, Paris-Klassifikation Is. Alle wurden vollständig mittels Schlingenpolypektomie entfernt.",
+    "pathology report": "Histologie: Vier der sechs Polypen zeigten sich als tubuläre Adenome, die anderen zwei als hyperplastische Polypen, keine Hinweise auf maligne Transformation.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

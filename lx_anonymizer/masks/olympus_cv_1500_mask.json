@@ -1,0 +1,9 @@
+{
+  "image_width": 1920,
+  "image_height": 1080,
+  "endoscope_image_x": 550,
+  "endoscope_image_y": 0,
+  "endoscope_image_width": 1350,
+  "endoscope_image_height": 1080,
+  "description": "Mask configuration for olympus_cv_1500"
+}

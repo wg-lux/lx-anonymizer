@@ -7,7 +7,7 @@ logging.addLevelName(VERBOSE_LOG_LEVEL, "VERBOSE")
 
 def verbose(self, message, *args, **kwargs):
     if self.isEnabledFor(VERBOSE_LOG_LEVEL):
-        self._log(VERBOSE_LOG_LEVEL, message, args, **kwargs)
+        self.log(VERBOSE_LOG_LEVEL, message, *args, **kwargs)
 
 logging.Logger.verbose = verbose
 
@@ -34,14 +34,33 @@ def configure_global_logger(verbose=False):
 
     return logger
 
-def get_logger(name):
+def get_logger(name, verbose=False):
     """
     Create a logger with the given name.
 
     Args:
         name (str): The name of the logger.
+        verbose (bool): Whether to enable verbose logging
 
     Returns:
         logging.Logger: A logger object.
     """
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+    
+    # Configure the logger if it hasn't been configured yet
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        
+        # Set level based on verbose flag
+        if verbose:
+            logger.setLevel(logging.DEBUG)
+        else:
+            logger.setLevel(logging.INFO)
+    
+    return logger
+
+# Create a default logger for imports
+logger = get_logger("lx_anonymizer")

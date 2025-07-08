@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Die Koloskopie wurde bei Herrn Dr. Wilhelm Hammerle aufgrund von anhaltenden abdominellen Beschwerden durchgeführt. Im Colon ascendens fanden sich multiple kleine Adenome, die Paris-Klassifikation war 0-IIb. Es wurden zwei Adenome mit der Schlinge abgetragen. Ein Stielpolyp mit langem Pedunkel im Colon transversum wurde ebenfalls entfernt. Zudem fanden sich tiefe Ulzerationen im Bereich des Colon descendens, aus denen Biopsien entnommen wurden. Eine inkomplette endoskopische Mukosaresektion (EMR) wurde durchgeführt. Eine erneute Kontrolle ist empfohlen.",
+    "pathology report": "Die histologische Untersuchung ergab tubuläre Adenome ohne hochgradige intraepitheliale Neoplasie sowie eine chronische, unspezifische Colitis der Ulzerationen.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Dr. Martina Fröhlich stellte sich zur Koloskopie vor, um eine rezidivierende Anämie abzuklären. Im Rekto sigmoidealen Übergang wurde eine Paris 0-IIb Läsion entdeckt und mit der Kaltbiopsie abgetragen. Im Colon ascendens fanden sich vier multiple kleine Adenome, ebenfalls abgetragen mit der Schlinge. Ein Stielpolyp mit langem Pedunkel wurde im Colon sigmoideum entdeckt und vollständig entfernt. Aus den Erosionsgebieten im Rektum wurden Biopsien entnommen.",
+    "pathology report": "Die Untersuchung zeigt tubuläre Adenome ohne Zeichen einer Dysplasie sowie unspezifische entzündliche Veränderungen im Rektum.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Siegfried Sommer wurde aufgrund eines positiven FOBT zur Koloskopie überwiesen. Im Colon ascendens fanden sich multiple kleine Adenome (Paris-Klassifikation 0-IIb). Im Sigma fand sich ein Stielpolyp mit langem Pedunkel, der mittels Schlinge entfernt wurde. Im Bereich des Colon descendes fanden sich tiefe Ulzerationen, aus denen Biopsien entnommen wurden. Eine inkomplette EMR wurde an einem 15 mm großen Polypen im Colon transversum durchgeführt. Eine erneute Kontrolle ist in 6 Monaten empfohlen.",
+    "pathology report": "Der histologische Befund ergab tubuläre Adenome ohne IEN sowie chronische Colitis der entnommenen Ulzerationsbiopsien.",
+    "follow up?": "6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Frau Johanna Blümchen kam zur Koloskopie aufgrund familiärer Polypose. Im Colon ascendens fanden sich sieben kleine Adenome, die je nach Größe mit der Schlinge oder der Kaltbiopsie entfernt wurden. Im Colon sigmoideum fand sich eine Paris 0-IIb Läsion, die mit dem Fangnetz abgetragen wurde. Ein langgestielter Polyp wurde im Rektum vollständig mit der Schlinge abgetragen, jedoch zeigte die Resektion Anzeichen auf eine inkomplette Abtragung, weswegen eine Kontrollkoloskopie empfohlen wird.",
+    "pathology report": "Die Histologie ergab tubuläre Adenome sowie ein Adenom mit fokaler hochgradiger intraepithelialer Neoplasie im Sigmoid.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Herr Kornelius Knopf wurde zur Koloskopie überwiesen aufgrund von rezidivierenden abdominalen Schmerzen und Blut im Stuhl. Im Colon ascendens wurden vier Paris 0-IIb Adenome diagnostiziert und mit der Schlinge entfernt. Ein Stielpolyp mit langem Pedunkel wurde im Colon transversum entdeckt und vollständig reseziert. Zudem wurden im Colon descendens tiefulzerierte Bereiche entdeckt, die biopsiert wurden.",
+    "pathology report": "Histologisch fanden sich tubuläre Adenome ohne dysplastische Veränderungen und eine chronische Ulceration ohne maligne Entartung.",
+    "follow up?": "3 Jahre"
+  }
+}

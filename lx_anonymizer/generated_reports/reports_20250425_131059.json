@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Der rumänische Patient Florin Popescu, 54 Jahre, stellte sich zur Kontrollkoloskopie vor. Der Patient hat eine Vorgeschichte mit Z.n. Rektumresektion – keine Auffälligkeiten. Bei der Untersuchung war der Kolon vollständig insuffliert, und der Boston Bowel Preparation Score betrug 9, was eine exzellente Vorbereitung anzeigt. Im Sigma fand sich ein Polyp von 8 mm, Paris-Klassifikation Is, JNET 2A. Dieser wurde mittels Schlingentechnik reseziert; es waren leichte Blutauflagerungen sichtbar, jedoch keine aktive Blutungsquelle identifizierbar.",
+    "pathology report": "Histologisch zeigte der Polyp ein tubuläres Adenom ohne hochgradige Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Dr. Cristian Ionescu, 67 Jahre, wurde zur Diagnostik einer unklaren Anämie untersucht. Der Boston Bowel Preparation Score lag bei 9, was eine sehr gute Darmvorbereitung anzeigt. Der Kolon war vollständig insuffliert. Im Sigma fanden sich Blutauflagerungen, jedoch ohne identifizierbare Blutungsquelle. In der linken Kolonflexur wurde ein 15 mm großer Polyp, Paris 0-Is, JNET 2B, entdeckt. Dieser wurde in Piecemeal-Technik entfernt.",
+    "pathology report": "Die Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Die 60-jährige rumänische Patientin Elena Stoica wurde zur Vorsorgekoloskopie vorgestellt. Die Darmvorbereitung war exzellent mit einem Boston Bowel Preparation Score von 9. Der Kolon war vollständig insuffliert. Während der Untersuchung zeigten sich keine Auffälligkeiten, keine Polypen oder Läsionen. Im Sigma waren leichte Blutauflagerungen zu sehen, aber keine aktive Blutungsquelle identifizierbar.",
+    "pathology report": "Kein histologischer Befund erforderlich.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Ion Crisan, 72 Jahre, mit bekannter Darmkrebsvorgeschichte, wurde zur Verlaufskontrolle koloskopiert. Nach einer exzellenten Vorbereitung (Boston Bowel Preparation Score 9) war der Kolon vollständig insuffliert. Im Sigma lagen Blutauflagerungen ohne aktive Blutungsquelle vor. Es wurde ein 12 mm großer Polyp, Paris Is, JNET 2A, entdeckt und mittels Schlingentechnik reseziert.",
+    "pathology report": "Histologisch ergab sich ein tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Die 58-jährige rumänische Patientin Doina Radulescu wurde aufgrund von positivem okkultem Blut im Stuhl zur Koloskopie überwiesen. Die Vorbereitung war optimal (Boston Bowel Preparation Score 9). Der Kolon war vollständig insuffliert. In der transversen Kolon wurden zwei Polypen von 5 mm und ein weiterer von 7 mm gesehen, klassifiziert als Paris 0-Is, JNET 2A. Diese wurden alle mit der Schlingentechnik reseziert. Im Sigma fand sich eine leichte Blutauflagerung, jedoch keine spezifische Blutungsquelle.",
+    "pathology report": "Die Polypen zeigten histologisch tubuläre Adenome ohne hochgradige Dysplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

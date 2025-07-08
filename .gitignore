@@ -1,6 +1,6 @@
 .devenv/
 .direnv/
-
+uv.lock
 lx_anonymizer/agl-anonymizer/*
 lx_anonymizer/agl-anonymizer-temp/*
 

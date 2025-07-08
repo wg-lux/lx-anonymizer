@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Dr. Farid El Khouzani, 58 Jahre alt. Der Eingriff wurde zur Routinevorsorge durchgeführt. Die Kolonoskopie konnte bis zum terminalen Ileum durchgeführt werden, jedoch war aufgrund einer engen Bauhin'schen Klappe kein Zugang ins terminale Ileum möglich. Es wurden zwei Polypen entdeckt: Ein 12 mm großer Polyp mit breiter Basis im aufsteigenden Colon (Paris IIa) wurde mittels endoskopischer Mukosaresektion (EMR) entfernt. Ein weiterer Polyp im Colon transversum mit einer Größe von 8 mm und einer malignitätsverdächtigen Oberfläche (Paris Is) wurde entdeckt; Biopsien wurden entnommen.",
+    "pathology report": "Der 12 mm Polyp war ein tubuläres Adenom ohne Anzeichen von Malignität. Die Biopsie des 8 mm Polypen zeigte hochgradige intraepitheliale Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Aicha Ben Allal, 45 Jahre alt. Voruntersuchung aufgrund familiärer Belastung durch Kolorektalkarzinom. Während der Koloskopie wurden insgesamt sechs Polypen im Bereich des Sigmas und Colon descendens entdeckt, alle unter 10 mm. Eine Zottenstruktur war bei einem 9 mm Polypen gestört, es wurden Biopsien entnommen. Abgeflachte Architektur in der terminalen Ileumschleimhaut beobachtet, doch keine direkte Läsion.",
+    "pathology report": "Fünf der sechs Polypen zeigten tubuläre Adenome mit geringer dysplastischer Veränderung. Der Polyp mit gestörter Zottenstruktur zeigte ebenfalls tubuläres Adenom mit mäßiger Dysplasie.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Mohammed Al Mansouri, 67 Jahre alt. Koloskopie zur Abklärung von Blut im Stuhl. Im Colon ascendens wurde ein großer sessiler Polyp (20 mm, Paris Is) mit malignitätsverdächtiger Oberfläche entdeckt und in Piecemeal-Technik mittels Schlinge reseziert. Kein Zutritt zum terminalen Ileum.",
+    "pathology report": "Der Polyp wurde als tubulovillöses Adenom mit fokaler hochgradiger intraepithelialer Neoplasie beschrieben. Keine Invasion in die submukosale Schicht.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Frau Leila Haddou, 53 Jahre alt. Routinescreening ohne vorherige Anomalien. Ein einzelner Polyp (5 mm, Paris Ip) im Colon sigmoideum wurde mittels Kaltabtragungsschlinge entfernt. Keine weiteren Auffälligkeiten. Terminales Ileum nicht erreicht.",
+    "pathology report": "Histologisch zeigte der Polyp ein tubuläres Adenom ohne Zeichen von hochgradiger Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Herr Prof. Dr. Khalid Tazi, 49 Jahre alt. Primärscreening aufgrund von abdominellen Beschwerden. Ein 15 mm großer Polyp mit breiter Basis und gestörter Zottenstruktur im Colon transversum wurde entdeckt und vollständig mittels EMR entfernt. Keine Auffälligkeiten im terminalen Ileum.",
+    "pathology report": "Der Polyp war ein villöses Adenom mit hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  }
+}

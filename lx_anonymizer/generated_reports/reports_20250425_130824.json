@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Herrn Driss El Mokhtar, einem 58-jährigen marokkanischen Patienten, wurde ein 12 mm großer Ileocekalpolyp festgestellt, der aufgrund seiner Position schwierig zu resezieren war. In der Anastomosenregion zeigte sich ein reizloser Zustand. Bei der Flexura lienalis fiel eine veränderte Gefäßzeichnung auf. Zudem wurden in mehreren Abschnitten des Kolons erythematöse Areale gesehen, differentialdiagnostisch denkbar als Entzündung. Es fand sich auch eine auffällige Pigmentierung im Kolon, die auf Melanose hindeuten könnte. Der Ileocekalpolyp wurde mittels Schlinge reseziert. Beurteilung: Komplikationslose Resektion des Ileocekalpolypen. Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Die Histologie des resezierten Ileocekalpolypen ergab ein tubuläres Adenom ohne Anzeichen einer hochgradigen intraepithelialen Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Amina Benbrahim, 45 Jahre alt, wurde während der Koloskopie ein 6 mm großer Polyp im Bereich der Flexura lienalis entdeckt, mit einer auffälligen Pigmentierung, die als Melanose interpretiert werden könnte. Die Gefäßzeichnung um den Polypen war verändert. Die Resektion erfolgte in Piecemeal-Technik aufgrund der schwierigen Lage. Im weiteren Verlauf zeigten sich mehrere erythematöse Areale, differentialdiagnostisch für eine Entzündung. Die Anastomosenregion wirkte reizlos. Beurteilung: Piecemeal-Resektion des Polypen. Empfehlung zur Kontrollkoloskopie in 2–6 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Youssef Alami, einem 62-jährigen marokkanischen Patienten, zeigte sich die Kolonmukosa im Bereich der Flexura lienalis mit veränderter Gefäßzeichnung. In der Anastomosenregion zeigte sich ein reizloses Bild. Im gesamten Kolon fanden sich multiple kleine Polypen, insgesamt sechs, der größte mit 8 mm. Die auffällige Pigmentierung ließ an eine Melanose denken. Mehrere erythematöse Areale könnten auf eine Entzündung hindeuten. Die Polypen wurden teilweise mit Schlinge und teilweise mittels Kaltbiopsie reseziert. Beurteilung: Resektion von mehr als fünf Polypen. Empfehlung zur nächsten Koloskopie innerhalb von 3 Jahren.",
+    "pathology report": "Die Histologie der Polypen ergab tubuläre Adenome ohne Hinweise auf IEN.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Ali Boussaid, einem 51-jährigen Patienten, wurde eine 10 mm große, auffällig pigmentierte Läsion im Ileum als Ileocekalpolyp diagnostiziert, der schwierig zu resezieren war. Aufgrund der Lage wurde die Resektion mit der Schlinge in Piecemeal-Technik durchgeführt. In der Flexura lienalis fand sich eine veränderte Gefäßzeichnung. Die anastomosierte Region präsentierte sich reizlos, und mehrere erythematöse Areale deuteten auf eine mögliche Entzündung hin. Beurteilung: Herausforderung in der Resektion des Ileocekalpolypen. Empfehlung zur Kontrollkoloskopie in 2–6 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Leila Zerhouni, 67 Jahre alt, wurden während der Koloskopie zwei Polypen im Colon ascendens entdeckt, 5 mm und 9 mm groß. Eine auffällige Pigmentierung, die auf Melanose hindeuten könnte, war vorhanden. Die Gefäßzeichnung in der Flexura lienalis war verändert. In der Anastomosenregion fand sich ein reizloses Bild. Die Polypen wurden erfolgreich mittels Schlinge reseziert. Zusätzlich waren vereinzelte erythematöse Areale zu sehen, differentialdiagnostisch für eine Entzündung. Beurteilung: Erfolgreiche Resektion zweier Polypen. Empfehlung zur nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Die Histologie ergab ein tubuläres Adenom ohne Anzeichen für hohe Neoplasie.",
+    "follow up?": "5 Jahre"
+  }
+}

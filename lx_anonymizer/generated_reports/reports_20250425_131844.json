@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Ibrahim Yildirim, 52 Jahre, stellte sich zur Vorsorgekoloskopie vor. Die Koloskopie konnte bis zum Coecum ohne Schwierigkeiten durchgeführt werden. Es zeigten sich im gesamten Kolon multiple gestielte Polypen (insgesamt 4, größter 8 mm, Paris Is, JNET 2A). Zwei kleine Adenome im aszendierenden Kolon (5 und 7 mm) wurden mittels Schlingenresektion entfernt, ein weiteres im Sigmoid mit Piecemeal-Technik (10 mm, JNET 2A). Das Resektionsgebiet wurde mit einem Clip versorgt. Im Rektum zeigten sich keine Auffälligkeiten. Im Colon transversum imponierte eine tiefe, etwa 1,5 cm lange Ulzeration, aus welcher gezielt Biopsien entnommen wurden. Kein Hinweis auf Colon irritabile.",
+    "beurteilung": "Bis auf die genannten Adenome und die Ulzeration kein pathologischer Befund. Die Piecemeal-Resektion war komplikationslos, Clip-Versorgung erfolgte. Empfehlung: Kontrollkoloskopie in 2–6 Monaten zur Überprüfung der vollständigen Abtragung (Piecemeal-Technik). Zusätzlich histologische Abklärung der Ulzeration abwarten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Dr. Nesrin Aydogan, 64 Jahre, stellte sich mit abdominalen Beschwerden vor. Die Koloskopie war aufgrund vermehrter Spastik erschwert, ergab jedoch keinen pathologischen Befund. Typische Schleimhautveränderungen wie sie bei Colon irritabile zu finden sind, aber keine ulzerativen Läsionen oder Polypen. Die Kolonwand durchgehend unauffällig.",
+    "beurteilung": "Kein pathologischer Befund, Symptomatik spricht für ein Colon irritabile. Kein Intervallverkürzungsbedarf.",
+    "pathology report": "",
+    "follow up?": "10 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Murat Demirci, 59 Jahre, wies im Colon descendens einen gestielten Polypen (Paris Ip, 15 mm, JNET 2B) und im Coecum eine tiefe Ulzeration von 1 cm auf. Die Resektion des Polypen erfolgte mit der Schlinge und anschließender Clip-Versorgung. Zusätzlich wurden aus dem Ulkus Biopsien entnommen. Im Colon ascendens wurden multipel gestielte Adenome (insgesamt 3, 4–6 mm) teils reseziert.",
+    "beurteilung": "Komplikationslose Resektion des gestielten Polypen, Clip-Versorgung. Biopsien aus der tiefen Ulzeration gesichert. Empfehlung: Da ein >10 mm Polyp reseziert wurde, erneute Koloskopie in 3 Jahren. Sollte die Histologie des Polypen Hinweise auf hochgradige IEN oder Malignität geben, ist ein engeres Intervall erforderlich.",
+    "pathology report": "Pathologie des gestielten Polypen: tubuläres Adenom mit low-grade intraepithelialer Neoplasie. Biopsien der Ulzeration: chronisch-entzündliche Veränderungen, kein Malignitätsnachweis.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Zeki Korkmaz, 68 Jahre, stellte sich zur Nachsorge nach Polypektomie vor. Im Rektosigmoid fand sich ein großer, breitbasiger Polyp (Paris Is, 22 mm, JNET 2B), der in Piecemeal-Technik vollständig abgetragen und mit zwei Clips versorgt wurde. Zusätzlich fanden sich multipel gestielte Adenome (5 Stück, jeweils <10 mm) im Colon transversum, von denen 3 reseziert wurden. Im Colon descendens fand sich eine tiefe Ulzeration, aus der Biopsien entnommen wurden.",
+    "beurteilung": "Komplette Piecemeal-Resektion, Clip-Versorgung, Biopsie der Ulzeration. Wegen der Größe und Anzahl der Adenome: engmaschige Nachsorge empfohlen. Kontrollkoloskopie in 2–6 Monaten zur Überprüfung der vollständigen Entfernung des großen Polypen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Ayse Gündüz, 71 Jahre, Vorstellung mit positiver Stuhlblutung. Im Sigma fand sich ein gestielter Polyp (Paris Ip, 18 mm, JNET 2B), der mittels Schlinge komplett entfernt werden konnte. Die Resektionsstelle wurde mit Clip versorgt. Aus dem abgetragenen Polypen wurde ein Malignitätsverdacht geäußert. Zusätzlich fanden sich multipel gestielte Adenome (>5, 3–7 mm), teilweise reseziert. Im Colon ascendens eine tiefe Ulzeration, Biopsien entnommen.",
+    "beurteilung": "Komplikationslose Resektion eines gestielten Polypen. Da Karzinom in Pathologie bestätigt: Tumorboard-Vorstellung. Weitere Polypektomie-Stellen komplikationslos. Wegen >5 Adenomen Empfehlung zur Koloskopie unter 3 Jahren.",
+    "pathology report": "Gestielter Polyp: invasives Adenokarzinom, R0-Resektion in der Polypenbasis. Adenome: tubuläres Adenom mit low-grade IEN. Biopsien Ulzeration: granulierende Entzündung, kein Malignitätsnachweis.",
+    "follow up?": "<3 Jahre"
+  }
+}

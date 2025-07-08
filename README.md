@@ -19,7 +19,9 @@ systemd
 
 ## A machine with an NVIDIA GPU is recommended for main function to avoid slow execution
 
-lx-anonymizer is a comprehensive Python code designed for image processing with specific functionalities for pseudonymization of images, blurring, and OCR (Optical Character Recognition). This tool is particularly useful in scenarios where sensitive information needs to be redacted from images or documents while retaining the overall context and visual structure.
+lx-anonymizer is a python module designed for image processing with specific functionalities for pseudonymization of images, blurring, and OCR (Optical Character Recognition). 
+
+Additionally, RegEx with spaCy is used to extract sensitive information. This tool is particularly useful in scenarios where sensitive information needs to be redacted from images or documents while retaining the overall context and visual structure.
 
 The software is far from perfect. It is meant to speed up the anonymization process under human supervision. An API with a frontend will be provided for human correction oft the outputs. Also, a model will be trained on all the outputs to 
 
@@ -114,7 +116,7 @@ Configure Settings: Adjust the settings in the configuration file (if applicable
 Run the Module: Execute the main script to process the images.
 
 ```bash
-python main.py --image images/your_image.jpg  --device="lympus_cv_1500" --validation=true --width=320 --height=320
+python main.py --image images/your_image.jpg  --device="olympus_cv_1500" --validation=true --width=320 --height=320
 ```
 
 Arguments can be set through flags or the system call to change the module settings.

@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Karim Benyamina, Z.n. Rektumresektion aufgrund einer früheren Rektumkarzinomdiagnose, wurde eine Kontrollkoloskopie durchgeführt. Die Koloskopie zeigte keine Auffälligkeiten im Bereich der Resektion. Z.n. Hemikolektomie, die unauffällige Anastomose war gut passierbar. Im Colon ascendens wurden erythematöse Areale gesehen, DD: Entzündung. Im Colon sigmoideum wurde ein 7 mm Polyp (Paris-Klassifikation: Is, JNET: Typ 2A) identifiziert und mit der Schlingentechnik entfernt. Koagulationsartefakte wurden dokumentiert, jedoch ist keine Aussage zur möglichen Restläsion möglich. Komplikationen traten nicht auf.",
+    "pathology report": "Histologie: Tubuläres Adenom ohne hochgradige IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Ahmed Saad, wurde eine Verlaufskoloskopie durchgeführt. Z.n. Hemikolektomie mit unauffälliger Anastomose. Im Colon transversum fanden sich multiple kleine erythematöse Areale, DD: Entzündung. Im Colon sigmoideum entdeckten wir zwei Polypen, einer 8 mm und der andere 15 mm groß, beide Paris-Klassifikation: Is, JNET: Typ 2A. Beide Polypen wurden vollständig mit der Schlinge reseziert. Keine periprozeduralen Komplikationen aufgetreten.",
+    "pathology report": "Histologie: Adenom mit niedriggradiger IEN.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Amira Bouchareb stellte sich zur Überwachungskoloskopie vor. Z.n. Rektumresektion, keine Auffälligkeiten in diesem Bereich. Die Kolonoskopie zeigte keine Pathologien im verbliebenen Darm, abgesehen von kleinen erythematösen Bereichen im Colon descendens, DD: Entzündung. Keine Polypen oder Tumore identifiziert.",
+    "pathology report": "Kein histologischer Befund erforderlich.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Jamal Al-Kader fand eine Kontrollkoloskopie nach Z.n. Hemikolektomie statt. Die Koloskopie zeigte eine unauffällige Anastomose. Im Colon sigmoideum wurden fünf Polypen identifiziert, alle unter 10 mm (Paris-Klassifikation: Ip, JNET: Typ 2B) und mittels Kaltbiopsie- und Schlingentechnik entfernt. Es traten keine Komplikationen auf.",
+    "pathology report": "Histologie: Mischadenome mit hochgradiger IEN bei zwei der fünf Polypen.",
+    "follow up?": "Unter 3 Jahren"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Samir Abdelkader wurde eine Koloskopie nach Z.n. Rektumresektion durchgeführt. Keine Auffälligkeiten im Rektumbereich. Das Colon ascendens zeigte erythematöse Areale, DD: Entzündung. Im Colon sigmoideum wurde ein einzelner 10 mm großer Polyp (Paris-Klassifikation: Is, JNET: Typ 2A) entdeckt und mit einer Schlinge reseziert. Koagulationsartefakte verhinderten eine vollständige Beurteilung der Resektionstiefe.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "3 Jahre, basierend auf der Größenangabe des Polypen"
+  }
+}

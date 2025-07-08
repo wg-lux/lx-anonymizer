@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der 58-jährige Herr Prof. Dr. Knud Sørensen stellte sich zur Darmkrebsvorsorgeuntersuchung vor. Während der Koloskopie wurde im Colon transversum ein 15 mm großer, sessiler Polyp mit malignitätsverdächtiger Oberfläche nach Paris-Klassifikation 0-Ip entdeckt. Der Polyp wies ein JNET-Muster Typ 3 auf. Eine abtragende Polypektomie mittels Schlinge wurde durchgeführt, während derer es zu einer Nachblutung kam, die durch den Einsatz von Clips gestillt werden konnte. Der Eingriff gestaltete sich durch den eingeschränkt insufflationstoleranten Patienten als technisch anspruchsvoll.",
+    "pathology report": "Histologisch zeigte sich ein tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Lone Bjerg, 65 Jahre alt, stellte sich mit rektalen Blutungen zur Abklärung vor. Während der Koloskopie wurden drei Polypen im Sigma gefunden: ein 8 mm, ein 5 mm und ein 12 mm großer Polyp, alle nach Paris-Klassifikation 0-Is. Die Polypektomie wurde mit einer Schlinge durchgeführt. Nach der Abtragung des 12 mm großen Polypen kam es zu einer Nachblutung, die jedoch spontan sistierte. Im Rektum wurde zudem ein 4 cm großer, radiodens erscheinender Fremdkörper entdeckt und erfolgreich entfernt. Eine Blutungsquelle für die rektalen Blutungen konnte jedoch nicht identifiziert werden.",
+    "pathology report": "Die Histologie ergab bei allen Polypen tubuläre Adenome ohne hochgradige dysplastische Veränderungen.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Der 47-jährige Herr Mikkel Nørgaard stellte sich aufgrund von unklaren Bauchschmerzen vor. Bei der Koloskopie wurde im Rektum ein 20 mm großer, breitbasiger Polyp nach Paris-Klassifikation 0-Is entdeckt und mittels Piecemeal-Technik abgetragen. Der Eingriff war durch die eingeschränkte Toleranz des Patienten für Luftinsufflation erschwert. Kein Hinweis auf weitere Polypen oder Tumore konnte gefunden werden.",
+    "pathology report": "Das histologische Gutachten zeigte ein tubuläres Adenom mit fokalen Arealen von hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Lars Østergaard, 60 Jahre alt, kam zur Routineuntersuchung. Im Colon ascendens wurde ein 7 mm großer, gestielter Polyp nach Paris-Klassifikation 0-Ip entdeckt und vollständig mittels Schlingenpolypektomie reseziert. Im absteigenden Teil des Colons waren keine weiteren Auffälligkeiten zu erkennen. Es wurden keine Blutungsquellen entdeckt, und der Patient tolerierte die Insufflation gut.",
+    "pathology report": "Der Polyp wurde als tubuläres Adenom klassifiziert, ohne Hinweise auf hochgradige Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Frau Kirsten Jensen, eine 55-jährige Patientin, wurde wegen rezidivierender abdomineller Schmerzen zur Koloskopie überwiesen. Im Colon sigmoideum wurden fünf Polypen, zwischen 4 mm und 9 mm groß, entdeckt, alle mit sessilem Wuchs nach Paris-Klassifikation 0-Is. Die Polypektomie aller Polypen wurde erfolgreich mittels Schlingentechnik durchgeführt. Keine weiteren Tumore oder auffälligen Läsionen wurden festgestellt. Der Patient war eingeschränkt insufflationstolerant. Eine Blutungsquelle war nicht identifizierbar.",
+    "pathology report": "Die Histologie ergab tubuläre Adenome, bei einem der Polypen fanden sich Anzeichen einer hochgradigen intraepithelialen Neoplasie.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

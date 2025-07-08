@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Herrn Dr. Mustafa Al-Tikriti wurden im Colon transversum mehrere erythematöse Areale beobachtet, die auf eine mögliche Entzündung hinweisen (DD: Entzündung). Es wurden Blutauflagerungen im Sigma festgestellt. Im Rektum fand sich ein gestielter Polyp (Paris I-p), ca. 8 mm groß, der mit einer Schlinge sicher entfernt wurde. Im Bereich des Colon ascendens zeigte sich ein Polyp mit breiter Basis (Paris Is), ca. 15 mm groß, der mittels EMR abgetragen wurde. Beim Sigma konnte eine suspekte Läsion (Paris IIc) identifiziert werden, jedoch war ein Lifting negativ, sodass kein vollständiger Befund erhoben werden konnte. Beurteilung: Komplikationslose Resektion der gestielten Polypen. Weitere Abklärung der Läsion im Sigma erforderlich. Empfehlung der nächsten Koloskopie in 3 Jahren aufgrund des Polypen >10 mm.",
+    "pathology report": "Histologiebefund: Keine maligne Entartung der gestielten Polypen. Der breite Polyp zeigt eine hochgradige intraepitheliale Neoplasie (IEN). Histologie der Läsion im Sigma steht noch aus.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Karim Mahmood wurde die Koloskopie durchgeführt. Es fanden sich multiple kleine Polypen (Paris Is), zwischen 4 mm bis 6 mm, im Colon descendens und Sigmoid, insgesamt 6 Polypen, die mit der Schlinge abgetragen wurden. Darüber hinaus zeigten sich erythematöse Areale entlang des Colon ascendens, was eine entzündliche Reaktion vermuten lässt. Beurteilung: Komplikationslose Resektion der Polypen. Empfehlung der nächsten Koloskopie unter 3 Jahren aufgrund der Anzahl der Polypen.",
+    "pathology report": "Histologiebefund: Tubuläre Adenome ohne Zeichen der Dysplasie.",
+    "follow up?": "unter 3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Layla Najafi wurde koloskopiert. Im Colon ascendens wurde ein großer Polyp (Paris Is) von 20 mm gefunden und vollständig mit der Piecemeal-Technik entfernt. Der Lifting-Test war hierbei positiv. Der weitere Verlauf zeigte keine weiteren pathologischen Befunde. Beurteilung: Komplikationslose Resektion des Polypen. Empfehlung der nächsten Koloskopie in 2–6 Monaten, um die vollständige Resektion zu überprüfen.",
+    "pathology report": "Histologiebefund: Tubulovillöses Adenom mit niedriggradiger Dysplasie.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Herrn Ahmed Al-Fadhil zeigten sich Blutauflagerungen im Sigma. Ein flacher Polyp (Paris IIa) von 12 mm im Colon sigmoideum wurde mittels EMR in einem Stück entfernt. Zusätzliche entzündliche erythematöse Areale wurden im Rektum festgestellt. Beurteilung: Komplikationslose Resektion des Polypen. Empfehlung der nächsten Koloskopie in 3 Jahren aufgrund des großen Polypen.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Herrn Dr. Ali Abdulla wurden im Sigma mehrere erythematöse Areale mit Blutauflagerungen beobachtet, was auf eine Entzündung hindeutet. Im Colon ascendens wurde ein breiter Polyp (Paris Is) von 18 mm gefunden. Der Polyp konnte aufgrund eines negativen Lifting-Tests nicht vollständig reseziert werden. Beurteilung: Inkomplette Resektion des Polypen im Colon ascendens, weitere Abklärung erforderlich. Empfehlung der nächsten Koloskopie in 6 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "6 Monate"
+  }
+}

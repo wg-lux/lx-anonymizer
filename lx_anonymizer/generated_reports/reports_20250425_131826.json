@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Patient William Montgomery, 62 Jahre alt, erfolgte die Kontrollkoloskopie nach Z.n. ESD im Bereich des oberen Rektums (Vorbefund: großes tubuläres Adenom mit low-grade IEN). Untersuchung bis terminales Ileum. Der anastomotische Ring nach anteriorer Rektumresektion zeigt sich vollständig und die Anastomosenregion war reizlos. Bei 35 cm ab Analkanal fand sich eine rötliche makroskopische Veränderung von 8 mm Durchmesser, Paris Is, mit JNET 2a. Aus dieser Region wurde eine PE entnommen und die Stelle prophylaktisch mit einer Klammer versorgt. Im Rektosigmoid insgesamt eine diskrete Reizung der Mukosa, keine Ulzera oder Erosionen. Keine weiteren Polypen.",
+    "beurteilung": "Komplikationslose Probenentnahme aus suspektem Areal, Kontrolle des Anastomosenrings und Anastomosenregion reizlos. Keine Hinweise auf Rezidiv eines Adenoms nach ESD. Die Histologie der rötlichen Veränderung steht noch aus. Empfohlene Nachsorge-Koloskopie in 5 Jahren, sofern keine Hochrisiko-Histologie.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Pat. Lady Eleanor Fitzwilliam (73 J.), Z.n. Sigmaresektion bei früherem Adenom, fand sich der anastomotische Ring intakt, die Anastomosenregion reizlos. Im Rektosigmoid zeigte sich eine umschriebene Reizung der Mukosa. Auf 22 cm ab ano wurde ein flacher, rötlicher, makroskopisch auffälliger Bezirk (12 mm) entdeckt, Paris IIa, JNET 2b. Aus dem Bereich wurde eine Probe entnommen (PE). Weitere 3 Polypen (jeweils <5 mm) im Colon descendens, mittels Schlinge abgetragen.",
+    "beurteilung": "Z.n. ESD mit Verdacht auf Rezidiv eines Adenoms - Biopsie und Polypektomien durchgeführt. Komplikationslose Resektion. Nachsorge entsprechend Mehrfachadenomen.",
+    "pathology report": "Histologisch: Bereich der rötlichen Veränderung: tubulovilläres Adenom mit low-grade IEN; Polypen: tubuläre Adenome ohne Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Charles ‘Charlie’ Hawkins, 55 Jahre, Erstkoloskopie aufgrund positiver Familienanamnese. Anastomotischer Ring nicht vorhanden (keine Vor-OP), aber im Rektosigmoid auffällige Reizung der Mukosa, vermutlich reaktive Veränderung. Auf 30 cm eine rötliche, makroskopische Veränderung (6 mm, Paris Is, JNET 2A). Hier wurde eine PE entnommen; ansonsten unauffälliger Befund.",
+    "beurteilung": "Eine kleine, rötliche Veränderung im Rektosigmoid – PE entnommen. Keine weiteren Polypen, keine Zeichen für ein Adenomrezidiv (kein Z.n. ESD). Komplette Untersuchung. Nachsorge gemäß Leitlinie.",
+    "pathology report": "Histologisch: Tubuläres Adenom mit low-grade IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Dr. Nigel Graham, 69, Z.n. ESD vor 8 Monaten im Rektum (großes Adenom mit high-grade IEN). Jetzt Kontrolle: Der anastomotische Ring ist vollständig und die Anastomosenregion reizlos. Im früheren ESD-Areal findet sich eine rötliche makroskopische Veränderung (7 mm, Paris IIa, JNET 2B), aus der eine PE entnommen wurde. Im Colon sigmoideum ebenfalls eine Reizung der Mukosa, aber ohne weitere Läsion. Keine weiteren Polypen.",
+    "beurteilung": "Verdacht auf Rezidiv im Bereich der Vor-ESD, Biopsie entnommen. Insgesamt komplikationslos. Kontroll-Koloskopie empfohlen.",
+    "pathology report": "Histologisch: Adenom mit hochgradiger intraepithelialer Neoplasie (high-grade IEN).",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Miss Beatrice Jenkins, 47 Jahre, Z.n. Sigmaresektion. Anastomotischer Ring nach Operation vollständig, Anastomosenregion reizlos. Rötliche makroskopische Veränderung (18 mm, Paris Ip, JNET 2B) im Colon ascendens, Polypektomie mittels Schlinge und Adrenalin-Injektion, Piecemeal-Technik eingesetzt. Zusätzlich im Rektosigmoid diskrete Reizung der Mukosa ohne Ulzera. Kein Hinweis auf neues Adenomrezidiv.",
+    "beurteilung": "Großer Polyp im Colon ascendens in Piecemeal-Resektion entfernt, komplikationslose Prozedur. Nachsorgeintervall verkürzt.",
+    "pathology report": "Histologisch: Tubulovilläres Adenom mit low-grade IEN. Inkomplette Resektion nicht auszuschließen.",
+    "follow up?": "6 Monate"
+  }
+}

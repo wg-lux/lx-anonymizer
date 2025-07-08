@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der Patient Herr Dr. Albrecht Rosenberg stellte sich zur Koloskopie aufgrund von anhaltenden abdominellen Beschwerden vor. Während der Untersuchung war die Ileozökalklappe nicht passierbar. Koagulationsartefakte führten dazu, dass keine Aussage über die Zökalregion möglich war. Im Rektum wurde eine submuköse Raumforderung von ca. 15 mm entdeckt. Es konnten keine Polypen dargestellt werden.",
+    "pathology report": "Eine Biopsie der submukösen Raumforderung ergab gutartig erscheinendes fibröses Gewebe mit unauffälligem Stroma.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Helga von Trapp wurde zur Vorsorgekoloskopie einbestellt. Die Ileozökalklappe war aufgrund von Adhäsionen nach vorherigen Operationen nicht passierbar. Drei Polypen wurden im Colon ascendens entdeckt: zwei flache Polypen nach Paris IIa von 6 mm und 9 mm sowie ein gestielter Polyp nach Paris Ip von 11 mm. Alle Polypen wurden mittels Schlinge reseziert. Koagulationsartefakte verhinderten eine vollständige Beurteilung der umgebenden Schleimhaut.",
+    "pathology report": "Histologie ergab zwei tubuläre Adenome ohne Dysplasie und ein tubuläres Adenom mit fokaler hochgradiger intraepithelialer Neoplasie (IEN) im 11 mm Polypen.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Otto Krauser, ein 68-jähriger Patient, unterzog sich einer Koloskopie aufgrund positiver okkulter Bluttests. Die Koloskopie wurde aufgrund eines stenosierenden malignen Tumors im Colon sigmoideum abgebrochen, wodurch die Ileozökalklappe nicht beurteilt werden konnte. Zusätzlich fand sich im Rektum eine submuköse Raumforderung von etwa 20 mm, bioptisch abgeklärt. Aufgrund von Koagulationsartefakten waren keine weiteren Aussagen über die Rektumschleimhaut möglich.",
+    "pathology report": "Die Biopsie im Rectum zeigte ein gut differenziertes Adenokarzinom.",
+    "follow up?": "Individuelle Nachsorge je nach Therapieplanung"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Die Koloskopie bei Herrn Professor Dr. Heinrich Blum wurde durchgeführt, da er unter Eisenmangelanämie leidet. Die Ileozökalklappe war aufgrund eines intraluminalen Tumors nicht passierbar. Es wurden fünf Polypen im Colon transversum und descendens entfernt, allesamt sessile Polypen nach Paris Is mit Größen von 4 bis 8 mm, reseziert mittels Kaltbiopsie-Technik. Während des Eingriffs entstanden Koagulationsartefakte, die allerdings die Untersuchung nicht wesentlich beeinträchtigten.",
+    "pathology report": "Die Histologie zeigte bei allen Polypen tubuläre Adenome mit low-grade IEN.",
+    "follow up?": "Unter 3 Jahren"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Frau Elsa Hinterseer wurde zur Koloskopie überwiesen, um anhaltende Diarrhoen abzuklären. Bei der Untersuchung stellte sich die Ileozökalklappe aufgrund entzündlicher Veränderungen als nicht passierbar dar. Im Sigma fand sich ein sessiler Polyp von 12 mm Größe, klassifiziert als Paris Is. Dieser wurde in Piecemeal-Technik mit Kaltbiopsiezangen abgetragen. Koagulationsartefakte erschwerten die Beurteilung der Resektionsränder.",
+    "pathology report": "Histologische Auswertung ergab ein tubuläres Adenom mit low-grade intraepithelialer Neoplasie.",
+    "follow up?": "2–6 Monate"
+  }
+}

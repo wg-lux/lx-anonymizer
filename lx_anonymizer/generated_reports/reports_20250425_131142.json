@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 42-jährige Pavol Jurčiak wurde aufgrund von anhaltendem Durchfall und Abdominalschmerzen zur Koloskopie überwiesen. Während der Untersuchung zeigten sich im Colon ascendens multiple mukoide Auflagerungen. Darüber hinaus wurde im Rectum ein 12 mm großer gestielter Polyp entdeckt, der mit der Schlinge reseziert wurde. Im Colon transversum fanden sich Veränderungen, die auf eine Clip-induzierte Veränderung hindeuten könnten, jedoch kein Tumorverdacht besteht. Zudem ergab die Untersuchung Hinweise auf eine lymphozytäre Colitis. Biopsien wurden zur weiteren Abklärung entnommen. Beurteilung: Komplikationslose Resektion des gestielten Polypen. Die mukoiden Auflagerungen und die lymphozytäre Colitis bedürfen weiterer histologischer Abklärung. Empfehlung: Nächste Koloskopie in 3 Jahren.",
+    "pathology report": "Der resezierte Polyp aus dem Rectum zeigt in der Histologie ein fokales Karzinom in situ. Die Biopsien aus dem Colon transversum bestätigen eine lymphozytäre Colitis.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 59-jährige Dr. János Smatana stellte sich mit unklaren Bauchbeschwerden vor. Die Koloskopie zeigte eine ausgedehnte Entzündung im gesamten Kolon, was dem Bild einer Pan-Colitis entspricht. Biopsien zur histologischen Sicherung wurden entnommen. Ein 8 mm sessiles Polyp im Colon descendens konnte vollständig mit der Schlinge entfernt werden. Keine Anzeichen für maligne Veränderung in den sichtbaren Läsionen. Beurteilung: Die Resektion des Polypen verlief komplikationslos. Die Ursache der Pan-Colitis muss jedoch noch genauer untersucht werden. Empfehlung: Nächste Koloskopie in 5 Jahren.",
+    "pathology report": "Die Histologie des Polypen zeigt ein tubuläres Adenom ohne Anzeichen einer hochgradigen Dysplasie. Die Biopsien der Pan-Colitis sind noch in Bearbeitung.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Martina Vavrová, 67 Jahre alt, wurde zur Routinekontrolle einbestellt. Während der Untersuchung fanden sich im Colon ascendens diskrete mukoide Auflagerungen. Im Sigmoid wurde ein gestielter 10 mm großer Polyp entdeckt und mittels Schlinge unkompliziert entfernt. Es gab keine Hinweise auf Clip-induzierte Veränderungen oder eine lymphozytäre Colitis. Beurteilung: Unauffälliger Verlauf nach vollständiger Polypenresektion. Keine weiteren Auffälligkeiten. Empfehlung: Nächste Koloskopie in 3 Jahren.",
+    "pathology report": "Der Polyp aus dem Sigmoid ist ein tubuläres Adenom mit fokalen hochgradigen intraepithelialen Neoplasien.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 52-jährige Miroslav Hronec wurde wegen intermittierender Blutabgänge und Bauchschmerzen untersucht. Im Colon descendens wurden mukoide Auflagerungen sowie ein 15 mm großer, breitbasiger Polyp gefunden, welcher in Piecemeal-Technik entfernt wurde. Die Untersuchung ergab Hinweise auf eine Pan-Colitis, wofür Biopsien entnommen wurden. Beurteilung: Die Resektion des Polypen verlief ohne Komplikationen. Weitere Abklärung der mukoiden Auflagerungen und der Pan-Colitis erforderlich. Empfehlung: Kontrollkoloskopie in 6 Monaten.",
+    "pathology report": "Die Histologie des Polypen ist noch ausstehend. Die Biopsien der Pan-Colitis zeigen chronisch-entzündliche Veränderungen.",
+    "follow up?": "6 Monate"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 45-jährige Professor László Kučera kam zur Abklärung chronischer Diarrhoe. Im Colon ascendens fielen mukoide Auflagerungen auf. Kein Hinweis auf Tumor oder Clip-induzierte Veränderungen. Im Colon sigmoideum wurden drei adenomatöse Polypen (4 mm, 6 mm und 9 mm) gefunden und vollständig mit der Schlinge reseziert. Aufgrund der klinischen Präsentation besteht ein Verdacht auf lymphozytäre Colitis, Biopsien wurden entnommen. Beurteilung: Die Resektion der Polypen verlief problemlos, weitere Analyse der Biopsien erforderlich. Empfehlung: Nächste Koloskopie in 5 Jahren.",
+    "pathology report": "Die resezierten Polypen sind tubuläre Adenome ohne Anzeichen für Dysplasie. Die Biopsien bestätigen den Verdacht auf lymphozytäre Colitis.",
+    "follow up?": "5 Jahre"
+  }
+}
