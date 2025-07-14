@@ -15,5 +15,6 @@ __all__ = [
     'EndoscopeDataExtractor',
     'ExaminationDataExtractor',
     'anonymize_text',
-    'FrameCleaner'
+    'FrameCleaner',
+    'MetaExtraction'
 ]

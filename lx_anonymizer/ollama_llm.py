@@ -43,6 +43,29 @@ class OllamaLLMProcessor:
         except Exception as e:
             logger.error(f"Failed to initialize Ollama LLM processor: {e}")
             raise
+        
+    def call_llm(self, prompt: str, context=None,
+             temperature: float = 0.1, top_p: float = 0.9,
+             image: Optional[Path] = None) -> dict:
+
+        kwargs = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "options": {
+                "temperature": temperature,
+                "top_p": top_p,
+                "num_predict": 1000
+            },
+            "stream": False          # optional: disable streaming for one-shot
+        }
+
+        if context:
+            kwargs["context"] = context          # keeps chat memory
+        if image:
+            kwargs["images"] = [self._encode_image_to_base64(image)]
+
+        return self.client.generate(**kwargs)
+
     
     def _verify_model_availability(self) -> bool:
         """
@@ -433,6 +456,7 @@ def analyze_full_image_with_ollama(image_path: Path, csv_path: Optional[Path] = 
         logger.error(f"Error in full image analysis with Ollama: {e}")
         return [], None
 
+# Compatibility functions to replace existing Phi-4 functions
 
 def replace_phi4_with_ollama(image_path: Path, existing_csv_path: Optional[Path] = None) -> Optional[List[Dict]]:
     """
@@ -473,7 +497,6 @@ def replace_phi4_with_ollama(image_path: Path, existing_csv_path: Optional[Path]
         return None
 
 
-# Compatibility functions to replace existing Phi-4 functions
 def initialize_ollama_processor(model_name: str = "llama3.2-vision:latest") -> Optional[OllamaLLMProcessor]:
     """
     Initialize Ollama processor (replacement for initialize_phi4).

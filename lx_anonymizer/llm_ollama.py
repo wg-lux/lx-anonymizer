@@ -66,7 +66,7 @@ def extract_meta_ollama(text: str, model: str = "llama3:8b") -> dict:
 
     Returns:
         A dictionary containing the extracted metadata, validated against PatientMeta.
-
+extract
     Raises:
         RetryError: If extraction fails after multiple retries.
         Exception: For other unexpected errors during the process.

@@ -23,6 +23,7 @@ import pytesseract
 from PIL import Image
 
 from lx_anonymizer.report_reader import ReportReader
+from lx_anonymizer.best_frame_text import BestFrameText
 from lx_anonymizer.utils.ollama import ensure_ollama
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,165 @@ class FrameCleaner:
     
     def __init__(self):
         ollama_proc = ensure_ollama()
+        bft = BestFrameText()
         pass 
     
+    def clean_video(
+        self,
+        video_path: Path,
+        report_reader=ReportReader(),
+        tmp_dir: Optional[Path] = None,
+        device_name: Optional[str] = None,
+        endoscope_roi: Optional[Dict[str, Any]] = None,
+        processor_rois: Optional[Dict[str, Dict[str, Any]]] = None,
+        frame_paths: Optional[list[Path]] = None
+    ) -> Path:
+        """
+        Clean video by removing frames with sensitive information or masking persistent overlays.
         
+        Args:
+            video_path: Path to input video
+            report_reader: ReportReader instance for sensitive data detection
+            tmp_dir: Temporary directory for processing (optional)
+            device_name: Name of endoscopy device for mask configuration (optional)
+            endoscope_roi: Endoscope ROI from processor for masking (optional)
+            processor_rois: All processor ROIs for comprehensive anonymization (optional)
+            
+        Returns:
+            Path to cleaned video file (with "_anony" suffix)
+            
+        Raises:
+            RuntimeError: If video processing fails
+        """
+        if tmp_dir is None:
+            tmp_dir = Path(tempfile.mkdtemp(prefix='frame_cleaner_'))
+        
+        # Default device name if not provided
+        if device_name is None:
+            device_name = "olympus_cv_1500"
+        
+        if frame_paths is None:                                   # ← only extract if we have none
+            frames_dir   = tmp_dir / "frames"
+            frame_paths  = self.extract_frames(video_path, frames_dir, max_frames=100)
+
+        try:
+            # ▼ adaptive streaming + on-the-fly OCR
+            bft = BestFrameText()             # reservoir sampler
+            sensitive_idx: list[int] = []
+            skip = 1  # default skip value in case no frames are processed
+
+            for abs_i, gray, skip in self._iter_video(video_path):
+                data = pytesseract.image_to_data(
+                    gray, lang="deu",
+                    config="--oem 3 --psm 6",          # faster, single-block mode
+                    output_type=pytesseract.Output.DICT
+                )
+
+                words = [w for w in data["text"] if w.strip()]
+                if not words:
+                    continue
+                confs = [int(c) for c in data["conf"] if c.isdigit() and int(c) >= 0]
+                avg_conf = (sum(confs) / len(confs) / 100) if confs else 0.0
+                ocr_text = " ".join(words)
+
+                # feed the ‘best text’ sampler (almost free)
+                bft.push(ocr_text, avg_conf)
+
+                # light-weight sensitive check (SpaCy/regex only)
+                if self.detect_sensitive_on_frame_text(ocr_text, report_reader):
+                    sensitive_idx.append(abs_i)
+            
+            best_summary = bft.reduce()
+            logger.info("Representative OCR text – best: %s", best_summary["best"])
+            total_frames = int(cv2.VideoCapture(str(video_path)).get(cv2.CAP_PROP_FRAME_COUNT))
+            if skip > 1:
+                pad          = skip - 1
+                padded_idx   = set()
+                for f in sensitive_idx:
+                    padded_idx.update(range(max(0, f - pad), min(total_frames, f + pad + 1)))
+                sensitive_idx = sorted(padded_idx)
+            
+            
+            sensitive_ratio = len(sensitive_idx) / total_frames
+
+            
+            logger.info(f"Found {total_frames / 100 * sensitive_ratio: .1%} sensitive frames out of {total_frames} "
+                       f"({sensitive_ratio:.1%} ratio)")
+            
+            # Decision: mask vs frame removal based on 10% threshold
+            if sensitive_ratio > 0.10:
+                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) exceeds 10% threshold. "
+                           f"Applying mask instead of removing frames.")
+                try:
+                    # Use processor ROI if available, otherwise fall back to device mask
+                    if endoscope_roi and self._validate_roi(endoscope_roi):
+                        logger.info("Using processor endoscope ROI for masking")
+                        mask_config = self._create_mask_config_from_roi(endoscope_roi, processor_rois)
+                    else:
+                        logger.info("Using device-specific mask configuration")
+                        mask_config = self._load_mask(device_name)
+                    
+                    success = self._mask_video(video_path, mask_config, output_video)
+                    
+                    if not success:
+                        logger.error("Failed to create masked video, using original")
+                        import shutil
+                        shutil.copy2(video_path, output_video)
+                        
+                except Exception as e:
+                    logger.error(f"Masking failed: {e}. Falling back to frame removal.")
+                    # Fall back to frame removal if masking fails
+                    success = self.remove_frames_from_video(
+                        video_path, 
+                        sensitive_idx, 
+                        output_video,
+                        total_frames=total_frames
+                    )
+                    
+                    if not success:
+                        logger.error("Failed to create cleaned video, using original")
+                        import shutil
+                        shutil.copy2(video_path, output_video)
+            else:
+                # Traditional frame removal for videos with < 10% sensitive content
+                if not sensitive_idx:
+                    logger.info("No sensitive frames detected, copying original video")
+                    import shutil
+                    shutil.copy2(video_path, output_video)
+                    return output_video
+                
+                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) below 10% threshold. "
+                           f"Removing {len(sensitive_idx)} sensitive frames.")
+                
+                # Re-encode video without sensitive frames
+                success = self.remove_frames_from_video(
+                    video_path, 
+                    sensitive_idx, 
+                    output_video,
+                    total_frames=total_frames
+                )
+                
+                if not success:
+                    logger.error("Failed to create cleaned video, using original")
+                    import shutil
+                    shutil.copy2(video_path, output_video)
+            
+            return output_video
+            
+        except Exception as e:
+            logger.error(f"Video cleaning failed: {e}")
+            # Fail-safe: copy original if cleaning fails
+            output_video = video_path.with_stem(f"{video_path.stem}_anony")
+            import shutil
+            shutil.copy2(video_path, output_video)
+            return output_video
+            
+        finally:
+            # Clean up temporary files
+            if tmp_dir.exists():
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
 
     def extract_frames(self, video_path: Path, output_dir: Path, max_frames: Optional[int] = None) -> List[Path]:
         """
@@ -236,6 +393,28 @@ class FrameCleaner:
         except Exception as e:
             logger.error(f"Error processing frame {frame_path}: {e}")
             # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
+            return False
+        
+    def detect_sensitive_on_frame_text(
+        self, ocr_text: str, report_reader: ReportReader) -> bool:
+        """
+        Detect if a frame text contains sensitive information using spaCy + regex.
+        Args:
+            ocr_text: OCR-extracted text from frame
+            report_reader: ReportReader instance with PatientDataExtractor
+        Returns:
+            True if frame contains sensitive data, False otherwise
+        """
+        # Use LLM-powered metadata extraction
+        has_sensitive, meta = self._detect_sensitive_meta_llm(
+            ocr_text, report_reader, llm_model="deepseek"
+        )
+        
+        if has_sensitive:
+            logger.warning(f"LLM detected sensitive data in text: {meta}")
+            return True
+        else:            
+            logger.debug("No sensitive data detected in text using LLM.")
             return False
 
     def remove_frames_from_video(
@@ -440,130 +619,145 @@ class FrameCleaner:
         except Exception as e:
             logger.error(f"Video masking error: {e}")
             return False
-
-    def clean_video(
-        self,
-        video_path: Path,
-        report_reader=ReportReader(),
-        tmp_dir: Optional[Path] = None,
-        device_name: Optional[str] = None
-    ) -> Path:
+    
+    def _validate_roi(self, roi: Dict[str, Any]) -> bool:
         """
-        Clean video by removing frames with sensitive information or masking persistent overlays.
+        Validate that ROI dictionary contains required fields and reasonable values.
         
         Args:
-            video_path: Path to input video
-            report_reader: ReportReader instance for sensitive data detection
-            tmp_dir: Temporary directory for processing (optional)
-            device_name: Name of endoscopy device for mask configuration (optional)
+            roi: ROI dictionary with x, y, width, height keys
             
         Returns:
-            Path to cleaned video file (with "_anony" suffix)
-            
-        Raises:
-            RuntimeError: If video processing fails
+            True if ROI is valid, False otherwise
         """
-        if tmp_dir is None:
-            tmp_dir = Path(tempfile.mkdtemp(prefix='frame_cleaner_'))
+        if not isinstance(roi, dict):
+            return False
         
-        # Default device name if not provided
-        if device_name is None:
-            device_name = "generic"
+        required_keys = ['x', 'y', 'width', 'height']
+        if not all(key in roi for key in required_keys):
+            logger.warning(f"ROI missing required keys. Expected: {required_keys}, got: {list(roi.keys())}")
+            return False
         
+        # Check for reasonable values (non-negative, not too large)
         try:
-            # Create output path with _anony suffix
-            output_video = video_path.with_stem(f"{video_path.stem}_anony")
+            x, y, width, height = roi['x'], roi['y'], roi['width'], roi['height']
             
-            # Extract frames for analysis
-            frames_dir = tmp_dir / 'frames'
-            frame_paths = self.extract_frames(video_path, frames_dir, max_frames=100)  # Limit for performance
-            
-            if not frame_paths:
-                logger.warning("No frames extracted, copying original video")
-                import shutil
-                shutil.copy2(video_path, output_video)
-                return output_video
-            
-            # Analyze frames for sensitive content
-            sensitive_frame_indices = []
-            for i, frame_path in enumerate(frame_paths):
-                if self.detect_sensitive_on_frame(frame_path, report_reader):
-                    sensitive_frame_indices.append(i)
-            
-            if not sensitive_frame_indices:
-                for i, frame_path in enumerate(frame_paths):
-                    if self.detect_sensitive_on_frame_extended(frame_path, report_reader):
-                        sensitive_frame_indices.append(i)
-            
-            total_frames = len(frame_paths)
-            sensitive_ratio = len(sensitive_frame_indices) / total_frames if total_frames > 0 else 0
-            
-            logger.info(f"Found {len(sensitive_frame_indices)} sensitive frames out of {total_frames} "
-                       f"({sensitive_ratio:.1%} ratio)")
-            
-            # Decision: mask vs frame removal based on 10% threshold
-            if sensitive_ratio > 0.10:
-                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) exceeds 10% threshold. "
-                           f"Applying mask instead of removing frames.")
-                try:
-                    mask_config = self._load_mask(device_name)
-                    success = self._mask_video(video_path, mask_config, output_video)
-                    
-                    if not success:
-                        logger.error("Failed to create masked video, using original")
-                        import shutil
-                        shutil.copy2(video_path, output_video)
-                        
-                except Exception as e:
-                    logger.error(f"Masking failed: {e}. Falling back to frame removal.")
-                    # Fall back to frame removal if masking fails
-                    success = self.remove_frames_from_video(
-                        video_path, 
-                        sensitive_frame_indices, 
-                        output_video,
-                        total_frames=total_frames
-                    )
-                    
-                    if not success:
-                        logger.error("Failed to create cleaned video, using original")
-                        import shutil
-                        shutil.copy2(video_path, output_video)
-            else:
-                # Traditional frame removal for videos with < 10% sensitive content
-                if not sensitive_frame_indices:
-                    logger.info("No sensitive frames detected, copying original video")
-                    import shutil
-                    shutil.copy2(video_path, output_video)
-                    return output_video
+            if any(val < 0 for val in [x, y, width, height]):
+                logger.warning(f"ROI contains negative values: {roi}")
+                return False
                 
-                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) below 10% threshold. "
-                           f"Removing {len(sensitive_frame_indices)} sensitive frames.")
+            if width == 0 or height == 0:
+                logger.warning(f"ROI has zero width or height: {roi}")
+                return False
                 
-                # Re-encode video without sensitive frames
-                success = self.remove_frames_from_video(
-                    video_path, 
-                    sensitive_frame_indices, 
-                    output_video,
-                    total_frames=total_frames
-                )
+            if any(val > 5000 for val in [x, y, width, height]):
+                logger.warning(f"ROI values seem unreasonably large: {roi}")
+                return False
                 
-                if not success:
-                    logger.error("Failed to create cleaned video, using original")
-                    import shutil
-                    shutil.copy2(video_path, output_video)
+            return True
             
-            return output_video
+        except (TypeError, ValueError) as e:
+            logger.warning(f"ROI contains invalid values: {roi}, error: {e}")
+            return False
+
+    def _create_mask_config_from_roi(
+        self, 
+        endoscope_roi: Dict[str, Any], 
+        processor_rois: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create mask configuration from processor ROI information.
+        
+        Args:
+            endoscope_roi: Endoscope ROI from processor
+            processor_rois: All processor ROIs (optional, for context)
             
-        except Exception as e:
-            logger.error(f"Video cleaning failed: {e}")
-            # Fail-safe: copy original if cleaning fails
-            output_video = video_path.with_stem(f"{video_path.stem}_anony")
-            import shutil
-            shutil.copy2(video_path, output_video)
-            return output_video
+        Returns:
+            Mask configuration dictionary compatible with _mask_video
+        """
+        # Extract endoscope ROI coordinates
+        endoscope_x = int(endoscope_roi.get('x', 0))
+        endoscope_y = int(endoscope_roi.get('y', 0))
+        endoscope_width = int(endoscope_roi.get('width', 640))
+        endoscope_height = int(endoscope_roi.get('height', 480))
+        
+        # Estimate image dimensions (use common video resolutions as fallback)
+        # In practice, these might come from video metadata or processor configuration
+        image_width = 1920  # Default HD width
+        image_height = 1080  # Default HD height
+        
+        # Try to infer image dimensions from ROI + some margin
+        if endoscope_x + endoscope_width > image_width:
+            image_width = endoscope_x + endoscope_width + 100  # Add some margin
+        if endoscope_y + endoscope_height > image_height:
+            image_height = endoscope_y + endoscope_height + 100  # Add some margin
+        
+        mask_config = {
+            "image_width": image_width,
+            "image_height": image_height,
+            "endoscope_image_x": endoscope_x,
+            "endoscope_image_y": endoscope_y,
+            "endoscope_image_width": endoscope_width,
+            "endoscope_image_height": endoscope_height,
+            "description": f"Mask configuration created from processor ROI",
+            "roi_source": "processor"
+        }
+        
+        logger.info(f"Created mask config from processor ROI: "
+                   f"endoscope=({endoscope_x},{endoscope_y},{endoscope_width},{endoscope_height}), "
+                   f"image=({image_width},{image_height})")
+        
+        return mask_config
+    
+    def video_ocr_stream(self, frame_paths: List[Path]):
+        """
+        Yield (ocr_text, avg_confidence) for every frame in frame_paths.
+
+        Confidence is the mean of Tesseract word-level confidences,
+        normalised to [0,1]. Empty-text frames are skipped.
+        """
+        for fp in frame_paths:
+            # load once, convert to L for better OCR accuracy
+            img = Image.open(fp).convert('L')
+
+            # word-level OCR with confidences
+            data = pytesseract.image_to_data(
+                img, lang='deu',
+                output_type=pytesseract.Output.DICT
+            )
+
+            words = [w for w in data["text"] if w.strip()]
+            if not words:
+                continue                      # nothing recognisable
+
+            # average confidence; Tesseract returns -1 for “no conf”
+            confs = [
+                int(c) for c in data["conf"]
+                if c.isdigit() and int(c) >= 0
+            ]
+            avg_conf = (sum(confs) / len(confs) / 100) if confs else 0.0
+            yield " ".join(words), avg_conf
             
-        finally:
-            # Clean up temporary files
-            if tmp_dir.exists():
-                import shutil
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+    def _iter_video(self, video_path: Path) -> tuple[int, np.ndarray]:
+        """
+        Yield (abs_frame_index, gray_frame) with adaptive subsampling:
+            <1 000  frames → every frame
+            1 000-9 999     → every 3rd
+            ≥10 000         → every 5th
+        """
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            logger.error("Cannot open %s", video_path)
+            return
+
+        tot = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+        skip = 1 if tot < 1_000 else 3 if tot < 10_000 else 5
+        idx = 0
+        while True:
+            ok, bgr = cap.read()
+            if not ok:
+                break
+            if idx % skip == 0:
+                yield idx, cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), skip
+            idx += 1
+        cap.release()
