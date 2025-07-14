@@ -150,7 +150,7 @@ class FrameOCR:
                 tesseract_config += f" {config['custom_config']}"
             
             # Extract text with detailed data
-            ocr_data = tesseract_full_image_ocr(image_path)
+            ocr_data = tesseract_full_image_ocr(processed_image)
             
             # Filter and clean text
             words = []
