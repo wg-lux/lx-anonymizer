@@ -1,7 +1,7 @@
 from __future__ import annotations
 import random, heapq, json, itertools
 from .utils.ollama import ensure_ollama
-from llm_ollama import call_llm
+from .llm_ollama import call_llm
 
 
 class BestFrameText:
