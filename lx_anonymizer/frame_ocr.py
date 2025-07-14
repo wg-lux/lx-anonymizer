@@ -156,12 +156,14 @@ class FrameOCR:
             words = []
             confidences = []
             
-            for i, word in enumerate(ocr_data['text']):
-                if word.strip():
-                    confidence = int(ocr_data['conf'][i])
-                    if confidence > 30:  # Higher threshold for frames
-                        words.append(word.strip())
-                        confidences.append(confidence)
+            # Ensure ocr_data has the expected structure
+            if 'text' in ocr_data and 'conf' in ocr_data and isinstance(ocr_data['text'], (list, tuple)):
+                for i, word in enumerate(ocr_data['text']):
+                    if word.strip():
+                        confidence = int(ocr_data['conf'][i])
+                        if confidence > 30:  # Higher threshold for frames
+                            words.append(word.strip())
+                            confidences.append(confidence)
             
             # Calculate average confidence
             avg_confidence = sum(confidences) / len(confidences) / 100 if confidences else 0.0
