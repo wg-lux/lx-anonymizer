@@ -17,7 +17,7 @@ import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
-from .ocr import tesseract_full_image_ocr
+from ocr import tesseract_full_image_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -150,25 +150,23 @@ class FrameOCR:
                 tesseract_config += f" {config['custom_config']}"
             
             # Extract text with detailed data
-            ocr_data = tesseract_full_image_ocr(processed_image)
+            ocr_data = pytesseract.image_to_data(
+                processed_image,
+                lang=config['lang'],
+                config=tesseract_config,
+                output_type=pytesseract.Output.DICT
+            )
             
             # Filter and clean text
             words = []
             confidences = []
             
-            # Ensure ocr_data has the expected structure
-            if ('text' in ocr_data and 'conf' in ocr_data and 
-                isinstance(ocr_data['text'], (list, tuple)) and 
-                isinstance(ocr_data['conf'], (list, tuple))):
-                for i, word in enumerate(ocr_data['text']):
-                    if word and str(word).strip():
-                        try:
-                            confidence = int(ocr_data['conf'][i])
-                            if confidence > 30:  # Higher threshold for frames
-                                words.append(str(word).strip())
-                                confidences.append(confidence)
-                        except (ValueError, IndexError):
-                            continue
+            for i, word in enumerate(ocr_data['text']):
+                if word.strip():
+                    confidence = int(ocr_data['conf'][i])
+                    if confidence > 30:  # Higher threshold for frames
+                        words.append(word.strip())
+                        confidences.append(confidence)
             
             # Calculate average confidence
             avg_confidence = sum(confidences) / len(confidences) / 100 if confidences else 0.0

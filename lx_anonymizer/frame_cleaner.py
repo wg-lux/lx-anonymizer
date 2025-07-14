@@ -18,7 +18,7 @@ import json
 import os
 from pathlib import Path
 from tkinter import N
-from typing import List, Optional, Tuple, Dict, Any, Union
+from typing import List, Optional, Tuple, Dict, Any, Union, Iterator
 import cv2
 import numpy as np
 from PIL import Image
@@ -50,6 +50,170 @@ class FrameCleaner:
         # Initialize Ollama for LLM processing
         self.ollama_proc = ensure_ollama()
     
+    def _iter_video_adaptive(
+        self,
+        video_path: Path,
+        total_frames: int,
+        max_samples: int = 500,
+        stop_tolerance: float = 0.10,
+        conf_z: float = 1.96,
+        min_samples: int = 30
+    ) -> Iterator[Tuple[int, np.ndarray, int, bool]]:
+        """
+        Adaptive video sampling with statistical early stopping.
+        
+        Yields (abs_idx, gray_frame, stride, should_continue) until we are confident
+        that the sensitive-ratio is either > stop_tolerance or <= stop_tolerance.
+        
+        Args:
+            video_path: Path to video file
+            total_frames: Total number of frames in video
+            max_samples: Maximum frames to sample (default 500)
+            stop_tolerance: Decision boundary for sensitive ratio (default 0.10)
+            conf_z: Confidence interval Z-score (default 1.96 for 95%)
+            min_samples: Minimum samples before testing confidence (default 30)
+            
+        Yields:
+            Tuple of (frame_index, gray_frame, stride, should_continue)
+        """
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open {video_path}")
+        
+        # Uniform stride ensuring ≤ max_samples if we run full pass
+        stride = max(1, math.ceil(total_frames / max_samples))
+        
+        tested, hits = 0, 0
+        frame_idx = -1
+        
+        try:
+            while True:
+                ok, bgr = cap.read()
+                frame_idx += 1
+                if not ok:
+                    break  # End of stream
+                    
+                if frame_idx % stride != 0:
+                    continue  # Skip non-sampled frame
+                
+                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+                tested += 1
+                
+                # Yield frame and receive sensitivity result back
+                is_sensitive = yield frame_idx, gray, stride, True
+                
+                if is_sensitive:
+                    hits += 1
+                
+                # Early-stop test (Wilson/Wald interval) after minimum samples
+                if tested >= min_samples:
+                    phat = hits / tested
+                    half_w = conf_z * math.sqrt(phat * (1 - phat) / tested)
+                    lo, hi = phat - half_w, phat + half_w
+                    
+                    if hi < stop_tolerance:
+                        logger.info(f"Early stop: confident that ratio ≤ {stop_tolerance:.1%} "
+                                   f"(tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
+                        # Yield final frame with should_continue=False
+                        yield frame_idx, gray, stride, False
+                        break
+                        
+                    if lo > stop_tolerance:
+                        logger.info(f"Early stop: confident that ratio > {stop_tolerance:.1%} "
+                                   f"(tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
+                        # Yield final frame with should_continue=False
+                        yield frame_idx, gray, stride, False
+                        break
+                
+                if tested >= max_samples:
+                    logger.info(f"Reached sample budget: {max_samples} frames tested")
+                    break
+                    
+        finally:
+            cap.release()
+    
+    def _sample_frames_coroutine(
+        self,
+        video_path: Path,
+        total_frames: int,
+        max_samples: int = 500,
+        stop_tolerance: float = 0.10
+    ) -> Tuple[List[int], float, bool]:
+        """
+        Sample frames using statistical adaptive method and return sensitivity analysis.
+        
+        Args:
+            video_path: Path to video file
+            total_frames: Total number of frames
+            max_samples: Maximum frames to sample
+            stop_tolerance: Decision boundary (default 0.10)
+            
+        Returns:
+            Tuple of (sensitive_frame_indices, estimated_ratio, early_stopped)
+        """
+        sensitive_indices = []
+        tested_count = 0
+        hits_count = 0
+        early_stopped = False
+        
+        # Initialize the adaptive iterator
+        frame_iter = self._iter_video_adaptive(
+            video_path, total_frames, max_samples, stop_tolerance
+        )
+        
+        try:
+            # Get first frame
+            frame_idx, gray_frame, stride, should_continue = next(frame_iter)
+            
+            while should_continue:
+                tested_count += 1
+                
+                # Use specialized frame OCR for sensitivity detection
+                ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
+                    gray_frame, 
+                    roi=None,  # Will be passed from caller if available
+                    high_quality=True
+                )
+                
+                is_sensitive = False
+                frame_metadata = {}
+                
+                if ocr_text:
+                    # Feed the 'best text' sampler
+                    self.best_frame_text.push(ocr_text, avg_conf)
+                    
+                    # Try LLM extraction first (faster for long videos)
+                    frame_metadata = self.extract_metadata_deepseek(ocr_text)
+                    if not frame_metadata:
+                        frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                    
+                    # Check if frame contains sensitive content
+                    is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                
+                if is_sensitive:
+                    sensitive_indices.append(frame_idx)
+                    hits_count += 1
+                    logger.info(f"Found sensitive data in frame {frame_idx}: {frame_metadata}")
+                
+                # Send result back to iterator and get next frame
+                try:
+                    frame_idx, gray_frame, stride, should_continue = frame_iter.send(is_sensitive)
+                except StopIteration:
+                    break
+                    
+        except StopIteration:
+            # Iterator finished normally
+            pass
+        
+        # Calculate final ratio
+        estimated_ratio = hits_count / tested_count if tested_count > 0 else 0.0
+        early_stopped = tested_count < max_samples
+        
+        logger.info(f"Statistical sampling complete: {hits_count}/{tested_count} = {estimated_ratio:.1%} "
+                   f"(early_stopped={early_stopped})")
+        
+        return sensitive_indices, estimated_ratio, early_stopped
+
     def clean_video(
         self,
         video_path: Path,
@@ -63,6 +227,8 @@ class FrameCleaner:
     ) -> Tuple[Path, Dict[str, Any]]:
         """
         Clean video by removing frames with sensitive information or masking persistent overlays.
+        
+        Uses statistical adaptive sampling for efficient processing of long videos.
         
         Args:
             video_path: Path to input video
@@ -104,111 +270,104 @@ class FrameCleaner:
         }
 
         try:
-            # ▼ Adaptive streaming + specialized frame OCR
-            sensitive_idx: list[int] = []
-            
             # Get total frames once
-            total_frames = int(cv2.VideoCapture(str(video_path)).get(cv2.CAP_PROP_FRAME_COUNT))
-            skip = 1
-
-            for abs_i, gray_frame, skip in self._iter_video(video_path, total_frames):
-                # Use specialized frame OCR instead of basic pytesseract
-                ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
-                    gray_frame, 
-                    roi=endoscope_roi,
-                    high_quality=True
+            cap = cv2.VideoCapture(str(video_path))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            
+            # ▼ Statistical adaptive sampling for efficiency
+            logger.info(f"Processing video with {total_frames} frames using statistical adaptive sampling")
+            
+            # Determine sampling strategy based on video length
+            if total_frames > 10000:  # Use statistical sampling for long videos
+                max_samples = min(500, total_frames // 20)  # At most 500 samples, at least 5% coverage
+                logger.info(f"Long video detected ({total_frames} frames). Using adaptive sampling with max {max_samples} samples.")
+                
+                # Use statistical sampling to get estimated ratio and sample sensitive frames
+                sample_sensitive_indices, estimated_ratio, early_stopped = self._sample_frames_coroutine(
+                    video_path, total_frames, max_samples
                 )
-
-                if not ocr_text:
-                    continue
                 
-                # Feed the 'best text' sampler
-                self.best_frame_text.push(ocr_text, avg_conf)
+                # Get best representative text
+                best_summary = self.best_frame_text.reduce()
+                representative_text = best_summary.get("best", "")
+                accumulated_metadata["representative_ocr_text"] = representative_text
                 
-                if self.best_frame_text:
-                    frame_metadata = self.extract_metadata_deepseek(ocr_text)
-                    if frame_metadata == {}:
-                        frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                logger.info(f"Statistical analysis: {estimated_ratio:.1%} sensitive ratio "
+                           f"(early_stopped={early_stopped})")
                 
-                # Check if frame contains sensitive content
-                has_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
-                
-                # Accumulate non-null metadata from this frame
-                if frame_metadata:
-                    accumulated_metadata = self.frame_metadata_extractor.merge_metadata(
-                        accumulated_metadata, frame_metadata
-                    )
-                    if has_sensitive:
-                        logger.info(f"Found sensitive data in frame {abs_i}: {frame_metadata}")
-
-                # Mark frame as sensitive if it contains sensitive data
-                if has_sensitive:
-                    sensitive_idx.append(abs_i)
-            
-            # Get best representative text
-            best_summary = self.best_frame_text.reduce()
-            representative_text = best_summary.get("best", "")
-            accumulated_metadata["representative_ocr_text"] = representative_text
-            
-            logger.info("Representative OCR text – best: %s", representative_text)
-            
-            # Try to extract additional metadata from the best OCR text using LLM if available
-            if representative_text and report_reader:
-                try:
-                    has_llm_sensitive, llm_metadata = self._detect_sensitive_meta_llm(
-                        representative_text, report_reader, llm_model="deepseek"
-                    )
+                # Decision based on statistical estimate
+                if estimated_ratio > 0.10:
+                    logger.info(f"Estimated sensitive ratio ({estimated_ratio:.1%}) exceeds 10% threshold. "
+                               f"Applying mask instead of analyzing all frames.")
                     
-                    # Merge LLM metadata with accumulated metadata
-                    if llm_metadata:
-                        accumulated_metadata = self.frame_metadata_extractor.merge_metadata(
-                            accumulated_metadata, llm_metadata
-                        )
-                        logger.info(f"LLM enhanced metadata: {llm_metadata}")
+                    # Apply masking without processing all frames
+                    try:
+                        if endoscope_roi and self._validate_roi(endoscope_roi):
+                            logger.info("Using processor endoscope ROI for masking")
+                            mask_config = self._create_mask_config_from_roi(endoscope_roi, processor_rois)
+                        else:
+                            logger.info("Using device-specific mask configuration")
+                            mask_config = self._load_mask(device_name)
                         
-                except Exception as e:
-                    logger.warning(f"LLM metadata enhancement failed: {e}")
-            
-            # Store extracted metadata in VideoFile's SensitiveMeta
-            if video_file_obj and accumulated_metadata:
-                self._update_video_sensitive_meta(video_file_obj, accumulated_metadata)
-            
-            # Apply padding to sensitive frame indices
-            if skip > 1:
-                pad = skip - 1
-                padded_idx = set()
-                for f in sensitive_idx:
-                    padded_idx.update(range(max(0, f - pad), min(total_frames, f + pad + 1)))
-                sensitive_idx = sorted(padded_idx)
-            
-            sensitive_ratio = len(sensitive_idx) / total_frames if total_frames > 0 else 0
-            
-            logger.info(f"Found {len(sensitive_idx)} sensitive frames out of {total_frames} "
-                       f"({sensitive_ratio:.1%} ratio)")
-            
-            # Decision: mask vs frame removal based on 10% threshold
-            if sensitive_ratio > 0.10:
-                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) exceeds 10% threshold. "
-                           f"Applying mask instead of removing frames.")
-                try:
-                    # Use processor ROI if available, otherwise fall back to device mask
-                    if endoscope_roi and self._validate_roi(endoscope_roi):
-                        logger.info("Using processor endoscope ROI for masking")
-                        mask_config = self._create_mask_config_from_roi(endoscope_roi, processor_rois)
-                    else:
-                        logger.info("Using device-specific mask configuration")
-                        mask_config = self._load_mask(device_name)
-                    
-                    success = self._mask_video(video_path, mask_config, output_video)
-                    
-                    if not success:
-                        logger.error("Failed to create masked video, using original")
+                        success = self._mask_video(video_path, mask_config, output_video)
+                        
+                        if not success:
+                            logger.error("Failed to create masked video, using original")
+                            import shutil
+                            shutil.copy2(video_path, output_video)
+                            
+                    except Exception as e:
+                        logger.exception(f"Masking failed: {e}. Using original video.")
                         import shutil
                         shutil.copy2(video_path, output_video)
+                else:
+                    # Low sensitive ratio: need to process all frames for precise removal
+                    logger.info(f"Estimated ratio ({estimated_ratio:.1%}) below 10%. "
+                               f"Processing all frames for precise frame removal.")
+                    
+                    sensitive_idx = []
+                    
+                    # Process all frames for precise detection
+                    for abs_i, gray_frame, skip in self._iter_video(video_path, total_frames):
+                        ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
+                            gray_frame, 
+                            roi=endoscope_roi,
+                            high_quality=True
+                        )
+
+                        if not ocr_text:
+                            continue
                         
-                except Exception as e:
-                    logger.exception(f"Masking failed: {e}. Falling back to frame removal.")
-                    # Fall back to frame removal if masking fails
+                        # Feed the 'best text' sampler
+                        self.best_frame_text.push(ocr_text, avg_conf)
+                        
+                        # LLM-first approach for metadata extraction
+                        frame_metadata = self.extract_metadata_deepseek(ocr_text)
+                        if not frame_metadata:
+                            frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                        
+                        # Check if frame contains sensitive content
+                        has_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                        
+                        # Accumulate non-null metadata from this frame
+                        if frame_metadata:
+                            accumulated_metadata = self.frame_metadata_extractor.merge_metadata(
+                                accumulated_metadata, frame_metadata
+                            )
+                            if has_sensitive:
+                                logger.info(f"Found sensitive data in frame {abs_i}: {frame_metadata}")
+
+                        # Mark frame as sensitive if it contains sensitive data
+                        if has_sensitive:
+                            sensitive_idx.append(abs_i)
+                    
+                    # Update representative text if we processed more frames
+                    best_summary = self.best_frame_text.reduce()
+                    representative_text = best_summary.get("best", "")
+                    accumulated_metadata["representative_ocr_text"] = representative_text
+                    
+                    # Remove sensitive frames
                     success = self.remove_frames_from_video(
                         video_path, 
                         sensitive_idx, 
@@ -220,29 +379,129 @@ class FrameCleaner:
                         logger.error("Failed to create cleaned video, using original")
                         import shutil
                         shutil.copy2(video_path, output_video)
+            
             else:
-                # Traditional frame removal for videos with < 10% sensitive content
-                if not sensitive_idx:
-                    logger.info("No sensitive frames detected, copying original video")
-                    import shutil
-                    shutil.copy2(video_path, output_video)
-                    return output_video, accumulated_metadata
+                # ▼ Original approach for shorter videos (< 10k frames)
+                logger.info(f"Short video detected ({total_frames} frames). Using full frame analysis.")
                 
-                logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) below 10% threshold. "
-                           f"Removing {len(sensitive_idx)} sensitive frames.")
+                sensitive_idx: list[int] = []
+                skip = 1
+
+                for abs_i, gray_frame, skip in self._iter_video(video_path, total_frames):
+                    # Use specialized frame OCR instead of basic pytesseract
+                    ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
+                        gray_frame, 
+                        roi=endoscope_roi,
+                        high_quality=True
+                    )
+
+                    if not ocr_text:
+                        continue
+                    
+                    # Feed the 'best text' sampler
+                    self.best_frame_text.push(ocr_text, avg_conf)
+                    
+                    # LLM-first approach
+                    frame_metadata = self.extract_metadata_deepseek(ocr_text)
+                    if not frame_metadata:
+                        frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                    
+                    # Check if frame contains sensitive content
+                    has_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                    
+                    # Accumulate non-null metadata from this frame
+                    if frame_metadata:
+                        accumulated_metadata = self.frame_metadata_extractor.merge_metadata(
+                            accumulated_metadata, frame_metadata
+                        )
+                        if has_sensitive:
+                            logger.info(f"Found sensitive data in frame {abs_i}: {frame_metadata}")
+
+                    # Mark frame as sensitive if it contains sensitive data
+                    if has_sensitive:
+                        sensitive_idx.append(abs_i)
                 
-                # Re-encode video without sensitive frames
-                success = self.remove_frames_from_video(
-                    video_path, 
-                    sensitive_idx, 
-                    output_video,
-                    total_frames=total_frames
-                )
+                # Get best representative text
+                best_summary = self.best_frame_text.reduce()
+                representative_text = best_summary.get("best", "")
+                accumulated_metadata["representative_ocr_text"] = representative_text
                 
-                if not success:
-                    logger.error("Failed to create cleaned video, using original")
-                    import shutil
-                    shutil.copy2(video_path, output_video)
+                logger.info("Representative OCR text – best: %s", representative_text)
+                
+                # Apply padding to sensitive frame indices
+                if skip > 1:
+                    pad = skip - 1
+                    padded_idx = set()
+                    for f in sensitive_idx:
+                        padded_idx.update(range(max(0, f - pad), min(total_frames, f + pad + 1)))
+                    sensitive_idx = sorted(padded_idx)
+                
+                sensitive_ratio = len(sensitive_idx) / total_frames if total_frames > 0 else 0
+                
+                logger.info(f"Found {len(sensitive_idx)} sensitive frames out of {total_frames} "
+                           f"({sensitive_ratio:.1%} ratio)")
+                
+                # Decision: mask vs frame removal based on 10% threshold
+                if sensitive_ratio > 0.10:
+                    logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) exceeds 10% threshold. "
+                               f"Applying mask instead of removing frames.")
+                    try:
+                        # Use processor ROI if available, otherwise fall back to device mask
+                        if endoscope_roi and self._validate_roi(endoscope_roi):
+                            logger.info("Using processor endoscope ROI for masking")
+                            mask_config = self._create_mask_config_from_roi(endoscope_roi, processor_rois)
+                        else:
+                            logger.info("Using device-specific mask configuration")
+                            mask_config = self._load_mask(device_name)
+                        
+                        success = self._mask_video(video_path, mask_config, output_video)
+                        
+                        if not success:
+                            logger.error("Failed to create masked video, using original")
+                            import shutil
+                            shutil.copy2(video_path, output_video)
+                            
+                    except Exception as e:
+                        logger.exception(f"Masking failed: {e}. Falling back to frame removal.")
+                        # Fall back to frame removal if masking fails
+                        success = self.remove_frames_from_video(
+                            video_path, 
+                            sensitive_idx, 
+                            output_video,
+                            total_frames=total_frames
+                        )
+                        
+                        if not success:
+                            logger.error("Failed to create cleaned video, using original")
+                            import shutil
+                            shutil.copy2(video_path, output_video)
+                else:
+                    # Traditional frame removal for videos with < 10% sensitive content
+                    if not sensitive_idx:
+                        logger.info("No sensitive frames detected, copying original video")
+                        import shutil
+                        shutil.copy2(video_path, output_video)
+                        return output_video, accumulated_metadata
+                    
+                    logger.info(f"Sensitive content ratio ({sensitive_ratio:.1%}) below 10% threshold. "
+                               f"Removing {len(sensitive_idx)} sensitive frames.")
+                    
+                    # Re-encode video without sensitive frames
+                    success = self.remove_frames_from_video(
+                        video_path, 
+                        sensitive_idx, 
+                        output_video,
+                        total_frames=total_frames
+                    )
+                    
+                    if not success:
+                        logger.error("Failed to create cleaned video, using original")
+                        import shutil
+                        shutil.copy2(video_path, output_video)
+            
+            # Store extracted metadata in VideoFile's SensitiveMeta
+            if video_file_obj and accumulated_metadata:
+                self._update_video_sensitive_meta(video_file_obj, accumulated_metadata)
             
             # Verify output exists
             if not output_video.exists():
@@ -264,7 +523,6 @@ class FrameCleaner:
             if tmp_dir.exists():
                 import shutil
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-
 
     def extract_frames(self, video_path: Path, output_dir: Path, max_frames: Optional[int] = None) -> List[Path]:
         """
