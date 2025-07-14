@@ -17,6 +17,7 @@ import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
+from .ocr import tesseract_full_image_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -149,12 +150,7 @@ class FrameOCR:
                 tesseract_config += f" {config['custom_config']}"
             
             # Extract text with detailed data
-            ocr_data = pytesseract.image_to_data(
-                processed_image,
-                lang=config['lang'],
-                config=tesseract_config,
-                output_type=pytesseract.Output.DICT
-            )
+            ocr_data = tesseract_full_image_ocr(image_path)
             
             # Filter and clean text
             words = []
