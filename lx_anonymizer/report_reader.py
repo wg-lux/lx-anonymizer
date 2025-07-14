@@ -171,7 +171,8 @@ class ReportReader:
             else:
                  logger.debug("Regex fallback also found nothing significant.")
                  # Ensure patient_info is the blank dict if it was None before fallback
-                 if not patient_info: patient_info = PatientDataExtractor._blank()
+                 if not patient_info: 
+                     patient_info = PatientDataExtractor._blank()
 
         # Ensure patient_info is initialized if all methods failed or text was empty
         if not patient_info:
@@ -267,7 +268,7 @@ class ReportReader:
 
         return report_meta
 
-    def extract_report_meta_deepseek(self, text, pdf_path):
+    def extract_report_meta_deepseek(self, text):
         """Extract metadata using DeepSeek via Ollama structured output."""
         logger.info("Attempting metadata extraction with DeepSeek (Ollama Structured Output)")
         # Use the wrapper that handles retries and returns {} on failure
@@ -278,7 +279,7 @@ class ReportReader:
              logger.info("DeepSeek Ollama extraction successful.")
         return meta
 
-    def extract_report_meta_medllama(self, text, pdf_path):
+    def extract_report_meta_medllama(self, text):
         """Extract metadata using MedLLaMA via Ollama structured output."""
         logger.info("Attempting metadata extraction with MedLLaMA (Ollama Structured Output)")
         # Use the wrapper that handles retries and returns {} on failure
@@ -289,7 +290,7 @@ class ReportReader:
              logger.info("MedLLaMA Ollama extraction successful.")
         return meta
 
-    def extract_report_meta_llama3(self, text, pdf_path):
+    def extract_report_meta_llama3(self, text):
         """Extract metadata using Llama3 via Ollama structured output."""
         logger.info("Attempting metadata extraction with Llama3 (Ollama Structured Output)")
         # Use the wrapper that handles retries and returns {} on failure
@@ -471,14 +472,14 @@ class ReportReader:
             if use_llm_extractor:
                 logger.info(f"Using specified LLM extractor: {use_llm_extractor}")
                 if use_llm_extractor == 'deepseek':
-                    report_meta = self.extract_report_meta_deepseek(text, pdf_path)
+                    report_meta = self.extract_report_meta_deepseek(text)
                 elif use_llm_extractor == 'medllama':
-                    report_meta = self.extract_report_meta_medllama(text, pdf_path)
+                    report_meta = self.extract_report_meta_medllama(text)
                 elif use_llm_extractor == 'llama3':
-                    report_meta = self.extract_report_meta_llama3(text, pdf_path)
+                    report_meta = self.extract_report_meta_llama3(text)
                 else:
                     logger.warning(f"Unknown LLM extractor specified: {use_llm_extractor}. Falling back to default.")
-                    report_meta = self.extract_report_meta(text, pdf_path) # Default SpaCy/Regex
+                    report_meta = self.extract_report_meta(text, pdf_path=None) # Default SpaCy/Regex
 
                 # If LLM extraction failed (returned {}), fall back to default SpaCy/Regex
                 if not report_meta:
