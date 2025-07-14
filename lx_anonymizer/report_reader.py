@@ -58,6 +58,19 @@ class ReportReader:
         Read pdf file using pdfplumber and return the raw text content.
         With improved preprocessing for better extraction.
         '''
+        # FIX: Validate pdf_path before processing
+        if pdf_path is None:
+            logger.error("PDF path is None, cannot read PDF")
+            return ""
+        
+        if not isinstance(pdf_path, (str, os.PathLike)):
+            logger.error(f"PDF path must be a string or PathLike object, got {type(pdf_path)}: {pdf_path}")
+            return ""
+        
+        if not os.path.exists(pdf_path):
+            logger.error(f"PDF file does not exist: {pdf_path}")
+            return ""
+        
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 # get the text content of the pdf file
@@ -236,10 +249,15 @@ class ReportReader:
 
         # Add PDF hash (remains the same)
         try:
-            with open(pdf_path, "rb") as f:
-                pdf_bytes = f.read()
-                pdf_hash_value = self.pdf_hash(pdf_bytes)
-                report_meta["pdf_hash"] = pdf_hash_value
+            # FIX: Validate pdf_path before calculating hash
+            if pdf_path and isinstance(pdf_path, (str, os.PathLike)) and os.path.exists(pdf_path):
+                with open(pdf_path, "rb") as f:
+                    pdf_bytes = f.read()
+                    pdf_hash_value = self.pdf_hash(pdf_bytes)
+                    report_meta["pdf_hash"] = pdf_hash_value
+            else:
+                logger.warning(f"Cannot calculate PDF hash: invalid or missing pdf_path: {pdf_path}")
+                report_meta["pdf_hash"] = None
         except Exception as e:
              logger.error(f"Could not calculate PDF hash for {pdf_path}: {e}")
              report_meta["pdf_hash"] = None
@@ -308,11 +326,23 @@ class ReportReader:
         if text is None:
             if not pdf_path and not image_path:
                 raise ValueError("Either 'pdf_path' 'image_path' or 'text' must be provided.")
-            if not os.path.exists(pdf_path):
-                raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+            
+            # FIX: Validate paths before proceeding
             if pdf_path:
+                if not isinstance(pdf_path, (str, os.PathLike)):
+                    logger.error(f"PDF path must be a string or PathLike object, got {type(pdf_path)}: {pdf_path}")
+                    return "", "", {}
+                if not os.path.exists(pdf_path):
+                    logger.error(f"PDF file not found: {pdf_path}")
+                    return "", "", {}
                 text = self.read_pdf(pdf_path)
             elif image_path:
+                if not isinstance(image_path, (str, os.PathLike)):
+                    logger.error(f"Image path must be a string or PathLike object, got {type(image_path)}: {image_path}")
+                    return "", "", {}
+                if not os.path.exists(image_path):
+                    logger.error(f"Image file not found: {image_path}")
+                    return "", "", {}
                 # If image_path is provided, we assume it's a single image file
                 logger.info(f"Reading text from image file: {image_path}")
                 try:
@@ -331,15 +361,46 @@ class ReportReader:
             ocr_applied = True
             try:
                 logger.info(f"Short/No text detected by pdfplumber ({len(text.strip())} chars), applying OCR fallback.")
-                # ... (OCR logic remains the same as before) ...
+                
+                # FIX: Validate pdf_path before OCR processing
                 if pdf_path:
+                    if not isinstance(pdf_path, (str, os.PathLike)):
+                        logger.error(f"Cannot apply OCR: PDF path is not valid: {pdf_path}")
+                        return "", "", {}
+                    if not os.path.exists(pdf_path):
+                        logger.error(f"Cannot apply OCR: PDF file not found: {pdf_path}")
+                        return "", "", {}
+                    
                     logger.info(f"Converting PDF to images for OCR: {pdf_path}")
-                    images_from_pdf = convert_pdf_to_images(pdf_path)
+                    try:
+                        images_from_pdf = convert_pdf_to_images(pdf_path)
+                    except Exception as e:
+                        logger.error(f"Failed to convert PDF to images: {e}")
+                        return "", "", {}
+                elif image_path:
+                    if not isinstance(image_path, (str, os.PathLike)):
+                        logger.error(f"Cannot apply OCR: Image path is not valid: {image_path}")
+                        return "", "", {}
+                    if not os.path.exists(image_path):
+                        logger.error(f"Cannot apply OCR: Image file not found: {image_path}")
+                        return "", "", {}
+                    try:
+                        images_from_pdf = [Image.open(image_path)]
+                    except Exception as e:
+                        logger.error(f"Failed to open image file: {e}")
+                        return "", "", {}
                 else:
-                    images_from_pdf = [image_path]
+                    logger.error("No valid path provided for OCR processing")
+                    return "", "", {}
+                
                 ocr_text = ""
 
                 for idx, pil_image in enumerate(images_from_pdf):
+                    # FIX: Validate pil_image before processing
+                    if pil_image is None:
+                        logger.error(f"Page {idx+1} image is None, skipping OCR")
+                        continue
+                        
                     logger.info(f"Processing page {idx+1} with OCR...")
                     ocr_part = ""
                     if use_ensemble:

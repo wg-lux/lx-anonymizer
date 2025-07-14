@@ -70,13 +70,15 @@ def extract_meta_ollama(text: str, model: str = "llama3:8b") -> dict:
 
     Returns:
         A dictionary containing the extracted metadata, validated against PatientMeta.
-extract
+
     Raises:
         RetryError: If extraction fails after multiple retries.
         Exception: For other unexpected errors during the process.
     """
     logger.info(f"Attempting metadata extraction with Ollama model: {model}")
     raw_response_content = ""  # Initialize to handle potential errors before assignment
+    cleaned_json_str = None   # Initialize cleaned_json_str to avoid UnboundLocalError
+    
     try:
         response = chat(
             model=model,
@@ -95,30 +97,28 @@ extract
         )
 
         raw_response_content = response['message']['content']
-        logger.debug(f"Raw Ollama response content:\n{raw_response_content}")  # Log raw response
-        if not cleaned_json_str:
-            logger.error(f"Could not extract valid JSON block from Ollama response (model: {model}). Raw content logged above.")
-            raise ValueError("Failed to extract JSON block from LLM response")
+        logger.debug(f"Raw Ollama response content:\n{raw_response_content}")
+        
+        # Extract JSON block from response
         cleaned_json_str = _extract_json_block(raw_response_content)
+        
         if cleaned_json_str:
             try:
-                meta = PatientMeta.model_validate_json(cleaned_json_str).model_dump(mode="json")
-                return meta.model_dump(mode='json')  # Ensure dates are serialized correctly if needed downstream
-            except ValidationError:
-                pass                       # fall through to regex parser
-
-        # --- fallback ---
+                # Try to validate with Pydantic first
+                validated_data = PatientMeta.model_validate_json(cleaned_json_str)
+                logger.info(f"Successfully extracted and validated metadata with {model}")
+                return validated_data.model_dump(mode='json')
+            except ValidationError as e:
+                logger.warning(f"Pydantic validation failed: {e}. Falling back to regex extraction.")
+                # Fall through to regex fallback
+        
+        # Fallback: Use regex-based extraction
+        logger.info("Using regex fallback for metadata extraction")
         meta = PatientDataExtractorLg.regex_extract_llm_meta(raw_response_content)
-
-        # --- End: Clean the response ---
-
-        logger.debug(f"Cleaned JSON string for validation: {cleaned_json_str}")
-
-        # Validate the cleaned JSON response using the Pydantic model
-        validated_data = PatientMeta.model_validate_json(cleaned_json_str)
-        logger.info(f"Successfully extracted and validated metadata with {model}")
-        # Return as a standard dictionary
-        return validated_data.model_dump(mode='json')  # Ensure dates are serialized correctly if needed downstream
+        
+        # Return the regex-extracted metadata
+        logger.info(f"Regex extraction completed with {model}")
+        return meta
 
     except ResponseError as e:
         logger.error(f"Ollama API Response Error (model: {model}): {e.status_code} - {e.error}")
@@ -127,14 +127,12 @@ extract
         logger.error(f"Ollama API Request Error (model: {model}): {e}")
         raise
     except json.JSONDecodeError as e:
-        # This might happen if _extract_json_block fails or returns invalid JSON despite checks
-        logger.error(f"Failed to decode JSON response even after cleaning (model: {model}): {e}")
-        logger.error(f"Content attempted for parsing: {cleaned_json_str if 'cleaned_json_str' in locals() else 'N/A'}")
+        logger.error(f"Failed to decode JSON response (model: {model}): {e}")
+        logger.error(f"Content attempted for parsing: {cleaned_json_str or 'N/A'}")
         raise
     except Exception as e:
-        # Catch Pydantic ValidationErrors and other unexpected errors (like the ValueError raised above)
         logger.error(f"Error during Ollama extraction or validation (model: {model}): {e}")
-        if 'cleaned_json_str' in locals() and cleaned_json_str:
+        if cleaned_json_str:
             logger.error(f"Cleaned content causing validation error: {cleaned_json_str}")
         elif raw_response_content:
             logger.error(f"Raw content (no JSON block found or cleaning failed): {raw_response_content}")
