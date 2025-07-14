@@ -329,7 +329,7 @@ class FrameMetadataExtractor:
         # Check for non-empty sensitive fields
         for field in sensitive_fields:
             value = metadata.get(field)
-            if value and value not in [None, '', 'Unknown']:
+            if value and value not in [None, '', 'Null', 'null', 'none', 'None', 'unknown', 'Unknown']:
                 return True
         
         # Check for non-empty date of birth
