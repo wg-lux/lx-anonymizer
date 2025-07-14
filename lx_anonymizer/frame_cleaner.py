@@ -488,7 +488,7 @@ class FrameCleaner:
             return True, meta
         else:            
             logger.debug("No sensitive data detected in text using LLM.")
-            return False, _
+            return False, None
 
     def remove_frames_from_video(
         self,
