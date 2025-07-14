@@ -124,10 +124,11 @@ class PatientDataExtractorLg:
             {"TEXT": {"REGEX": r"^\d+$"}}
         ]
 
+        # FIX: spacer should be a list containing the dictionary, not just a dictionary
+        spacer = [{"OP": "*", "IS_SPACE": True}]  # Allows zero or more spaces/newlines
+        
         # Combine components into the full pattern
         # Structure: Header + Name + Optional(Geb) + Optional(Fall)
-        # Using {"OP": "*", "IS_SPACE": True} to allow optional spaces/newlines between blocks
-        spacer = {"OP": "*", "IS_SPACE": True} # Allows zero or more spaces/newlines
         pattern = pat_header + spacer + name_block + spacer + \
                   [{"OP": "?"}] + geb_block + spacer + \
                   [{"OP": "?"}] + fall_block
