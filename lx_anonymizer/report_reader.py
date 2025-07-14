@@ -335,6 +335,8 @@ class ReportReader:
                 if pdf_path:
                     logger.info(f"Converting PDF to images for OCR: {pdf_path}")
                     images_from_pdf = convert_pdf_to_images(pdf_path)
+                else:
+                    images_from_pdf = [image_path]
                 ocr_text = ""
 
                 for idx, pil_image in enumerate(images_from_pdf):
@@ -355,7 +357,6 @@ class ReportReader:
                                 logger.error(f"Tesseract fallback also failed on page {idx+1}: {te}")
                                 ocr_part = ""
                     else:
-                        # Default Tesseract OCR
                         try:
                             text_part, _ = tesseract_full_image_ocr(pil_image)
                             ocr_part = text_part
@@ -369,7 +370,7 @@ class ReportReader:
                 text = ocr_text.strip()
                 logger.info(f"OCR fallback finished. Total text length: {len(text)}. Preview: {text[:200]}...")
 
-                # Apply correction using Ollama (Keep this part)
+                # Apply correction using Ollama (Keep this if you want to correct OCR text)
                 if text and len(text.strip()) > 10: # Only correct if OCR produced something meaningful
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:

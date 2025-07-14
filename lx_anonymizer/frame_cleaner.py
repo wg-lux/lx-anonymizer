@@ -348,6 +348,7 @@ class FrameCleaner:
             return has_sensitive_data, meta
             
         except Exception as e:
+            
             logger.error(f"LLM metadata extraction failed: {e}")
             return False, {}
 

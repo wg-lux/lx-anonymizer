@@ -6,6 +6,14 @@ from spacy.pipeline import EntityRuler
 from datetime import datetime
 import warnings
 from .determine_gender import determine_gender
+import re, json, spacy
+from spacy.language import Language
+from spacy.tokens import Doc
+from .spacy_extractor import _clean_date
+
+# Compile heavy regexes once at module level
+DATE_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
+NUMBER_RE = re.compile(r"^\d+$")
 
 class PatientDataExtractorLg:
     def __init__(self):
@@ -16,8 +24,69 @@ class PatientDataExtractorLg:
             self.ruler = self.nlp.add_pipe("entity_ruler", config={"overwrite_ents": True}, before="ner")
         else:
             self.ruler = self.nlp.get_pipe("entity_ruler")
+        
+        # FIX: Actually register the regex patterns
+        self.ruler.add_patterns(self._build_regex_patterns())
+        
         self.matcher = Matcher(self.nlp.vocab) # Initialize matcher here
         self.setup_matcher()
+        Doc.set_extension("meta", default={}, force=True)
+        
+        # Initialize examiner ruler once
+        self._examiner_ruler = None
+    
+    _FIELDS = {
+    "patient_first_name": r"patient_first_name",
+    "patient_last_name":  r"patient_last_name",
+    "patient_dob":        r"(?:patient_)?(?:dob|geb(?:urtsdatum)?)",
+    "casenumber":         r"(?:case)?number",
+    "patient_gender":     r"(?:patient_)?gender",
+    }
+    # Improved VALUE pattern to handle UTF-8 names with accents
+    _VALUE = r'["\']?(?P<val>[\w\.\-\/ äöüßÄÖÜéèêç]+?)["\']?$'
+    
+    clean_date = _clean_date
+
+    def _build_regex_patterns(self):
+        patts = []
+        for key, lbl in self._FIELDS.items():
+            # (?m) → multiline; ^\s*-? optional bullet or list dash
+            pattern = rf"(?m)^\s*-?\s*{lbl}\s*[:=]\s*{self._VALUE}"
+            patts.append({"label": key, "pattern": pattern})
+        return patts
+
+
+    def regex_extract_llm_meta(self, text: str) -> dict[str, str | None]:
+        """
+        Parse an LLM answer *that is NOT valid JSON* and recover
+        first name / last name / dob / casenumber / gender.
+
+        Returns a dict with the same keys as PatientMeta – values may be None
+        """
+        doc = self.nlp(text)
+        meta = {k: None for k in self._FIELDS}      # initialise blanks
+
+        for ent in doc.ents:                   # RegexRuler creates ents
+            key = ent.label_
+            # drop the field name, keep only captured value (last group)
+            m = re.search(self._VALUE, ent.text)
+            if not m:
+                continue
+            val = m.group("val").strip()
+            # basic normalisation
+            if key == "patient_dob":
+                # try to normalise dd.mm.yyyy → yyyy-mm-dd (reuse your _clean_date)
+                val = self.clean_date(val) or val
+            meta[key] = val
+
+        # sanity: if either name field still None but the other has value "Unknown"
+        for k in ("patient_first_name", "patient_last_name"):
+            if meta[k] and meta[k].lower() in ("unknown", "unbekannt"):
+                meta[k] = None
+
+        return meta
+
+
 
     def setup_matcher(self):
         """Setup the SpaCy Matcher and Ruler with robust patient information patterns"""
@@ -75,9 +144,7 @@ class PatientDataExtractorLg:
 
 
     def patient_data_extractor(self, text):
-        # This method seems redundant if extract_patient_info uses the matcher/ruler correctly.
-        # Kept for compatibility if called elsewhere, but relies on extract_patient_info.
-        warnings.warn("patient_data_extractor is deprecated, use extract_patient_info", DeprecationWarning)
+        # Simple alias without deprecation spam
         return self.extract_patient_info(text)
 
     def extract_patient_info(self, text):
@@ -98,15 +165,15 @@ class PatientDataExtractorLg:
         if best_match:
             match_id, start, end = best_match
             span = doc[start:end]
-            # Initialize default values
-            first_name, last_name, birthdate, casenumber = "NOT FOUND", "NOT FOUND", "NOT FOUND", "NOT FOUND"
+            # Initialize default values - FIX: Use None instead of "NOT FOUND"
+            first_name, last_name, birthdate, casenumber = None, None, None, None
 
             # --- Extract based on token properties within the span ---
             comma_indices = [i for i, token in enumerate(span) if token.text == ","]
             geb_indices = [i for i, token in enumerate(span) if token.lower_ in ["geb", "geb.", "geboren"]]
             fall_indices = [i for i, token in enumerate(span) if token.lower_ in ["fallnr", "fallnr.", "fallnummer"]]
-            date_indices = [i for i, token in enumerate(span) if re.match(r"^\d{1,2}\.\d{1,2}\.\d{4}$", token.text)]
-            case_num_indices = [i for i, token in enumerate(span) if re.match(r"^\d+$", token.text) and i > 0 and span[i-1].lower_ in [":", "fallnr", "fallnr.", "fallnummer"]]
+            date_indices = [i for i, token in enumerate(span) if DATE_RE.match(token.text)]
+            case_num_indices = [i for i, token in enumerate(span) if NUMBER_RE.match(token.text) and i > 0 and span[i-1].lower_ in [":", "fallnr", "fallnr.", "fallnummer"]]
 
             # Extract Name (assuming structure: Header, Lastname, Comma, Firstname)
             if comma_indices:
@@ -143,7 +210,7 @@ class PatientDataExtractorLg:
                     try:
                         birthdate = datetime.strptime(birthdate_str, "%d.%m.%Y").strftime("%Y-%m-%d")
                     except ValueError:
-                        birthdate = "INVALID DATE FORMAT" # Mark as invalid
+                        birthdate = None # Mark as None instead of "INVALID DATE FORMAT"
 
             # Extract Casenumber
             if case_num_indices:
@@ -161,7 +228,7 @@ class PatientDataExtractorLg:
                     casenumber = span[num_idx].text
 
             # Determine Gender
-            gender = determine_gender(first_name) if first_name != "NOT FOUND" else "NOT FOUND"
+            gender = determine_gender(first_name) if first_name else None
 
             return {
                 "patient_first_name": first_name,
@@ -171,13 +238,13 @@ class PatientDataExtractorLg:
                 "patient_gender": gender
             }
 
-        # Fallback if no match found by the matcher
+        # Fallback if no match found by the matcher - FIX: Return None values
         return {
-            "patient_first_name": "NOT FOUND",
-            "patient_last_name": "NOT FOUND",
-            "patient_dob": "NOT FOUND",
-            "casenumber": "NOT FOUND",
-            "patient_gender": "NOT FOUND"
+            "patient_first_name": None,
+            "patient_last_name": None,
+            "patient_dob": None,
+            "casenumber": None,
+            "patient_gender": None
         }
 
     def _extract_using_entity_ruler(self, text):
@@ -212,23 +279,25 @@ class PatientDataExtractorLg:
         }
 
     def examiner_data_extractor(self, text):
-        nlp = spacy.load("de_core_news_lg")
-        doc = nlp(text)
-        patterns = [
-            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},
-            {"label": "PER", "pattern": r"Dr\.\\med\\.\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+\\s[A-Z][a-z]+"},  
-        ]
-        ruler = EntityRuler(nlp)
-        nlp.add_pipe(ruler)
-        ruler.add_patterns(patterns)
+        # FIX: Reuse self.nlp instead of loading spacy.load("de_core_news_lg") every time
+        # Initialize examiner ruler once if not already done
+        if not self._examiner_ruler:
+            patterns = [
+                {"label": "PER", "pattern": r"Dr\.\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.med\.\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.med\.\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},
+                {"label": "PER", "pattern": r"Dr\.med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+"},  
+            ]
+            self._examiner_ruler = self.nlp.add_pipe("entity_ruler", name="examiner_ruler", last=True)
+            self._examiner_ruler.add_patterns(patterns)
+        
+        doc = self.nlp(text)
         
         for ent in doc.ents:
             if ent.label_ == "PER":

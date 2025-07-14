@@ -2,10 +2,14 @@ import json
 import re  # Import regex
 from ollama import chat, ResponseError, RequestError
 from tenacity import retry, stop_after_attempt, wait_fixed, RetryError
+from pydantic import ValidationError
 from .schema import PatientMeta
 from .custom_logger import get_logger
+from .spacy_regex import PatientDataExtractorLg
 
 logger = get_logger(__name__)
+
+''' This module provides functionality to extract patient metadata from medical reports using Ollama's structured output feature. It defines prompts, schemas, and a function to handle the extraction process with retries and error handling. '''
 
 # Prompt templates for structured extraction
 SYSTEM_PROMPT = (
@@ -19,9 +23,9 @@ SYSTEM_PROMPT = (
 
 USER_PROMPT_TEMPLATE = 'Extract patient metadata from the following report:\n"""{report}"""'
 
-# Define the schema as a dictionary once
 PATIENT_META_SCHEMA = PatientMeta.model_json_schema()
 
+PatientDataExtractorLg = PatientDataExtractorLg()
 
 def _extract_json_block(text: str) -> str | None:
     """Tries to extract the first valid JSON block {} from a string."""
@@ -92,13 +96,20 @@ extract
 
         raw_response_content = response['message']['content']
         logger.debug(f"Raw Ollama response content:\n{raw_response_content}")  # Log raw response
-
-        # --- Start: Clean the response ---
-        cleaned_json_str = _extract_json_block(raw_response_content)
         if not cleaned_json_str:
             logger.error(f"Could not extract valid JSON block from Ollama response (model: {model}). Raw content logged above.")
-            # Raise an error that tenacity can catch for retry
             raise ValueError("Failed to extract JSON block from LLM response")
+        cleaned_json_str = _extract_json_block(raw_response_content)
+        if cleaned_json_str:
+            try:
+                meta = PatientMeta.model_validate_json(cleaned_json_str).model_dump(mode="json")
+                return meta.model_dump(mode='json')  # Ensure dates are serialized correctly if needed downstream
+            except ValidationError:
+                pass                       # fall through to regex parser
+
+        # --- fallback ---
+        meta = PatientDataExtractorLg.regex_extract_llm_meta(raw_response_content)
+
         # --- End: Clean the response ---
 
         logger.debug(f"Cleaned JSON string for validation: {cleaned_json_str}")
@@ -130,7 +141,7 @@ extract
         raise  # Reraise to trigger tenacity retry
 
 
-# Example of how to handle the final failure after retries
+# handle the final failure after retries
 def extract_with_fallback(text: str, model: str) -> dict:
     """Wrapper to call extract_meta_ollama and handle final RetryError."""
     try:
