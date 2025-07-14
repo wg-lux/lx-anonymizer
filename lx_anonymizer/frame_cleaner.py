@@ -388,7 +388,7 @@ class FrameCleaner:
                 skip = 1
 
                 for abs_i, gray_frame, skip in self._iter_video(video_path, total_frames):
-                    # Use specialized frame OCR instead of basic pytesseract
+                    # Use specialized frame OCR
                     ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
                         gray_frame, 
                         roi=endoscope_roi,
