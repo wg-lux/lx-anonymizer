@@ -3,11 +3,11 @@ Frame-level anonymization module for video processing.
 
 This module provides functionality to:
 - Extract frames from videos using ffmpeg
-- Apply OCR to detect sensitive information (names, DOB, case numbers)
+- Apply specialized frame OCR to detect sensitive information
 - Remove or mask frames containing sensitive data
 - Re-encode cleaned videos
 
-Uses the same spaCy + regex logic from lx_anonymizer.report_reader for consistency.
+Uses specialized frame processing components separated from PDF logic.
 """
 
 import logging
@@ -19,12 +19,15 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any, Union
 import cv2
 import numpy as np
-import pytesseract
 from PIL import Image
+import pytesseract
 
-from lx_anonymizer.report_reader import ReportReader
+from lx_anonymizer.frame_ocr import FrameOCR
+from lx_anonymizer.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.best_frame_text import BestFrameText
 from lx_anonymizer.utils.ollama import ensure_ollama
+from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
+from lx_anonymizer.report_reader import ReportReader
 
 logger = logging.getLogger(__name__)
 
@@ -33,31 +36,23 @@ class FrameCleaner:
     FrameCleaner class for handling video frame extraction and sensitive data detection.
     
     This class provides methods to extract frames from a video, detect sensitive information
-    using OCR, and re-encode the video without sensitive frames.
+    using specialized frame OCR, and re-encode the video without sensitive frames.
     """
     
     def __init__(self):
-        ollama_proc = ensure_ollama()
-        bft = BestFrameText()
-        pass 
-    
-    def _safe_conf_list(self, raw_conf):
-        """Convert values from data['conf'] to int >= 0 safely"""
-        confs = []
-        for c in raw_conf:
-            try:
-                conf_int = int(c)            # works for both str AND int
-            except (TypeError, ValueError):
-                continue
-            if conf_int >= 0:
-                confs.append(conf_int)
-        return confs
+        # Initialize specialized frame processing components
+        self.frame_ocr = FrameOCR()
+        self.frame_metadata_extractor = FrameMetadataExtractor()
+        self.best_frame_text = BestFrameText()
+        
+        # Initialize Ollama for LLM processing
+        self.ollama_proc = ensure_ollama()
     
     def clean_video(
         self,
         video_path: Path,
         video_file_obj=None,  # Add VideoFile object to store metadata
-        report_reader=None,
+        report_reader=None,  # Keep for compatibility but use frame-specific logic
         tmp_dir: Optional[Path] = None,
         device_name: Optional[str] = None,
         endoscope_roi: Optional[Dict[str, Any]] = None,
@@ -70,7 +65,7 @@ class FrameCleaner:
         Args:
             video_path: Path to input video
             video_file_obj: VideoFile Django model instance to store extracted metadata
-            report_reader: ReportReader instance for sensitive data detection
+            report_reader: Kept for compatibility (now uses frame-specific processing)
             tmp_dir: Temporary directory for processing (optional)
             device_name: Name of endoscopy device for mask configuration (optional)
             endoscope_roi: Endoscope ROI from processor for masking (optional)
@@ -82,10 +77,6 @@ class FrameCleaner:
         Raises:
             RuntimeError: If video processing fails
         """
-        if report_reader is None:
-            from lx_anonymizer.report_reader import ReportReader
-            report_reader = ReportReader()
-            
         if tmp_dir is None:
             tmp_dir = Path(tempfile.mkdtemp(prefix='frame_cleaner_'))
         
@@ -96,7 +87,7 @@ class FrameCleaner:
         # Create output video path
         output_video = video_path.with_stem(f"{video_path.stem}_anony")
         
-        # Accumulate metadata from all frames
+        # Accumulate metadata from all frames using specialized extractor
         accumulated_metadata = {
             "patient_first_name": None,
             "patient_last_name": None,
@@ -106,78 +97,79 @@ class FrameCleaner:
             "examination_date": None,
             "examination_time": None,
             "examiner": None,
+            "representative_ocr_text": None,
             "source": "frame_extraction"
         }
-        
-        if frame_paths is None:
-            frames_dir = tmp_dir / "frames"
-            frame_paths = self.extract_frames(video_path, frames_dir, max_frames=100)
 
         try:
-            # ▼ adaptive streaming + on-the-fly OCR
-            bft = BestFrameText()
+            # ▼ Adaptive streaming + specialized frame OCR
             sensitive_idx: list[int] = []
             
             # Get total frames once
             total_frames = int(cv2.VideoCapture(str(video_path)).get(cv2.CAP_PROP_FRAME_COUNT))
             skip = 1
 
-            for abs_i, gray, skip in self._iter_video(video_path, total_frames):
-                data = pytesseract.image_to_data(
-                    gray, lang="deu",
-                    config="--oem 3 --psm 6",
-                    output_type=pytesseract.Output.DICT
+            for abs_i, gray_frame, skip in self._iter_video(video_path, total_frames):
+                # Use specialized frame OCR instead of basic pytesseract
+                ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
+                    gray_frame, 
+                    roi=endoscope_roi,
+                    high_quality=True
                 )
 
-                words = [w for w in data["text"] if w.strip()]
-                if not words:
+                if not ocr_text:
                     continue
                 
-                # FIX: Use safe confidence list handling
-                confs = self._safe_conf_list(data["conf"])
-                avg_conf = sum(confs) / len(confs) / 100 if confs else 0.0
-                ocr_text = " ".join(words)
-
-                # feed the 'best text' sampler (almost free)
-                bft.push(ocr_text, avg_conf)
+                # Feed the 'best text' sampler
+                self.best_frame_text.push(ocr_text, avg_conf)
                 
-                # Extract metadata and check for sensitive content
-                has_sensitive, frame_metadata = self.detect_sensitive_on_frame_text(ocr_text, report_reader)
+                # Extract metadata using specialized frame extractor
+                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                
+                # Check if frame contains sensitive content
+                has_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
                 
                 # Accumulate non-null metadata from this frame
                 if frame_metadata:
-                    for key, value in frame_metadata.items():
-                        if value and value not in [None, '', 'Unknown'] and not accumulated_metadata.get(key):
-                            accumulated_metadata[key] = value
-                            logger.info(f"Found {key}: {value} in frame {abs_i}")
+                    accumulated_metadata = self.frame_metadata_extractor.merge_metadata(
+                        accumulated_metadata, frame_metadata
+                    )
+                    if has_sensitive:
+                        logger.info(f"Found sensitive data in frame {abs_i}: {frame_metadata}")
 
                 # Mark frame as sensitive if it contains sensitive data
                 if has_sensitive:
                     sensitive_idx.append(abs_i)
             
-            best_summary = bft.reduce()
-            logger.info("Representative OCR text – best: %s", best_summary["best"])
+            # Get best representative text
+            best_summary = self.best_frame_text.reduce()
+            representative_text = best_summary.get("best", "")
+            accumulated_metadata["representative_ocr_text"] = representative_text
             
-            # Store the best OCR text in metadata
-            accumulated_metadata["representative_ocr_text"] = best_summary.get("best", "")
+            logger.info("Representative OCR text – best: %s", representative_text)
             
-            # Try to extract additional metadata from the best OCR text using LLM
-            if best_summary.get("best"):
-                has_llm_sensitive, llm_metadata = self._detect_sensitive_meta_llm(
-                    best_summary["best"], report_reader, llm_model="deepseek"
-                )
-                
-                # Merge LLM metadata with accumulated metadata
-                if llm_metadata:
-                    for key, value in llm_metadata.items():
-                        if value and value not in [None, '', 'Unknown'] and not accumulated_metadata.get(key):
-                            accumulated_metadata[key] = value
-                            logger.info(f"LLM extracted {key}: {value}")
+            # Try to extract additional metadata from the best OCR text using LLM if available
+            if representative_text and report_reader:
+                try:
+                    has_llm_sensitive, llm_metadata = self._detect_sensitive_meta_llm(
+                        representative_text, report_reader, llm_model="deepseek"
+                    )
+                    
+                    # Merge LLM metadata with accumulated metadata
+                    if llm_metadata:
+                        accumulated_metadata = self.frame_metadata_extractor.merge_metadata(
+                            accumulated_metadata, llm_metadata
+                        )
+                        logger.info(f"LLM enhanced metadata: {llm_metadata}")
+                        
+                except Exception as e:
+                    logger.warning(f"LLM metadata enhancement failed: {e}")
             
             # Store extracted metadata in VideoFile's SensitiveMeta
             if video_file_obj and accumulated_metadata:
                 self._update_video_sensitive_meta(video_file_obj, accumulated_metadata)
             
+            # Apply padding to sensitive frame indices
             if skip > 1:
                 pad = skip - 1
                 padded_idx = set()
@@ -834,3 +826,97 @@ class FrameCleaner:
                 yield idx, gray, skip
             idx += 1
         cap.release()
+
+    def _update_video_sensitive_meta(self, video_file_obj, metadata: Dict[str, Any]):
+        """
+        Update VideoFile's SensitiveMeta with extracted metadata from frames.
+        
+        Args:
+            video_file_obj: VideoFile Django model instance
+            metadata: Extracted metadata dictionary
+        """
+        try:
+            # Import here to avoid circular imports
+            from endoreg_db.models import SensitiveMeta
+            
+            # Get or create SensitiveMeta for this video file
+            sensitive_meta, created = SensitiveMeta.objects.get_or_create(
+                video_file=video_file_obj,
+                defaults={
+                    'patient_first_name': metadata.get('patient_first_name'),
+                    'patient_last_name': metadata.get('patient_last_name'),
+                    'patient_dob': metadata.get('patient_dob'),
+                    'casenumber': metadata.get('casenumber'),
+                    'patient_gender': metadata.get('patient_gender'),
+                    'examination_date': metadata.get('examination_date'),
+                    'examination_time': metadata.get('examination_time'),
+                    'examiner': metadata.get('examiner'),
+                    'representative_ocr_text': metadata.get('representative_ocr_text', ''),
+                }
+            )
+            
+            # If not created, update existing with non-empty values
+            if not created:
+                updated = False
+                for field in ['patient_first_name', 'patient_last_name', 'patient_dob', 
+                             'casenumber', 'patient_gender', 'examination_date', 
+                             'examination_time', 'examiner', 'representative_ocr_text']:
+                    value = metadata.get(field)
+                    if value and value not in [None, '', 'Unknown']:
+                        current_value = getattr(sensitive_meta, field, None)
+                        if not current_value or current_value in [None, '', 'Unknown']:
+                            setattr(sensitive_meta, field, value)
+                            updated = True
+                
+                if updated:
+                    sensitive_meta.save()
+            
+            logger.info(f"{'Created' if created else 'Updated'} SensitiveMeta for video {video_file_obj.id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update video sensitive metadata: {e}")
+
+    def _safe_conf_list(self, raw_conf):
+        """Convert values from data['conf'] to int >= 0 safely"""
+        confs = []
+        for c in raw_conf:
+            try:
+                conf_int = int(c)            # works for both str AND int
+            except (TypeError, ValueError):
+                continue
+            if conf_int >= 0:
+                confs.append(conf_int)
+        return confs
+
+    def extract_metadata_deepseek(self, text: str) -> Dict[str, Any]:
+        """Extract metadata using DeepSeek via Ollama structured output."""
+        logger.info("Attempting metadata extraction with DeepSeek (Ollama Structured Output)")
+        # Use the wrapper that handles retries and returns {} on failure
+        meta = extract_with_fallback(text, model="deepseek-r1:1.5b")
+        if not meta:
+            logger.warning("DeepSeek Ollama extraction failed, returning empty dict.")
+        else:
+            logger.info("DeepSeek Ollama extraction successful.")
+        return meta
+
+    def extract_metadata_medllama(self, text: str) -> Dict[str, Any]:
+        """Extract metadata using MedLLaMA via Ollama structured output."""
+        logger.info("Attempting metadata extraction with MedLLaMA (Ollama Structured Output)")
+        # Use the wrapper that handles retries and returns {} on failure
+        meta = extract_with_fallback(text, model="rjmalagon/medllama3-v20:fp16")
+        if not meta:
+            logger.warning("MedLLaMA Ollama extraction failed, returning empty dict.")
+        else:
+            logger.info("MedLLaMA Ollama extraction successful.")
+        return meta
+
+    def extract_metadata_llama3(self, text: str) -> Dict[str, Any]:
+        """Extract metadata using Llama3 via Ollama structured output."""
+        logger.info("Attempting metadata extraction with Llama3 (Ollama Structured Output)")
+        # Use the wrapper that handles retries and returns {} on failure
+        meta = extract_with_fallback(text, model="llama3:8b")  # Or llama3:70b if available/needed
+        if not meta:
+            logger.warning("Llama3 Ollama extraction failed, returning empty dict.")
+        else:
+            logger.info("Llama3 Ollama extraction successful.")
+        return meta

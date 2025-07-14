@@ -52,13 +52,13 @@ class ReportReader:
         
         # Initialize Ollama
         self.ollama_proc = ensure_ollama()
+        
     
     def read_pdf(self, pdf_path):
         '''
         Read pdf file using pdfplumber and return the raw text content.
         With improved preprocessing for better extraction.
         '''
-        # FIX: Validate pdf_path before processing
         if pdf_path is None:
             logger.error("PDF path is None, cannot read PDF")
             return ""
@@ -152,7 +152,6 @@ class ReportReader:
                          is_valid_info = True
                          break
 
-        # Option 3: If SpaCy extractor failed, try the regex fallback
         if not is_valid_info and text: # Only run if SpaCy failed AND there is text
             logger.debug("SpaCy extractor failed, using regex fallback extraction")
             fallback_info = extract_patient_info_from_text(text) # This fallback might still fail on dotless date
