@@ -122,12 +122,15 @@ class ReportReader:
         lines = text.split('\n') if text else [] # Handle empty text
 
         patient_info = None
-        # Option 1: Try on whole text with SpaCy
-        if text: # Only run if text exists
-            patient_info = self.patient_extractor(text) # Use __call__
-            logger.debug(f"Patient extractor result on full text: {patient_info}")
+        # Option 1: Try on whole text with Deepseek
+        
+        if text:
+            patient_info = self.extract_report_meta_deepseek(text)
+            if patient_info == {}:
+                patient_info = self.patient_extractor(text) # Use __call__
+                logger.debug(f"Patient extractor result on full text: {patient_info}")
         else:
-            logger.debug("Skipping SpaCy extraction on empty text.")
+            logger.debug("Skipping extraction on empty text.")
             patient_info = PatientDataExtractor._blank() # Start with blank if no text
 
         # Check if the result is valid (name found, not None)

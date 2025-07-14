@@ -99,8 +99,12 @@ class FrameMetadataExtractor:
             "source": "frame_extraction"
         }
         
+        
+        
         if not text or not text.strip():
             return metadata
+        
+        
         
         try:
             # Extract patient names

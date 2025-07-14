@@ -16,6 +16,7 @@ import tempfile
 import json
 import os
 from pathlib import Path
+from tkinter import N
 from typing import List, Optional, Tuple, Dict, Any, Union
 import cv2
 import numpy as np
@@ -123,8 +124,10 @@ class FrameCleaner:
                 # Feed the 'best text' sampler
                 self.best_frame_text.push(ocr_text, avg_conf)
                 
-                # Extract metadata using specialized frame extractor
-                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                if self.best_frame_text:
+                    frame_metadata = self.extract_metadata_deepseek(ocr_text)
+                    if frame_metadata == {}:
+                        frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
                 
                 # Check if frame contains sensitive content
                 has_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
