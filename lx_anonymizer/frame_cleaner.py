@@ -10,6 +10,7 @@ This module provides functionality to:
 Uses specialized frame processing components separated from PDF logic.
 """
 
+import math
 import logging
 import subprocess
 import tempfile
@@ -808,17 +809,14 @@ class FrameCleaner:
             
     def _iter_video(self, video_path: Path, total_frames: int) -> tuple[int, np.ndarray, int]:
         """
-        Yield (abs_frame_index, gray_frame, skip_value) with adaptive subsampling:
-            <1 000  frames → every frame
-            1 000-9 999     → every 3rd
-            ≥10 000         → every 5th
+        Yield (abs_frame_index, gray_frame, skip_value) with adaptive subsampling
         """
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             logger.error("Cannot open %s", video_path)
             return
 
-        skip = 10 if total_frames < 1_000 else 100 if total_frames < 10_000 else 1000
+        skip = math.ceil(total_frames / 200)
         idx = 0
         while True:
             ok, bgr = cap.read()
