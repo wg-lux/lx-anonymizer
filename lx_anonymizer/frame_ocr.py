@@ -17,7 +17,6 @@ import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
-from ocr import tesseract_full_image_ocr
 
 logger = logging.getLogger(__name__)
 
