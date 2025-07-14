@@ -818,7 +818,7 @@ class FrameCleaner:
             logger.error("Cannot open %s", video_path)
             return
 
-        skip = 1 if total_frames < 1_000 else 3 if total_frames < 10_000 else 5
+        skip = 10 if total_frames < 1_000 else 100 if total_frames < 10_000 else 1000
         idx = 0
         while True:
             ok, bgr = cap.read()
