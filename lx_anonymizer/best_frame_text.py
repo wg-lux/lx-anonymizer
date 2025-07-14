@@ -1,7 +1,7 @@
 from __future__ import annotations
 import random, heapq, json, itertools
 from .utils.ollama import ensure_ollama
-from .llm_ollama import call_llm
+from .ollama_llm_processor import OllamaLLMProcessor
 
 
 class BestFrameText:
@@ -27,7 +27,8 @@ class BestFrameText:
     # ----- offline phase -----
 
     def _score(self, text: str) -> float:
-        resp = call_llm(
+        processor = OllamaLLMProcessor()
+        resp = processor.call_llm(
             "Act as an OCR expert. Give me a single float in [0,1] that reflects how clean and informative this passage is:",
             text)
         return float(resp.strip())

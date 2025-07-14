@@ -20,7 +20,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../lx_a
 # Import the modules we want to test
 try:
     from lx_anonymizer import main
-    from lx_anonymizer.ollama_llm import (
+    from lx_anonymizer.ollama_llm_processor import (
         OllamaLLMProcessor,
         analyze_full_image_with_ollama,
         replace_phi4_with_ollama

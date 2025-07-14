@@ -22,7 +22,7 @@ from .ocr_preprocessing import preprocess_image, optimize_image_for_medical_text
 from datetime import datetime, date
 import dateparser
 from .utils.ollama import ensure_ollama
-from .llm_ollama import extract_with_fallback
+from .ollama_llm_meta_extraction import extract_with_fallback
 
 class ReportReader:
     def __init__(
