@@ -68,7 +68,7 @@ class FrameCleaner:
             try:
                 minicpm = MiniCPMVisionOCR()
                 minicpm_config = minicpm_config or {}
-                self.minicpm_ocr = minicpm.create_minicpm_ocr(**minicpm_config)
+                self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
                 logger.info("MiniCPM-o 2.6 initialized successfully")
             except Exception as e:
                 logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
