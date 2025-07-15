@@ -16,6 +16,10 @@ import subprocess
 import tempfile
 import json
 import os
+import stat
+import time
+import shutil
+
 from pathlib import Path
 from tkinter import N
 from typing import List, Optional, Tuple, Dict, Any, Union, Iterator
@@ -30,6 +34,7 @@ from lx_anonymizer.best_frame_text import BestFrameText
 from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
 from lx_anonymizer.report_reader import ReportReader
+from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +43,15 @@ class FrameCleaner:
     FrameCleaner class for handling video frame extraction and sensitive data detection.
     
     This class provides methods to extract frames from a video, detect sensitive information
-    using specialized frame OCR, and re-encode the video without sensitive frames.
+    using specialized frame OCR (including MiniCPM-o 2.6), and re-encode the video without sensitive frames.
+    
+    New features:
+    - Stream-based processing with FFmpeg -c copy to avoid full transcoding
+    - Named pipe (FIFO) support for in-memory video streaming
+    - Pixel format conversion optimization for minimal re-encoding
     """
     
-    def __init__(self):
+    def __init__(self, use_minicpm: bool = True, minicpm_config: Optional[Dict[str, Any]] = None):
         # Initialize specialized frame processing components
         self.frame_ocr = FrameOCR()
         self.frame_metadata_extractor = FrameMetadataExtractor()
@@ -49,175 +59,568 @@ class FrameCleaner:
         
         # Initialize Ollama for LLM processing
         self.ollama_proc = ensure_ollama()
-    
-    def _iter_video_adaptive(
-        self,
-        video_path: Path,
-        total_frames: int,
-        max_samples: int = 500,
-        stop_tolerance: float = 0.10,
-        conf_z: float = 1.96,
-        min_samples: int = 30
-    ) -> Iterator[Tuple[int, np.ndarray, int, bool]]:
-        """
-        Adaptive video sampling with statistical early stopping.
         
-        Yields (abs_idx, gray_frame, stride, should_continue) until we are confident
-        that the sensitive-ratio is either > stop_tolerance or <= stop_tolerance.
+        # Initialize MiniCPM-o 2.6 if enabled
+        self.use_minicpm = use_minicpm
+        self.minicpm_ocr = None
+        
+        if self.use_minicpm:
+            try:
+                minicpm = MiniCPMVisionOCR()
+                minicpm_config = minicpm_config or {}
+                self.minicpm_ocr = minicpm.create_minicpm_ocr(**minicpm_config)
+                logger.info("MiniCPM-o 2.6 initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
+                self.use_minicpm = False
+                self.minicpm_ocr = None
+    
+    def _get_primary_ocr_engine(self) -> str:
+        """Return the name of the primary OCR engine being used."""
+        return "MiniCPM-o 2.6" if (self.use_minicpm and self.minicpm_ocr) else "FrameOCR + LLM"
+    
+    def _detect_video_format(self, video_path: Path) -> Dict[str, Any]:
+        """
+        Analyze video format to determine optimal processing strategy.
         
         Args:
-            video_path: Path to video file
-            total_frames: Total number of frames in video
-            max_samples: Maximum frames to sample (default 500)
-            stop_tolerance: Decision boundary for sensitive ratio (default 0.10)
-            conf_z: Confidence interval Z-score (default 1.96 for 95%)
-            min_samples: Minimum samples before testing confidence (default 30)
-            
-        Yields:
-            Tuple of (frame_index, gray_frame, stride, should_continue)
-        """
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open {video_path}")
-        
-        # Uniform stride ensuring ≤ max_samples if we run full pass
-        stride = max(1, math.ceil(total_frames / max_samples))
-        
-        tested, hits = 0, 0
-        frame_idx = -1
-        
-        try:
-            while True:
-                ok, bgr = cap.read()
-                frame_idx += 1
-                if not ok:
-                    break  # End of stream
-                    
-                if frame_idx % stride != 0:
-                    continue  # Skip non-sampled frame
-                
-                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-                tested += 1
-                
-                # Yield frame and receive sensitivity result back
-                is_sensitive = yield frame_idx, gray, stride, True
-                
-                if is_sensitive:
-                    hits += 1
-                
-                # Early-stop test (Wilson/Wald interval) after minimum samples
-                if tested >= min_samples:
-                    phat = hits / tested
-                    half_w = conf_z * math.sqrt(phat * (1 - phat) / tested)
-                    lo, hi = phat - half_w, phat + half_w
-                    
-                    if hi < stop_tolerance:
-                        logger.info(f"Early stop: confident that ratio ≤ {stop_tolerance:.1%} "
-                                   f"(tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
-                        # Yield final frame with should_continue=False
-                        yield frame_idx, gray, stride, False
-                        break
-                        
-                    if lo > stop_tolerance:
-                        logger.info(f"Early stop: confident that ratio > {stop_tolerance:.1%} "
-                                   f"(tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
-                        # Yield final frame with should_continue=False
-                        yield frame_idx, gray, stride, False
-                        break
-                
-                if tested >= max_samples:
-                    logger.info(f"Reached sample budget: {max_samples} frames tested")
-                    break
-                    
-        finally:
-            cap.release()
-    
-    def _sample_frames_coroutine(
-        self,
-        video_path: Path,
-        total_frames: int,
-        max_samples: int = 500,
-        stop_tolerance: float = 0.10
-    ) -> Tuple[List[int], float, bool]:
-        """
-        Sample frames using statistical adaptive method and return sensitivity analysis.
-        
-        Args:
-            video_path: Path to video file
-            total_frames: Total number of frames
-            max_samples: Maximum frames to sample
-            stop_tolerance: Decision boundary (default 0.10)
+            video_path: Path to input video
             
         Returns:
-            Tuple of (sensitive_frame_indices, estimated_ratio, early_stopped)
+            Dictionary with format information for optimization decisions
         """
-        sensitive_indices = []
-        tested_count = 0
-        hits_count = 0
-        early_stopped = False
+        try:
+            # Use ffprobe to get detailed format information
+            cmd = [
+                'ffprobe', '-v', 'quiet', '-print_format', 'json', 
+                '-show_format', '-show_streams', str(video_path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            format_info = json.loads(result.stdout)
+            
+            # Extract key information for optimization
+            video_stream = next((s for s in format_info['streams'] if s['codec_type'] == 'video'), {})
+            audio_streams = [s for s in format_info['streams'] if s['codec_type'] == 'audio']
+            
+            analysis = {
+                'video_codec': video_stream.get('codec_name', 'unknown'),
+                'pixel_format': video_stream.get('pix_fmt', 'unknown'),
+                'width': int(video_stream.get('width', 0)),
+                'height': int(video_stream.get('height', 0)),
+                'has_audio': len(audio_streams) > 0,
+                'audio_codec': audio_streams[0].get('codec_name', 'none') if audio_streams else 'none',
+                'container_format': format_info['format'].get('format_name', 'unknown'),
+                'duration': float(format_info['format'].get('duration', 0)),
+                'size_bytes': int(format_info['format'].get('size', 0)),
+                'can_stream_copy': self._can_use_stream_copy(video_stream, audio_streams)
+            }
+            
+            logger.debug(f"Video format analysis: {analysis}")
+            return analysis
+            
+        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Failed to analyze video format: {e}")
+            return {
+                'video_codec': 'unknown',
+                'pixel_format': 'unknown', 
+                'width': 1920,
+                'height': 1080,
+                'has_audio': True,
+                'audio_codec': 'unknown',
+                'container_format': 'unknown',
+                'duration': 0,
+                'size_bytes': 0,
+                'can_stream_copy': False
+            }
+    
+    def _can_use_stream_copy(self, video_stream: Dict, audio_streams: List[Dict]) -> bool:
+        """
+        Determine if we can use FFmpeg -c copy for fast processing.
         
-        # Initialize the adaptive iterator
-        frame_iter = self._iter_video_adaptive(
-            video_path, total_frames, max_samples, stop_tolerance
-        )
+        Args:
+            video_stream: Video stream info from ffprobe
+            audio_streams: Audio stream info from ffprobe
+            
+        Returns:
+            True if stream copy is viable
+        """
+        # Common codecs that work well with stream copy
+        good_video_codecs = {'h264', 'h265', 'hevc', 'vp8', 'vp9', 'av1'}
+        good_audio_codecs = {'aac', 'mp3', 'opus', 'vorbis'}
+        
+        video_codec = video_stream.get('codec_name', '').lower()
+        
+        # Check video codec compatibility
+        if video_codec not in good_video_codecs:
+            logger.debug(f"Video codec {video_codec} not suitable for stream copy")
+            return False
+        
+        # Check audio codec compatibility  
+        for audio_stream in audio_streams:
+            audio_codec = audio_stream.get('codec_name', '').lower()
+            if audio_codec not in good_audio_codecs:
+                logger.debug(f"Audio codec {audio_codec} not suitable for stream copy")
+                return False
+        
+        # Check pixel format - some 10-bit formats need conversion
+        pixel_format = video_stream.get('pix_fmt', '')
+        if '10le' in pixel_format or '422' in pixel_format:
+            logger.debug(f"Pixel format {pixel_format} may need conversion")
+            return False
+        
+        return True
+    
+    def _create_named_pipe(self, suffix: str = ".mp4") -> Path:
+        """
+        Create a named pipe (FIFO) for streaming video data.
+        
+        Args:
+            suffix: File extension for the pipe name
+            
+        Returns:
+            Path to created named pipe
+        """
+        # Create temporary directory for pipes
+        temp_dir = Path(tempfile.mkdtemp(prefix='video_pipes_'))
+        pipe_path = temp_dir / f"stream{suffix}"
         
         try:
-            # Get first frame
-            frame_idx, gray_frame, stride, should_continue = next(frame_iter)
+            # Create named pipe
+            os.mkfifo(str(pipe_path))
+            logger.debug(f"Created named pipe: {pipe_path}")
+            return pipe_path
             
-            while should_continue:
-                tested_count += 1
+        except OSError as e:
+            logger.error(f"Failed to create named pipe: {e}")
+            # Fallback to regular temp file
+            return temp_dir / f"fallback{suffix}"
+    
+    def _stream_copy_with_pixel_conversion(
+        self, 
+        input_video: Path, 
+        output_video: Path,
+        target_pixel_format: str = "yuv420p"
+    ) -> bool:
+        """
+        Convert video with minimal re-encoding using pixel format conversion only.
+        
+        This is much faster than full re-encoding when only pixel format differs.
+        
+        Args:
+            input_video: Source video path
+            output_video: Destination video path  
+            target_pixel_format: Target pixel format (default yuv420p for compatibility)
+            
+        Returns:
+            True if conversion succeeded
+        """
+        try:
+            # Build FFmpeg command for pixel format conversion only
+            cmd = [
+                'ffmpeg', '-i', str(input_video),
+                '-vf', f'format={target_pixel_format}',  # Only convert pixel format
+                '-c:v', 'libx264',  # Use efficient H.264 encoder
+                '-preset', 'ultrafast',  # Fastest encoding preset
+                '-crf', '18',  # High quality constant rate factor
+                '-c:a', 'copy',  # Copy audio without re-encoding
+                '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
+                '-y', str(output_video)
+            ]
+            
+            logger.info(f"Converting pixel format: {input_video} -> {output_video}")
+            logger.debug(f"FFmpeg command: {' '.join(cmd)}");
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            logger.debug(f"Pixel conversion output: {result.stderr}")
+            
+            return output_video.exists() and output_video.stat().st_size > 0
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Pixel format conversion failed: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Pixel format conversion error: {e}")
+            return False
+
+    def _stream_copy_video(
+        self,
+        input_video: Path,
+        output_video: Path, 
+        format_info: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Copy video streams without re-encoding for maximum speed.
+        
+        Args:
+            input_video: Source video path
+            output_video: Destination video path
+            format_info: Video format analysis (optional)
+            
+        Returns:
+            True if stream copy succeeded
+        """
+        try:
+            if format_info is None:
+                format_info = self._detect_video_format(input_video)
+            
+            # Check if we can use pure stream copy
+            if format_info['can_stream_copy']:
+                cmd = [
+                    'ffmpeg', '-i', str(input_video),
+                    '-c', 'copy',  # Copy all streams without re-encoding
+                    '-avoid_negative_ts', 'make_zero',
+                    '-y', str(output_video)
+                ]
                 
-                # Use specialized frame OCR for sensitivity detection
-                ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
-                    gray_frame, 
-                    roi=None,  # Will be passed from caller if available
-                    high_quality=True
-                )
+                logger.info(f"Stream copying (no re-encoding): {input_video} -> {output_video}")
                 
-                is_sensitive = False
-                frame_metadata = {}
+            else:
+                # Need minimal conversion (usually just pixel format)
+                pixel_fmt = format_info.get('pixel_format', 'unknown')
                 
-                if ocr_text:
-                    # Feed the 'best text' sampler
-                    self.best_frame_text.push(ocr_text, avg_conf)
+                if '10le' in pixel_fmt or '422' in pixel_fmt:
+                    logger.info(f"Converting {pixel_fmt} to yuv420p for compatibility")
+                    return self._stream_copy_with_pixel_conversion(input_video, output_video)
+                else:
+                    # Use fast presets for unknown formats
+                    cmd = [
+                        'ffmpeg', '-i', str(input_video),
+                        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+                        '-c:a', 'copy',
+                        '-y', str(output_video)
+                    ]
                     
-                    # Try LLM extraction first (faster for long videos)
-                    frame_metadata = self.extract_metadata_deepseek(ocr_text)
-                    if not frame_metadata:
-                        frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                    logger.info(f"Fast re-encoding with stream copy audio: {input_video} -> {output_video}")
+            
+            logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            logger.debug(f"Stream copy output: {result.stderr}")
+            
+            return output_video.exists() and output_video.stat().st_size > 0
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Stream copy failed: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Stream copy error: {e}")
+            return False
+
+    def _mask_video_streaming(
+        self, 
+        input_video: Path, 
+        mask_config: Dict[str, Any], 
+        output_video: Path,
+        use_named_pipe: bool = True
+    ) -> bool:
+        """
+        Apply video masking using streaming approach with optional named pipes.
+        
+        Args:
+            input_video: Path to input video file
+            mask_config: Dictionary containing mask coordinates
+            output_video: Path for output masked video
+            use_named_pipe: Whether to use named pipes for streaming
+            
+        Returns:
+            True if masking succeeded, False otherwise
+        """
+        try:
+            format_info = self._detect_video_format(input_video)
+            
+            endoscope_x = mask_config.get("endoscope_image_x", 0)
+            endoscope_y = mask_config.get("endoscope_image_y", 0)
+            endoscope_w = mask_config.get("endoscope_image_width", 640)
+            endoscope_h = mask_config.get("endoscope_image_height", 480)
+            
+            # Check if we can use simple crop (most efficient)
+            if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
+                # Simple crop - can often use stream copy for audio
+                crop_filter = f"crop=in_w-{endoscope_x}:in_h:{endoscope_x}:0"
+                
+                if use_named_pipe and format_info['can_stream_copy']:
+                    # Use named pipe for streaming processing
+                    pipe_path = self._create_named_pipe(".mp4")
                     
-                    # Check if frame contains sensitive content
-                    is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                    try:
+                        # Start background process to write to pipe
+                        writer_cmd = [
+                            'ffmpeg', '-i', str(input_video),
+                            '-vf', crop_filter,
+                            '-c:a', 'copy',  # Stream copy audio
+                            '-f', 'mp4', '-movflags', 'faststart',
+                            str(pipe_path)
+                        ]
+                        
+                        # Start reader process from pipe
+                        reader_cmd = [
+                            'ffmpeg', '-i', str(pipe_path),
+                            '-c', 'copy',  # Pure stream copy from pipe
+                            '-y', str(output_video)
+                        ]
+                        
+                        logger.info(f"Using named pipe for streaming mask: {crop_filter}")
+                        
+                        # Start writer in background
+                        writer_proc = subprocess.Popen(
+                            writer_cmd, 
+                            stdout=subprocess.PIPE, 
+                            stderr=subprocess.PIPE
+                        )
+                        
+                        # Start reader (blocks until complete)
+                        reader_result = subprocess.run(
+                            reader_cmd, 
+                            capture_output=True, 
+                            text=True, 
+                            check=True
+                        )
+                        
+                        # Wait for writer to complete
+                        writer_result = writer_proc.communicate()
+                        
+                        logger.debug(f"Streaming mask completed via named pipe")
+                        
+                    finally:
+                        # Clean up pipe
+                        if pipe_path.exists():
+                            try:
+                                pipe_path.unlink()
+                                pipe_path.parent.rmdir()
+                            except OSError:
+                                pass
+                else:
+                    # Direct processing without pipe
+                    cmd = [
+                        'ffmpeg', '-i', str(input_video),
+                        '-vf', crop_filter,
+                        '-c:a', 'copy',  # Stream copy audio when possible
+                        '-y', str(output_video)
+                    ]
+                    
+                    logger.info(f"Direct crop masking: {crop_filter}")
+                    logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    logger.debug(f"Direct masking output: {result.stderr}")
+            
+            else:
+                # Complex masking - use drawbox filters
+                mask_filters = []
                 
-                if is_sensitive:
-                    sensitive_indices.append(frame_idx)
-                    hits_count += 1
-                    logger.info(f"Found sensitive data in frame {frame_idx}: {frame_metadata}")
+                # Build mask rectangles (same logic as before)
+                if endoscope_x > 0:
+                    mask_filters.append(f"drawbox=0:0:{endoscope_x}:{mask_config.get('image_height', 1080)}:color=black@1:t=fill")
                 
-                # Send result back to iterator and get next frame
+                right_start = endoscope_x + endoscope_w
+                image_width = mask_config.get('image_width', 1920)
+                if right_start < image_width:
+                    right_width = image_width - right_start
+                    mask_filters.append(f"drawbox={right_start}:0:{right_width}:{mask_config.get('image_height', 1080)}:color=black@1:t=fill")
+                
+                if endoscope_y > 0:
+                    mask_filters.append(f"drawbox={endoscope_x}:0:{endoscope_w}:{endoscope_y}:color=black@1:t=fill")
+                
+                bottom_start = endoscope_y + endoscope_h
+                image_height = mask_config.get('image_height', 1080)
+                if bottom_start < image_height:
+                    bottom_height = image_height - bottom_start
+                    mask_filters.append(f"drawbox={endoscope_x}:{bottom_start}:{endoscope_w}:{bottom_height}:color=black@1:t=fill")
+                
+                vf = ','.join(mask_filters)
+                
+                # Use optimized encoding for complex masks
+                cmd = [
+                    'ffmpeg', '-i', str(input_video),
+                    '-vf', vf,
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',  # Fast encoding
+                    '-c:a', 'copy',  # Always copy audio
+                    '-y', str(output_video)
+                ]
+                
+                logger.info(f"Complex mask processing with {len(mask_filters)} regions")
+                logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                logger.debug(f"Complex masking output: {result.stderr}")
+            
+            # Verify output
+            if output_video.exists() and output_video.stat().st_size > 0:
+                # Compare file sizes to ensure reasonable output
+                input_size = input_video.stat().st_size
+                output_size = output_video.stat().st_size
+                size_ratio = output_size / input_size if input_size > 0 else 0
+                
+                if size_ratio < 0.1:  # Output suspiciously small
+                    logger.warning(f"Output video much smaller than input ({size_ratio:.1%})")
+                
+                logger.info(f"Successfully created masked video: {output_video} (size ratio: {size_ratio:.1%})")
+                return True
+            else:
+                logger.error("Masked video is empty or missing")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Streaming mask failed: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Streaming mask error: {e}")
+            return False
+
+    def remove_frames_from_video_streaming(
+        self,
+        original_video: Path, 
+        frames_to_remove: List[int], 
+        output_video: Path,
+        total_frames: Optional[int] = None,
+        use_named_pipe: bool = True
+    ) -> bool:
+        """
+        Remove frames using streaming approach with optional named pipes.
+        
+        Args:
+            original_video: Path to original video
+            frames_to_remove: List of frame numbers to remove (0-based)
+            output_video: Path for output video
+            total_frames: Total frame count (for optimization)
+            use_named_pipe: Whether to use named pipes for streaming
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not frames_to_remove:
+                logger.info("No frames to remove, using stream copy")
+                return self._stream_copy_video(original_video, output_video)
+            
+            format_info = self._detect_video_format(original_video)
+            
+            logger.info(f"Removing {len(frames_to_remove)} frames using streaming method")
+            
+            # Create frame selection filter
+            idx_list = '+'.join([f'eq(n\\,{idx})' for idx in frames_to_remove])
+            vf = f"select='not({idx_list})',setpts=N/FRAME_RATE/TB"
+            af = f"aselect='not({idx_list})',asetpts=N/SR/TB"
+            
+            if use_named_pipe and len(frames_to_remove) < (total_frames or 1000) * 0.1:
+                # Use named pipe for small frame removal operations
+                pipe_path = self._create_named_pipe(".mp4")
+                
                 try:
-                    frame_idx, gray_frame, stride, should_continue = frame_iter.send(is_sensitive)
-                except StopIteration:
-                    break
+                    # Pipeline: filter frames -> pipe -> stream copy to final output
+                    filter_cmd = [
+                        'ffmpeg', '-i', str(original_video),
+                        '-vf', vf,
+                        '-af', af, 
+                        '-f', 'mp4', '-movflags', 'faststart',
+                        str(pipe_path)
+                    ]
                     
-        except StopIteration:
-            # Iterator finished normally
-            pass
-        
-        # Calculate final ratio
-        estimated_ratio = hits_count / tested_count if tested_count > 0 else 0.0
-        early_stopped = tested_count < max_samples
-        
-        logger.info(f"Statistical sampling complete: {hits_count}/{tested_count} = {estimated_ratio:.1%} "
-                   f"(early_stopped={early_stopped})")
-        
-        return sensitive_indices, estimated_ratio, early_stopped
+                    copy_cmd = [
+                        'ffmpeg', '-i', str(pipe_path),
+                        '-c', 'copy',  # Stream copy from pipe
+                        '-y', str(output_video)
+                    ]
+                    
+                    logger.info("Using named pipe for frame removal streaming")
+                    
+                    # Start filter process in background
+                    filter_proc = subprocess.Popen(
+                        filter_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
+                    
+                    # Start copy process (blocks until complete)
+                    copy_result = subprocess.run(
+                        copy_cmd,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    
+                    # Wait for filter to complete
+                    filter_result = filter_proc.communicate()
+                    
+                    logger.debug("Streaming frame removal completed via named pipe")
+                    
+                finally:
+                    # Clean up pipe
+                    if pipe_path.exists():
+                        try:
+                            pipe_path.unlink()
+                            pipe_path.parent.rmdir()
+                        except OSError:
+                            pass
+            
+            else:
+                # Direct processing for larger removals or when pipes unavailable
+                if format_info['can_stream_copy'] and format_info['has_audio']:
+                    # Use optimized encoding to preserve quality
+                    cmd = [
+                        'ffmpeg', '-i', str(original_video),
+                        '-vf', vf,
+                        '-af', af,
+                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+                        '-c:a', 'aac', '-b:a', '128k',  # Re-encode audio with high quality
+                        '-y', str(output_video)
+                    ]
+                else:
+                    # Video-only or format needs re-encoding
+                    cmd = [
+                        'ffmpeg', '-i', str(original_video),
+                        '-vf', vf,
+                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+                        '-an' if not format_info['has_audio'] else '-af', 
+                        af if format_info['has_audio'] else '',
+                        '-y', str(output_video)
+                    ]
+                    
+                    # Remove empty arguments
+                    cmd = [arg for arg in cmd if arg]
+                
+                logger.info("Direct frame removal processing")
+                logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                logger.debug(f"Direct frame removal output: {result.stderr}")
+            
+            # Verify output
+            if output_video.exists() and output_video.stat().st_size > 0:
+                logger.info(f"Successfully removed frames: {output_video}")
+                return True
+            else:
+                logger.error("Frame removal output is empty or missing")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Streaming frame removal failed: {e.stderr}")
+            
+            # Fallback to original method without audio processing
+            try:
+                logger.warning("Retrying frame removal without audio processing...")
+                cmd_no_audio = [
+                    'ffmpeg', '-i', str(original_video),
+                    '-vf', vf,
+                    '-an',  # No audio
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                    '-y', str(output_video)
+                ]
+                result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
+                logger.info("Successfully removed frames without audio")
+                return True
+            except subprocess.CalledProcessError as e2:
+                logger.error(f"Frame removal fallback also failed: {e2.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Streaming frame removal error: {e}")
+            return False
 
     def clean_video(
         self,
         video_path: Path,
-        video_file_obj=None,  # Add VideoFile object to store metadata
+        video_file_obj=None,
         report_reader=None,  # Keep for compatibility but use frame-specific logic
         tmp_dir: Optional[Path] = None,
         device_name: Optional[str] = None,
@@ -304,23 +707,35 @@ class FrameCleaner:
                     # Apply masking without processing all frames
                     try:
                         if endoscope_roi and self._validate_roi(endoscope_roi):
-                            logger.info("Using processor endoscope ROI for masking")
+                            logger.info("Using processor endoscope ROI for streaming masking")
                             mask_config = self._create_mask_config_from_roi(endoscope_roi, processor_rois)
                         else:
-                            logger.info("Using device-specific mask configuration")
+                            logger.info("Using device-specific mask configuration for streaming")
                             mask_config = self._load_mask(device_name)
                         
-                        success = self._mask_video(video_path, mask_config, output_video)
+                        # Use streaming masking instead of old method
+                        success = self._mask_video_streaming(video_path, mask_config, output_video, use_named_pipe=True)
                         
                         if not success:
-                            logger.error("Failed to create masked video, using original")
+                            logger.error("Failed to create masked video with streaming, using original")
                             import shutil
                             shutil.copy2(video_path, output_video)
                             
                     except Exception as e:
-                        logger.exception(f"Masking failed: {e}. Using original video.")
-                        import shutil
-                        shutil.copy2(video_path, output_video)
+                        logger.exception(f"Streaming masking failed: {e}. Falling back to frame removal.")
+                        # Fall back to streaming frame removal if masking fails
+                        success = self.remove_frames_from_video_streaming(
+                            video_path, 
+                            sensitive_idx, 
+                            output_video,
+                            total_frames=total_frames,
+                            use_named_pipe=True
+                        )
+                        
+                        if not success:
+                            logger.error("Failed to create cleaned video, using original")
+                            import shutil
+                            shutil.copy2(video_path, output_video)
                 else:
                     # Low sensitive ratio: need to process all frames for precise removal
                     logger.info(f"Estimated ratio ({estimated_ratio:.1%}) below 10%. "
@@ -343,11 +758,14 @@ class FrameCleaner:
                         self.best_frame_text.push(ocr_text, avg_conf)
                         
                         # LLM-first approach for metadata extraction
-                        frame_metadata = self.extract_metadata_deepseek(ocr_text)
+                        timeout = 500
+                        timeout_start = time.time()
+                        while time.time() - timeout_start < timeout:
+                            frame_metadata = self.extract_metadata_deepseek(ocr_text)
                         if not frame_metadata:
                             frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
                         
-                        # Check if frame contains sensitive content
+                        # Check if frame contains sensitive data
                         has_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
                         
                         # Accumulate non-null metadata from this frame
@@ -368,7 +786,7 @@ class FrameCleaner:
                     accumulated_metadata["representative_ocr_text"] = representative_text
                     
                     # Remove sensitive frames
-                    success = self.remove_frames_from_video(
+                    success = self.remove_frames_from_video_streaming(
                         video_path, 
                         sensitive_idx, 
                         output_video,
@@ -448,27 +866,29 @@ class FrameCleaner:
                     try:
                         # Use processor ROI if available, otherwise fall back to device mask
                         if endoscope_roi and self._validate_roi(endoscope_roi):
-                            logger.info("Using processor endoscope ROI for masking")
+                            logger.info("Using processor endoscope ROI for streaming masking")
                             mask_config = self._create_mask_config_from_roi(endoscope_roi, processor_rois)
                         else:
-                            logger.info("Using device-specific mask configuration")
+                            logger.info("Using device-specific mask configuration for streaming")
                             mask_config = self._load_mask(device_name)
                         
-                        success = self._mask_video(video_path, mask_config, output_video)
+                        # Use streaming masking instead of old method
+                        success = self._mask_video_streaming(video_path, mask_config, output_video, use_named_pipe=True)
                         
                         if not success:
-                            logger.error("Failed to create masked video, using original")
+                            logger.error("Failed to create masked video with streaming, using original")
                             import shutil
                             shutil.copy2(video_path, output_video)
                             
                     except Exception as e:
-                        logger.exception(f"Masking failed: {e}. Falling back to frame removal.")
-                        # Fall back to frame removal if masking fails
-                        success = self.remove_frames_from_video(
+                        logger.exception(f"Streaming masking failed: {e}. Falling back to frame removal.")
+                        # Fall back to streaming frame removal if masking fails
+                        success = self.remove_frames_from_video_streaming(
                             video_path, 
                             sensitive_idx, 
                             output_video,
-                            total_frames=total_frames
+                            total_frames=total_frames,
+                            use_named_pipe=True
                         )
                         
                         if not success:
@@ -715,7 +1135,7 @@ class FrameCleaner:
                 logger.warning(f"LLM detected sensitive data in frame {frame_path.name}: {meta}")
                 return True, meta
             
-            return False, _
+            return False, None
             
         except Exception as e:
             logger.error(f"Error processing frame {frame_path}: {e}")
@@ -1065,7 +1485,7 @@ class FrameCleaner:
             avg_conf = (sum(confs) / len(confs) / 100) if confs else 0.0
             yield " ".join(words), avg_conf
             
-    def _iter_video(self, video_path: Path, total_frames: int) -> tuple[int, np.ndarray, int]:
+    def _iter_video(self, video_path: Path, total_frames: int) -> Iterator[Tuple[int, np.ndarray, int]]:
         """
         Yield (abs_frame_index, gray_frame, skip_value) with adaptive subsampling
         """
@@ -1179,3 +1599,318 @@ class FrameCleaner:
         else:
             logger.info("Llama3 Ollama extraction successful.")
         return meta
+
+    def _iter_video_adaptive(
+        self,
+        video_path: Path,
+        total_frames: int,
+        max_samples: int = 500,
+        stop_tolerance: float = 0.10,
+        conf_z: float = 1.96,
+        min_samples: int = 30
+    ) -> Iterator[Tuple[int, np.ndarray, int, bool]]:
+        """
+        Adaptive video sampling with statistical early stopping.
+        
+        Yields (abs_idx, gray_frame, stride, should_continue) until we are confident
+        that the sensitive-ratio is either > stop_tolerance or <= stop_tolerance.
+        
+        Args:
+            video_path: Path to video file
+            total_frames: Total number of frames in video
+            max_samples: Maximum frames to sample (default 500)
+            stop_tolerance: Decision boundary for sensitive ratio (default 0.10)
+            conf_z: Confidence interval Z-score (default 1.96 for 95%)
+            min_samples: Minimum samples before testing confidence (default 30)
+            
+        Yields:
+            Tuple of (frame_index, gray_frame, stride, should_continue)
+        """
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open {video_path}")
+        
+        # Uniform stride ensuring ≤ max_samples if we run full pass
+        stride = max(1, math.ceil(total_frames / max_samples))
+        
+        tested, hits = 0, 0
+        frame_idx = -1
+        
+        try:
+            while True:
+                ok, bgr = cap.read()
+                frame_idx += 1
+                if not ok:
+                    break  # End of stream
+                    
+                if frame_idx % stride != 0:
+                    continue  # Skip non-sampled frame
+                
+                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+                tested += 1
+                
+                # Yield frame and receive sensitivity result back
+                is_sensitive = yield frame_idx, gray, stride, True
+                
+                if is_sensitive:
+                    hits += 1
+                
+                # Early-stop test (Wilson/Wald interval) after minimum samples
+                if tested >= min_samples:
+                    phat = hits / tested
+                    half_w = conf_z * math.sqrt(phat * (1 - phat) / tested)
+                    lo, hi = phat - half_w, phat + half_w
+                    
+                    if hi < stop_tolerance:
+                        logger.info(f"Early stop: confident that ratio ≤ {stop_tolerance:.1%} "
+                                   f"(tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
+                        # Yield final frame with should_continue=False
+                        yield frame_idx, gray, stride, False
+                        break
+                        
+                    if lo > stop_tolerance:
+                        logger.info(f"Early stop: confident that ratio > {stop_tolerance:.1%} "
+                                   f"(tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
+                        # Yield final frame with should_continue=False
+                        yield frame_idx, gray, stride, False
+                        break
+                
+                if tested >= max_samples:
+                    logger.info(f"Reached sample budget: {max_samples} frames tested")
+                    break
+                    
+        finally:
+            cap.release()
+    
+    def _sample_frames_coroutine(
+        self,
+        video_path: Path,
+        total_frames: int,
+        max_samples: int = 500,
+        stop_tolerance: float = 0.10
+    ) -> Tuple[List[int], float, bool]:
+        """
+        Sample frames using statistical adaptive method and return sensitivity analysis.
+        
+        Args:
+            video_path: Path to video file
+            total_frames: Total number of frames
+            max_samples: Maximum frames to sample
+            stop_tolerance: Decision boundary (default 0.10)
+            
+        Returns:
+            Tuple of (sensitive_frame_indices, estimated_ratio, early_stopped)
+        """
+        sensitive_frame_indices = []  # Fix: renamed for consistency
+        tested_count = 0
+        hits_count = 0
+        early_stopped = False
+        
+        # Initialize the adaptive iterator
+        frame_iter = self._iter_video_adaptive(
+            video_path, total_frames, max_samples, stop_tolerance
+        )
+        
+        try:
+            # Get first frame
+            frame_idx, gray_frame, stride, should_continue = next(frame_iter)
+            
+            while should_continue:
+                tested_count += 1
+                
+                # Use MiniCPM-o unified detection if available, otherwise fallback
+                try:
+                    if self.use_minicpm and self.minicpm_ocr:
+                        # Convert numpy array to PIL Image for MiniCPM-o
+                        if len(gray_frame.shape) == 2:  # Grayscale
+                            image = Image.fromarray(gray_frame, mode='L').convert('RGB')
+                        else:  # Color
+                            image = Image.fromarray(gray_frame, mode='RGB')
+                        
+                        is_sensitive, frame_metadata, ocr_text = self.minicpm_ocr.detect_sensitivity_unified(
+                            image, context="endoscopy video frame"
+                        )
+                        
+                        logger.debug(f"MiniCPM-o analysis for frame {frame_idx}: sensitive={is_sensitive}")
+                        
+                    else:
+                        # Fallback to traditional OCR + LLM approach
+                        ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
+                            gray_frame, 
+                            roi=None,  # Will be passed from caller if available
+                            high_quality=True
+                        )
+                        
+                        is_sensitive = False
+                        frame_metadata = {}
+                        
+                        if ocr_text:
+                            # Feed the 'best text' sampler
+                            self.best_frame_text.push(ocr_text, avg_conf)
+                            
+                            # Try LLM extraction first (faster for long videos)
+                            frame_metadata = self.extract_metadata_deepseek(ocr_text)
+                            if not frame_metadata:
+                                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                            
+                            # Check if frame contains sensitive content
+                            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                        
+                        logger.debug(f"Traditional OCR analysis for frame {frame_idx}: sensitive={is_sensitive}")
+                        
+                except Exception as e:
+                    logger.exception(f"Error during sensitivity detection for frame {frame_idx}: {e}")
+                    is_sensitive = False  # Fail-safe: treat as non-sensitive on error
+                
+                if is_sensitive:
+                    sensitive_frame_indices.append(frame_idx)
+                    hits_count += 1
+                    logger.info(f"Found sensitive data in frame {frame_idx}")
+                
+                # Send result back to iterator and get next frame
+                try:
+                    frame_idx, gray_frame, stride, should_continue = frame_iter.send(is_sensitive)
+                    if not should_continue:
+                        early_stopped = True
+                        break
+                except StopIteration:
+                    break
+                    
+        except StopIteration:
+            # Iterator finished normally
+            pass
+        
+        # Calculate final ratio
+        estimated_ratio = hits_count / tested_count if tested_count > 0 else 0.0
+        early_stopped = tested_count < max_samples
+        
+        logger.info(f"Statistical sampling complete: {hits_count}/{tested_count} = {estimated_ratio:.1%} "
+                   f"(early_stopped={early_stopped})")
+        
+        return sensitive_frame_indices, estimated_ratio, early_stopped
+
+    def clean_video(self, output_path: Path) -> Dict[str, Any]:
+        """
+        Main video cleaning workflow using streaming processing
+        """
+        logger.info(f"Starting video cleaning: {self.video_path} -> {output_path}")
+        
+        try:
+            # Get total frame count
+            total_frames = self._get_total_frames()
+            logger.info(f"Total frames in video: {total_frames}")
+            
+            # Detect sensitive frames using streaming
+            sensitive_frames = list(self._detect_sensitive_frames_streaming(total_frames))
+            logger.info(f"Detected {len(sensitive_frames)} sensitive frames")
+            
+            if not sensitive_frames:
+                logger.info("No sensitive frames detected, copying original video")
+                shutil.copy2(self.video_path, output_path)
+                return {
+                    "processed": True,
+                    "method": "copy",
+                    "sensitive_frames": 0,
+                    "total_frames": total_frames,
+                    "output_path": str(output_path)
+                }
+            
+            # Calculate sensitivity ratio
+            sensitivity_ratio = len(sensitive_frames) / total_frames
+            logger.info(f"Sensitivity ratio: {sensitivity_ratio:.3f}")
+            
+            # Choose processing method based on sensitivity ratio
+            if sensitivity_ratio > 0.1:  # High sensitivity - use masking
+                logger.info("High sensitivity detected, using masking approach")
+                result = self._mask_video_streaming(output_path, sensitive_frames)
+                result["method"] = "masking"
+            else:  # Low sensitivity - remove frames
+                logger.info("Low sensitivity detected, using frame removal approach")
+                result = self._remove_frames_streaming(output_path, sensitive_frames)
+                result["method"] = "frame_removal"
+            
+            result.update({
+                "sensitive_frames": len(sensitive_frames),
+                "total_frames": total_frames,
+                "sensitivity_ratio": sensitivity_ratio,
+                "output_path": str(output_path)
+            })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Video cleaning failed: {e}")
+            raise
+
+    def analyze_video_sensitivity(self) -> Dict[str, Any]:
+        """
+        Analyze video for sensitive content without processing
+        Returns analysis metadata
+        """
+        logger.info(f"Analyzing video sensitivity: {self.video_path}")
+        
+        try:
+            # Get total frame count
+            total_frames = self._get_total_frames()
+            logger.info(f"Total frames in video: {total_frames}")
+            
+            # Detect sensitive frames using streaming
+            sensitive_frames = list(self._detect_sensitive_frames_streaming(total_frames))
+            logger.info(f"Detected {len(sensitive_frames)} sensitive frames")
+            
+            # Calculate sensitivity ratio
+            sensitivity_ratio = len(sensitive_frames) / total_frames if total_frames > 0 else 0.0
+            
+            # Get video metadata
+            video_info = self._get_video_info()
+            
+            analysis_result = {
+                "sensitive_frames": len(sensitive_frames),
+                "total_frames": total_frames,
+                "sensitivity_ratio": sensitivity_ratio,
+                "duration": video_info.get("duration"),
+                "resolution": video_info.get("resolution"),
+                "recommended_method": "masking" if sensitivity_ratio > 0.1 else "frame_removal",
+                "sensitive_frame_list": sensitive_frames[:100] if len(sensitive_frames) <= 100 else sensitive_frames[:100] + ["...truncated"],
+                "analysis_engine": "minicpm" if self.use_minicpm else "traditional"
+            }
+            
+            logger.info(f"Analysis complete: {analysis_result['recommended_method']} recommended")
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Video analysis failed: {e}")
+            raise
+
+    def _get_video_info(self) -> Dict[str, Any]:
+        """Get basic video information using ffprobe"""
+        try:
+            cmd = [
+                'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
+                str(self.video_path)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
+            
+            # Find video stream
+            video_stream = None
+            for stream in data.get('streams', []):
+                if stream.get('codec_type') == 'video':
+                    video_stream = stream
+                    break
+            
+            info = {}
+            if video_stream:
+                info['resolution'] = f"{video_stream.get('width', 0)}x{video_stream.get('height', 0)}"
+                
+            format_info = data.get('format', {})
+            duration = format_info.get('duration')
+            if duration:
+                info['duration'] = float(duration)
+                
+            return info
+            
+        except Exception as e:
+            logger.warning(f"Failed to get video info: {e}")
+            return {}

@@ -9,6 +9,9 @@ class BestFrameText:
         self.N = reservoir_size
         self.i = 0
         self.reservoir: list[str] = []
+        ensure_ollama()
+        self.processor = OllamaLLMProcessor()
+
 
     def _should_keep(self) -> bool:
         return random.random() < self.N / (self.i + 1)
@@ -27,8 +30,7 @@ class BestFrameText:
     # ----- offline phase -----
 
     def _score(self, text: str) -> float:
-        processor = OllamaLLMProcessor()
-        resp = processor.call_llm(
+        resp = self.processor.call_llm(
             "Act as an OCR expert. Give me a single float in [0,1] that reflects how clean and informative this passage is:",
             text)
         return float(resp.strip())
@@ -44,5 +46,5 @@ class BestFrameText:
             "Return JSON: {\"best\": \"...\", \"average\": \"...\"}\n"
             + "#".join(top_texts)
         )
-        return json.loads(call_llm(prompt))
+        return json.loads(self.processor.call_llm(prompt))
 

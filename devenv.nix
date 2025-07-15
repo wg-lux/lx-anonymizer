@@ -38,6 +38,7 @@ in
     pkg-config
     protobuf
     python312Packages.sentencepiece
+    ffmpeg_6-headless
   ];
 
   env = {
@@ -68,6 +69,7 @@ in
 
   '';
 
+
   processes = {
     #ollama-pull-llama.exec = "ollama pull llama3.3";
     #ollama-run-llama.exec = "ollama run llama3.3";
@@ -87,6 +89,8 @@ in
     uv sync
 
     hello
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${pkgs.ffmpeg_6}/lib
+
     cd lx_anonymizer
   '';
 }

@@ -18,7 +18,7 @@ dependencies = [
     "torch>=2.5.1",
     "torchaudio>=2.5.1",
     "torchvision>=0.20.1",
-    "transformers>=4.47.0",
+    "transformers==4.44.2",
     "pytest>=7.0.1",
     "flake8>=7.1.1",
     "ollama>=0.4.7",
