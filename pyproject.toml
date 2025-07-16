@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "certifi>=2024.8.30",
-    "endoreg-db",
     "flair>=0.14.0",
     "gender-guesser>=0.4.0",
     "hezar>=0.42.0",
