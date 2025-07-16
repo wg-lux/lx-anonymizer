@@ -14,6 +14,7 @@ Key features:
 
 import logging
 import math
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional, List
 import json
@@ -21,8 +22,13 @@ import numpy as np
 from PIL import Image
 import torch
 import gc
+import os
 
 logger = logging.getLogger(__name__)
+
+class StorageError(Exception):
+    """Raised when there's insufficient storage for model operations."""
+    pass
 
 class MiniCPMVisionOCR:
     """
@@ -30,6 +36,8 @@ class MiniCPMVisionOCR:
     
     Uses model.chat() for stateless frame-by-frame processing, combining 
     OCR and reasoning in a single model call for optimal efficiency.
+    
+    Now includes storage management to prevent filesystem overflow.
     """
     
     def __init__(
@@ -38,10 +46,13 @@ class MiniCPMVisionOCR:
         max_image_size: Tuple[int, int] = (1344, 1344),
         device: Optional[str] = None,
         fallback_to_tesseract: bool = True,
-        confidence_threshold: float = 0.7
+        confidence_threshold: float = 0.7,
+        min_storage_gb: float = 50.0,  # Minimum free storage required
+        max_cache_size_gb: float = 200.0,  # Maximum HuggingFace cache size
+        auto_cleanup: bool = True  # Whether to auto-cleanup on low storage
     ):
         """
-        Initialize MiniCPM-o 2.6 vision OCR system.
+        Initialize MiniCPM-o 2.6 vision OCR system with storage management.
         
         Args:
             model_name: HuggingFace model identifier (using int4 for efficiency)
@@ -49,11 +60,21 @@ class MiniCPMVisionOCR:
             device: Compute device (auto-detected if None)
             fallback_to_tesseract: Whether to use Tesseract fallback
             confidence_threshold: Minimum confidence for model outputs
+            min_storage_gb: Minimum free storage required before download (default: 50GB)
+            max_cache_size_gb: Maximum HuggingFace cache size before cleanup (default: 200GB)
+            auto_cleanup: Whether to automatically clean up cache on low storage
         """
         self.model_name = model_name
         self.max_image_size = max_image_size
         self.fallback_to_tesseract = fallback_to_tesseract
         self.confidence_threshold = confidence_threshold
+        self.min_storage_gb = min_storage_gb
+        self.max_cache_size_gb = max_cache_size_gb
+        self.auto_cleanup = auto_cleanup
+        
+        # Storage paths
+        self.hf_cache_dir = Path.home() / '.cache' / 'huggingface'
+        self.model_cache_dir = self.hf_cache_dir / 'hub'
         
         # Device detection
         if device is None:
@@ -69,11 +90,215 @@ class MiniCPMVisionOCR:
         # Initialize model components
         self.model = None
         self.tokenizer = None
+        
+        # Check storage and load model
+        self._check_and_manage_storage()
         self._load_model()
     
-    def _load_model(self):
-        """Load MiniCPM-o 2.6 model and tokenizer with memory optimization."""
+    def _get_storage_info(self) -> Dict[str, float]:
+        """Get current storage information in GB."""
         try:
+            # Get filesystem stats
+            total, used, free = shutil.disk_usage('/')
+            
+            # Get HuggingFace cache size
+            hf_cache_size = 0
+            if self.hf_cache_dir.exists():
+                hf_cache_size = sum(
+                    f.stat().st_size for f in self.hf_cache_dir.rglob('*') 
+                    if f.is_file()
+                )
+            
+            return {
+                'total_gb': total / (1024**3),
+                'used_gb': used / (1024**3),
+                'free_gb': free / (1024**3),
+                'hf_cache_gb': hf_cache_size / (1024**3),
+                'usage_percent': (used / total) * 100
+            }
+        except Exception as e:
+            logger.error(f"Failed to get storage info: {e}")
+            return {
+                'total_gb': 0,
+                'used_gb': 0,
+                'free_gb': 0,
+                'hf_cache_gb': 0,
+                'usage_percent': 100
+            }
+    
+    def _check_and_manage_storage(self):
+        """Check storage capacity and clean up if necessary."""
+        storage_info = self._get_storage_info()
+        
+        logger.info(f"Storage check: {storage_info['free_gb']:.1f}GB free, "
+                   f"HF cache: {storage_info['hf_cache_gb']:.1f}GB")
+        
+        # Check if we have minimum required storage
+        if storage_info['free_gb'] < self.min_storage_gb:
+            if self.auto_cleanup:
+                logger.warning(f"Low storage ({storage_info['free_gb']:.1f}GB < {self.min_storage_gb}GB), "
+                              "attempting cleanup...")
+                self._cleanup_hf_cache()
+                
+                # Re-check after cleanup
+                storage_info = self._get_storage_info()
+                
+            if storage_info['free_gb'] < self.min_storage_gb:
+                error_msg = (
+                    f"Insufficient storage for MiniCPM model. "
+                    f"Available: {storage_info['free_gb']:.1f}GB, "
+                    f"Required: {self.min_storage_gb}GB. "
+                    f"Consider cleaning up HuggingFace cache ({storage_info['hf_cache_gb']:.1f}GB) "
+                    f"or use fallback_to_tesseract=True"
+                )
+                logger.error(error_msg)
+                
+                if self.fallback_to_tesseract:
+                    logger.info("Insufficient storage, will use Tesseract fallback only")
+                    return
+                else:
+                    raise StorageError(error_msg)
+        
+        # Check if HuggingFace cache is too large
+        if storage_info['hf_cache_gb'] > self.max_cache_size_gb:
+            if self.auto_cleanup:
+                logger.warning(f"HF cache too large ({storage_info['hf_cache_gb']:.1f}GB > {self.max_cache_size_gb}GB), "
+                              "cleaning up...")
+                self._cleanup_hf_cache()
+    
+    def _cleanup_hf_cache(self) -> float:
+        """
+        Clean up HuggingFace cache to free storage space.
+        
+        Returns:
+            Amount of space freed in GB
+        """
+        if not self.hf_cache_dir.exists():
+            return 0.0
+        
+        try:
+            from huggingface_hub import scan_cache_dir
+            
+            # Scan cache to find deletable items
+            cache_info = scan_cache_dir(self.hf_cache_dir)
+            
+            # Get size before cleanup
+            size_before = sum(repo.size_on_disk for repo in cache_info.repos)
+            
+            # Find old/unused models to delete (keep only recent ones)
+            repos_to_delete = []
+            for repo in cache_info.repos:
+                # Skip our current model
+                if self.model_name in repo.repo_id:
+                    continue
+                    
+                # Mark old models for deletion (> 30 days unused or large size)
+                if (repo.size_on_disk > 10 * 1024**3):  # > 10GB
+                    repos_to_delete.append(repo)
+            
+            # Delete old models
+            if repos_to_delete:
+                logger.info(f"Deleting {len(repos_to_delete)} cached models to free space...")
+                for repo in repos_to_delete:
+                    try:
+                        repo.delete()
+                        logger.info(f"Deleted cached model: {repo.repo_id} ({repo.size_on_disk / 1024**3:.1f}GB)")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete {repo.repo_id}: {e}")
+            
+            # Get size after cleanup
+            cache_info_after = scan_cache_dir(self.hf_cache_dir)
+            size_after = sum(repo.size_on_disk for repo in cache_info_after.repos)
+            
+            freed_gb = (size_before - size_after) / (1024**3)
+            logger.info(f"HuggingFace cache cleanup completed: {freed_gb:.1f}GB freed")
+            
+            return freed_gb
+            
+        except ImportError:
+            # Fallback: manual cleanup of old files
+            logger.warning("huggingface_hub not available, using manual cleanup")
+            return self._manual_cache_cleanup()
+        except Exception as e:
+            logger.error(f"HuggingFace cache cleanup failed: {e}")
+            return 0.0
+    
+    def _manual_cache_cleanup(self) -> float:
+        """Manual cleanup of HuggingFace cache when hub library is not available."""
+        try:
+            if not self.hf_cache_dir.exists():
+                return 0.0
+            
+            size_before = sum(
+                f.stat().st_size for f in self.hf_cache_dir.rglob('*') 
+                if f.is_file()
+            )
+            
+            # Remove old temporary files and incomplete downloads
+            patterns_to_clean = [
+                '*.tmp',
+                '*.incomplete',
+                '**/tmp*',
+                '**/temp*'
+            ]
+            
+            files_deleted = 0
+            for pattern in patterns_to_clean:
+                for file_path in self.hf_cache_dir.rglob(pattern):
+                    try:
+                        if file_path.is_file():
+                            file_path.unlink()
+                            files_deleted += 1
+                    except Exception as e:
+                        logger.debug(f"Failed to delete {file_path}: {e}")
+            
+            size_after = sum(
+                f.stat().st_size for f in self.hf_cache_dir.rglob('*') 
+                if f.is_file()
+            )
+            
+            freed_gb = (size_before - size_after) / (1024**3)
+            logger.info(f"Manual cache cleanup completed: {files_deleted} files deleted, {freed_gb:.1f}GB freed")
+            
+            return freed_gb
+            
+        except Exception as e:
+            logger.error(f"Manual cache cleanup failed: {e}")
+            return 0.0
+    
+    def _estimate_model_size(self) -> float:
+        """
+        Estimate the download size of the MiniCPM model in GB.
+        
+        Returns:
+            Estimated model size in GB
+        """
+        # MiniCPM-o 2.6 is approximately 8-12GB depending on precision
+        # Being conservative with estimate
+        model_size_estimates = {
+            "openbmb/MiniCPM-o-2_6": 12.0,  # ~12GB for full model
+            "openbmb/MiniCPM-o-2_6-int4": 4.0,  # ~4GB for quantized
+        }
+        
+        return model_size_estimates.get(self.model_name, 10.0)  # Default 10GB
+    
+    def _load_model(self):
+        """Load MiniCPM-o 2.6 model and tokenizer with storage checks."""
+        try:
+            # Check if we should skip model loading due to storage constraints
+            storage_info = self._get_storage_info()
+            estimated_model_size = self._estimate_model_size()
+            
+            if storage_info['free_gb'] < estimated_model_size + 5:  # 5GB buffer
+                logger.warning(f"Insufficient storage for model loading. "
+                              f"Available: {storage_info['free_gb']:.1f}GB, "
+                              f"Estimated model size: {estimated_model_size:.1f}GB")
+                if self.fallback_to_tesseract:
+                    logger.info("Skipping model loading, will use Tesseract fallback")
+                    return
+                else:
+                    raise StorageError(f"Insufficient storage for model loading")
+            
             logger.info(f"Loading MiniCPM-o 2.6 model: {self.model_name}")
             
             # Import here to avoid dependency issues if not available
@@ -87,14 +312,16 @@ class MiniCPMVisionOCR:
                 torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32,
                 init_vision=True,   # Enable vision processing
                 init_audio=False,   # Disable audio for frame processing
-                init_tts=False      # Disable TTS for frame processing
+                init_tts=False,     # Disable TTS for frame processing
+                cache_dir=str(self.hf_cache_dir)  # Use managed cache directory
             )
             
             # Load tokenizer (use base model name for tokenizer)
             tokenizer_name = "openbmb/MiniCPM-o-2_6"  # Use base model for tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
                 tokenizer_name, 
-                trust_remote_code=True
+                trust_remote_code=True,
+                cache_dir=str(self.hf_cache_dir)
             )
             
             # Move to device and set to eval mode
@@ -103,7 +330,11 @@ class MiniCPMVisionOCR:
             
             self.model.eval()
             
-            logger.info("MiniCPM-o 2.6 model loaded successfully")
+            # Log final storage status
+            final_storage = self._get_storage_info()
+            logger.info(f"MiniCPM-o 2.6 model loaded successfully. "
+                       f"Storage: {final_storage['free_gb']:.1f}GB free, "
+                       f"HF cache: {final_storage['hf_cache_gb']:.1f}GB")
             
         except ImportError as e:
             logger.error(f"Failed to import transformers: {e}")
@@ -111,6 +342,11 @@ class MiniCPMVisionOCR:
             self.tokenizer = None
             if not self.fallback_to_tesseract:
                 raise RuntimeError(f"transformers not available and fallback disabled: {e}")
+        except StorageError:
+            # Re-raise storage errors
+            self.model = None
+            self.tokenizer = None
+            raise
         except Exception as e:
             logger.error(f"Failed to load MiniCPM-o 2.6 model: {e}")
             # Ensure both are None on failure
