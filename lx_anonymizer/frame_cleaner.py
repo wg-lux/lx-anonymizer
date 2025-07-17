@@ -35,7 +35,7 @@ from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr
-from lx_anonymizer.spacy_extractor import PatientMetaExtractor
+from lx_anonymizer.spacy_extractor import PatientDataExtractor
 from typing_inspection.typing_objects import NoneType
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class FrameCleaner:
         # Initialize specialized frame processing components
         self.frame_ocr = FrameOCR()
         self.frame_metadata_extractor = FrameMetadataExtractor()
-        self.PatientMetaExtractor = PatientMetaExtractor()
+        self.PatientDataExtractor = PatientDataExtractor()
         self.best_frame_text = BestFrameText()
         
         # Initialize Ollama for LLM processing
@@ -666,7 +666,7 @@ class FrameCleaner:
                     high_quality=True,
                 )
                 frame_metadata = (
-                    self.PatientMetaExtractor
+                    self.PatientDataExtractor
                 )
                 is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
                     frame_metadata
