@@ -1310,7 +1310,7 @@ class FrameCleaner:
             avg_conf = (sum(confs) / len(confs) / 100) if confs else 0.0
             yield " ".join(words), avg_conf
             
-    def _iter_video(self, video_path: Path, total_frames: int, frame_paths: list) -> Iterator[Tuple[int, np.ndarray, int]]:
+    def _iter_video(self, video_path: Path, total_frames: int) -> Iterator[Tuple[int, np.ndarray, int]]:
         """
         Yield (abs_frame_index, gray_frame, skip_value) with adaptive subsampling
         """
