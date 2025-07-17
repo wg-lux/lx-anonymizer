@@ -35,6 +35,7 @@ from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr
+from typing_inspection.typing_objects import NoneType
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +66,18 @@ class FrameCleaner:
         self.use_minicpm = use_minicpm
         self.minicpm_ocr = None
         
+        
+        
         if self.use_minicpm:
             try:
-                minicpm = MiniCPMVisionOCR()
                 minicpm_config = minicpm_config or {}
-                self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
+                if(MiniCPMVisionOCR()._can_load_model()):
+                    self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
+                else:
+                    logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
+                    self.use_minicpm = False
+                    self.minicpm_ocr = None
+                
                 logger.info("MiniCPM-o 2.6 initialized successfully")
             except Exception as e:
                 logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
@@ -634,12 +642,44 @@ class FrameCleaner:
                 Image.fromarray(gray_frame, mode="L")
                 .convert("RGB")
             )
-            is_sensitive, frame_metadata, ocr_text = (
-                self.minicpm_ocr.detect_sensitivity_unified(
-                    pil_img,
-                    context="endoscopy video frame",
+            try:
+                is_sensitive, frame_metadata, ocr_text = (
+                    self.minicpm_ocr.detect_sensitivity_unified(
+                        pil_img,
+                        context="endoscopy video frame",
+                    )
                 )
-            )
+            except ValueError as ve:
+                logger.error(f"MiniCPM-o 2.6 processing failed: {ve}")
+                self.use_minicpm = False
+                self.minicpm_ocr = False
+                logger.warning(
+                    "MiniCPM-o 2.6 failed to detect sensitivity or text, falling back to traditional OCR."
+                )
+                # Fallback to traditional OCR
+                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                    gray_frame,
+                    roi=endoscope_roi,
+                    high_quality=True,
+                )
+                frame_metadata = (
+                    self.extract_metadata_deepseek(ocr_text)
+                    or self.frame_metadata_extractor.extract_metadata_from_frame_text(
+                        ocr_text
+                    )
+                )
+                is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
+                    frame_metadata
+                )
+            except Exception as e:
+                logger.error(f"MiniCPM-o 2.6 processing failed: {e}")
+                self.use_minicpm = False
+                self.minicpm_ocr = False
+                logger.warning(
+                    "MiniCPM-o 2.6 failed to detect sensitivity or text, falling back to traditional OCR."
+                )
+                # Fallback to traditional OCR
+                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame
             # MiniCPM does not provide a confidence value – treat as 1.0
             ocr_conf = 1.0
         else:

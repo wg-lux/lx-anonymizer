@@ -47,7 +47,7 @@ class MiniCPMVisionOCR:
         device: Optional[str] = None,
         fallback_to_tesseract: bool = True,
         confidence_threshold: float = 0.7,
-        min_storage_gb: float = 50.0,  # Minimum free storage required
+        min_storage_gb: float = 200.0,  # Minimum free storage required
         max_cache_size_gb: float = 200.0,  # Maximum HuggingFace cache size
         auto_cleanup: bool = True  # Whether to auto-cleanup on low storage
     ):
@@ -94,6 +94,22 @@ class MiniCPMVisionOCR:
         # Check storage and load model
         self._check_and_manage_storage()
         self._load_model()
+        
+    def _can_load_model(self) -> bool:
+        """Check if the model can be loaded based on current storage."""
+        storage_info = self._get_storage_info()
+        
+        if storage_info['free_gb'] < self.min_storage_gb:
+            logger.error(f"Insufficient storage: {storage_info['free_gb']:.1f}GB free, "
+                         f"required: {self.min_storage_gb}GB")
+            return False
+        
+        if storage_info['hf_cache_gb'] > self.max_cache_size_gb:
+            logger.warning(f"HuggingFace cache too large: {storage_info['hf_cache_gb']:.1f}GB, "
+                           f"max allowed: {self.max_cache_size_gb}GB")
+            return False
+        
+        return True
     
     def _get_storage_info(self) -> Dict[str, float]:
         """Get current storage information in GB."""
