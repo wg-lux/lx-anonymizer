@@ -35,6 +35,7 @@ from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr
+from lx_anonymizer.spacy_extractor import PatientMetaExtractor
 from typing_inspection.typing_objects import NoneType
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ class FrameCleaner:
         # Initialize specialized frame processing components
         self.frame_ocr = FrameOCR()
         self.frame_metadata_extractor = FrameMetadataExtractor()
+        self.PatientMetaExtractor = PatientMetaExtractor()
         self.best_frame_text = BestFrameText()
         
         # Initialize Ollama for LLM processing
@@ -644,6 +646,7 @@ class FrameCleaner:
             )
             try:
                 is_sensitive, frame_metadata, ocr_text = (
+                    # using minicpm
                     self.minicpm_ocr.detect_sensitivity_unified(
                         pil_img,
                         context="endoscopy video frame",
@@ -663,10 +666,7 @@ class FrameCleaner:
                     high_quality=True,
                 )
                 frame_metadata = (
-                    self.extract_metadata_deepseek(ocr_text)
-                    or self.frame_metadata_extractor.extract_metadata_from_frame_text(
-                        ocr_text
-                    )
+                    self.PatientMetaExtractor
                 )
                 is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
                     frame_metadata
@@ -689,8 +689,7 @@ class FrameCleaner:
                 high_quality=True,
             )
             frame_metadata = (
-                self.extract_metadata_deepseek(ocr_text)
-                or self.frame_metadata_extractor.extract_metadata_from_frame_text(
+                self.frame_metadata_extractor.extract_metadata_from_frame_text(
                     ocr_text
                 )
             )
@@ -945,62 +944,6 @@ class FrameCleaner:
             # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
             return False
     
-    def _detect_sensitive_meta_llm(
-        self,
-        ocr_text: str,
-        report_reader: ReportReader,
-        llm_model: str = "deepseek"
-    ) -> Tuple[bool, Dict[str, Any]]:
-        """
-        Detect sensitive metadata using LLM-powered extraction from ReportReader.
-        
-        Args:
-            ocr_text: OCR-extracted text from frame
-            report_reader: ReportReader instance with LLM extractors
-            llm_model: LLM model to use ('deepseek', 'medllama', 'llama3')
-            
-        Returns:
-            Tuple of (has_sensitive_data, metadata_dict)
-        """
-        try:
-            # Call ReportReader's process_report with LLM extractor
-            _, _, meta = report_reader.process_report(
-                text=ocr_text,
-                pdf_path=None,
-                image_path=None,
-                use_llm_extractor=llm_model,
-                verbose=False
-            )
-            
-            # Check for sensitive information in extracted metadata
-            sensitive_fields = ['patient_first_name', 'patient_last_name', 'casenumber']
-            has_sensitive_data = False
-            
-            # Check standard sensitive fields
-            for field in sensitive_fields:
-                value = meta.get(field)
-                if value not in [None, '', 'Unknown']:
-                    has_sensitive_data = True
-                    break
-            
-            # Check for non-empty patient_dob
-            if not has_sensitive_data:
-                patient_dob = meta.get('patient_dob')
-                if patient_dob and patient_dob.strip():
-                    has_sensitive_data = True
-            
-            # Check for patient_gender that is not None
-            if not has_sensitive_data:
-                patient_gender = meta.get('patient_gender')
-                if patient_gender is not None:
-                    has_sensitive_data = True
-            
-            return has_sensitive_data, meta
-            
-        except Exception as e:
-            
-            logger.error(f"LLM metadata extraction failed: {e}")
-            return False, {}
 
     def detect_sensitive_on_frame_extended(self, frame_path: Path, report_reader) -> bool:
         """
@@ -1046,27 +989,6 @@ class FrameCleaner:
             # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
             return False
         
-    def detect_sensitive_on_frame_text(
-        self, ocr_text: str, report_reader: ReportReader) -> bool:
-        """
-        Detect if a frame text contains sensitive information using spaCy + regex.
-        Args:
-            ocr_text: OCR-extracted text from frame
-            report_reader: ReportReader instance with PatientDataExtractor
-        Returns:
-            True if frame contains sensitive data, False otherwise
-        """
-        # Use LLM-powered metadata extraction
-        has_sensitive, meta = self._detect_sensitive_meta_llm(
-            ocr_text, report_reader, llm_model="deepseek"
-        )
-        
-        if has_sensitive:
-            logger.warning(f"LLM detected sensitive data in text: {meta}")
-            return True, meta
-        else:            
-            logger.debug("No sensitive data detected in text using LLM.")
-            return False, None
 
     def remove_frames_from_video(
         self,
@@ -1421,6 +1343,7 @@ class FrameCleaner:
         try:
             # Import here to avoid circular imports
             from endoreg_db.models import SensitiveMeta
+            metadata = self.extract_metadata_deepseek(metadata.get('representative_ocr_text', ''))
             
             # Get or create SensitiveMeta for this video file
             sensitive_meta, created = SensitiveMeta.objects.get_or_create(

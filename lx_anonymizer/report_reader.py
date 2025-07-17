@@ -131,7 +131,7 @@ class ReportReader:
                 logger.debug(f"Patient extractor result on full text: {patient_info}")
         else:
             logger.debug("Skipping extraction on empty text.")
-            patient_info = PatientDataExtractor._blank() # Start with blank if no text
+            patient_info = PatientDataExtractor # Start with blank if no text
 
         # Check if the result is valid (name found, not None)
         is_valid_info = patient_info and \
