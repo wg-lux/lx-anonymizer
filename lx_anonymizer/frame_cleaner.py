@@ -34,7 +34,7 @@ from lx_anonymizer.best_frame_text import BestFrameText
 from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
 from lx_anonymizer.report_reader import ReportReader
-from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr
+from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr, _can_load_model
 from lx_anonymizer.spacy_extractor import PatientDataExtractor
 from typing_inspection.typing_objects import NoneType
 
@@ -73,7 +73,7 @@ class FrameCleaner:
         if self.use_minicpm:
             try:
                 minicpm_config = minicpm_config or {}
-                if(MiniCPMVisionOCR()._can_load_model()):
+                if(_can_load_model()):
                     self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
                 else:
                     logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
@@ -379,20 +379,88 @@ class FrameCleaner:
                             stderr=subprocess.PIPE
                         )
                         
-                        # Start reader (blocks until complete)
-                        reader_result = subprocess.run(
-                            reader_cmd, 
-                            capture_output=True, 
-                            text=True, 
-                            check=True
-                        )
+                        try:
+                            # Start reader (blocks until complete)
+                            try:
+                                duration = format_info.get("duration", 0) or 1  # seconds
+                                multiplier = 10.0                                # 10× realtime headroom (On server this might be unessecary)
+                                reader_tmo  = max(600, duration * multiplier)   # at least 10 min
+                                writer_tmo  = reader_tmo * 0.5                  # writer should finish sooner
+                            except KeyError:
+                                # Fallback to default timeouts if duration not available
+                                reader_tmo = 1000000
+                                logger.warning("FFProbe problem. Using default timeout for reader process")
                         
-                        # Wait for writer to complete
-                        writer_result = writer_proc.communicate()
-                        
-                        logger.debug(f"Streaming mask completed via named pipe")
-                        
+                            
+
+                            reader_result = subprocess.run(
+                                reader_cmd,
+                                capture_output=True,
+                                text=True,
+                                check=True,
+                                timeout=reader_tmo,
+                            )
+
+                            
+                            # Wait for writer to complete with timeout
+                            try:
+                                writer_stdout, writer_stderr = writer_proc.communicate(timeout=writer_tmo)
+                                writer_returncode = writer_proc.returncode
+                                
+                                # Check if both processes completed successfully
+                                if writer_returncode != 0:
+                                    logger.error(f"Writer process failed with code {writer_returncode}: {writer_stderr.decode() if isinstance(writer_stderr, bytes) else writer_stderr}")
+                                    raise subprocess.CalledProcessError(writer_returncode, writer_cmd, writer_stderr)
+                                
+                                logger.debug(f"Streaming mask completed via named pipe")
+                                
+                            except subprocess.TimeoutExpired:
+                                logger.error("Writer process timed out, terminating...")
+                                writer_proc.terminate()
+                                try:
+                                    writer_proc.wait(timeout=10)
+                                except subprocess.TimeoutExpired:
+                                    logger.error("Writer process did not terminate gracefully, killing...")
+                                    writer_proc.kill()
+                                    writer_proc.wait()
+                                raise RuntimeError("Named pipe writer process timed out")
+                                
+                        except subprocess.TimeoutExpired:
+                            logger.error("Reader process timed out, cleaning up...")
+                            # Kill writer if reader times out
+                            if writer_proc.poll() is None:  # Still running
+                                writer_proc.terminate()
+                                try:
+                                    writer_proc.wait(timeout=10)
+                                except subprocess.TimeoutExpired:
+                                    writer_proc.kill()
+                                    writer_proc.wait()
+                            raise RuntimeError("Named pipe reader process timed out")
+                            
+                        except subprocess.CalledProcessError as e:
+                            logger.error(f"Reader process failed: {e.stderr}")
+                            # Clean up writer process
+                            if writer_proc.poll() is None:  # Still running
+                                writer_proc.terminate()
+                                try:
+                                    writer_proc.wait(timeout=10)
+                                except subprocess.TimeoutExpired:
+                                    writer_proc.kill()
+                                    writer_proc.wait()
+                            raise
+                            
                     finally:
+                        # Ensure writer process is cleaned up
+                        if writer_proc.poll() is None:  # Still running
+                            logger.warning("Writer process still running during cleanup, terminating...")
+                            writer_proc.terminate()
+                            try:
+                                writer_proc.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                logger.error("Writer process did not terminate, killing...")
+                                writer_proc.kill()
+                                writer_proc.wait()
+                        
                         # Clean up pipe
                         if pipe_path.exists():
                             try:
@@ -1058,8 +1126,8 @@ class FrameCleaner:
                     'ffmpeg', '-i', str(original_video),
                     '-vf', vf,
                     '-an',  # No audio
-                    '-y',
-                    str(output_video)
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                    '-y', str(output_video)
                 ]
                 result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
                 logger.info("Successfully re-encoded video without audio")

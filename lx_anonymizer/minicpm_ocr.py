@@ -26,9 +26,59 @@ import os
 
 logger = logging.getLogger(__name__)
 
+min_storage_gb = 200.0  # Minimum free storage required before download
+
 class StorageError(Exception):
     """Raised when there's insufficient storage for model operations."""
     pass
+
+def _can_load_model() -> bool:
+    """Check if the model can be loaded based on current storage."""
+    storage_info = min_storage_gb
+    
+    if storage_info['free_gb'] < min_storage_gb:
+        logger.error(f"Insufficient storage: {storage_info['free_gb']:.1f}GB free, "
+                        f"required: {min_storage_gb}GB")
+        return False
+    
+    if storage_info['hf_cache_gb'] > self.max_cache_size_gb:
+        logger.warning(f"HuggingFace cache too large: {storage_info['hf_cache_gb']:.1f}GB, "
+                        f"max allowed: {max_cache_size_gb}GB")
+        return False
+    
+    return True
+
+def _get_storage_info(self) -> Dict[str, float]:
+    """Get current storage information in GB."""
+    try:
+        # Get filesystem stats
+        total, used, free = shutil.disk_usage('/')
+        
+        # Get HuggingFace cache size
+        hf_cache_size = 0
+        if self.hf_cache_dir.exists():
+            hf_cache_size = sum(
+                f.stat().st_size for f in self.hf_cache_dir.rglob('*') 
+                if f.is_file()
+            )
+        
+        return {
+            'total_gb': total / (1024**3),
+            'used_gb': used / (1024**3),
+            'free_gb': free / (1024**3),
+            'hf_cache_gb': hf_cache_size / (1024**3),
+            'usage_percent': (used / total) * 100
+        }
+    except Exception as e:
+        logger.error(f"Failed to get storage info: {e}")
+        return {
+            'total_gb': 0,
+            'used_gb': 0,
+            'free_gb': 0,
+            'hf_cache_gb': 0,
+            'usage_percent': 100
+        }
+    
 
 class MiniCPMVisionOCR:
     """
@@ -95,56 +145,10 @@ class MiniCPMVisionOCR:
         self._check_and_manage_storage()
         self._load_model()
         
-    def _can_load_model(self) -> bool:
-        """Check if the model can be loaded based on current storage."""
-        storage_info = self._get_storage_info()
-        
-        if storage_info['free_gb'] < self.min_storage_gb:
-            logger.error(f"Insufficient storage: {storage_info['free_gb']:.1f}GB free, "
-                         f"required: {self.min_storage_gb}GB")
-            return False
-        
-        if storage_info['hf_cache_gb'] > self.max_cache_size_gb:
-            logger.warning(f"HuggingFace cache too large: {storage_info['hf_cache_gb']:.1f}GB, "
-                           f"max allowed: {self.max_cache_size_gb}GB")
-            return False
-        
-        return True
-    
-    def _get_storage_info(self) -> Dict[str, float]:
-        """Get current storage information in GB."""
-        try:
-            # Get filesystem stats
-            total, used, free = shutil.disk_usage('/')
-            
-            # Get HuggingFace cache size
-            hf_cache_size = 0
-            if self.hf_cache_dir.exists():
-                hf_cache_size = sum(
-                    f.stat().st_size for f in self.hf_cache_dir.rglob('*') 
-                    if f.is_file()
-                )
-            
-            return {
-                'total_gb': total / (1024**3),
-                'used_gb': used / (1024**3),
-                'free_gb': free / (1024**3),
-                'hf_cache_gb': hf_cache_size / (1024**3),
-                'usage_percent': (used / total) * 100
-            }
-        except Exception as e:
-            logger.error(f"Failed to get storage info: {e}")
-            return {
-                'total_gb': 0,
-                'used_gb': 0,
-                'free_gb': 0,
-                'hf_cache_gb': 0,
-                'usage_percent': 100
-            }
-    
+
     def _check_and_manage_storage(self):
         """Check storage capacity and clean up if necessary."""
-        storage_info = self._get_storage_info()
+        storage_info = _get_storage_info()
         
         logger.info(f"Storage check: {storage_info['free_gb']:.1f}GB free, "
                    f"HF cache: {storage_info['hf_cache_gb']:.1f}GB")
@@ -157,7 +161,7 @@ class MiniCPMVisionOCR:
                 self._cleanup_hf_cache()
                 
                 # Re-check after cleanup
-                storage_info = self._get_storage_info()
+                storage_info = _get_storage_info()
                 
             if storage_info['free_gb'] < self.min_storage_gb:
                 error_msg = (
@@ -302,7 +306,7 @@ class MiniCPMVisionOCR:
         """Load MiniCPM-o 2.6 model and tokenizer with storage checks."""
         try:
             # Check if we should skip model loading due to storage constraints
-            storage_info = self._get_storage_info()
+            storage_info = _get_storage_info()
             estimated_model_size = self._estimate_model_size()
             
             if storage_info['free_gb'] < estimated_model_size + 5:  # 5GB buffer
@@ -347,7 +351,7 @@ class MiniCPMVisionOCR:
             self.model.eval()
             
             # Log final storage status
-            final_storage = self._get_storage_info()
+            final_storage = _get_storage_info()
             logger.info(f"MiniCPM-o 2.6 model loaded successfully. "
                        f"Storage: {final_storage['free_gb']:.1f}GB free, "
                        f"HF cache: {final_storage['hf_cache_gb']:.1f}GB")
