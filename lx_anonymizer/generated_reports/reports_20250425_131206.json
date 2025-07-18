@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Jeroen van der Veen, 58 Jahre alt, wurde eine Koloskopie durchgeführt. Im Colon ascendens fand sich eine moderate Anzahl mukoider Auflagerungen. Es wurden multiple kleine Polypen (3 bis 5 mm, Paris-Klassifikation: Is) entdeckt, die endoskopisch mittels Schlingen-Polypektomie entfernt wurden. Zusätzlich zeigte sich eine Divertikulose im Colon descendens. Kein Hinweis auf Dysplasie wurde beobachtet. Eine Biopsie der entzündlich veränderten Mukosa wurde entnommen. Beurteilung: Die Resektion der Adenome war komplikationslos. Empfehlung: Kontrollkoloskopie in unter 3 Jahren.",
+    "pathology report": "Die histologische Untersuchung ergab in einem der entfernten Adenome eine hochgradige intraepitheliale Neoplasie (IEN).",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Annelies de Jong, 65 Jahre alt, wurde eine Vorsorgekoloskopie durchgeführt. Im Colon ascendens fanden sich multiple kleine Adenome (5 bis 8 mm, Paris-Klassifikation: Isp). Eine Divertikulose war im Colon descendens sichtbar. Nach der Abtragung eines 8 mm großen Adenoms mittels Schlinge wurde ein Schnappverschluss appliziert. Kein Hinweis auf Dysplasie in sichtbaren Strukturen. Beurteilung: Komplikationslose Resektion. Empfehlung: Kontrollkoloskopie in 3 Jahren.",
+    "pathology report": "Das abgetragene Adenom zeigte histologisch eine hochgradige IEN.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Der 72-jährige Herr Willem-Jan Koenders wurde zur Koloskopie vorgestellt. Im Colon ascendens waren deutliche mukoide Auflagerungen vorhanden. Es wurden drei kleine Adenome (4 bis 7 mm, Paris-Klassifikation: Is) entfernt, sowie ein größerer Polyp (12 mm, Paris-Klassifikation: Iia) im Colon transversum. Im Colon descendens wurde eine ausgeprägte Divertikulose festgestellt. Beurteilung: Polypektomie erfolgte in Piecemeal-Technik, histologische Aufarbeitung steht noch aus. Empfehlung: Kontrollkoloskopie in 2–6 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Sophie van der Meer, 60 Jahre alt, wurden im Rahmen einer Koloskopie mehrere kleine adenomatöse Polypen im Colon ascendens entdeckt. Die Polypen (zwischen 5 bis 10 mm, Paris-Klassifikation: Is) wurden unter Verwendung einer Schlinge entfernt. Keine dysplastischen Veränderungen sichtbar. Im Colon descendens wurde eine Divertikulose festgestellt. Beurteilung: Angaben zur Resektionstechnik wurden eingehalten; keine Komplikationen. Empfehlung: Kontrollkoloskopie in 3 Jahren.",
+    "pathology report": "Histologie der entnommenen Proben zeigt hochgradige IEN in einem Adenom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Pieter van den Hoek, 69 Jahre alt, zeigte die Koloskopie im Colon ascendens eine stark mukoide Oberfläche. Es wurden insgesamt sechs kleine Adenome (3 bis 8 mm, Paris-Klassifikation: Is) entfernt. Im Colon descendens war eine moderate Divertikulose zu beobachten. Die Entfernung erfolgte mittels Schlingen-Polypektomie. Beurteilung: Aufgrund der Anzahl der Polypen ist eine frühzeitige Nachuntersuchung notwendig. Empfehlung: Kontrollkoloskopie in unter 3 Jahren.",
+    "pathology report": "Die histologische Untersuchung ergab keine Hinweise auf Dysplasie.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

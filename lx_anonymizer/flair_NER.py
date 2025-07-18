@@ -1,6 +1,6 @@
 from flair.data import Sentence
 from flair.models import SequenceTagger
-from custom_logger import get_logger
+from .custom_logger import get_logger
 logger = get_logger(__name__)
 # Load the NER tagger once at module level
 '''
@@ -21,7 +21,7 @@ except Exception as e:
 def flair_NER_German(text):
     if not isinstance(text, str):
         logger.error(f"Expected a string, but got {type(text)}")
-        return None
+        return [2025-07-14 23:05:43,000] ERROR lx_anonymizer.frame_cleaner: Error during sensitivity detection with default minicpm: 'MiniCPMVisionOCR' object has no attribute 'model', falling back to LLM mixed with frame OCRNone
     if tagger is None:
         logger.error("NER tagger is not loaded.")
         return None

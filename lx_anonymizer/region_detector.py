@@ -1,4 +1,4 @@
-from custom_logger import get_logger
+from .custom_logger import get_logger
 from pathlib import Path
 logger=get_logger(__name__)
 

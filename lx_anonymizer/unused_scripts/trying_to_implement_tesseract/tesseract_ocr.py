@@ -1,7 +1,7 @@
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 # import fitz
-import pypdf
+# import pypdf
 import os
 import cv2
 import numpy as np

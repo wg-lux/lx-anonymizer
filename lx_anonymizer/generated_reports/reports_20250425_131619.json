@@ -1,0 +1,37 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Emil Breitwieser, 63 Jahre, stellte sich zur surveillancebezogenen Koloskopie bei bekannter Colitis ulcerosa vor. Entsprechend Surveillance-Protokoll wurden im gesamten Kolon multiple Biopsien zur Überwachung der IBD-typischen Veränderungen entnommen. Im Colon ascendens fanden sich drei kleine gestielte Polypen (Paris Is, jeweils 5–7 mm, JNET 2A). Die Polypen wurden mittels Schlinge entfernt. Im Rektum wurde ein etwa 6 cm langer Fremdkörper (Plastikstift) gesehen, der problemlos mit der Polypektomieschlinge geborgen werden konnte. Im Sigma zeigten sich geringgradige, frische Blutauflagerungen auf der Mukosa ohne erkennbare Blutungsquelle. Weitere pathologische Befunde im Sinne eines Colon irritabile lagen nicht vor. Keine Stenosierungen, keine entzündlichen Veränderungen außerhalb der bekannten IBD, keine weiteren Auffälligkeiten.",
+    "Beurteilung:": "Unkomplizierte Polypektomie von drei kleinen Adenomen im Colon ascendens sowie Entfernung eines Fremdkörpers aus dem Rektum. Surveillance-Biopsien bei IBD wie geplant. Kein Hinweis auf relevante Entzündung oder neoplasieverdächtige Läsionen außerhalb der beschriebenen Polypen. Empfehlung: Nächste Koloskopie in 3 Jahren (3 Adenome <10 mm).",
+    "pathology report": "Die histopathologische Untersuchung ergab drei tubuläre Adenome ohne Zeichen einer intraepithelialen Neoplasie (IEN), Biopsien aus dem Kolon zeigten keine Dysplasie bei IBD.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Dr. Sibylle von Steinfeld, 51 Jahre, wurde zur Abklärung rezidivierender abdomineller Beschwerden vorgestellt. Bei der Koloskopie zeigten sich im gesamten Kolon keine relevanten Auffälligkeiten. Die Untersuchung wurde bis ins terminale Ileum durchgeführt: Die Schleimhaut zeigte sich blande, kein Hinweis auf Entzündung oder Neoplasie. Inspektionsbefund konsistent mit einem Colon irritabile. Im Sigma fanden sich vereinzelte Blutauflagerungen ohne Ulcera oder Blutungsquelle. Im Rektum wurde ein kleiner, runder Fremdkörper (Glasmurmel) gefunden und mittels Dormia-Körbchen entfernt. Keine Polypen, keine Tumoren gefunden.",
+    "Beurteilung:": "Unauffälliger Koloskopiebefund im Sinne eines Colon irritabile. Fremdkörper im Rektum komplikationslos entfernt. Minimale Blutauflagerungen im Sigma, keine Blutungsquelle, kein Anhalt für relevante Pathologie. Empfehlung: Koloskopie-Kontrolle in 10 Jahren.",
+    "pathology report": "Keine Polypen, keine Biopsien entnommen – daher keine histologische Untersuchung.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Mustafa Albrecht, 58 Jahre, stellte sich zur Koloskopie nach positivem Stuhltest vor. Im Colon ascendens wurden insgesamt sechs kleine, flache Polypen (Paris IIa, jeweils 4–8 mm, JNET 2A) festgestellt, die alle mittels Kaltzange und -schlinge entfernt wurden. Im Sigma fanden sich streifige Blutauflagerungen, die mit einer fragilen Mukoaschädigung vereinbar sind. Im Rektum wurde überraschend ein kleiner, metallischer Fremdkörper (Knopf) identifiziert und komplikationslos geborgen. Zur Surveillance bei bekannter leichter Colitis ulcerosa wurden aus dem Quer- und absteigenden Kolon sowie dem Rektum systematisch Biopsien entnommen. Im übrigen Kolon kein weiterer pathologischer Befund, insbesondere kein Zeichen eines Colon irritabile.",
+    "Beurteilung:": "Entfernung von sechs kleinen Adenomen im Colon ascendens. Biopsien zur IBD-Surveillance entnommen. Fremdkörper im Rektum komplikationslos entfernt. Leichte Blutauflagerungen im Sigma, keine aktive Blutung. Empfehlung: Da >5 Adenome entfernt wurden, Kontrolle der Koloskopie in unter 3 Jahren (Konkrete Empfehlung: 2 Jahre).",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Ulrich-Johann Gustafsson, 67 Jahre, wurde nach akuter Rektalblutung zur Koloskopie vorgestellt. Im Sigma fanden sich ausgeprägte Blutauflagerungen, eine diskrete, sich blutende Erosion wurde mittels Clip versorgt. Im Colon ascendens identifizierten wir zwei kleine, gestielte Polypen (je 6 mm, Paris Is, JNET 2A), die mit Schlinge reseziert wurden. Im Rektum wurde ein etwa 7 cm langer Keramikstift entdeckt, der vorsichtig geborgen werden konnte. Im Rahmen der Surveillance bei bekannter Colitis Crohn-IBD wurden quadrantenförmig Biopsien aus Colon transversum und absteigendem Colon entnommen. Das übrige Kolon zeigte keine pathologischen Veränderungen, insbesondere kein Anhalt für einen Colon irritabile.",
+    "Beurteilung:": "Komplikationslose Polypektomie von zwei Adenomen, Fremdkörperentfernung aus dem Rektum, adäquate Blutstillung im Sigma. IBD-Surveillance-Biopsien wie geplant. Empfehlung: Kontrolle der Koloskopie in 5 Jahren (2 Adenome <10 mm).",
+    "pathology report": "Die Polypen zeigten sich histologisch als tubuläre Adenome mit niedriggradiger intraepithelialer Neoplasie. Die IBD-Biopsien ohne Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Nguyen-Doris Marie Kubatschek, 45 Jahre, stellte sich zur Kontrolle bei bekannter Colitis ulcerosa vor. Es wurden wie empfohlen multiple Biopsien aus dem gesamten Kolon zur Surveillance entnommen. Der Kolonrahmen zeigte keine aktiven Entzündungszeichen. Im Colon ascendens wurden vier kleine flache Adenome (Paris IIa, 3-6 mm, JNET 2A) detektiert und mit Kaltzange polypektomiert. Im Rektum wurde ein auffallender Fremdkörper (Haarnadel) entdeckt, komplikationslos geborgen. Im Sigma fanden sich geringfügige, oberflächliche Blutauflagerungen, keine aktive Blutung. Das Kolon ansonsten unauffällig, kein Nachweis für Colon irritabile.",
+    "Beurteilung:": "Komplikationslose Entfernung von vier kleinen Adenomen, Fremdkörperextraction im Rektum. Blutauflagerungen im Sigma ohne aktive Blutungsquelle. Biopsien zur IBD-Surveillance entnommen. Empfehlung: Nächste Koloskopie in 3 Jahren (4 Adenome <10 mm).",
+    "pathology report": "Vier tubuläre Adenome ohne Hinweise auf hochgradige intraepitheliale Neoplasie. IBD-Biopsien entzündungsfrei.",
+    "follow up?": "3 Jahre"
+  }
+}

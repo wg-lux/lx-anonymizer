@@ -1,12 +1,11 @@
 [project]
 name = "lx-anonymizer"
-version = "0.1.0"
+version = "0.7.0"
 description = ""
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "certifi>=2024.8.30",
-    "endoreg-db>=0.5.2",
     "flair>=0.14.0",
     "gender-guesser>=0.4.0",
     "hezar>=0.42.0",
@@ -18,9 +17,28 @@ dependencies = [
     "torch>=2.5.1",
     "torchaudio>=2.5.1",
     "torchvision>=0.20.1",
-    "transformers>=4.47.0",
+    "transformers==4.44.2",
     "pytest>=7.0.1",
     "flake8>=7.1.1",
+    "ollama>=0.4.7",
+    "tiktoken>=0.9.0",
+    "verovio>=5.1.0",
+    "protobuf>=6.30.2",
+    "pyspellchecker>=0.8.2",
+    "dateparser>=1.2.1",
+    "django>=5.2",
+    "faker>=37.1.0",
+    "tenacity>=9.1.2",
+    "de-core-news-lg",
+    "rapidfuzz>=3.13.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.setuptools]
 packages = ["lx_anonymizer"]
+
+[tool.uv.sources]
+de-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }

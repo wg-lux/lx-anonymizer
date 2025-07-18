@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Patient Herr João da Silva (63 Jahre, Brasilien) mit Z.n. Rektumresektion wegen Sigma-Karzinom. Koloskopie bis terminales Ileum durchgeführt. Anastomosenregion reizlos, keine Auffälligkeiten. Kein Anhalt für eine Blutungsquelle. Im absteigenden Kolon abheilende Ulzera nach Colitis zu sehen, ohne aktive Inflammation. Im Colon transversum submuköse Einblutung, unklarer Genese, keine intervention erforderlich. Keine Polypen entdeckt.",
+    "pathology report": "",
+    "follow up?": "10 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Maria Aparecida dos Santos (58 Jahre) zur Verlaufskoloskopie bei Z.n. Rektumresektion (2 Jahre zuvor). Anastomosenregion reizlos, keine Auffälligkeiten. Keine Blutungsquelle identifizierbar. Im Colon ascendens ein flacher Polyp (Paris 0-IIa, JNET 2A, 7 mm), Polypektomie mit Kaltzange durchgeführt. Im Rektum abheilende Ulzera nach Colitis sichtbar. Segmentale submuköse Einblutung im Coecum, keine Therapie erforderlich.",
+    "pathology report": "Tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Prof. Dr. Antônio Carlos Souza, 70J., kommt nach episodischer Hämatochezie. Z.n. Rektumresektion, Anastomosenregion reizlos, keine Auffälligkeiten. Es finden sich abheilende Ulzera nach durchgemachter Colitis im Rectumstumpf. Keine aktive Blutungsquelle identifizierbar. Sigma mit multiplen submukösen Einblutungen. Im Colon descendens Polyp 13mm, Paris 0-Is, JNET 2A, Abtragung mit Schlinge en bloc, Clip-Anlage zur Prophylaxe.",
+    "pathology report": "Tubulo-villöses Adenom mit niedriggradiger intraepithelialer Neoplasie, Resektionsrand frei.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Josefa de Oliveira (46 J., Brasilien), bekannte Colitis ulcerosa, aktuell keine Beschwerden. Z.n. Rektumresektion, Anastomosenregion reizlos, sonst keine Auffälligkeiten. Mehrere abheilende Ulzera nach Colitis im gesamten linken Hemikolon. Im Colon ascendens submuköse Einblutung, ohne aktiven Blutaustritt. Kein Hinweis auf Blutungsquelle. Im Sigma 3 kleine Polypen (Paris 0-IIa, JNET 2A, 4-5 mm), Abtragung mit Kaltzange.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "Nach Histologie, vermutlich 5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Eliane Fernandes Costa, 61, Z.n. Rektumresektion, Vorstellung wegen positivem iFOBT. Anastomosenregion reizlos, keine Auffälligkeiten. Keine Blutungsquelle identifizierbar. Im Colon transversum 6 Polypen (3–8 mm, Paris 0-IIa, JNET 2A), Abtragung mit Schlinge teils in Piecemeal-Technik. Im absteigenden Kolon submuköse Einblutung. Im Rectum abheilende Ulzera nach bekannter Colitis.",
+    "pathology report": "Tubuläre Adenome mit niedriggradiger intraepithelialer Neoplasie; Resektion bei 2 Polypen piecemeal—in einem Fragment nicht sicher im Gesunden.",
+    "follow up?": "2–6 Monate"
+  }
+}

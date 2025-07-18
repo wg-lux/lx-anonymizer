@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Dr. Mehmet Yılmaz, ein 58-jähriger Patient, stellte sich zur Koloskopie vor. Bei der Untersuchung zeigte sich das Colon vollständig vorbereitet mit einem Boston Bowel Preparation Score von 9. Im absteigenden Colon wurden einzelne Erosionen festgestellt, die auf eine mögliche mikroskopische Colitis hinweisen. Des Weiteren fand sich ein 8 mm großer Polyp im Sigma, der nach Paris-Klassifikation als Typ 0-Is, JNET-Klassifikation Typ 2A eingestuft wurde. Der Polyp wurde mittels Schlingenresektion vollständig entfernt. Keine aktiven Blutungen wurden beobachtet. Beurteilung: Komplikationslose Entfernung des Polypen. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Der entfernte Polyp wurde als tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie diagnostiziert. Histologie der Erosionen steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Ahmet Çelik, 64 Jahre alt, wurde aufgrund positiver familiärer Anamnese hinsichtlich kolorektalem Karzinom zur Vorsorgekoloskopie überwiesen. Der Darm war mit einem Boston Bowel Preparation Score von 9 gut vorbereitet. Es zeigten sich keine aktiven Blutungen. Im absteigenden Colon wurden einzelne Erosionen entdeckt, die möglicherweise auf eine mikroskopische Colitis hindeuten. In der linken Flexur fand sich ein 12 mm großer Polyp (Paris-Typ 0-Is, JNET-Typ 2B), der mit der Schlingentechnik entfernt wurde. Beurteilung: Komplikationslose Resektion des Polypen. Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Histologie zeigt ein tubulovillöses Adenom mit hochgradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Elif Kaya, 72 Jahre alt, erfolgte eine Kontrollkoloskopie nach rektaler Blutung. Die Untersuchung ergab einen Boston Bowel Preparation Score von 9. Keine aktiven Blutungen wurden beobachtet. Einzelne Erosionen im absteigenden Colon wurden festgestellt und biopsiert. Im Colon transversum fand sich ein 8 mm großer Polyp (Paris-Typ 0-Is, JNET-Typ 2A), der mittels heißer Schlinge entfernt wurde. Beurteilung: Unauffälliger Verlauf nach Polypenentfernung. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Der Polyp wurde als tubuläres Adenom ohne intraepitheliale Neoplasie klassifiziert. Histologie der Erosionen steht noch aus.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Professor Mustafa Öztürk, ein 68-jähriger Patient, wurde aufgrund eines unklaren abdominalen Beschwerdebildes vorgestellt. Der Boston Bowel Preparation Score betrug 9. Im absteigenden Colon wurden multiple, sehr kleine Erosionen entdeckt. Auffällig war ein 15 mm großer Tumor im Colon ascendens, der biopsiert wurde. Kein Anhalt für aktive Blutungen. Beurteilung: Verdacht auf malignen Tumor. Empfehlung zur raschen chirurgischen Intervention und Nachsorge je nach histologischem Ergebnis.",
+    "pathology report": "Biopsie des Tumors zeigt ein Adenokarzinom. Histologie der Erosionen steht noch aus.",
+    "follow up?": "Klinische Nachsorge dringend erforderlich, abhängig vom pathologischen Befund"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Aslı Demir, 55 Jahre alt, zur Vorsorgekoloskopie. Der Darm war optimal vorbereitet, Boston Bowel Preparation Score 9. Im absteigenden Colon fanden sich einzelne Erosionen, die zur weiteren Abklärung biopsiert wurden. Das gesamte Kolon war frei von aktiven Blutungen. Beurteilung: Keine Polypen oder Tumoren entdeckt. Empfehlung der nächsten Koloskopie in 10 Jahren.",
+    "pathology report": "Histologie der Erosionen steht noch aus. Der aktuelle Befund deutet auf keine pathologischen Veränderungen hin.",
+    "follow up?": "10 Jahre"
+  }
+}

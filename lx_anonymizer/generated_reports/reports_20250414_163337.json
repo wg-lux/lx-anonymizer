@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der Patient Herr Dr. Urs von Gunten, 58 Jahre alt, mit bekannter Diagnose eines Colon irritabile, stellte sich zur Kontrollkoloskopie vor. Während der Untersuchung zeigte der Patient eine eingeschränkte Insufflationstoleranz, dennoch konnte das Colon bis zum Coecum eingesehen werden. Es fanden sich keine pathologischen Befunde und keine aktiven Blutungen wurden beobachtet. Ein etwa 8 mm großer Stielpolyp mit langem Pedunkel im Colon transversum wurde mittels Schlingenabtragung entfernt.",
+    "pathology report": "Der Polyp wurde histologisch als tubuläres Adenom klassifiziert.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Claire Joller, 66 Jahre alt, wurde aufgrund eines Verdachts auf kollagene Colitis zur Koloskopie überwiesen. Trotz der eingeschränkten Insufflationstoleranz der Patientin konnte die Untersuchung vollständig durchgeführt werden. Im Colon sigmoideum fand sich ein flacher Polyp vom Typ 0-IIa nach Paris, mit einem Durchmesser von 15 mm. Die Abtragung erfolgte mittels Heissbiopsie. Ansonsten fanden sich keine aktiven Blutungen oder weitere auffällige Befunde.",
+    "pathology report": "Histologisch zeigte der Polyp eine tubulovillöse Adenomstruktur mit hochgradiger intraepithelialer Neoplasie (IEN).",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Jean-Luc Constantin, 72 Jahre alt, stellte sich mit Beschwerden passend zu Colon irritabile zur Koloskopie vor. Die Untersuchung zeigte eine weitestgehend normale Schleimhaut ohne Hinweise auf Blutungen oder Polypen. Aufgrund der bestehenden Symptomatik wurde dennoch eine Biopsie entnommen, um den Verdacht auf eine kollagene Colitis histologisch auszuschließen.",
+    "pathology report": "Die Biopsie ergab keine Hinweise auf eine kollagene Colitis, kein pathologischer Befund.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Otto Schönbächler, 64 Jahre alt, wurde zur Routinekoloskopie überwiesen. Der Patient tolerierte die Insufflation nur eingeschränkt. Im Bereich des Colon ascendens zeigte sich ein gestielter Polyp (Typ 0-Is nach Paris) mit einem langen Pedunkel, der 12 mm maß. Die Abtragung erfolgte mittels Schlingentechnik ohne Komplikationen. Es waren keine aktiven Blutungen zu sehen.",
+    "pathology report": "Der Polyp wurde als hyperplastisches Polyp, kein weiteres Risiko, klassifiziert.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Frau Prof. Dr. Helga Nägeli, 70 Jahre alt, wurde mit Verdacht auf kollagene Colitis vorstellig. Die Koloskopie offenbarte eine insgesamt unauffällige Darmschleimhaut. Während der Untersuchung zeigte die Patientin eine eingeschränkte Insufflationstoleranz. Ein 5 mm großer Polyp vom Typ 0-Ip nach Paris wurde im Colon descendens entdeckt und problemlos mittels Kaltbiopsie entfernt.",
+    "pathology report": "Der Polyp wurde histologisch als hyperplastisches Polyp ohne Neoplasie diagnostiziert.",
+    "follow up?": "10 Jahre"
+  }
+}

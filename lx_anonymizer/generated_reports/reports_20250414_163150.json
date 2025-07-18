@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Señor Alejandro Gómez, ein 55-jähriger Patient, der zur Vorsorgeuntersuchung erschienen ist. Bei der Untersuchung fiel eine veränderte Gefäßzeichnung in der Flexura lienalis auf. Im Colon ascendens wurden multiple kleine Adenome mit einer Größe von jeweils unter 5 mm entdeckt. Diese flachen Adenome (Paris IIa) wurden mit der Kaltzangenbiopsie-Technik entnommen. Es kam zu einer leichten Nachblutung nach der Polypektomie, die durch die Applikation von Hämoclips gestillt werden konnte. Die Untersuchung zeigte keine weiteren Auffälligkeiten.",
+    "pathology report": "Histologie bestätigt multiple tubuläre Adenome ohne Zeichen einer Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Dr. María Fernández, eine 60-jährige Patientin mit bekanntem Z.n. ESD für ein Adenom im Colon transversum. Die aktuelle Untersuchung zeigte das Rezidiv eines Adenoms an der gleichen Stelle, diesmal jedoch mit hochgradiger intraepithelialer Neoplasie. Das Adenom (Paris 0-Is) von 8 mm Größe wurde mittels Schlingenresektion entfernt.",
+    "pathology report": "Histologie zeigt ein tubuläres Adenom mit hochgradiger intraepithelialer Neoplasie, Ränder histologisch unauffällig.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Señor Carlos Bautista, 48 Jahre alt, kam mit diffusen Bauchschmerzen. In der Koloskopie fanden sich multiple flache Adenome (Paris IIa) im Colon ascendens, alle kleiner als 5 mm. Die Adenome wurden durch Kaltzangenbiopsie entfernt. Außerdem zeigte sich in der Flexura lienalis eine veränderte Gefäßzeichnung.",
+    "pathology report": "Histologie zeigt tubuläre Adenome mit leichter Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Señorita Isabella Ruiz, 52 Jahre alt, zur Routinekontrolle. Die Untersuchung ergab multiple kleine Adenome im Colon ascendens und transversum, einige mit einer Größe von 4 mm, andere unter 5 mm. Nachblutung trat nach der Entfernung eines 4 mm Adenoms im Colon transversum auf, die mittels Argon-Plasma-Koagulation behandelt wurde.",
+    "pathology report": "Histologische Untersuchung zeigt multiple tubuläre Adenome ohne Anzeichen von Dysplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Señor Juan Castillo, 65 Jahre alt, mit bekannter Anamnese von Z.n. ESD bei Adenom im letzten Jahr. Bei der aktuellen Koloskopie wurde kein Rezidiv an der zuvor behandelten Stelle festgestellt, jedoch multiple neue flache Adenome (Paris IIa) im Colon ascendens und im Sigma, alle kleiner als 5 mm. Die Polypektomie wurde mit der Kaltbiopsiezange durchgeführt.",
+    "pathology report": "Histologische Untersuchungen bestätigen tubuläre Adenome ohne Dysplasie.",
+    "follow up?": "3 Jahre"
+  }
+}

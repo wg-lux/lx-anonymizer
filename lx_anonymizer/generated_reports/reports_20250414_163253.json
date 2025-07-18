@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Patient: Mr. Albert Thompson, 67 Jahre alt. Klinischer Verlauf: Bei dem Patienten bestehen seit einigen Monaten anhaltende Unterbauchschmerzen und wechselhafte Stuhlgewohnheiten. Indikation zur Koloskopie: Abklärung der Beschwerden. Befund: Im Colon sigmoideum zeigt sich eine polypöse Schleimhautveränderung mit multiplen gestielten Adenomen, welche z.T. reseziert wurden. Ein 12 mm großer Polyp im Colon sigmoideum wird mittels Schlingenpolypektomie entfernt. Zusätzlich zeigt sich eine auffällige Kryptenarchitektur im Bereich des absteigenden Colons.",
+    "pathology report": "Der histologische Befund ergab ein tubuläres Adenom mit niedriggradiger dysplastischer Veränderung und in einem Polypen eine hochgradige intraepitheliale Neoplasie (IEN).",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Patient: Sir Edwin Palmer, 72 Jahre alt. Klinischer Verlauf: Routinemäßige Kontrolluntersuchung, da der Patient bekannt ist mit Z.n. Loop-Resektion vor 5 Jahren. Befund: Im gesamten Kolon sind mehrere gestielte Polypen sichtbar. Ein Polyp mit einer Größe von 5 mm im Colon transversum wird mittels Kaltbiopsiezange entfernt. Im Colon ascendens finden sich weitere drei kleine Adenome unter 10 mm, die z.T. reseziert wurden. In einer Region zeigt sich eine unregelmäßige Kryptenarchitektur.",
+    "pathology report": "Der histologische Befund zeigt in den resezierten Polypen tubuläre Adenome ohne Anzeichen einer hochgradigen Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Patient: Mrs. Elizabeth Green, 60 Jahre alt. Klinischer Verlauf: Patientin stellt sich mit positiver Familienanamnese für Kolorektalkarzinom zur Vorsorgeuntersuchung vor. Befund: Es zeigen sich mehrere gestielte Polypen, größter Polyp 20 mm im Colon sigmoideum, entfernt in Piecemeal-Technik. Im Rektum eine polypöse Schleimhautveränderung mit auffälliger Kryptenarchitektur, kein interventioneller Eingriff notwendig.",
+    "pathology report": "Der 20 mm große Polyp zeigt ein tubulo-villöses Adenom mit niedriggradiger Dysplasie ohne Anzeichen von Karzinom.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Patient: Dr. Jonathan McCulloch, 55 Jahre alt. Klinischer Verlauf: Kontrolluntersuchung nach Polypektomie vor einem Jahr. Befund: Im Colon descendens wird ein einsamer, gestielter Polyp mit einer Größe von 9 mm entdeckt. Polypektomie mittels Heißschlingenresektion erfolgt. Im Colon sigmoideum zeigen sich geringgradige polypöse Schleimhautveränderungen ohne dringlichen Handlungsbedarf.",
+    "pathology report": "Histologische Untersuchung des 9 mm Polypen zeigt ein tubuläres Adenom mit niedriggradiger IEN.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Patient: Mr. William Hargreaves, 68 Jahre alt. Klinischer Verlauf: Der Patient berichtet über chronische Diarrhöe und Gewichtsverlust in den letzten Monaten. Befund: Im Colon ascendens zeigt sich ein großer, teilweise gestielter Polyp, ca. 15 mm, entfernt mittels Schlingenpolypektomie. Die Kryptenarchitektur erscheint in diesem Bereich auffällig. Weitere kleinere, unter 10 mm große Polypen wurden im Colon transversum entdeckt und z.T. reseziert.",
+    "pathology report": "Der große Polyp zeigt histologisch ein tubuläres Adenom mit Anzeichen einer hochgradigen IEN. Keine Invasion in die Submukosa erkennbar.",
+    "follow up?": "3 Jahre"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Mihai Popescu wurde die Koloskopie auf Grund von anhaltenden Bauchbeschwerden durchgeführt. Der Zugang ins terminale Ileum konnte nicht hergestellt werden. Im Colon ascendens fand sich eine polypöse Schleimhautveränderung, die mittels Schlinge abgetragen wurde. Des Weiteren wurde eine rötliche makroskopische Veränderung im Colon transversum festgestellt, aus der eine Probe entnommen wurde. Die Vorbereitung war suboptimal, sodass kein vollständiger Überblick möglich war. Die Ileozökalklappe war nicht passierbar. Beurteilung: Die Resektion der polypösen Veränderung verlief komplikationslos. Eine erneute Koloskopie zur besseren Beurteilung des gesamten Colons wird in 5 Jahren empfohlen.",
+    "pathology report": "Histologie: Tubuläres Adenom. Die entnommene Probe der rötlichen Veränderung im Colon transversum zeigte eine hyperplastische Läsion.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Oana Ionescu, die mit einer Familienanamnese für kolorektales Karzinom vorstellig wurde, konnte der Zugang ins terminale Ileum nicht erreicht werden. Im Colon sigmoideum fanden sich drei Polypen von 6 mm, 8 mm, und 10 mm (Paris IIa). Diese wurden mit der Schlingenabtragung entfernt. Zusätzlich wurde eine rötlich-makroskopische Veränderung im Rektum detektiert und bioptisch gesichert. Die Vorbereitung war suboptimal, was den Überblick erschwerte, und die Ileozökalklappe war nicht passierbar. Beurteilung: Komplikationslose Resektion der Polypen. Eine Kontrollkoloskopie in 3 Jahren wird empfohlen.",
+    "pathology report": "Histologie: Alle Polypen zeigten tubuläre Adenome, kein Hinweis auf Malignität.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Cristian Vasiliu stellte sich zur Screening-Koloskopie vor. Ein Zugang ins terminale Ileum war nicht erreichbar. Im Colon descendens wurde eine rötliche makroskopische Veränderung festgestellt, aus der eine Probe entnommen wurde. Die Untersuchung war aufgrund der suboptimalen Vorbereitung erschwert. Die Ileozökalklappe war nicht passierbar. Beurteilung: Die histologische Analyse der rötlichen Veränderung steht noch aus. Da keine weiteren auffälligen Befunde vorlagen, wird eine Kontrollkoloskopie in 10 Jahren empfohlen.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Vasile Dumitrescu mit chronischen Durchfällen wurde zur Koloskopie vorgestellt. In Anbetracht der suboptimalen Vorbereitung war kein vollständiger Überblick möglich und die Ileozökalklappe nicht passierbar. Es wurde eine polypöse Schleimhautveränderung im Colon ascendens (Paris IIb) entdeckt. Diese wurde unter Verwendung der Schlinge entfernt. Zudem wurde eine rötliche Veränderung im Colon transversum beobachtet, und zur Histologie eingesandt. Beurteilung: Die Entfernung der Veränderung verlief komplikationslos. Aufgrund der Anzahl der Polypen und der Teilergebnisse der Histologie wird eine erneute Untersuchung in 3 Jahren empfohlen.",
+    "pathology report": "Histologie: Der Polyp zeigte ein tubuläres Adenom, die rötliche Veränderung war nicht neoplastisch.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Frau Elena Raducanu wurde aufgrund einer positiven Familienanamnese eine Koloskopie durchgeführt. Der Zugang ins terminale Ileum war nicht möglich. Im Colon sigmoideum wurden insgesamt sechs polypöse Schleimhautveränderungen detektiert und mittels Schlinge entfernt. Aufgrund der suboptimalen Vorbereitung war kein vollständiger Überblick möglich, und die Ileozökalklappe war nicht passierbar. Eine rötliche makroskopische Veränderung im Rektum wurde biopsiert. Beurteilung: Da mehr als fünf Polypen vorlagen, wird eine Kontrollkoloskopie in unter 3 Jahren empfohlen.",
+    "pathology report": "Histologie: Die Polypen zeigten tubuläre Adenome, die entnommene Biopsie aus dem Rektum zeigte keine Anomalien.",
+    "follow up?": "unter 3 Jahren"
+  }
+}

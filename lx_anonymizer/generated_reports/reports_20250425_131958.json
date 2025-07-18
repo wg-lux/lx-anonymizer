@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Dr. Juan-Carlos Jiménez, 62 J., stellte sich zur Vorsorgekoloskopie vor. Die Passage ins terminale Ileum war unauffällig und problemlos. Im Colon transversum zeigte sich ein frischer koagel, der auf eine rezente Blutung hindeutet, keine aktive Blutungsquelle sichtbar. Rechtsseitig im Colon ascendens fand sich eine flache, 8mm große Läsion (Paris IIa, JNET 2A), Injektionslifting positiv, Läsion war somit vollständig resektabel. Resektion erfolgte mittels Kaltzange, nach Resektion Clip-Versorgung wegen leichter Blutung. Im Bereich der alten Polypektomiestelle zeigten sich Koagulationsartefakte – keine sichere Aussage zu eventuellen Residuen möglich, Kontrolle erforderlich. Keine weiteren Auffälligkeiten.  \nBeurteilung: Unauffällige Passage bis ins terminale Ileum. Komplikationslose Abtragung eines Adenoms im rechten Kolon mit Clip-Versorgung. Wegen Koagulationsartefakten im Bereich der Polypektomiestelle keine vollständige Beurteilung möglich. Kontrolle empfohlen in sechs Monaten.",
+    "pathology report": "Tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie, Resektionsrand im Gesunden.",
+    "follow up?": "6 Monate"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Pat. Señora Carmen de la Fuente, 58 Jahre, stellte sich wegen positiver Familienanamnese vor. Die Passage ins terminale Ileum war unauffällig. Im Colon transversum zeigte sich ein frischer Koagel, Absuche ergab keinen aktiven Blutungsherd. Im Sigma wurde eine flache, 12 mm große Läsion (Paris IIa+Is, JNET 2A) entdeckt. Injektionslifting positiv, endoskopische Resektion erschien möglich. Die Läsion wurde in einer Piecemeal-Technik mit Schlinge abgetragen, Clip-Versorgung erfolgte. Ansonsten fanden sich Koagulationsartefakte im Colon descendens, keine Aussage möglich zu älteren Polypektomiestellen.  \nBeurteilung: Komplikationslose Piecemeal-Resektion einer Sigma-Läsion. Wiederholungskoloskopie in 2-6 Monaten empfohlen zur Resektionskontrolle. Keine weiteren Auffälligkeiten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Pedro Alvarez, 69, stellte sich wegen okkultem Blut im Stuhl vor. Terminales Ileum war unauffällig passierbar. Im Colon transversum lag ein frischer Koagel; die Blutungsquelle konnte nicht exakt identifiziert werden. Im Rektum zeigte sich ein Polyp (Paris Is, JNET 2A), 7mm groß, Injektionslifting war positiv. Die Läsion ließ sich problemlos mit einer Schlinge abtragen, Clip-Versorgung wurde nicht notwendig, jedoch nach Z.n. Polypektomie im Colon descendens zeigte sich ein älterer Clip. Koagulationsartefakte im Bereich des alten Clips, keine sichere Aussage zu Residuen.  \nBeurteilung: Adenomabtragung im Rektum, ansonsten unauffällige Koloskopie. Kontrolle der alten Polypektomiestelle in 6 Monaten empfohlen.",
+    "pathology report": "Tubuläres Adenom mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Patientin Doña Maria-Luisa Ortega, 73 Jahre, Indikation: Anämie. Unaufällige Passage ins terminale Ileum (echt glatt). Im Colon transversum lag ein frischer Koagel mit Koagulationsartefakten, aber keine Blutungsquelle sichtbar. Sigmoideum: 4 Polypen, jeweils <10mm, sessil, Paristyp Is, JNET 2A, alle mit positivem Injektionslifting. Sämtliche Polypen wurden mit Kaltzange entfernt, Clip-Versorgung bei 2 Polypektomiestellen wegen Nachblutung. Eine ehemalige Polypektomiestelle zeigte Koagulationsartefakte, keine Beurteilung möglich.  \nBeurteilung: Insgesamt 4 Polypen im Sigmoid entfernt, Komplikationslose Resektion. Wiederholungskoloskopie zur Kontrolle in 3 Jahren empfohlen.",
+    "pathology report": "Histologie: Alle Polypen zeigten tubuläre Adenome mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Dr. Esteban Ruiz-García, 66, stellte sich nach Z.n. Polypektomie vor. Unauffällige Passage ins terminale Ileum. Im Colon transversum zeigte sich ein frischer Koagel ohne aktives Bluten. An der alten Polypektomiestelle im Colon descendens fanden sich massive Koagulationsartefakte– leider keine Aussage zur Lokalisation möglicher Residuen. Clip sichtbar. Im Rektum eine 16mm große, blasse Läsion (Paris IIa+IIc, JNET 2B), Injektionslifting positiv, endoskopisch resektabel. Resektion erfolgte in Piecemeal-Technik mit Schlinge, Clip-Versorgung wegen Blutung.  \nBeurteilung: Piecemeal-Resektion einer größeren Rektumläsion, Kontrolle auf Residualgewebe erforderlich. Kontrolle empfohlen in 2-6 Monaten.",
+    "pathology report": "Histologie: Tubulovillöses Adenom mit hochgradiger intraepithelialer Neoplasie, Resektionsrand nicht eindeutig beurteilbar.",
+    "follow up?": "2–6 Monate"
+  }
+}

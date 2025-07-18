@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Dr. Laurens van der Velde, 54 Jahre alt, wurde eine Koloskopie aufgrund von Verdacht auf Rezidiv eines Adenoms durchgeführt. In der absteigenden Kolon wurde eine Divertikulose festgestellt. Mehrere flache Adenome, alle < 5 mm und mit Paris-Klassifikation Is, wurden im Colon transversum entdeckt. Kein Blutnachweis im gesamten Kolon. Es erfolgte die Resektion der Adenome mit einer kalten Schlinge. Beurteilung: Komplikationslose Resektion der Adenome, Kontrolle nach transanaler Polypabtragung unauffällig. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Die histologische Untersuchung ergab tubuläre Adenome mit niedriggradiger intraepithelialer Neoplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Durchführung der Koloskopie bei Frau Marie-Camille Reijnen, 62 Jahre alt, nach Kontrolle transanaler Polypabtragung. Fünf flache Adenome, alle < 5 mm, wurden im Colon ascendens entdeckt. Die Divertikulose im Colon descendens wurde erneut bestätigt. Kein Blutnachweis wurde festgestellt. Die Adenome wurden mittels kalter Biopsiezange entfernt. Beurteilung: Unkomplizierte Entfernung multiple flacher Adenome. Histologie steht noch aus. Empfehlung der nächsten Koloskopie in unter 3 Jahren.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Prof. Dr. Charles De Smet, 69 Jahre alt, stellte sich zur Nachkontrolle nach transanaler Polypabtragung vor. Im Colon sigmoideum wurden drei Polypen entdeckt: ein 10 mm tubuläres Adenom, ein 8 mm Adenom mit hochgradiger IEN, sowie ein weiteres flaches Adenom < 5 mm. Kein Blutnachweis wurde gefunden. Die Polypen wurden mit einer Schlinge entfernt. Beurteilung: Resektion der Polypen ohne Komplikationen. Empfehlung der nächsten Koloskopie in 3 Jahren.",
+    "pathology report": "Das 10 mm Polyp zeigte ein tubuläres Adenom, der 8 mm Polyp zeigte ein tubuläres Adenom mit hochgradiger IEN.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herr Olivier Lefebvre, 58 Jahre, erfolgte die Koloskopie zur Kontrolle nach transanaler Polypabtragung. Es zeigten sich multiple flache Adenome im Colon ascendens, sämtlich < 5 mm, sowie eine Divertikulose im Colon descendens. Kein Blutnachweis vorhanden. Alle Adenome wurden mittels Kaltbiopsie entfernt. Beurteilung: Die Resektion der Adenome verlief komplikationslos. Histologie steht noch aus. Empfehlung der nächsten Koloskopie in unter 3 Jahren.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Jean-Luc Dubois, 65 Jahre, wurde aufgrund Verdachts auf Rezidiv eines Adenoms koloskopiert. Ein 20 mm großer Paris Is Polyp wurde im Colon descendens entdeckt und vollständig mit der Piecemeal-Technik abgetragen. Divertikulose im Colon descendens vorhanden, kein Blutnachweis. Beurteilung: Resektion des großen Polypen mittels Piecemeal-Technik ohne Komplikationen. Histologie steht noch aus. Empfehlung der nächsten Koloskopie in 2–6 Monaten.",
+    "pathology report": "Histologie steht noch aus.",
+    "follow up?": "2–6 Monate"
+  }
+}

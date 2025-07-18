@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Johann Unterberger, 72 Jahre, Status nach Hartmann-Operation bei Sigma-Karzinom vor 3 Jahren. Die vollständige Koloskopie bis zum terminalen Ileum gelang problemlos. Im Colon descendens zeigten sich vereinzelte, oberflächliche Erosionen ohne aktive Blutung. Die Architektur der terminalen Ileumschleimhaut erschien abgeflacht, ansonsten ohne Ulzerationen. An der Bauhin-Klappe fand sich eine etwa 8 mm große suspekte Läsion (Paris Is, JNET 2A), die mittels kalter Schlinge vollständig abgetragen wurde. Keine weiteren Auffälligkeiten. Kein Hinweis auf Dysplasie im übrigen Untersuchteilen.",
+    "pathology report": "Histologisch zeigte sich bei der Läsion an der Bauhin-Klappe ein tubuläres Adenom mit low grade intraepithelialer Neoplasie, kein Hinweis auf Dysplasie höherer Ordnung.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Prof. Dr. Henriette Engelmayer, 64 Jahre, Zustand nach Hartmann-Operation wegen perforierter Divertikulitis. Einzelne Erosionen im absteigenden Colon, keine aktiven Blutungen. Die terminale Ileumschleimhaut imponiert mit abgeflachter Architektur, kein weiteres pathologisches Erscheinungsbild. An der Bauhin-Klappe zeigt sich eine suspekt imponierende, leicht erhabene Läsion von ca. 14 mm (Paris Is+IIa, JNET 2B), welche in Piecemeal-Technik unter Einsatz von Endoloop und Hot Snare entfernt wurde. Kein Hinweis auf Dysplasie im übrigen Colon.",
+    "pathology report": "Die Histologie steht noch aus.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Sepp Wurzinger, 79 Jahre, Z.n. Hartmann-OP wegen Kolonkarzinoms. Die Untersuchung verlief komplikationslos, das absteigende Colon zeigte einzelne Erosionen, ansonsten Normalkaliber. Im Bereich der terminalen Ileumschleimhaut wurde eine abgeflachte Architektur dokumentiert. Bei der Bauhin-Klappe war eine flach-suspekte, nur leicht gerötete Läsion von 5 mm Durchmesser (Paris IIb, JNET 1) sichtbar, die mittels kalter Zange reseziert wurde. Kein Hinweis auf Dysplasie im restlichen Colon.",
+    "pathology report": "Die histologische Untersuchung ergab hyperplastische Veränderungen ohne Nachweis eines Adenoms oder einer Dysplasie.",
+    "follow up?": "10 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Frau Aloisia Traunfellner, 56 Jahre, Status nach Hartmann-Operation bei komplizierter Divertikulitis. Im absteigenden Colon vereinzelte Erosionen, kein blutendes Ulkus. Abgeflachte Architektur der terminalen Ileumschleimhaut. An der Bauhin-Klappe zeigt sich eine etwa 18 mm große, breitbasige und suspekt imponierende Läsion (Paris IIa, JNET 2B). Entfernung erfolgte komplett in Piecemeal-Technik mit Hot Snare und nachfolgender Clip-Applikation. Kein Hinweis auf Dysplasie in den restlichen Kolonteilen.",
+    "pathology report": "Histologisch zeigt sich ein tubulo-villöses Adenom mit low grade IEN. Kein Nachweis eines invasiven Karzinoms.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Mag. Leopoldin Hohenegger, 68 Jahre, Z.n. Hartmann-Operation bei Sigmadivertikulitis vor 2 Jahren. Das absteigende Colon zeigt vereinzelte Erosionen, keine Ulzera. Abgeflachte Architektur der terminalen Ileumschleimhaut. Bei der Bauhin-Klappe findet sich eine ca. 4 mm große, flache, unscharf begrenzte suspekt imponierende Läsion (Paris IIb, JNET 1), die komplett mit kalter Biopsiezange entfernt wurde. Ansonsten unauffälliger Befund ohne Hinweis auf Dysplasie.",
+    "pathology report": "Histologie noch ausstehend.",
+    "follow up?": "10 Jahre"
+  }
+}

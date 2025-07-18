@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei der Koloskopie von Frau Dr. Nalinee Prasertsuk, einer 54-jährigen Patientin, zeigte sich kein Anhalt für entzündliche Veränderungen. Kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon descendens wurde ein sessiler serratierter Polyp von 10 mm Größe entdeckt und mittels Piecemeal-Resektion mit Clip-Versorgung entfernt. Im Rektum fiel eine auffällige Pigmentierung auf – DD: Melanose, klinisch aber unbedenklich. Beurteilung: Komplikationslose Resektion des Polypen. Empfehlung der nächsten Koloskopie in 3 Jahren aufgrund der Polypengröße.",
+    "pathology report": "Histologiebefund: Kein Anhalt für Dysplasie im sessilen serratierten Polypen.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herrn Somchai Panyaprasit, 60 Jahre alt, wurde eine Koloskopie durchgeführt. Kein Anhalt für entzündliche Veränderungen, kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Sigmoid war ein 8 mm großer Polyp (Paris IIa) zu sehen, der mit der Schlinge abgetragen wurde. Eine auffällige Pigmentierung fand sich – DD: Melanose, jedoch ohne klinische Relevanz. Beurteilung: Unauffällige Koloskopie bis auf den abgetragenen Polypen. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Histologiebefund: Tubuläres Adenom mit niedriggradiger Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Kritsada Anuwat, ein 48-jähriger Patient, stellte sich zur Koloskopie vor. Kein Anhalt für entzündliche Veränderungen, kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon transversum wurde ein 15 mm großer, sessiler serratierter Polyp entdeckt und in Piecemeal-Technik mit Clip-Versorgung reseziert. Beurteilung: Resektion des Polypen komplikationslos, Histologie steht noch aus. Empfehlung der nächsten Koloskopie in 2–6 Monaten, abhängig vom histologischen Ergebnis.",
+    "pathology report": "Histologie steht noch aus",
+    "follow up?": "2–6 Monate"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Befund: Bei Herr Dr. Chaiyaporn Amnatthan, 67 Jahre alt, zeigten sich keine entzündlichen Veränderungen. Kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon ascendens fanden sich zwei kleine Polypen (je 6 mm), die mit der Schlingenabtragung entfernt wurden. Zudem wurde im Rektum eine auffällige Pigmentierung beobachtet – DD: Melanose. Beurteilung: Problemloser Verlauf, Polypektomie ohne Komplikationen. Empfehlung der nächsten Koloskopie in 5 Jahren.",
+    "pathology report": "Histologiebefund: Beide Polypen zeigten tubuläre Adenome mit niedriggradiger Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Befund: Herr Methee Phongphan, 52 Jahre alt, wurde zur Koloskopie vorgestellt. Kein Anhalt für entzündliche Veränderungen, kein Hinweis auf M. Crohn oder Colitis ulcerosa. Im Colon sigmoideum fand sich ein 20 mm großer, sessiler serratierter Polyp, der mittels Piecemeal-Resektion und Clip-Versorgung komplett entfernt wurde. Beurteilung: Resektion erfolgreich, keine akuten Komplikationen. Empfehlung der nächsten Koloskopie in 6 Monaten zur Kontrolle.",
+    "pathology report": "Histologie: Sessiler serratierter Polyp ohne Dysplasie.",
+    "follow up?": "6 Monate"
+  }
+}

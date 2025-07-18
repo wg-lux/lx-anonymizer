@@ -1,0 +1,32 @@
+{
+  "Report 1": {
+    "type": "colonoscopy",
+    "report": "Der 55-jährige Herr Professor Eino Mäkinen wurde zur Koloskopie vorgestellt aufgrund von gelegentlichen Blutabgängen und einer positiven Familienanamnese für kolorektales Karzinom. Während der Untersuchung wurden im Sigma und distal im Colon descendens multiple flache Adenome (<5 mm) im Paris-Typ 0-IIa-JNET-Klassifikation IIa festgestellt. In der distalen Kolitiszone wurden zudem erythematöse Areale gefunden, die differentialdiagnostisch für eine Entzündung sprechen könnten. Es wurden insgesamt 6 Polypen mittels Schlingen-Polypektomie entfernt, alle <5 mm groß.",
+    "pathology report": "Histologisch zeigten alle Polypen ein tubuläres Adenom ohne Anzeichen einer Dysplasie. Kein Adenokarzinom wurde identifiziert.",
+    "follow up?": "unter 3 Jahren"
+  },
+  "Report 2": {
+    "type": "colonoscopy",
+    "report": "Frau Tuula Virtanen, 63 Jahre alt, stellte sich zur Koloskopie nach einem Screening-Test vor. Während der Untersuchung fanden sich zwei Polypen im Rektum, jeweils von 4 mm Größe, klassifiziert als Paris-Typ 0-IIa und JNET-Klassifikation IIb. Am Übergang von Colon descendens zu Sigma fand sich ein Bereich mit erythematösen Arealen, differentialdiagnostisch eine Entzündung. Beide Polypen wurden mit einer Biopsiezange entfernt.",
+    "pathology report": "Die histologische Untersuchung ergab tubuläre Adenome ohne Hinweise auf Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 3": {
+    "type": "colonoscopy",
+    "report": "Herr Lauri Kinnunen, 68 Jahre, kam mit Bauchschmerzen und verändertem Stuhlbild zur Koloskopie. Im Colon ascendens wurde ein 20 mm Polyp im Paris-Typ 0-Is, JNET-Klassifikation IIb entdeckt. Aufgrund der Größe und Morphologie wurde eine Schlingen-Polypektomie in Piecemeal-Technik durchgeführt. Zusätzlich fand sich im Colon transversum ein kleinerer, flacher Polyp von 3 mm Größe, der ebenfalls mittels Zange entfernt wurde.",
+    "pathology report": "Der 20 mm Polyp zeigte ein tubuläres Adenom mit fokaler hochgradiger intraepithelialer Neoplasie. Der kleinere Polyp war ein gutartiges, tubuläres Adenom.",
+    "follow up?": "3 Jahre"
+  },
+  "Report 4": {
+    "type": "colonoscopy",
+    "report": "Herr Matti Häkkinen, 47 Jahre, wurde zur Vorsorgekoloskopie vorgestellt. Es wurde ein einzelner Polyp von 9 mm im Sigma, klassifiziert als Paris-Typ 0-IIa, JNET-Klassifikation IIa, entdeckt und erfolgreich mit einer Schlinge entfernt. Die restliche Darmuntersuchung zeigte keine Auffälligkeiten.",
+    "pathology report": "Der Polyp histologisch als tubuläres Adenom diagnostiziert, ohne Hinweise auf Dysplasie.",
+    "follow up?": "5 Jahre"
+  },
+  "Report 5": {
+    "type": "colonoscopy",
+    "report": "Frau Marita Korhonen, 52 Jahre, kam aufgrund von rektalem Blutabgang zur Koloskopie. Im Rektum wurde ein 5 mm großer Polyp vom Paris-Typ 0-IIa, JNET-Klassifikation IIb, entdeckt. Darüber hinaus fand sich eine distale Kolitiszone mit erythematösen Arealen. Der Polyp wurde mit einer Zange entfernt.",
+    "pathology report": "Histologisch zeigte sich ein tubuläres Adenom ohne Hinweis auf Dysplasie. Die erythematöse Zone deutete auf eine unspezifische Entzündung hin.",
+    "follow up?": "5 Jahre"
+  }
+}

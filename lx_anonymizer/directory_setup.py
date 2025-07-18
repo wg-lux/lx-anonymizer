@@ -1,6 +1,6 @@
 from pathlib import Path, PosixPath
 import logging
-from custom_logger import get_logger
+from .custom_logger import get_logger
 import os
 
 logger = get_logger(__name__)
