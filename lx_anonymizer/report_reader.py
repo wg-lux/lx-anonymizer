@@ -570,6 +570,21 @@ class ReportReader:
                     output_dir=crop_output_dir
                 )
                 
+                # Erstelle automatisch ein anonymisiertes PDF
+                if cropped_regions_info:
+                    anonymized_pdf_path = pdf_path.replace('.pdf', '_anonymized.pdf')
+                    try:
+                        self.sensitive_cropper.create_anonymized_pdf_with_crops(
+                            pdf_path=pdf_path,
+                            crop_output_dir=crop_output_dir,
+                            anonymized_pdf_path=anonymized_pdf_path
+                        )
+                        report_meta['anonymized_pdf_path'] = anonymized_pdf_path
+                        logger.info(f"Anonymisiertes PDF erstellt: {anonymized_pdf_path}")
+                    except Exception as pdf_error:
+                        logger.warning(f"Konnte anonymisiertes PDF nicht erstellen: {pdf_error}")
+                        report_meta['anonymized_pdf_error'] = str(pdf_error)
+                
                 # Füge Cropping-Informationen zu den Metadaten hinzu
                 report_meta['cropped_regions'] = cropped_regions_info
                 report_meta['cropping_enabled'] = True

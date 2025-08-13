@@ -358,10 +358,69 @@ class SensitiveRegionCropper:
             crop_output_dir: Verzeichnis mit den Crop-Daten
             anonymized_pdf_path: Pfad für das anonymisierte PDF
         """
-        # TODO: Implementiere PDF-Rekonstruktion mit überdeckten sensitiven Bereichen
-        # Dies würde pymupdf verwenden, um das ursprüngliche PDF zu laden
-        # und schwarze Rechtecke über die sensitiven Regionen zu legen
-        pass
+        try:
+            import fitz  # PyMuPDF
+            
+            logger.info(f"Erstelle anonymisiertes PDF: {anonymized_pdf_path}")
+            
+            # Öffne das ursprüngliche PDF
+            doc = fitz.open(pdf_path)
+            
+            # Konvertiere PDF zu Bildern für die Analyse
+            images = convert_pdf_to_images(pdf_path)
+            
+            # Verarbeite jede Seite
+            for page_num, image in enumerate(images):
+                page = doc[page_num]
+                
+                # Führe OCR durch, um sensitive Bereiche zu finden
+                full_text, word_boxes = tesseract_full_image_ocr(image)
+                
+                # Erkenne sensitive Regionen
+                sensitive_regions = self.detect_sensitive_regions(image, word_boxes)
+                
+                if sensitive_regions:
+                    logger.info(f"Anonymisiere {len(sensitive_regions)} Bereiche auf Seite {page_num + 1}")
+                    
+                    # Konvertiere Pixel-Koordinaten zu PDF-Koordinaten
+                    # PDF-Koordinaten haben Ursprung unten links, Bilder oben links
+                    page_rect = page.rect
+                    page_height = page_rect.height
+                    page_width = page_rect.width
+                    
+                    img_width, img_height = image.size
+                    
+                    # Skalierungsfaktoren
+                    scale_x = page_width / img_width
+                    scale_y = page_height / img_height
+                    
+                    for x1, y1, x2, y2 in sensitive_regions:
+                        # Konvertiere Bildkoordinaten zu PDF-Koordinaten
+                        pdf_x1 = x1 * scale_x
+                        pdf_y1 = page_height - (y2 * scale_y)  # Y-Achse umkehren
+                        pdf_x2 = x2 * scale_x
+                        pdf_y2 = page_height - (y1 * scale_y)  # Y-Achse umkehren
+                        
+                        # Erstelle schwarzes Rechteck
+                        rect = fitz.Rect(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
+                        
+                        # Füge schwarzes Rechteck hinzu
+                        page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
+                        
+                        logger.debug(f"Geschwärzt: ({pdf_x1:.1f}, {pdf_y1:.1f}, {pdf_x2:.1f}, {pdf_y2:.1f})")
+            
+            # Speichere das anonymisierte PDF
+            doc.save(anonymized_pdf_path)
+            doc.close()
+            
+            logger.info(f"Anonymisiertes PDF gespeichert: {anonymized_pdf_path}")
+            
+        except ImportError:
+            logger.error("PyMuPDF (fitz) nicht verfügbar. Installiere mit: pip install PyMuPDF")
+            raise
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen des anonymisierten PDFs: {e}")
+            raise
 
 
 def crop_sensitive_regions_from_pdf(pdf_path: str, 
