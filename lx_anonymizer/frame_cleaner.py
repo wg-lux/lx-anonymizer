@@ -52,6 +52,7 @@ class FrameCleaner:
     - Stream-based processing with FFmpeg -c copy to avoid full transcoding
     - Named pipe (FIFO) support for in-memory video streaming
     - Pixel format conversion optimization for minimal re-encoding
+    - NVIDIA NVENC hardware acceleration with CPU fallback
     """
     
     def __init__(self, use_minicpm: bool = True, minicpm_config: Optional[Dict[str, Any]] = None):
@@ -68,7 +69,12 @@ class FrameCleaner:
         self.use_minicpm = use_minicpm
         self.minicpm_ocr = None
         
+        # Hardware acceleration detection
+        self.nvenc_available = self._detect_nvenc_support()
+        self.preferred_encoder = self._get_preferred_encoder()
         
+        logger.info(f"Hardware acceleration: NVENC {'available' if self.nvenc_available else 'not available'}")
+        logger.info(f"Using encoder: {self.preferred_encoder}")
         
         if self.use_minicpm:
             try:
@@ -89,6 +95,130 @@ class FrameCleaner:
     def _get_primary_ocr_engine(self) -> str:
         """Return the name of the primary OCR engine being used."""
         return "MiniCPM-o 2.6" if (self.use_minicpm and self.minicpm_ocr) else "FrameOCR + LLM"
+    
+    def _detect_nvenc_support(self) -> bool:
+        """
+        Detect if NVIDIA NVENC hardware acceleration is available.
+        
+        Returns:
+            True if NVENC is available, False otherwise
+        """
+        try:
+            # Test NVENC availability with a minimal command (minimum size for NVENC)
+            cmd = [
+                'ffmpeg', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=256x256:rate=1',
+                '-c:v', 'h264_nvenc', '-preset', 'p1', '-f', 'null', '-'
+            ]
+            
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=15,
+                check=False
+            )
+            
+            if result.returncode == 0:
+                logger.debug("NVENC h264 encoding test successful")
+                return True
+            else:
+                logger.debug(f"NVENC test failed: {result.stderr}")
+                return False
+                
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"NVENC detection failed: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"Unexpected error during NVENC detection: {e}")
+            return False
+    
+    def _get_preferred_encoder(self) -> Dict[str, Any]:
+        """
+        Get the preferred video encoder configuration based on available hardware.
+        
+        Returns:
+            Dictionary with encoder configuration
+        """
+        if self.nvenc_available:
+            return {
+                'name': 'h264_nvenc',
+                'preset_param': '-preset',
+                'preset_value': 'p4',  # Medium quality/speed for NVENC (P1=fastest, P7=best quality)
+                'quality_param': '-cq',
+                'quality_value': '20',  # NVENC CQ mode (lower = better quality)
+                'type': 'nvenc',
+                'fallback_preset': 'p1'  # Fastest NVENC preset for fallback
+            }
+        else:
+            return {
+                'name': 'libx264',
+                'preset_param': '-preset',
+                'preset_value': 'veryfast',  # CPU preset
+                'quality_param': '-crf',
+                'quality_value': '18',  # CPU CRF mode
+                'type': 'cpu',
+                'fallback_preset': 'ultrafast'  # Fastest CPU preset for fallback
+            }
+    
+    def _build_encoder_cmd(self, 
+                          quality_mode: str = 'balanced',
+                          fallback: bool = False) -> List[str]:
+        """
+        Build encoder command arguments based on available hardware and quality requirements.
+        
+        Args:
+            quality_mode: 'fast', 'balanced', or 'quality'
+            fallback: Whether to use fallback settings for compatibility
+            
+        Returns:
+            List of FFmpeg encoder arguments
+        """
+        encoder = self.preferred_encoder
+        
+        if encoder['type'] == 'nvenc':
+            # NVIDIA NVENC configuration
+            if fallback:
+                preset = encoder['fallback_preset']  # p1 - fastest
+                quality = '28'  # Lower quality for speed
+            elif quality_mode == 'fast':
+                preset = 'p2'  # Faster preset
+                quality = '25'
+            elif quality_mode == 'quality':
+                preset = 'p6'  # Higher quality preset
+                quality = '18'
+            else:  # balanced
+                preset = encoder['preset_value']  # p4
+                quality = encoder['quality_value']  # 20
+            
+            return [
+                '-c:v', encoder['name'],
+                encoder['preset_param'], preset,
+                encoder['quality_param'], quality,
+                '-gpu', '0',  # Use first GPU
+                '-rc', 'vbr',  # Variable bitrate
+                '-profile:v', 'high'
+            ]
+        else:
+            # CPU libx264 configuration
+            if fallback:
+                preset = encoder['fallback_preset']  # ultrafast
+                quality = '23'  # Lower quality for speed
+            elif quality_mode == 'fast':
+                preset = 'faster'
+                quality = '20'
+            elif quality_mode == 'quality':
+                preset = 'slow'
+                quality = '15'
+            else:  # balanced
+                preset = encoder['preset_value']  # veryfast
+                quality = encoder['quality_value']  # 18
+            
+            return [
+                '-c:v', encoder['name'],
+                encoder['preset_param'], preset,
+                encoder['quality_param'], quality,
+                '-profile:v', 'high'
+            ]
     
     def _detect_video_format(self, video_path: Path) -> Dict[str, Any]:
         """
@@ -227,20 +357,21 @@ class FrameCleaner:
             True if conversion succeeded
         """
         try:
-            # Build FFmpeg command for pixel format conversion only
+            # Get optimal encoder configuration
+            encoder_args = self._build_encoder_cmd('balanced')
+            
+            # Build FFmpeg command for pixel format conversion with hardware acceleration
             cmd = [
                 'ffmpeg', '-i', str(input_video),
                 '-vf', f'format={target_pixel_format}',  # Only convert pixel format
-                '-c:v', 'libx264',  # Use efficient H.264 encoder
-                '-preset', 'veryfast',  # Optimierte Geschwindigkeit bei guter Qualität
-                '-crf', '18',  # High quality constant rate factor
+                *encoder_args,  # Use hardware-optimized encoder
                 '-c:a', 'copy',  # Copy audio without re-encoding
                 '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
                 '-y', str(output_video)
             ]
             
-            logger.info(f"Converting pixel format: {input_video} -> {output_video}")
-            logger.debug(f"FFmpeg command: {' '.join(cmd)}");
+            logger.info(f"Converting pixel format: {input_video} -> {output_video} (using {self.preferred_encoder['type']})")
+            logger.debug(f"FFmpeg command: {' '.join(cmd)}")
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"Pixel conversion output: {result.stderr}")
@@ -248,10 +379,51 @@ class FrameCleaner:
             return output_video.exists() and output_video.stat().st_size > 0
             
         except subprocess.CalledProcessError as e:
+            # Try fallback encoder if hardware acceleration fails
+            if self.preferred_encoder['type'] == 'nvenc':
+                logger.warning(f"NVENC pixel conversion failed, trying CPU fallback: {e.stderr}")
+                return self._pixel_conversion_fallback(input_video, output_video, target_pixel_format)
+            else:
+                logger.error(f"Pixel format conversion failed: {e.stderr}")
+                return False
             logger.error(f"Pixel format conversion failed: {e.stderr}")
             return False
         except Exception as e:
             logger.error(f"Pixel format conversion error: {e}")
+            return False
+
+    def _pixel_conversion_fallback(self, 
+                                  input_video: Path, 
+                                  output_video: Path, 
+                                  target_pixel_format: str) -> bool:
+        """
+        Fallback pixel format conversion using CPU encoding.
+        
+        Args:
+            input_video: Source video path
+            output_video: Destination video path
+            target_pixel_format: Target pixel format
+            
+        Returns:
+            True if conversion succeeded
+        """
+        try:
+            cmd = [
+                'ffmpeg', '-i', str(input_video),
+                '-vf', f'format={target_pixel_format}',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                '-c:a', 'copy',
+                '-avoid_negative_ts', 'make_zero',
+                '-y', str(output_video)
+            ]
+            
+            logger.info(f"CPU fallback pixel conversion: {input_video} -> {output_video}")
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            
+            return output_video.exists() and output_video.stat().st_size > 0
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"CPU fallback pixel conversion failed: {e.stderr}")
             return False
 
     def _stream_copy_video(
@@ -294,15 +466,16 @@ class FrameCleaner:
                     logger.info(f"Converting {pixel_fmt} to yuv420p for compatibility")
                     return self._stream_copy_with_pixel_conversion(input_video, output_video)
                 else:
-                    # Use fast presets for unknown formats
+                    # Use hardware-optimized encoding for unknown formats
+                    encoder_args = self._build_encoder_cmd('fast')
                     cmd = [
                         'ffmpeg', '-i', str(input_video),
-                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+                        *encoder_args,
                         '-c:a', 'copy',
                         '-y', str(output_video)
                     ]
                     
-                    logger.info(f"Fast re-encoding with stream copy audio: {input_video} -> {output_video}")
+                    logger.info(f"Fast re-encoding with {self.preferred_encoder['type']} and stream copy audio: {input_video} -> {output_video}")
             
             logger.debug(f"FFmpeg command: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -311,10 +484,47 @@ class FrameCleaner:
             return output_video.exists() and output_video.stat().st_size > 0
             
         except subprocess.CalledProcessError as e:
-            logger.error(f"Stream copy failed: {e.stderr}")
-            return False
+            # Try fallback if hardware acceleration fails
+            if self.preferred_encoder['type'] == 'nvenc' and not format_info.get('can_stream_copy', False):
+                logger.warning(f"NVENC stream copy failed, trying CPU fallback: {e.stderr}")
+                return self._stream_copy_fallback(input_video, output_video, format_info)
+            else:
+                logger.error(f"Stream copy failed: {e.stderr}")
+                return False
         except Exception as e:
             logger.error(f"Stream copy error: {e}")
+            return False
+
+    def _stream_copy_fallback(self, 
+                             input_video: Path, 
+                             output_video: Path, 
+                             format_info: Dict[str, Any]) -> bool:
+        """
+        Fallback stream copy using CPU encoding.
+        
+        Args:
+            input_video: Source video path
+            output_video: Destination video path
+            format_info: Video format information
+            
+        Returns:
+            True if conversion succeeded
+        """
+        try:
+            cmd = [
+                'ffmpeg', '-i', str(input_video),
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                '-c:a', 'copy',
+                '-y', str(output_video)
+            ]
+            
+            logger.info(f"CPU fallback stream copy: {input_video} -> {output_video}")
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            
+            return output_video.exists() and output_video.stat().st_size > 0
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"CPU fallback stream copy failed: {e.stderr}")
             return False
 
     def _mask_video_streaming(
@@ -508,16 +718,17 @@ class FrameCleaner:
                 
                 vf = ','.join(mask_filters)
                 
-                # Use optimized encoding for complex masks
+                # Use hardware-optimized encoding for complex masks
+                encoder_args = self._build_encoder_cmd('balanced')
                 cmd = [
                     'ffmpeg', '-i', str(input_video),
                     '-vf', vf,
-                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',  # Optimierte Geschwindigkeit
+                    *encoder_args,  # Use hardware-optimized encoder
                     '-c:a', 'copy',  # Always copy audio
                     '-y', str(output_video)
                 ]
                 
-                logger.info(f"Complex mask processing with {len(mask_filters)} regions")
+                logger.info(f"Complex mask processing with {len(mask_filters)} regions using {self.preferred_encoder['type']}")
                 logger.debug(f"FFmpeg command: {' '.join(cmd)}")
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -635,21 +846,23 @@ class FrameCleaner:
             else:
                 # Direct processing for larger removals or when pipes unavailable
                 if format_info['can_stream_copy'] and format_info['has_audio']:
-                    # Use optimized encoding to preserve quality
+                    # Use hardware-optimized encoding to preserve quality
+                    encoder_args = self._build_encoder_cmd('balanced')
                     cmd = [
                         'ffmpeg', '-i', str(original_video),
                         '-vf', vf,
                         '-af', af,
-                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+                        *encoder_args,  # Use hardware-optimized encoder
                         '-c:a', 'aac', '-b:a', '128k',  # Re-encode audio with high quality
                         '-y', str(output_video)
                     ]
                 else:
                     # Video-only or format needs re-encoding
+                    encoder_args = self._build_encoder_cmd('balanced')
                     cmd = [
                         'ffmpeg', '-i', str(original_video),
                         '-vf', vf,
-                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+                        *encoder_args,  # Use hardware-optimized encoder
                         '-an' if not format_info['has_audio'] else '-af', 
                         af if format_info['has_audio'] else '',
                         '-y', str(output_video)
@@ -658,7 +871,7 @@ class FrameCleaner:
                     # Remove empty arguments
                     cmd = [arg for arg in cmd if arg]
                 
-                logger.info("Direct frame removal processing")
+                logger.info(f"Direct frame removal processing using {self.preferred_encoder['type']}")
                 logger.debug(f"FFmpeg command: {' '.join(cmd)}")
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -675,21 +888,22 @@ class FrameCleaner:
         except subprocess.CalledProcessError as e:
             logger.error(f"Streaming frame removal failed: {e.stderr}")
             
-            # Fallback to original method without audio processing
+            # Fallback to CPU method without audio processing
             try:
-                logger.warning("Retrying frame removal without audio processing...")
+                logger.warning("Retrying frame removal without audio processing using CPU...")
+                fallback_encoder_args = self._build_encoder_cmd('fast', fallback=True)
                 cmd_no_audio = [
                     'ffmpeg', '-i', str(original_video),
                     '-vf', vf,
                     '-an',  # No audio
-                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+                    *fallback_encoder_args,
                     '-y', str(output_video)
                 ]
                 result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
-                logger.info("Successfully removed frames without audio")
+                logger.info("Successfully removed frames without audio using CPU fallback")
                 return True
             except subprocess.CalledProcessError as e2:
-                logger.error(f"Frame removal fallback also failed: {e2.stderr}")
+                logger.error(f"Frame removal CPU fallback also failed: {e2.stderr}")
                 return False
                 
         except Exception as e:
