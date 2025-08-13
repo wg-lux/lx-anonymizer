@@ -232,7 +232,7 @@ class FrameCleaner:
                 'ffmpeg', '-i', str(input_video),
                 '-vf', f'format={target_pixel_format}',  # Only convert pixel format
                 '-c:v', 'libx264',  # Use efficient H.264 encoder
-                '-preset', 'ultrafast',  # Fastest encoding preset
+                '-preset', 'veryfast',  # Optimierte Geschwindigkeit bei guter Qualität
                 '-crf', '18',  # High quality constant rate factor
                 '-c:a', 'copy',  # Copy audio without re-encoding
                 '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
@@ -297,7 +297,7 @@ class FrameCleaner:
                     # Use fast presets for unknown formats
                     cmd = [
                         'ffmpeg', '-i', str(input_video),
-                        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
                         '-c:a', 'copy',
                         '-y', str(output_video)
                     ]
@@ -512,7 +512,7 @@ class FrameCleaner:
                 cmd = [
                     'ffmpeg', '-i', str(input_video),
                     '-vf', vf,
-                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',  # Fast encoding
+                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',  # Optimierte Geschwindigkeit
                     '-c:a', 'copy',  # Always copy audio
                     '-y', str(output_video)
                 ]
@@ -640,7 +640,7 @@ class FrameCleaner:
                         'ffmpeg', '-i', str(original_video),
                         '-vf', vf,
                         '-af', af,
-                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
                         '-c:a', 'aac', '-b:a', '128k',  # Re-encode audio with high quality
                         '-y', str(output_video)
                     ]
@@ -649,7 +649,7 @@ class FrameCleaner:
                     cmd = [
                         'ffmpeg', '-i', str(original_video),
                         '-vf', vf,
-                        '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
                         '-an' if not format_info['has_audio'] else '-af', 
                         af if format_info['has_audio'] else '',
                         '-y', str(output_video)
@@ -682,7 +682,7 @@ class FrameCleaner:
                     'ffmpeg', '-i', str(original_video),
                     '-vf', vf,
                     '-an',  # No audio
-                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
                     '-y', str(output_video)
                 ]
                 result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
@@ -1126,7 +1126,7 @@ class FrameCleaner:
                     'ffmpeg', '-i', str(original_video),
                     '-vf', vf,
                     '-an',  # No audio
-                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
                     '-y', str(output_video)
                 ]
                 result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
