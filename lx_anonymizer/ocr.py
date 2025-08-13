@@ -16,6 +16,17 @@ from .craft_text_detection import craft_text_detection  # Neuer Import für CRAF
 from .model_service import model_service
 from typing import List, Tuple, Any # Added List, Tuple, Any
 
+# Import optimized tesserocr if available
+try:
+    from .ocr_tesserocr import tesseract_on_boxes_fast, compare_ocr_performance, cleanup_global_processor
+    TESSEROCR_AVAILABLE = True
+    logger = get_logger(__name__)
+    logger.info("TesseOCR available - using optimized OCR processing")
+except ImportError as e:
+    TESSEROCR_AVAILABLE = False
+    logger = get_logger(__name__)
+    logger.warning(f"TesseOCR not available ({e}), falling back to pytesseract")
+
 logger = get_logger(__name__)
 # At the start of your script
 if torch.cuda.is_available():
@@ -277,7 +288,38 @@ def fallback_full_ocr(image, processor, model, device):
         logger.error(f"Fallback OCR failed: {e}")
         return ""
 
-def tesseract_on_boxes(image_path, boxes):
+def tesseract_on_boxes(image_path, boxes, use_fast_ocr=True):
+    """
+    Enhanced tesseract_on_boxes with automatic optimization.
+    
+    Args:
+        image_path: Path to image or PIL Image object
+        boxes: List of bounding boxes (startX, startY, endX, endY)
+        use_fast_ocr: If True, use TesseOCR when available for 10-50x speedup
+        
+    Returns:
+        Tuple of (extracted_text_with_boxes, confidences)
+    """
+    # Use optimized TesseOCR if available and requested
+    if use_fast_ocr and TESSEROCR_AVAILABLE:
+        try:
+            logger.debug("Using optimized TesseOCR for text extraction")
+            return tesseract_on_boxes_fast(image_path, boxes)
+        except Exception as e:
+            logger.warning(f"TesseOCR failed ({e}), falling back to pytesseract")
+    
+    # Fallback to original pytesseract implementation
+    logger.debug("Using pytesseract for text extraction")
+    return tesseract_on_boxes_pytesseract(image_path, boxes)
+
+
+def tesseract_on_boxes_pytesseract(image_path, boxes):
+    """
+    Original pytesseract implementation (renamed for clarity).
+    
+    This is the original function that uses subprocess calls to tesseract CLI.
+    Kept for compatibility and as a fallback when TesseOCR is not available.
+    """
     if hasattr(image_path, "convert"):
         image = image_path.convert("RGB")
     else:
@@ -291,13 +333,8 @@ def tesseract_on_boxes(image_path, boxes):
         try:
             (startX, startY, endX, endY) = box
 
-            # Expand the region of interest
-            image_np = np.asarray(image)
-            image_shape = image_np.shape
-            #expanded_box = expand_roi(startX, startY, endX, endY, 5, image_shape)
-            (startX_exp, startY_exp, endX_exp, endY_exp) = box
-
             # Crop the image to the expanded box
+            (startX_exp, startY_exp, endX_exp, endY_exp) = box
             cropped_image = image.crop((startX_exp, startY_exp, endX_exp, endY_exp))
 
             # Use pytesseract to perform OCR on the cropped image

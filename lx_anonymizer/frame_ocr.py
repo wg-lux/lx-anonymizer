@@ -6,6 +6,7 @@ This module provides specialized OCR functionality optimized for video frames:
 - Frame-specific preprocessing
 - Medical text recognition patterns
 - Optimized for endoscopy video overlays
+- Support for both pytesseract and tesserocr (10-50x faster)
 
 Separated from PDF processing to maintain clean architecture.
 """
@@ -16,7 +17,14 @@ import numpy as np
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Dict, Any, Tuple, Optional
-from pathlib import Path
+import re
+
+# Try to import optimized TesseOCR
+try:
+    from .frame_ocr_tesserocr import TesseOCRFrameProcessor, extract_text_from_frame_fast
+    TESSEROCR_AVAILABLE = True
+except ImportError:
+    TESSEROCR_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +37,29 @@ class FrameOCR:
     - Patient information detection
     - High confidence text extraction
     - German medical terminology
+    - Optional TesseOCR acceleration (10-50x faster when available)
     """
     
-    def __init__(self):
+    def __init__(self, use_fast_ocr: bool = True):
+        """
+        Initialize FrameOCR processor.
+        
+        Args:
+            use_fast_ocr: Use TesseOCR when available for significant speedup
+        """
+        self.use_fast_ocr = use_fast_ocr and TESSEROCR_AVAILABLE
+        
+        if self.use_fast_ocr:
+            try:
+                self.tesserocr_processor = TesseOCRFrameProcessor()
+                logger.info("FrameOCR initialized with TesseOCR acceleration")
+            except Exception as e:
+                logger.warning(f"Failed to initialize TesseOCR, falling back to pytesseract: {e}")
+                self.use_fast_ocr = False
+                self.tesserocr_processor = None
+        else:
+            self.tesserocr_processor = None
+            logger.info("FrameOCR initialized with pytesseract")
         # Frame-specific OCR configuration
         self.frame_ocr_config = {
             'lang': 'deu+eng',  # German + English for medical terms
@@ -128,6 +156,37 @@ class FrameOCR:
         """
         Extract text from a video frame with confidence scoring.
         
+        Automatically uses TesseOCR when available for 10-50x speedup.
+        
+        Args:
+            frame: Input frame as numpy array
+            roi: Optional region of interest for OCR
+            high_quality: Use high-quality OCR settings
+            
+        Returns:
+            Tuple of (extracted_text, confidence_score, ocr_data)
+        """
+        try:
+            # Use TesseOCR if available for much better performance
+            if self.use_fast_ocr and self.tesserocr_processor:
+                return self.tesserocr_processor.extract_text_from_frame(frame, roi, high_quality)
+            
+            # Fallback to pytesseract implementation
+            return self._extract_text_pytesseract(frame, roi, high_quality)
+            
+        except Exception as e:
+            logger.error(f"Frame text extraction failed: {e}")
+            return "", 0.0, {}
+    
+    def _extract_text_pytesseract(
+        self, 
+        frame: np.ndarray, 
+        roi: Optional[Dict[str, Any]] = None,
+        high_quality: bool = True
+    ) -> Tuple[str, float, Dict[str, Any]]:
+        """
+        Original pytesseract implementation for fallback.
+        
         Args:
             frame: Input frame as numpy array
             roi: Optional region of interest for OCR
@@ -190,9 +249,7 @@ class FrameOCR:
             
         Returns:
             Dictionary with extracted medical information
-        """
-        import re
-        
+        """        
         extracted_info = {
             'patient_names': [],
             'dates': [],

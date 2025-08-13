@@ -69,6 +69,8 @@ in
 
   '';
 
+    env.TESSDATA_PREFIX = "${pkgs.tesseract}/share/tessdata";
+
 
   processes = {
     #ollama-pull-llama.exec = "ollama pull llama3.3";
