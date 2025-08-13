@@ -19,6 +19,7 @@ from .ocr import tesseract_full_image_ocr #, trocr_full_image_ocr_on_boxes # Imp
 from .pdf_operations import convert_pdf_to_images
 from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
 from .ocr_preprocessing import preprocess_image, optimize_image_for_medical_text
+from .sensitive_region_cropper import SensitiveRegionCropper  # Import the new cropper
 from datetime import datetime, date
 import dateparser
 from .utils.ollama import ensure_ollama
@@ -49,6 +50,9 @@ class ReportReader:
         self.examiner_extractor = ExaminerDataExtractor()
         self.endoscope_extractor = EndoscopeDataExtractor()
         self.examination_extractor = ExaminationDataExtractor()
+        
+        # Initialize sensitive region cropper
+        self.sensitive_cropper = SensitiveRegionCropper()
         
         # Initialize Ollama
         self.ollama_proc = ensure_ollama()
@@ -521,3 +525,111 @@ class ReportReader:
             The SHA256 hash of the PDF file.
         """
         return hashlib.sha256(pdf_binary).hexdigest()
+    
+    def process_report_with_cropping(self, pdf_path=None, image_path=None, use_ensemble=False, 
+                                   verbose=True, use_llm_extractor='deepseek', text=None,
+                                   crop_output_dir=None, crop_sensitive_regions=True):
+        """
+        Erweiterte Version von process_report mit optionalem Cropping sensitiver Regionen.
+        
+        Args:
+            pdf_path: Pfad zum PDF
+            image_path: Pfad zum Bild (alternative zu PDF)
+            use_ensemble: Ob Ensemble-OCR verwendet werden soll
+            verbose: Ob ausführliche Logs ausgegeben werden sollen
+            use_llm_extractor: LLM-Extraktor für Metadaten ('deepseek', 'medllama', 'llama3')
+            text: Bereits extrahierter Text (optional)
+            crop_output_dir: Ausgabeverzeichnis für gecropte Regionen
+            crop_sensitive_regions: Ob sensitive Regionen gecroppt werden sollen
+            
+        Returns:
+            Tuple: (original_text, anonymized_text, report_meta, cropped_regions_info)
+        """
+        # Führe die normale Verarbeitung durch
+        original_text, anonymized_text, report_meta = self.process_report(
+            pdf_path=pdf_path, 
+            image_path=image_path, 
+            use_ensemble=use_ensemble,
+            verbose=verbose,
+            use_llm_extractor=use_llm_extractor,
+            text=text
+        )
+        
+        cropped_regions_info = {}
+        
+        if not crop_output_dir:
+            # Setze ein Standard-Ausgabeverzeichnis, falls nicht angegeben
+            crop_output_dir = os.path.join(os.path.dirname(pdf_path) if pdf_path else os.getcwd(), "pdfs")
+
+        # Führe Cropping durch, falls angefordert
+        if crop_sensitive_regions and crop_output_dir and pdf_path:
+            try:
+                logger.info("Beginne Cropping sensitiver Regionen...")
+                cropped_regions_info = self.sensitive_cropper.crop_sensitive_regions(
+                    pdf_path=pdf_path,
+                    output_dir=crop_output_dir
+                )
+                
+                # Füge Cropping-Informationen zu den Metadaten hinzu
+                report_meta['cropped_regions'] = cropped_regions_info
+                report_meta['cropping_enabled'] = True
+                
+                # Berechne Statistiken
+                total_crops = sum(len(crops) for crops in cropped_regions_info.values())
+                report_meta['total_cropped_regions'] = total_crops
+                
+                logger.info(f"Cropping abgeschlossen: {total_crops} Regionen über {len(cropped_regions_info)} Seiten")
+                
+            except Exception as e:
+                logger.error(f"Fehler beim Cropping sensitiver Regionen: {e}")
+                report_meta['cropping_error'] = str(e)
+                report_meta['cropping_enabled'] = False
+        
+        else:
+            report_meta['cropping_enabled'] = False
+        
+        return original_text, anonymized_text, report_meta, cropped_regions_info
+    
+    def create_visualization_report(self, pdf_path, output_dir, visualize_all_pages=False):
+        """
+        Erstellt Visualisierungsreport für sensitive Regionen (für Debugging).
+        
+        Args:
+            pdf_path: Pfad zum PDF
+            output_dir: Ausgabeverzeichnis
+            visualize_all_pages: Ob alle Seiten visualisiert werden sollen
+            
+        Returns:
+            Liste der erstellten Visualisierungsdateien
+        """
+        from .pdf_operations import convert_pdf_to_images
+        from .ocr import tesseract_full_image_ocr
+        from pathlib import Path
+        
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        pdf_name = Path(pdf_path).stem
+        images = convert_pdf_to_images(pdf_path)
+        visualization_files = []
+        
+        pages_to_process = range(len(images)) if visualize_all_pages else [0]  # Nur erste Seite standardmäßig
+        
+        for page_num in pages_to_process:
+            if page_num >= len(images):
+                continue
+                
+            image = images[page_num]
+            full_text, word_boxes = tesseract_full_image_ocr(image)
+            
+            vis_filename = f"{pdf_name}_page_{page_num + 1}_analysis.png"
+            vis_path = output_dir / vis_filename
+            
+            self.sensitive_cropper.visualize_sensitive_regions(
+                image, word_boxes, str(vis_path)
+            )
+            
+            visualization_files.append(str(vis_path))
+            logger.info(f"Visualisierung erstellt: {vis_filename}")
+        
+        return visualization_files
