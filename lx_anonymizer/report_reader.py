@@ -1,5 +1,7 @@
-from pyexpat import model
+from pathlib import Path
 from faker import Faker
+import json
+import re
 import gender_guesser.detector as gender_detector
 from typing import List, Optional, Dict, Any # Added Optional, Dict, Any
 import os
@@ -7,9 +9,6 @@ import warnings
 import hashlib
 import pdfplumber
 from PIL import Image
-from uuid import uuid4
-import json
-import re
 from .settings import DEFAULT_SETTINGS
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .text_anonymizer import anonymize_text
@@ -528,7 +527,7 @@ class ReportReader:
     
     def process_report_with_cropping(self, pdf_path=None, image_path=None, use_ensemble=False, 
                                    verbose=True, use_llm_extractor='deepseek', text=None,
-                                   crop_output_dir=None, crop_sensitive_regions=True):
+                                   crop_output_dir=None, crop_sensitive_regions=True, anonymization_output_dir=None):
         """
         Erweiterte Version von process_report mit optionalem Cropping sensitiver Regionen.
         
@@ -559,7 +558,11 @@ class ReportReader:
         
         if not crop_output_dir:
             # Setze ein Standard-Ausgabeverzeichnis, falls nicht angegeben
-            crop_output_dir = os.path.join(os.path.dirname(pdf_path) if pdf_path else os.getcwd(), "pdfs")
+            crop_output_dir =  Path(os.getcwd()).parent / "pdfs" / "cropped_regions"
+
+        if not anonymization_output_dir:
+            # Setze ein Standard-Ausgabeverzeichnis für anonymisierte PDFs
+            anonymization_output_dir = Path(os.getcwd()).parent / "pdfs" / "anonymized"
 
         # Führe Cropping durch, falls angefordert
         if crop_sensitive_regions and crop_output_dir and pdf_path:
@@ -572,14 +575,16 @@ class ReportReader:
                 
                 # Erstelle automatisch ein anonymisiertes PDF
                 if cropped_regions_info:
-                    anonymized_pdf_path = pdf_path.replace('.pdf', '_anonymized.pdf')
+                    out_dir = Path(anonymization_output_dir) if anonymization_output_dir else Path(pdf_path).parent
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    anonymized_pdf_path = out_dir / (Path(pdf_path).stem + "_anonymized.pdf")
                     try:
                         self.sensitive_cropper.create_anonymized_pdf_with_crops(
                             pdf_path=pdf_path,
                             crop_output_dir=crop_output_dir,
-                            anonymized_pdf_path=anonymized_pdf_path
+                            anonymized_pdf_path=str(anonymized_pdf_path)
                         )
-                        report_meta['anonymized_pdf_path'] = anonymized_pdf_path
+                        report_meta['anonymized_pdf_path'] = str(anonymized_pdf_path)
                         logger.info(f"Anonymisiertes PDF erstellt: {anonymized_pdf_path}")
                     except Exception as pdf_error:
                         logger.warning(f"Konnte anonymisiertes PDF nicht erstellen: {pdf_error}")
