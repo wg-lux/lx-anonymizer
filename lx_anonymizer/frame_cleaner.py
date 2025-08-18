@@ -1083,7 +1083,7 @@ class FrameCleaner:
 
         # ------------- decide between frame removal and masking -------------
         try:
-            if sensitive_ratio <= 0.10:
+            if sensitive_ratio <= 0.01:
                 # ---- low ratio ➞ remove individual frames ------------------
                 logger.info("Using frame‑removal strategy.")
                 ok = self.remove_frames_from_video_streaming(
