@@ -991,6 +991,7 @@ class FrameCleaner:
         endoscope_roi: Optional[Dict[str, Any]] = None,
         processor_rois: Optional[Dict[str, Dict[str, Any]]] = None,
         output_path: Optional[Path] = None,
+        technique: str = "mask_overlay",
     ) -> tuple[Path, Dict[str, Any]]:
         """
         Refactored version: single code path, fewer duplicated branches.
@@ -1082,8 +1083,9 @@ class FrameCleaner:
         )
 
         # ------------- decide between frame removal and masking -------------
+        # if sensitive_ratio < 0.1 could be applied or default to masking
         try:
-            if sensitive_ratio <= 0.01:
+            if technique == "remove_frames":
                 # ---- low ratio ➞ remove individual frames ------------------
                 logger.info("Using frame‑removal strategy.")
                 ok = self.remove_frames_from_video_streaming(
@@ -1092,7 +1094,7 @@ class FrameCleaner:
                     output_video,
                     total_frames=total_frames,
                 )
-            else:
+            elif technique == "mask_overlay":
                 # ---- high ratio ➞ mask overlay area -------------------------
                 logger.info("Using masking strategy.")
                 if endoscope_roi and self._validate_roi(endoscope_roi):
