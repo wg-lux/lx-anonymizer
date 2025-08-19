@@ -89,7 +89,7 @@ in
   enterShell = ''
     . .devenv/state/venv/bin/activate
     uv sync
-
+    uv run python env_setup.py
     hello
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${pkgs.ffmpeg_6}/lib
 

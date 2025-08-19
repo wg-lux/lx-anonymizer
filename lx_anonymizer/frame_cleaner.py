@@ -68,6 +68,7 @@ class FrameCleaner:
         # Initialize MiniCPM-o 2.6 if enabled
         self.use_minicpm = use_minicpm
         self.minicpm_ocr = None
+        self._log_hf_cache_info()
         
         # Hardware acceleration detection
         self.nvenc_available = self._detect_nvenc_support()
@@ -1973,3 +1974,20 @@ class FrameCleaner:
         except Exception as e:
             logger.warning(f"Failed to get video info: {e}")
             return {}
+
+    def _log_hf_cache_info(self) -> None:
+            base = Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
+            hub  = Path(os.environ.get("HF_HUB_CACHE", str(base / "hub")))
+            tfc  = Path(os.environ.get("TRANSFORMERS_CACHE", str(base)))
+            candidates = [
+                hub / "models--openbmb--MiniCPM-o-2_6",
+                base / "models--openbmb--MiniCPM-o-2_6",
+                tfc / "models--openbmb--MiniCPM-o-2_6",
+            ]
+            logger.info(f"HF_HOME={base} HF_HUB_CACHE={hub} TRANSFORMERS_CACHE={tfc}")
+            for p in candidates:
+                try:
+                    size = shutil.disk_usage(p).total if p.exists() else 0
+                except Exception:
+                    size = 0
+                logger.info(f"HF cache candidate: {p} exists={p.exists()} size_bytes={p.stat().st_size if p.exists() and p.is_file() else 'dir' if p.exists() else 0}")
