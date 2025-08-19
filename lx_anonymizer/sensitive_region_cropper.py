@@ -9,7 +9,7 @@ import re
 from typing import List, Tuple, Dict, Optional
 from PIL import Image, ImageDraw
 from pathlib import Path
-
+from typing import Iterable
 from .ocr import tesseract_full_image_ocr
 from .pdf_operations import convert_pdf_to_images
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor
@@ -43,6 +43,8 @@ class SensitiveRegionCropper:
         self.patient_extractor = PatientDataExtractor()
         self.examiner_extractor = ExaminerDataExtractor()
         
+        self.patient_info = None
+        
         # Definiere sensitive Datentypen und ihre Regex-Patterns
         self.sensitive_patterns = {
             'patient_name': r'[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+',
@@ -53,6 +55,109 @@ class SensitiveRegionCropper:
             'address': r'[A-ZÄÖÜ][a-zäöüß\s]+(str\.|straße|platz|weg|gasse)\s*\d+',
             'doctor_name': r'(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?'
         }
+    
+    # Füge in der Klasse SensitiveRegionCropper hinzu:
+
+
+    def _enclosing_box(self, boxes: Iterable[Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
+        """
+        Enclosing-Box-Helfer: (x, y, w, h)-Boxen -> (x1, y1, x2, y2).
+        """
+        boxes = list(boxes)
+        if not boxes:
+            return (0, 0, 0, 0)
+        x1 = min(b[0] for b in boxes)
+        y1 = min(b[1] for b in boxes)
+        x2 = max(b[0] + b[2] for b in boxes)
+        y2 = max(b[1] + b[3] for b in boxes)
+        return (x1, y1, x2, y2)
+
+    def _create_bounding_boxes_recursive(
+        self,
+        boxes: List[Tuple[int, int, int, int]],
+        axis: str = "x",
+        gap_threshold: Optional[int] = None,
+        depth: int = 0,
+        max_depth: int = 10,
+    ) -> List[Tuple[int, int, int, int]]:
+        """
+        Rekursive Zerlegung einer Menge von (x, y, w, h)-Boxen in kleinere
+        Enclosing-Boxes, indem entlang einer Achse bei ausreichend großen Lücken
+        gesplittet wird. Achse wechselt pro Rekursionsschritt (x -> y -> x ...).
+
+        Args:
+            boxes: Liste von (x, y, w, h).
+            axis: 'x' (horizontal clustern) oder 'y' (vertikal clustern).
+            gap_threshold: minimale Lücke (in Pixeln), um zu splitten.
+            depth: aktuelle Rekursionstiefe.
+            max_depth: Sicherheitslimit gegen Pathologien.
+
+        Returns:
+            Liste von (x1, y1, x2, y2)-Bounding-Boxes.
+        """
+        if not boxes:
+            return []
+        if len(boxes) == 1 or depth >= max_depth:
+            return [self._enclosing_box(boxes)]
+
+        if gap_threshold is None:
+            # konservativ: halbiere merge_distance, aber min. 8 px
+            gap_threshold = max(8, self.merge_distance // 2)
+
+        # Sortiere Boxen entlang Achse und berechne Lücken
+        if axis == "x":
+            boxes_sorted = sorted(boxes, key=lambda b: (b[0], b[1]))
+            # gap = linker Rand des nächsten - rechter Rand des vorherigen
+            gaps = []
+            for i in range(len(boxes_sorted) - 1):
+                left = boxes_sorted[i]
+                right = boxes_sorted[i + 1]
+                gap = (right[0]) - (left[0] + left[2])
+                gaps.append((gap, i))
+        else:  # axis == "y"
+            boxes_sorted = sorted(boxes, key=lambda b: (b[1], b[0]))
+            # gap = oberer Rand des nächsten - unterer Rand des vorherigen
+            gaps = []
+            for i in range(len(boxes_sorted) - 1):
+                top = boxes_sorted[i]
+                bottom = boxes_sorted[i + 1]
+                gap = (bottom[1]) - (top[1] + top[3])
+                gaps.append((gap, i))
+
+        # Finde größte Lücke über Schwellwert
+        split_index = None
+        max_gap = -1
+        for gap, i in gaps:
+            if gap > gap_threshold and gap > max_gap:
+                max_gap = gap
+                split_index = i
+
+        if split_index is not None:
+            # Splitte in zwei Cluster und rekursiv weiter
+            left_cluster = boxes_sorted[: split_index + 1]
+            right_cluster = boxes_sorted[split_index + 1 :]
+
+            next_axis = "y" if axis == "x" else "x"
+
+            left_boxes = self._create_bounding_boxes_recursive(
+                left_cluster, axis=next_axis, gap_threshold=gap_threshold, depth=depth + 1, max_depth=max_depth
+            )
+            right_boxes = self._create_bounding_boxes_recursive(
+                right_cluster, axis=next_axis, gap_threshold=gap_threshold, depth=depth + 1, max_depth=max_depth
+            )
+            return left_boxes + right_boxes
+
+        # Keine ausreichend große Lücke auf dieser Achse -> Versuche einmal die andere Achse
+        if depth == 0:
+            other_axis = "y" if axis == "x" else "x"
+            alt = self._create_bounding_boxes_recursive(
+                boxes, axis=other_axis, gap_threshold=gap_threshold, depth=depth + 1, max_depth=max_depth
+            )
+            return alt
+
+        # Keine sinnvolle weitere Zerlegung -> eine Enclosing-Box
+        return [self._enclosing_box(boxes)]
+
 
     def detect_sensitive_regions(self, 
                                 image: Image.Image, 
@@ -93,7 +198,7 @@ class SensitiveRegionCropper:
                 
                 if region_boxes:
                     # Erstelle Bounding Box für diese Region
-                    bbox = self._create_bounding_box(region_boxes)
+                    bbox = self._create_bounding_boxes_recursive(region_boxes, axis="x")
                     sensitive_regions.append(bbox)
         
         # 3. Zusätzliche Erkennung für Patientendaten aus SpaCy-Extraktor
@@ -162,27 +267,28 @@ class SensitiveRegionCropper:
         """
         regions = []
         
-        # Suche nach Vor- und Nachnamen
         if patient_info.get('patient_first_name') and patient_info.get('patient_last_name'):
             full_name = f"{patient_info['patient_first_name']} {patient_info['patient_last_name']}"
             name_boxes = self._find_word_boxes_for_text_span(full_name, word_boxes)
             if name_boxes:
-                regions.append(self._create_bounding_box(name_boxes))
-        
-        # Suche nach Geburtsdatum
+                # ALT:
+                # regions.append(self._create_bounding_box(name_boxes))
+                regions.extend(self._create_bounding_boxes_recursive(name_boxes, axis="x"))
+
+        # Geburtsdatum
         if patient_info.get('patient_dob'):
             dob_str = str(patient_info['patient_dob'])
             dob_boxes = self._find_word_boxes_for_text_span(dob_str, word_boxes)
             if dob_boxes:
-                regions.append(self._create_bounding_box(dob_boxes))
-        
-        # Suche nach Fallnummer
+                regions.extend(self._create_bounding_boxes_recursive(dob_boxes, axis="x"))
+
+        # Fallnummer
         if patient_info.get('casenumber'):
             case_str = str(patient_info['casenumber'])
             case_boxes = self._find_word_boxes_for_text_span(case_str, word_boxes)
             if case_boxes:
-                regions.append(self._create_bounding_box(case_boxes))
-        
+                regions.extend(self._create_bounding_boxes_recursive(case_boxes, axis="x"))
+
         return regions
 
     def _create_bounding_box(self, boxes: List[Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
