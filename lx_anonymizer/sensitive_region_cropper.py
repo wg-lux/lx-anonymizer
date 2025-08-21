@@ -197,9 +197,9 @@ class SensitiveRegionCropper:
                 )
                 
                 if region_boxes:
-                    # Erstelle Bounding Box für diese Region
-                    bbox = self._create_bounding_boxes_recursive(region_boxes, axis="x")
-                    sensitive_regions.append(bbox)
+                    # Erstelle Bounding Boxes für diese Region
+                    bboxes = self._create_bounding_boxes_recursive(region_boxes, axis="x")
+                    sensitive_regions.extend(bboxes)  # extend statt append!
         
         # 3. Zusätzliche Erkennung für Patientendaten aus SpaCy-Extraktor
         if patient_info:
@@ -208,7 +208,17 @@ class SensitiveRegionCropper:
             )
         
         # 4. Führe benachbarte Regionen zusammen
-        merged_regions = self._merge_nearby_regions(sensitive_regions)
+        logger.debug(f"Sensitive regions vor Merge: {len(sensitive_regions)} Regionen")
+        for i, region in enumerate(sensitive_regions):
+            if not isinstance(region, tuple) or len(region) != 4:
+                logger.error(f"Invalid region at index {i}: {region} (type: {type(region)})")
+        
+        # Filtere ungültige Regionen heraus
+        valid_regions = [r for r in sensitive_regions if isinstance(r, tuple) and len(r) == 4]
+        if len(valid_regions) != len(sensitive_regions):
+            logger.warning(f"Filtered out {len(sensitive_regions) - len(valid_regions)} invalid regions")
+        
+        merged_regions = self._merge_nearby_regions(valid_regions)
         
         # 5. Erweitere Regionen um Margin und validiere Größe
         final_regions = []
@@ -364,59 +374,63 @@ class SensitiveRegionCropper:
         Returns:
             Dictionary mit Seite -> Liste von Crop-Bild-Pfaden
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Konvertiere PDF zu Bildern
-        logger.info(f"Konvertiere PDF zu Bildern: {pdf_path}")
-        images = convert_pdf_to_images(pdf_path)
-        
-        if page_numbers is None:
-            page_numbers = list(range(len(images)))
-        
-        results = {}
-        pdf_name = Path(pdf_path).stem
-        
-        for page_num in page_numbers:
-            if page_num >= len(images):
-                logger.warning(f"Seite {page_num} existiert nicht in PDF")
-                continue
+        try:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Konvertiere PDF zu Bildern
+            logger.info(f"Konvertiere PDF zu Bildern: {pdf_path}")
+            images = convert_pdf_to_images(pdf_path)
+            
+            if page_numbers is None:
+                page_numbers = list(range(len(images)))
+            
+            results = {}
+            pdf_name = Path(pdf_path).stem
+            
+            for page_num in page_numbers:
+                if page_num >= len(images):
+                    logger.warning(f"Seite {page_num} existiert nicht in PDF")
+                    continue
+                    
+                logger.info(f"Verarbeite Seite {page_num + 1}")
+                image = images[page_num]
                 
-            logger.info(f"Verarbeite Seite {page_num + 1}")
-            image = images[page_num]
-            
-            # Führe OCR durch, um Word-Boxes zu erhalten
-            full_text, word_boxes = tesseract_full_image_ocr(image)
-            
-            if not word_boxes:
-                logger.warning(f"Keine Textboxen auf Seite {page_num + 1} gefunden")
-                continue
-            
-            # Erkenne sensitive Regionen
-            sensitive_regions = self.detect_sensitive_regions(image, word_boxes)
-            
-            if not sensitive_regions:
-                logger.info(f"Keine sensitiven Regionen auf Seite {page_num + 1} gefunden")
-                results[f"page_{page_num + 1}"] = []
-                continue
-            
-            # Croppe und speichere sensitive Regionen
-            page_crops = []
-            for i, (x1, y1, x2, y2) in enumerate(sensitive_regions):
-                # Croppe die Region
-                cropped_image = image.crop((x1, y1, x2, y2))
+                # Führe OCR durch, um Word-Boxes zu erhalten
+                full_text, word_boxes = tesseract_full_image_ocr(image)
                 
-                # Erstelle Dateinamen
-                crop_filename = f"{pdf_name}_page_{page_num + 1}_region_{i + 1}.png"
-                crop_path = output_dir / crop_filename
+                if not word_boxes:
+                    logger.warning(f"Keine Textboxen auf Seite {page_num + 1} gefunden")
+                    continue
                 
-                # Speichere das gecropte Bild
-                cropped_image.save(crop_path)
-                page_crops.append(str(crop_path))
+                # Erkenne sensitive Regionen
+                sensitive_regions = self.detect_sensitive_regions(image, word_boxes)
                 
-                logger.info(f"Gespeichert: {crop_filename} ({x2-x1}x{y2-y1} px)")
-            
-            results[f"page_{page_num + 1}"] = page_crops
+                if not sensitive_regions:
+                    logger.info(f"Keine sensitiven Regionen auf Seite {page_num + 1} gefunden")
+                    results[f"page_{page_num + 1}"] = []
+                    continue
+                
+                # Croppe und speichere sensitive Regionen
+                page_crops = []
+                for i, (x1, y1, x2, y2) in enumerate(sensitive_regions):
+                    # Croppe die Region
+                    cropped_image = image.crop((x1, y1, x2, y2))
+                    
+                    # Erstelle Dateinamen
+                    crop_filename = f"{pdf_name}_page_{page_num + 1}_region_{i + 1}.png"
+                    crop_path = output_dir / crop_filename
+                    
+                    # Speichere das gecropte Bild
+                    cropped_image.save(crop_path)
+                    page_crops.append(str(crop_path))
+                    
+                    logger.info(f"Gespeichert: {crop_filename} ({x2-x1}x{y2-y1} px)")
+                
+                results[f"page_{page_num + 1}"] = page_crops
+        except Exception as e:
+            logger.error(f"Fehler beim Cropping von Seite {page_num + 1}: {e}")
+            results[f"page_{page_num + 1}"] = []
         
         return results
 
@@ -522,7 +536,7 @@ class SensitiveRegionCropper:
             logger.info(f"Anonymisiertes PDF gespeichert: {anonymized_pdf_path}")
             
         except ImportError:
-            logger.error("PyMuPDF (fitz) nicht verfügbar. Installiere mit: pip install PyMuPDF")
+            logger.error("PymuPDF not installed.")
             raise
         except Exception as e:
             logger.error(f"Fehler beim Erstellen des anonymisierten PDFs: {e}")

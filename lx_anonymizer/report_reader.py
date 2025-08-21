@@ -9,6 +9,7 @@ import warnings
 import hashlib
 import pdfplumber
 from PIL import Image
+import logging
 from .settings import DEFAULT_SETTINGS
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .text_anonymizer import anonymize_text
@@ -73,6 +74,13 @@ class ReportReader:
         if not os.path.exists(pdf_path):
             logger.error(f"PDF file does not exist: {pdf_path}")
             return ""
+        
+        # Disable verbose pdfminer logging
+        logging.getLogger('pdfminer').setLevel(logging.WARNING)
+        logging.getLogger('pdfminer.psparser').setLevel(logging.WARNING)
+        logging.getLogger('pdfminer.pdfdocument').setLevel(logging.WARNING)
+        logging.getLogger('pdfminer.pdfinterp').setLevel(logging.WARNING)
+        logging.getLogger('pdfminer.pdfpage').setLevel(logging.WARNING)
         
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -255,7 +263,6 @@ class ReportReader:
 
         # Add PDF hash (remains the same)
         try:
-            # FIX: Validate pdf_path before calculating hash
             if pdf_path and isinstance(pdf_path, (str, os.PathLike)) and os.path.exists(pdf_path):
                 with open(pdf_path, "rb") as f:
                     pdf_bytes = f.read()
@@ -555,6 +562,7 @@ class ReportReader:
         )
         
         cropped_regions_info = {}
+        anonymized_pdf_path = None
         
         if not crop_output_dir:
             # Setze ein Standard-Ausgabeverzeichnis, falls nicht angegeben
@@ -567,11 +575,15 @@ class ReportReader:
         # Führe Cropping durch, falls angefordert
         if crop_sensitive_regions and crop_output_dir and pdf_path:
             try:
-                logger.info("Beginne Cropping sensitiver Regionen...")
-                cropped_regions_info = self.sensitive_cropper.crop_sensitive_regions(
-                    pdf_path=pdf_path,
-                    output_dir=crop_output_dir
-                )
+                try:
+                    logger.info("Beginne Cropping sensitiver Regionen...")
+                    cropped_regions_info = self.sensitive_cropper.crop_sensitive_regions(
+                        pdf_path=pdf_path,
+                        output_dir=crop_output_dir
+                    )
+                except Exception as e:
+                    logger.error(f"Fehler beim initialien Aufruf der Funktion zum Cropping sensitiver Regionen: {e}")
+                    cropped_regions_info = {}
                 
                 # Erstelle automatisch ein anonymisiertes PDF
                 if cropped_regions_info:
@@ -589,26 +601,55 @@ class ReportReader:
                     except Exception as pdf_error:
                         logger.warning(f"Konnte anonymisiertes PDF nicht erstellen: {pdf_error}")
                         report_meta['anonymized_pdf_error'] = str(pdf_error)
-                
-                # Füge Cropping-Informationen zu den Metadaten hinzu
-                report_meta['cropped_regions'] = cropped_regions_info
-                report_meta['cropping_enabled'] = True
-                
-                # Berechne Statistiken
-                total_crops = sum(len(crops) for crops in cropped_regions_info.values())
-                report_meta['total_cropped_regions'] = total_crops
-                
-                logger.info(f"Cropping abgeschlossen: {total_crops} Regionen über {len(cropped_regions_info)} Seiten")
-                
+                        anonymized_pdf_path = None
+                try:
+                    
+                    # Füge Cropping-Informationen zu den Metadaten hinzu
+                    report_meta['cropped_regions'] = cropped_regions_info
+                    report_meta['cropping_enabled'] = True
+                    
+                    # Berechne Statistiken
+                    total_crops = sum(len(crops) for crops in cropped_regions_info.values())
+                    report_meta['total_cropped_regions'] = total_crops
+                    
+                    logger.info(f"Cropping abgeschlossen: {total_crops} Regionen über {len(cropped_regions_info)} Seiten")
+                except Exception as e:
+                    logger.error(f"Fehler beim Hinzufügen von Cropping-Informationen zu den Metadaten: {e}")
+                    report_meta['cropped_regions'] = {}
+                    report_meta['total_cropped_regions'] = 0
+                    report_meta['cropping_error'] = str(e)
+                    report_meta['cropping_enabled'] = False
+                    cropped_regions_info = {}
+                    anonymized_pdf_path = None
+                    raise e  # Reraise to handle in the outer try-except
+                    
             except Exception as e:
-                logger.error(f"Fehler beim Cropping sensitiver Regionen: {e}")
-                report_meta['cropping_error'] = str(e)
-                report_meta['cropping_enabled'] = False
+                logger.error(f"Fehler beim Cropping sensitiver Regionen: {e}, trying fallback.")
+                try:
+                    # Import hier um Circular Import zu vermeiden
+                    from .main_with_reassembly import main
+                    # Fallback auf die alte Methode, falls Cropping fehlschlägt
+                    logger.info("Versuche Fallback-Cropping mit main_with_reassembly...")
+                    anonymized_pdf_path, data, original_path = main(
+                        pdf_path,
+                    )
+                    report_meta['anonymized_pdf_path'] = str(anonymized_pdf_path)
+                    report_meta['cropping_enabled'] = True
+                    logger.info(f"Fallback-Anonymisierung erfolgreich: {anonymized_pdf_path}")
+                except Exception as fallback_error:
+                    logger.error(f"Fallback-Cropping fehlgeschlagen: {fallback_error}")
+                    report_meta['anonymized_pdf_error'] = str(fallback_error)
+                    report_meta['cropped_regions'] = {}
+                    report_meta['total_cropped_regions'] = 0
+                    report_meta['cropping_error'] = str(e)
+                    report_meta['cropping_enabled'] = False
+                    anonymized_pdf_path = None
         
         else:
             report_meta['cropping_enabled'] = False
+            
         
-        return original_text, anonymized_text, report_meta, cropped_regions_info
+        return original_text, anonymized_text, report_meta, cropped_regions_info, anonymized_pdf_path
     
     def create_visualization_report(self, pdf_path, output_dir, visualize_all_pages=False):
         """
