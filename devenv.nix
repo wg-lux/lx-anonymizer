@@ -2,7 +2,7 @@
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
-    python312Full
+    python311Full
     stdenv.cc.cc
     git
     direnv
@@ -37,7 +37,7 @@ in
     gcc
     pkg-config
     protobuf
-    python312Packages.sentencepiece
+    python311Packages.sentencepiece
     ffmpeg_6-headless
   ];
 
