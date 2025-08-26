@@ -2,7 +2,7 @@
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
-    python312Full
+    python311Full
     stdenv.cc.cc
     git
     direnv
@@ -48,15 +48,10 @@ in
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
     PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
+    UV_PYTHON_DOWNLOADS = "managed";
+    UV_PYTHON_PREFERENCE = "system";
   };
 
-  languages.python = {
-    enable = true;
-    uv = {
-      enable = true;
-      sync.enable = true;
-    };
-  };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
 
@@ -87,7 +82,6 @@ in
   };
 
   enterShell = ''
-    . .devenv/state/venv/bin/activate
     uv sync
     uv run python env_setup.py
     hello
