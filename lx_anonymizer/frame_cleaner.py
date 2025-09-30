@@ -107,7 +107,7 @@ class FrameCleaner:
         try:
             # Test NVENC availability with a minimal command (minimum size for NVENC)
             cmd = [
-                'ffmpeg', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=256x256:rate=1',
+                'ffmpeg', '-nostdin', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=256x256:rate=1',
                 '-c:v', 'h264_nvenc', '-preset', 'p1', '-f', 'null', '-'
             ]
             
@@ -234,7 +234,7 @@ class FrameCleaner:
         try:
             # Use ffprobe to get detailed format information
             cmd = [
-                'ffprobe', '-v', 'quiet', '-print_format', 'json', 
+                'ffprobe', '-nostdin', '-v', 'quiet', '-print_format', 'json', 
                 '-show_format', '-show_streams', str(video_path)
             ]
             
@@ -363,12 +363,12 @@ class FrameCleaner:
             
             # Build FFmpeg command for pixel format conversion with hardware acceleration
             cmd = [
-                'ffmpeg', '-i', str(input_video),
+                'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                 '-vf', f'format={target_pixel_format}',  # Only convert pixel format
                 *encoder_args,  # Use hardware-optimized encoder
                 '-c:a', 'copy',  # Copy audio without re-encoding
                 '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
-                '-y', str(output_video)
+                str(output_video)
             ]
             
             logger.info(f"Converting pixel format: {input_video} -> {output_video} (using {self.preferred_encoder['type']})")
@@ -410,12 +410,12 @@ class FrameCleaner:
         """
         try:
             cmd = [
-                'ffmpeg', '-i', str(input_video),
+                'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                 '-vf', f'format={target_pixel_format}',
                 '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
                 '-c:a', 'copy',
                 '-avoid_negative_ts', 'make_zero',
-                '-y', str(output_video)
+                str(output_video)
             ]
             
             logger.info(f"CPU fallback pixel conversion: {input_video} -> {output_video}")
@@ -451,10 +451,10 @@ class FrameCleaner:
             # Check if we can use pure stream copy
             if format_info['can_stream_copy']:
                 cmd = [
-                    'ffmpeg', '-i', str(input_video),
+                    'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                     '-c', 'copy',  # Copy all streams without re-encoding
                     '-avoid_negative_ts', 'make_zero',
-                    '-y', str(output_video)
+                    str(output_video)
                 ]
                 
                 logger.info(f"Stream copying (no re-encoding): {input_video} -> {output_video}")
@@ -470,15 +470,15 @@ class FrameCleaner:
                     # Use hardware-optimized encoding for unknown formats
                     encoder_args = self._build_encoder_cmd('fast')
                     cmd = [
-                        'ffmpeg', '-i', str(input_video),
+                        'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                         *encoder_args,
                         '-c:a', 'copy',
-                        '-y', str(output_video)
+                        str(output_video)
                     ]
                     
                     logger.info(f"Fast re-encoding with {self.preferred_encoder['type']} and stream copy audio: {input_video} -> {output_video}")
             
-            logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+            logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"Stream copy output: {result.stderr}")
             
@@ -513,10 +513,10 @@ class FrameCleaner:
         """
         try:
             cmd = [
-                'ffmpeg', '-i', str(input_video),
+                'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                 '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
                 '-c:a', 'copy',
-                '-y', str(output_video)
+                str(output_video)
             ]
             
             logger.info(f"CPU fallback stream copy: {input_video} -> {output_video}")
@@ -548,8 +548,6 @@ class FrameCleaner:
             True if masking succeeded, False otherwise
         """
         try:
-            format_info = self._detect_video_format(input_video)
-            
             endoscope_x = mask_config.get("endoscope_image_x", 0)
             endoscope_y = mask_config.get("endoscope_image_y", 0)
             endoscope_w = mask_config.get("endoscope_image_width", 640)
@@ -557,142 +555,24 @@ class FrameCleaner:
             
             # Check if we can use simple crop (most efficient)
             if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
-                # Simple crop - can often use stream copy for audio
+                # Simple crop - use single-pass processing for maximum efficiency
                 crop_filter = f"crop=in_w-{endoscope_x}:in_h:{endoscope_x}:0"
+                encoder_args = self._build_encoder_cmd('balanced')
                 
-                if use_named_pipe and format_info['can_stream_copy']:
-                    # Use named pipe for streaming processing
-                    pipe_path = self._create_named_pipe(".mp4")
-                    
-                    try:
-                        # Start background process to write to pipe
-                        writer_cmd = [
-                            'ffmpeg', '-i', str(input_video),
-                            '-vf', crop_filter,
-                            '-c:a', 'copy',  # Stream copy audio
-                            '-f', 'mp4', '-movflags', 'faststart',
-                            str(pipe_path)
-                        ]
-                        
-                        # Start reader process from pipe
-                        reader_cmd = [
-                            'ffmpeg', '-i', str(pipe_path),
-                            '-c', 'copy',  # Pure stream copy from pipe
-                            '-y', str(output_video)
-                        ]
-                        
-                        logger.info(f"Using named pipe for streaming mask: {crop_filter}")
-                        
-                        # Start writer in background
-                        writer_proc = subprocess.Popen(
-                            writer_cmd, 
-                            stdout=subprocess.PIPE, 
-                            stderr=subprocess.PIPE
-                        )
-                        
-                        try:
-                            # Start reader (blocks until complete)
-                            try:
-                                duration = format_info.get("duration", 0) or 1  # seconds
-                                multiplier = 10.0                                # 10× realtime headroom (On server this might be unessecary)
-                                reader_tmo  = max(600, duration * multiplier)   # at least 10 min
-                                writer_tmo  = reader_tmo * 0.5                  # writer should finish sooner
-                            except KeyError:
-                                # Fallback to default timeouts if duration not available
-                                reader_tmo = 1000000
-                                logger.warning("FFProbe problem. Using default timeout for reader process")
-                        
-                            
-
-                            reader_result = subprocess.run(
-                                reader_cmd,
-                                capture_output=True,
-                                text=True,
-                                check=True,
-                                timeout=reader_tmo,
-                            )
-
-                            
-                            # Wait for writer to complete with timeout
-                            try:
-                                writer_stdout, writer_stderr = writer_proc.communicate(timeout=writer_tmo)
-                                writer_returncode = writer_proc.returncode
-                                
-                                # Check if both processes completed successfully
-                                if writer_returncode != 0:
-                                    logger.error(f"Writer process failed with code {writer_returncode}: {writer_stderr.decode() if isinstance(writer_stderr, bytes) else writer_stderr}")
-                                    raise subprocess.CalledProcessError(writer_returncode, writer_cmd, writer_stderr)
-                                
-                                logger.debug(f"Streaming mask completed via named pipe")
-                                
-                            except subprocess.TimeoutExpired:
-                                logger.error("Writer process timed out, terminating...")
-                                writer_proc.terminate()
-                                try:
-                                    writer_proc.wait(timeout=10)
-                                except subprocess.TimeoutExpired:
-                                    logger.error("Writer process did not terminate gracefully, killing...")
-                                    writer_proc.kill()
-                                    writer_proc.wait()
-                                raise RuntimeError("Named pipe writer process timed out")
-                                
-                        except subprocess.TimeoutExpired:
-                            logger.error("Reader process timed out, cleaning up...")
-                            # Kill writer if reader times out
-                            if writer_proc.poll() is None:  # Still running
-                                writer_proc.terminate()
-                                try:
-                                    writer_proc.wait(timeout=10)
-                                except subprocess.TimeoutExpired:
-                                    writer_proc.kill()
-                                    writer_proc.wait()
-                            raise RuntimeError("Named pipe reader process timed out")
-                            
-                        except subprocess.CalledProcessError as e:
-                            logger.error(f"Reader process failed: {e.stderr}")
-                            # Clean up writer process
-                            if writer_proc.poll() is None:  # Still running
-                                writer_proc.terminate()
-                                try:
-                                    writer_proc.wait(timeout=10)
-                                except subprocess.TimeoutExpired:
-                                    writer_proc.kill()
-                                    writer_proc.wait()
-                            raise
-                            
-                    finally:
-                        # Ensure writer process is cleaned up
-                        if writer_proc.poll() is None:  # Still running
-                            logger.warning("Writer process still running during cleanup, terminating...")
-                            writer_proc.terminate()
-                            try:
-                                writer_proc.wait(timeout=10)
-                            except subprocess.TimeoutExpired:
-                                logger.error("Writer process did not terminate, killing...")
-                                writer_proc.kill()
-                                writer_proc.wait()
-                        
-                        # Clean up pipe
-                        if pipe_path.exists():
-                            try:
-                                pipe_path.unlink()
-                                pipe_path.parent.rmdir()
-                            except OSError:
-                                pass
-                else:
-                    # Direct processing without pipe
-                    cmd = [
-                        'ffmpeg', '-i', str(input_video),
-                        '-vf', crop_filter,
-                        '-c:a', 'copy',  # Stream copy audio when possible
-                        '-y', str(output_video)
-                    ]
-                    
-                    logger.info(f"Direct crop masking: {crop_filter}")
-                    logger.debug(f"FFmpeg command: {' '.join(cmd)}")
-                    
-                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                    logger.debug(f"Direct masking output: {result.stderr}")
+                cmd = [
+                    'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
+                    '-vf', crop_filter,
+                    *encoder_args,
+                    '-c:a', 'copy',
+                    '-movflags', '+faststart',
+                    str(output_video)
+                ]
+                
+                logger.info(f"Direct crop masking (single pass) using {self.preferred_encoder['type']}: {crop_filter}")
+                logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                logger.debug(f"Direct masking output: {result.stderr}")
             
             else:
                 # Complex masking - use drawbox filters
@@ -720,13 +600,14 @@ class FrameCleaner:
                 vf = ','.join(mask_filters)
                 
                 # Use hardware-optimized encoding for complex masks
-                encoder_args = self._build_encoder_cmd('balanced')
+                encoder_args = self._build_encoder_cmd('fast')
                 cmd = [
-                    'ffmpeg', '-i', str(input_video),
+                    'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                     '-vf', vf,
                     *encoder_args,  # Use hardware-optimized encoder
                     '-c:a', 'copy',  # Always copy audio
-                    '-y', str(output_video)
+                    '-movflags', '+faststart',
+                    str(output_video)
                 ]
                 
                 logger.info(f"Complex mask processing with {len(mask_filters)} regions using {self.preferred_encoder['type']}")
@@ -800,20 +681,23 @@ class FrameCleaner:
                 try:
                     # Pipeline: filter frames -> pipe -> stream copy to final output
                     filter_cmd = [
-                        'ffmpeg', '-i', str(original_video),
+                        'ffmpeg', '-nostdin', '-y', '-i', str(original_video),
                         '-vf', vf,
                         '-af', af, 
-                        '-f', 'mp4', '-movflags', 'faststart',
+                        '-f', 'matroska',  # Use MKV for better streaming compatibility
                         str(pipe_path)
                     ]
                     
                     copy_cmd = [
-                        'ffmpeg', '-i', str(pipe_path),
+                        'ffmpeg', '-nostdin', '-y', '-fflags', 'nobuffer', '-i', str(pipe_path),
                         '-c', 'copy',  # Stream copy from pipe
-                        '-y', str(output_video)
+                        '-movflags', '+faststart',
+                        str(output_video)
                     ]
                     
-                    logger.info("Using named pipe for frame removal streaming")
+                    logger.info("Using named pipe for frame removal streaming (MKV container)")
+                    logger.debug(f"Filter command with -nostdin: {' '.join(filter_cmd)}")
+                    logger.debug(f"Copy command with -nostdin: {' '.join(copy_cmd)}")
                     
                     # Start filter process in background
                     filter_proc = subprocess.Popen(
@@ -823,7 +707,7 @@ class FrameCleaner:
                     )
                     
                     # Start copy process (blocks until complete)
-                    copy_result = subprocess.run(
+                    subprocess.run(
                         copy_cmd,
                         capture_output=True,
                         text=True,
@@ -831,7 +715,7 @@ class FrameCleaner:
                     )
                     
                     # Wait for filter to complete
-                    filter_result = filter_proc.communicate()
+                    filter_proc.communicate()
                     
                     logger.debug("Streaming frame removal completed via named pipe")
                     
@@ -850,30 +734,32 @@ class FrameCleaner:
                     # Use hardware-optimized encoding to preserve quality
                     encoder_args = self._build_encoder_cmd('balanced')
                     cmd = [
-                        'ffmpeg', '-i', str(original_video),
+                        'ffmpeg', '-nostdin', '-y', '-i', str(original_video),
                         '-vf', vf,
                         '-af', af,
                         *encoder_args,  # Use hardware-optimized encoder
                         '-c:a', 'aac', '-b:a', '128k',  # Re-encode audio with high quality
-                        '-y', str(output_video)
+                        '-movflags', '+faststart',
+                        str(output_video)
                     ]
                 else:
                     # Video-only or format needs re-encoding
                     encoder_args = self._build_encoder_cmd('balanced')
                     cmd = [
-                        'ffmpeg', '-i', str(original_video),
+                        'ffmpeg', '-nostdin', '-y', '-i', str(original_video),
                         '-vf', vf,
                         *encoder_args,  # Use hardware-optimized encoder
                         '-an' if not format_info['has_audio'] else '-af', 
                         af if format_info['has_audio'] else '',
-                        '-y', str(output_video)
+                        '-movflags', '+faststart' if format_info['has_audio'] else '',
+                        str(output_video)
                     ]
                     
                     # Remove empty arguments
                     cmd = [arg for arg in cmd if arg]
                 
                 logger.info(f"Direct frame removal processing using {self.preferred_encoder['type']}")
-                logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+                logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 logger.debug(f"Direct frame removal output: {result.stderr}")
@@ -894,11 +780,11 @@ class FrameCleaner:
                 logger.warning("Retrying frame removal without audio processing using CPU...")
                 fallback_encoder_args = self._build_encoder_cmd('fast', fallback=True)
                 cmd_no_audio = [
-                    'ffmpeg', '-i', str(original_video),
+                    'ffmpeg', '-nostdin', '-y', '-i', str(original_video),
                     '-vf', vf,
                     '-an',  # No audio
                     *fallback_encoder_args,
-                    '-y', str(output_video)
+                    str(output_video)
                 ]
                 result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
                 logger.info("Successfully removed frames without audio using CPU fallback")
@@ -915,6 +801,7 @@ class FrameCleaner:
         self,
         gray_frame: np.ndarray,
         endoscope_roi: dict | None,
+        frame_id: int | None = None,
     ) -> tuple[bool, dict, str, float]:
         """
         Centralised OCR + metadata extraction for ONE frame.
@@ -922,6 +809,8 @@ class FrameCleaner:
         Returns:
             is_sensitive, frame_metadata, ocr_text, ocr_conf
         """
+        logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
+        
         if self.use_minicpm and self.minicpm_ocr:
             pil_img = (
                 Image.fromarray(gray_frame, mode="L")
@@ -935,6 +824,7 @@ class FrameCleaner:
                         context="endoscopy video frame",
                     )
                 )
+                logger.debug(f"MiniCPM extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
             except ValueError as ve:
                 logger.error(f"MiniCPM-o 2.6 processing failed: {ve}")
                 self.use_minicpm = False
@@ -948,9 +838,18 @@ class FrameCleaner:
                     roi=endoscope_roi,
                     high_quality=True,
                 )
-                frame_metadata = (
-                    self.PatientDataExtractor
-                )
+                logger.debug(f"Fallback OCR extracted text length: {len(ocr_text or '')}")
+                try:
+                    frame_metadata = (
+                        self.frame_metadata_extractor.extract_metadata_from_frame_text(
+                            ocr_text
+                        ) if ocr_text else {}
+                    )
+                    logger.debug(f"Fallback extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
+                except Exception:
+                    logger.exception("Failed to extract patient data from OCR text in fallback")
+                    frame_metadata = {}
+                    
                 is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
                     frame_metadata
                 )
@@ -962,7 +861,26 @@ class FrameCleaner:
                     "MiniCPM-o 2.6 failed to detect sensitivity or text, falling back to traditional OCR."
                 )
                 # Fallback to traditional OCR
-                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame
+                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                    gray_frame,
+                    roi=endoscope_roi,
+                    high_quality=True,
+                )
+                logger.debug(f"Exception fallback OCR extracted text length: {len(ocr_text or '')}")
+                try:
+                    frame_metadata = (
+                        self.frame_metadata_extractor.extract_metadata_from_frame_text(
+                            ocr_text
+                        ) if ocr_text else {}
+                    )
+                    logger.debug(f"Exception fallback extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
+                except Exception:
+                    logger.exception("Failed to extract patient data from OCR text in exception fallback")
+                    frame_metadata = {}
+                    
+                is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
+                    frame_metadata
+                )
             # MiniCPM does not provide a confidence value – treat as 1.0
             ocr_conf = 1.0
         else:
@@ -971,11 +889,18 @@ class FrameCleaner:
                 roi=endoscope_roi,
                 high_quality=True,
             )
-            frame_metadata = (
-                self.frame_metadata_extractor.extract_metadata_from_frame_text(
-                    ocr_text
+            logger.debug(f"Traditional OCR extracted text length: {len(ocr_text or '')}")
+            try:
+                frame_metadata = (
+                    self.frame_metadata_extractor.extract_metadata_from_frame_text(
+                        ocr_text
+                    ) if ocr_text else {}
                 )
-            )
+                logger.debug(f"Traditional extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
+            except Exception:
+                logger.exception("Failed to extract patient data from OCR text")
+                frame_metadata = {}
+                
             is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
                 frame_metadata
             )
@@ -1051,7 +976,7 @@ class FrameCleaner:
             sampled += 1
 
             is_sensitive, frame_meta, ocr_text, ocr_conf = self._process_frame(
-                gray_frame, endoscope_roi
+                gray_frame, endoscope_roi, frame_id=idx
             )
 
             # merge metadata for every frame (high recall)
@@ -1150,9 +1075,8 @@ class FrameCleaner:
         
         # Build ffmpeg command
         cmd = [
-            'ffmpeg', '-i', str(video_path),
+            'ffmpeg', '-nostdin', '-y', '-i', str(video_path),
             '-vf', 'fps=1',  # Extract 1 frame per second (adjust as needed)
-            '-y',  # Overwrite existing files
             str(output_dir / 'frame_%04d.jpg')
         ]
         
@@ -1163,6 +1087,7 @@ class FrameCleaner:
         
         try:
             logger.info(f"Extracting frames from {video_path} to {output_dir}")
+            logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"ffmpeg output: {result.stderr}")
             
@@ -1313,16 +1238,18 @@ class FrameCleaner:
             af = f"aselect='not({idx_list})',asetpts=N/SR/TB"
             
             # Build ffmpeg command with properly quoted filters
+            encoder_args = self._build_encoder_cmd('balanced')
             cmd = [
-                'ffmpeg', '-i', str(original_video),
+                'ffmpeg', '-nostdin', '-y', '-i', str(original_video),
                 '-vf', vf,
                 '-af', af,
-                '-y',  # Overwrite existing files
+                *encoder_args,
+                '-movflags', '+faststart',
                 str(output_video)
             ]
             
-            logger.info(f"Re-encoding video without {len(frames_to_remove)} frames")
-            logger.debug(f"FFmpeg command: {' '.join(cmd)}")
+            logger.info(f"Re-encoding video without {len(frames_to_remove)} frames using {self.preferred_encoder['type']}")
+            logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"ffmpeg re-encode output: {result.stderr}")
@@ -1339,15 +1266,16 @@ class FrameCleaner:
             # Fallback: try without audio filter if audio processing failed
             try:
                 logger.warning("Retrying without audio processing...")
+                fallback_encoder_args = self._build_encoder_cmd('fast', fallback=True)
                 cmd_no_audio = [
-                    'ffmpeg', '-i', str(original_video),
+                    'ffmpeg', '-nostdin', '-y', '-i', str(original_video),
                     '-vf', vf,
                     '-an',  # No audio
-                    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
-                    '-y', str(output_video)
+                    *fallback_encoder_args,
+                    str(output_video)
                 ]
                 result = subprocess.run(cmd_no_audio, capture_output=True, text=True, check=True)
-                logger.info("Successfully re-encoded video without audio")
+                logger.info("Successfully re-encoded video without audio using CPU fallback")
                 return True
             except subprocess.CalledProcessError as e2:
                 logger.error(f"ffmpeg re-encoding failed even without audio: {e2.stderr}")
@@ -1410,14 +1338,16 @@ class FrameCleaner:
             if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
                 # Simple left crop case - crop everything to the right of the endoscope area
                 crop_filter = f"crop=in_w-{endoscope_x}:in_h:{endoscope_x}:0"
+                encoder_args = self._build_encoder_cmd('balanced')
                 cmd = [
-                    'ffmpeg', '-i', str(input_video),
+                    'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                     '-vf', crop_filter,
+                    *encoder_args,
                     '-c:a', 'copy',  # Preserve audio
-                    '-y',
+                    '-movflags', '+faststart',
                     str(output_video)
                 ]
-                logger.info(f"Using simple crop mask: {crop_filter}")
+                logger.info(f"Using simple crop mask with {self.preferred_encoder['type']}: {crop_filter}")
             else:
                 # Complex masking using drawbox to black out sensitive areas
                 # Mask everything except the endoscope area
@@ -1448,17 +1378,19 @@ class FrameCleaner:
                 # Combine all mask filters
                 vf = ','.join(mask_filters)
                 
+                encoder_args = self._build_encoder_cmd('fast')
                 cmd = [
-                    'ffmpeg', '-i', str(input_video),
+                    'ffmpeg', '-nostdin', '-y', '-i', str(input_video),
                     '-vf', vf,
+                    *encoder_args,
                     '-c:a', 'copy',  # Preserve audio
-                    '-y',
+                    '-movflags', '+faststart',
                     str(output_video)
                 ]
-                logger.info(f"Using complex drawbox mask with {len(mask_filters)} regions")
+                logger.info(f"Using complex drawbox mask with {len(mask_filters)} regions using {self.preferred_encoder['type']}")
             
             logger.info(f"Applying mask to video: {input_video} -> {output_video}")
-            logger.debug(f"FFmpeg masking command: {' '.join(cmd)}")
+            logger.debug(f"FFmpeg masking command with -nostdin: {' '.join(cmd)}")
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"FFmpeg masking output: {result.stderr}")
