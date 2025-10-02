@@ -107,6 +107,7 @@ def extract_meta_ollama(text: str, model: str = "llama3:8b") -> dict:
                 # Try to validate with Pydantic first
                 validated_data = PatientMeta.model_validate_json(cleaned_json_str)
                 logger.info(f"Successfully extracted and validated metadata with {model}")
+                logger.debug(f"Extracted metadata: {validated_data.model_dump(mode='json')}")
                 return validated_data.model_dump(mode='json')
             except ValidationError as e:
                 logger.warning(f"Pydantic validation failed: {e}. Falling back to regex extraction.")
