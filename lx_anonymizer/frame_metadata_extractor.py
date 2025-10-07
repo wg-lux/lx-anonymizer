@@ -15,6 +15,8 @@ import re
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, date
 import dateparser
+from typing import Any, Dict
+
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ class FrameMetadataExtractor:
         self.gender_patterns = [
             r'(männlich|weiblich|male|female|m|f|w)',
         ]
+        self.logger = logging.getLogger(__name__)
     
     def extract_metadata_from_frame_text(self, text: str) -> Dict[str, Any]:
         """
@@ -342,22 +345,45 @@ class FrameMetadataExtractor:
         
         return False
     
+
+    _SENTINELS = {"unknown", "none", "n/a", "na", "unbekannt"}
+
+    def _is_blank(self, v: Any) -> bool:
+        if v is None:
+            return True
+        if isinstance(v, str):
+            s = v.strip()
+            return not s or s.lower() in self._SENTINELS
+        return False  # keep 0, False, [], {} as valid
+
     def merge_metadata(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Merge new metadata with existing, preferring non-empty values.
-        
-        Args:
-            existing: Existing metadata dictionary
-            new: New metadata to merge
-            
-        Returns:
-            Merged metadata dictionary
-        """
-        merged = existing.copy()
-        
-        for key, value in new.items():
-            if value and value not in [None, '', 'Unknown']:
-                if not merged.get(key) or merged[key] in [None, '', 'Unknown']:
-                    merged[key] = value
-        
+        merged = dict(existing or {})
+        for k, nv in (new or {}).items():
+            if self._is_blank(nv):
+                continue
+            cv = merged.get(k)
+
+            # fill if missing/blank
+            if self._is_blank(cv):
+                merged[k] = nv
+                continue
+
+            # optional upgrade heuristics
+            if isinstance(cv, str) and isinstance(nv, str):
+                if len(nv.strip()) > len(cv.strip()) and nv.strip().lower() != cv.strip().lower():
+                    merged[k] = nv
+            elif isinstance(cv, dict) and isinstance(nv, dict):
+                merged[k] = self.merge_metadata(cv, nv)  # recursive
+            elif isinstance(cv, list) and isinstance(nv, list):
+                # simple union preserving order
+                seen = set()
+                out = []
+                for x in cv + nv:
+                    key = (type(x), str(x))
+                    if key not in seen:
+                        seen.add(key)
+                        out.append(x)
+                merged[k] = out
+            # else: keep existing
+        self.logger.info(f"Merged metadata: {merged}")
         return merged

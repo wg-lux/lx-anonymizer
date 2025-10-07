@@ -23,7 +23,7 @@ from .sensitive_region_cropper import SensitiveRegionCropper  # Import the new c
 from datetime import datetime, date
 import dateparser
 from .utils.ollama import ensure_ollama
-from lx_annotate.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from lx_anonymizer.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
 
 class ReportReader:
     def __init__(

@@ -35,9 +35,15 @@ from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr, _can_load_model
 from lx_anonymizer.spacy_extractor import PatientDataExtractor
+from lx_anonymizer.ocr import trocr_full_image_ocr
 from typing_inspection.typing_objects import NoneType
 
-from lx_annotate.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from lx_anonymizer.ollama_llm_meta_extraction_optimized import (
+    OllamaOptimizedExtractor, 
+    EnrichedMetadataExtractor, 
+    FrameSamplingOptimizer,
+    create_optimized_extractor_with_sampling
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,23 +62,53 @@ class FrameCleaner:
     - NVIDIA NVENC hardware acceleration with CPU fallback
     """
     
-    def __init__(self, use_minicpm: bool = True, minicpm_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, use_minicpm: bool = True, minicpm_config: Optional[Dict[str, Any]] = None, use_llm: bool = False):
         # Initialize specialized frame processing components
         self.frame_ocr = FrameOCR()
         self.frame_metadata_extractor = FrameMetadataExtractor()
         self.PatientDataExtractor = PatientDataExtractor()
-        self.best_frame_text = BestFrameText()
         
-        # Initialize Ollama for LLM processing
-        self.ollama_proc = ensure_ollama()
+        # Enhanced OCR integration - use enhanced components if available
+        logger.info("Initializing with Enhanced OCR components (OCR_FIX_V1 enabled)")
+        self.best_frame_text = BestFrameText()
+        self.use_enhanced_ocr = True
+        
+        # LLM usage flag (guard)
+        self.use_llm = bool(use_llm)
         
         # Initialize MiniCPM-o 2.6 if enabled
         self.use_minicpm = use_minicpm
         self.minicpm_ocr = None
         self._log_hf_cache_info()
         
-        # Initialize the optimized ollama processing pipeline
-        self.ollama_extractor = OllamaOptimizedExtractor()
+        # Initialize the optimized ollama processing pipeline (guarded)
+        self.ollama_proc = None
+        self.ollama_extractor = None
+        self.frame_sampling_optimizer = None
+        self.enriched_extractor = None
+        if self.use_llm:
+            try:
+                # Initialize Ollama for LLM processing
+                self.ollama_proc = ensure_ollama()
+                self.ollama_extractor = OllamaOptimizedExtractor()
+                # Initialize enriched metadata extraction components
+                self.frame_sampling_optimizer = FrameSamplingOptimizer(max_frames=100, skip_similar_threshold=0.85)
+                self.enriched_extractor = EnrichedMetadataExtractor(
+                    ollama_extractor=self.ollama_extractor,
+                    frame_optimizer=self.frame_sampling_optimizer
+                )
+            except Exception as e:
+                logger.warning(f"Ollama/LLM unavailable, disabling LLM features: {e}")
+                self.use_llm = False
+                self.ollama_proc = None
+                self.ollama_extractor = None
+                self.frame_sampling_optimizer = None
+                self.enriched_extractor = None
+        
+        # Frame data collection for batch processing
+        self.frame_collection = []
+        self.ocr_text_collection = []
+        self.current_video_total_frames = 0
         
         # Hardware acceleration detection
         self.nvenc_available = self._detect_nvenc_support()
@@ -890,12 +926,69 @@ class FrameCleaner:
             # MiniCPM does not provide a confidence value – treat as 1.0
             ocr_conf = 1.0
         else:
-            ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
-                gray_frame,
-                roi=endoscope_roi,
-                high_quality=True,
-            )
-            logger.debug(f"Traditional OCR extracted text length: {len(ocr_text or '')}")
+            # Enhanced OCR integration - use diagnostic OCR if available
+            if self.use_enhanced_ocr:
+                logger.debug("Using Enhanced OCR with gibberish detection")
+                try:
+                    ocr_text, ocr_conf, ocr_data = self.frame_ocr.extract_text_from_frame(
+                        gray_frame,
+                        roi=endoscope_roi,
+                        high_quality=True
+                    )
+                    logger.debug(f"Enhanced OCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
+                    
+                    frame_metadata = (
+                        self.frame_metadata_extractor.extract_metadata_from_frame_text(
+                            ocr_text
+                        ) if ocr_text else {}
+                    )
+                    
+                    is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
+                        frame_metadata
+                    )
+                    
+                    # Add enhanced text to quality-based best frame collection
+                    if ocr_text:
+                        if hasattr(self.best_frame_text, 'push'):
+                            # Standard BestFrameText API expects only 2 positional arguments
+                            try:
+                                # Use standard API with text and confidence
+                                self.best_frame_text.push(ocr_text, ocr_conf)
+                            except TypeError:
+                                # Fallback in case of API changes
+                                logger.warning("BestFrameText.push() failed, using fallback storage")
+                                if not hasattr(self, '_text_collection'):
+                                    self._text_collection = []
+                                self._text_collection.append((ocr_text, ocr_conf))
+                        else:
+                            # Standard BestFrameText API with add_text method
+                            logger.warning("BestFrameText does not have push method - using fallback")
+                            # Store in internal collection for later processing
+                            if not hasattr(self, '_text_collection'):
+                                self._text_collection = []
+                            self._text_collection.append((ocr_text, ocr_conf))
+                    
+                except Exception as e:
+                    logger.warning(f"Enhanced OCR failed, falling back to standard OCR: {e}")
+                    # Fallback to standard OCR
+                    ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                        gray_frame,
+                        roi=endoscope_roi,
+                        high_quality=True,
+                    )
+                    logger.debug(f"Standard OCR fallback text length: {len(ocr_text or '')}")
+            else:
+                # Standard OCR
+                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                    gray_frame,
+                    roi=endoscope_roi,
+                    high_quality=True,
+                )
+                logger.debug(f"Traditional OCR extracted text length: {len(ocr_text or '')}")
+                
+                # Add text to standard best frame collection
+                if ocr_text:
+                    self.best_frame_text.push(ocr_text, ocr_conf, is_sensitive=None)
             try:
                 frame_metadata = (
                     self.frame_metadata_extractor.extract_metadata_from_frame_text(
@@ -977,6 +1070,7 @@ class FrameCleaner:
         for idx, gray_frame, stride in self._iter_video(
             video_path, total_frames
         ):
+            indicator = 5 + (idx // 1000)
             if sampled >= max_samples:
                 break
             sampled += 1
@@ -987,23 +1081,31 @@ class FrameCleaner:
 
             # merge metadata for every frame (high recall)
             accumulated = self.frame_metadata_extractor.merge_metadata(
-                accumulated, frame_meta or {}
+                accumulated, frame_meta
             )
 
             # collect text for preview (loose gates handled inside)
             if ocr_text:
-                self.best_frame_text.push(
-                    ocr_text, ocr_conf, is_sensitive=is_sensitive
-                )
+                if is_sensitive and indicator % 5 == 0:
+                    # Höherwertige OCR (TrOCR) + LLM-Metadaten auf sensitiven Stichproben
+                    ext_text = trocr_full_image_ocr(gray_frame)
+                    ext_meta = self.extract_metadata(ext_text) or {}
+                    logger.debug(f"Sensitive text detected in frame {idx}. Extended processing.")
+
+                    # Vergleiche Anzahl sinnvoll gesetzter Felder und merge ggf.
+                    base_count = len([v for v in (frame_meta or {}).values() if v not in (None, '', 'Unknown')])
+                    ext_count  = len([v for v in ext_meta.values() if v not in (None, '', 'Unknown')])
+                    if ext_count > base_count:
+                        accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, ext_meta)
 
             if is_sensitive:
                 sensitive_idx.append(idx)
 
-        # representative preview text
-        accumulated["representative_ocr_text"] = (
-            self.best_frame_text.reduce().get("best", "")
-        )
-
+        
+        # Entfernt: verwaister Merge aus self.metadata (nicht vorhanden)
+        # if hasattr(self, 'metadata') and self.metadata:
+        #     accumulated.update(self.metadata)
+        
         sensitive_ratio = (
             len(sensitive_idx) / total_frames if total_frames else 0.0
         )
@@ -1052,6 +1154,8 @@ class FrameCleaner:
             # Clean up temporary files
             if tmp_dir.exists():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+                
+        
 
         # ----------------------- persist metadata ---------------------------
         if video_file_obj:
@@ -1623,22 +1727,23 @@ class FrameCleaner:
         """LLM-first mit automatischem Modell-Fallback; spaCy als Notanker."""
         if not text or not text.strip():
             return {}
+        
+        logger.debug(f"Extracting metadata from text of length {len(text)} with content: {text}...")
 
-        try:
-            meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
-            if meta_obj:
-                meta = meta_obj.model_dump()
-            else:
+        meta: Dict[str, Any] = {}
+        # Nur versuchen, wenn LLM aktiviert und verfügbar ist
+        if getattr(self, "use_llm", False) and getattr(self, "ollama_extractor", None) is not None:
+            try:
+                meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
+                if meta_obj:
+                    meta = meta_obj.model_dump()
+            except Exception as e:
+                logger.warning(f"Ollama extraction failed: {e}")
                 meta = {}
-        except Exception as e:
-            logger.warning(f"Ollama extraction failed: {e}")
-            meta = {}
 
-        # LLM fehlgeschlagen/leer → spaCy-Extractor fallback
+        # LLM fehlgeschlagen/leer oder nicht aktiv → spaCy-Extractor fallback
         if not meta:
             try:
-                # Der spaCy-Extractor kann je nach Implementierung callable sein oder eine Methode besitzen.
-                # Versuche __call__ zuerst, sonst 'extract'/'__call__'/'patient_extractor' heuristisch.
                 if callable(self.PatientDataExtractor):
                     spacy_meta = self.PatientDataExtractor(text)
                 elif hasattr(self.PatientDataExtractor, "extract"):
@@ -1938,3 +2043,107 @@ class FrameCleaner:
                 except Exception:
                     size = 0
                 logger.info(f"HF cache candidate: {p} exists={p.exists()} size_bytes={p.stat().st_size if p.exists() and p.is_file() else 'dir' if p.exists() else 0}")
+    
+    def _process_frame_enriched(
+        self,
+        gray_frame: np.ndarray,
+        endoscope_roi: dict | None,
+        frame_id: int | None = None,
+        collect_for_batch: bool = True,
+    ) -> tuple[bool, dict, str, float]:
+        """
+        Erweiterte Frame-Verarbeitung mit Sammlung für Batch-Metadaten-Extraktion.
+        
+        Args:
+            gray_frame: Grayscale frame array
+            endoscope_roi: ROI für Endoskop-Bereich
+            frame_id: Frame-Index
+            collect_for_batch: Ob Frame-Daten für Batch-Verarbeitung gesammelt werden sollen
+            
+        Returns:
+            is_sensitive, frame_metadata, ocr_text, ocr_conf
+        """
+        logger.debug(f"Processing enriched frame_id={frame_id or 'unknown'}")
+        
+        # Intelligente Frame-Auswahl basierend auf FrameSamplingOptimizer
+        should_process = True
+        if collect_for_batch and frame_id is not None:
+            should_process = self.frame_sampling_optimizer.should_process_frame(
+                frame_id, self.current_video_total_frames
+            )
+        
+        if not should_process:
+            logger.debug(f"Skipping frame {frame_id} based on sampling optimization")
+            return False, {}, "", 0.0
+        
+        # Normale Frame-Verarbeitung
+        is_sensitive, frame_metadata, ocr_text, ocr_conf = self._process_frame(
+            gray_frame, endoscope_roi, frame_id
+        )
+        
+        # Sammle Frame-Daten für Batch-Verarbeitung
+        if collect_for_batch and ocr_text and len(ocr_text.strip()) > 10:
+            frame_data = {
+                'frame_id': frame_id,
+                'ocr_text': ocr_text,
+                'ocr_confidence': ocr_conf,
+                'is_sensitive': is_sensitive,
+                'frame_metadata': frame_metadata,
+                'frame_shape': gray_frame.shape,
+                'timestamp': frame_id / 30.0 if frame_id else 0.0,  # Annahme: 30 FPS
+            }
+            
+            self.frame_collection.append(frame_data)
+            self.ocr_text_collection.append(ocr_text)
+            
+            # Registriere verarbeiteten Frame
+            frame_hash = str(hash(ocr_text[:100]))  # Einfacher Hash für Duplikatserkennung
+            self.frame_sampling_optimizer.register_processed_frame(frame_hash, frame_metadata)
+            
+            logger.debug(f"Collected frame {frame_id} for batch processing (total: {len(self.frame_collection)})")
+        
+        return is_sensitive, frame_metadata, ocr_text, ocr_conf
+    
+    def _extract_enriched_metadata_batch(self) -> Dict[str, Any]:
+        """
+        Extrahiert erweiterte Metadaten aus gesammelten Frame-Daten.
+        
+        Returns:
+            Erweiterte Metadaten-Dictionary
+        """
+        if not self.frame_collection:
+            logger.warning("Keine Frame-Daten für Batch-Extraktion gesammelt")
+            return {}
+        
+        logger.info(f"Extracting enriched metadata from {len(self.frame_collection)} collected frames")
+        
+        try:
+            # Verwende EnrichedMetadataExtractor für Multi-Frame-Analyse
+            enriched_metadata = self.enriched_extractor.extract_from_frame_sequence(
+                frames_data=self.frame_collection,
+                ocr_texts=self.ocr_text_collection
+            )
+            
+            logger.info(f"✅ Enriched metadata extraction successful: {len(enriched_metadata)} fields")
+            
+            # Zeige gefundene Daten
+            if enriched_metadata.get('patient_name'):
+                logger.info(f"Found patient: {enriched_metadata['patient_name']}")
+            if enriched_metadata.get('patient_age'):
+                logger.info(f"Found age: {enriched_metadata['patient_age']}")
+            if enriched_metadata.get('examination_date'):
+                logger.info(f"Found date: {enriched_metadata['examination_date']}")
+            
+            return enriched_metadata
+            
+        except Exception as e:
+            logger.error(f"Enriched metadata extraction failed: {e}")
+            logger.debug(f"Frame collection size: {len(self.frame_collection)}")
+            logger.debug(f"OCR text collection size: {len(self.ocr_text_collection)}")
+            return {}
+    
+    def _reset_frame_collection(self):
+        """Setzt die Frame-Sammlung für ein neues Video zurück."""
+        self.frame_collection.clear()
+        self.ocr_text_collection.clear()
+        logger.debug("Frame collection reset for new video")
