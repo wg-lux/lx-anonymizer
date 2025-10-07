@@ -23,7 +23,7 @@ from .sensitive_region_cropper import SensitiveRegionCropper  # Import the new c
 from datetime import datetime, date
 import dateparser
 from .utils.ollama import ensure_ollama
-from .ollama_llm_meta_extraction import extract_with_fallback
+from lx_annotate.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
 
 class ReportReader:
     def __init__(
@@ -56,6 +56,7 @@ class ReportReader:
         
         # Initialize Ollama
         self.ollama_proc = ensure_ollama()
+        self.ollama_extractor = OllamaOptimizedExtractor()
         
     
     def read_pdf(self, pdf_path):
@@ -281,8 +282,9 @@ class ReportReader:
     def extract_report_meta_deepseek(self, text):
         """Extract metadata using DeepSeek via Ollama structured output."""
         logger.info("Attempting metadata extraction with DeepSeek (Ollama Structured Output)")
-        # Use the wrapper that handles retries and returns {} on failure
-        meta = extract_with_fallback(text, model="deepseek-r1:1.5b")
+        # Use the unified extractor that handles retries and fallbacks automatically
+        meta_obj = self.ollama_extractor.extract_metadata(text)
+        meta = meta_obj.model_dump() if meta_obj else {}
         if not meta:
             logger.warning("DeepSeek Ollama extraction failed, returning empty dict.")
         else:
@@ -292,8 +294,9 @@ class ReportReader:
     def extract_report_meta_medllama(self, text):
         """Extract metadata using MedLLaMA via Ollama structured output."""
         logger.info("Attempting metadata extraction with MedLLaMA (Ollama Structured Output)")
-        # Use the wrapper that handles retries and returns {} on failure
-        meta = extract_with_fallback(text, model="rjmalagon/medllama3-v20:fp16")
+        # Use the unified extractor that handles retries and fallbacks automatically
+        meta_obj = self.ollama_extractor.extract_metadata(text)
+        meta = meta_obj.model_dump() if meta_obj else {}
         if not meta:
             logger.warning("MedLLaMA Ollama extraction failed, returning empty dict.")
         else:
@@ -303,8 +306,9 @@ class ReportReader:
     def extract_report_meta_llama3(self, text):
         """Extract metadata using Llama3 via Ollama structured output."""
         logger.info("Attempting metadata extraction with Llama3 (Ollama Structured Output)")
-        # Use the wrapper that handles retries and returns {} on failure
-        meta = extract_with_fallback(text, model="llama3:8b") # Or llama3:70b if available/needed
+        # Use the unified extractor that handles retries and fallbacks automatically
+        meta_obj = self.ollama_extractor.extract_metadata(text)
+        meta = meta_obj.model_dump() if meta_obj else {}
         if not meta:
             logger.warning("Llama3 Ollama extraction failed, returning empty dict.")
         else:

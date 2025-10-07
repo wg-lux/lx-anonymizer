@@ -32,11 +32,12 @@ from lx_anonymizer.frame_ocr import FrameOCR
 from lx_anonymizer.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.best_frame_text import BestFrameText
 from lx_anonymizer.utils.ollama import ensure_ollama
-from lx_anonymizer.ollama_llm_meta_extraction import extract_with_fallback
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.minicpm_ocr import MiniCPMVisionOCR, create_minicpm_ocr, _can_load_model
 from lx_anonymizer.spacy_extractor import PatientDataExtractor
 from typing_inspection.typing_objects import NoneType
+
+from lx_annotate.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,9 @@ class FrameCleaner:
         self.use_minicpm = use_minicpm
         self.minicpm_ocr = None
         self._log_hf_cache_info()
+        
+        # Initialize the optimized ollama processing pipeline
+        self.ollama_extractor = OllamaOptimizedExtractor()
         
         # Hardware acceleration detection
         self.nvenc_available = self._detect_nvenc_support()
@@ -552,6 +556,8 @@ class FrameCleaner:
             endoscope_y = mask_config.get("endoscope_image_y", 0)
             endoscope_w = mask_config.get("endoscope_image_width", 640)
             endoscope_h = mask_config.get("endoscope_image_height", 480)
+            
+            
             
             # Check if we can use simple crop (most efficient)
             if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
@@ -1552,50 +1558,52 @@ class FrameCleaner:
     def _update_video_sensitive_meta(self, video_file_obj, metadata: Dict[str, Any]):
         """
         Update VideoFile's SensitiveMeta with extracted metadata from frames.
-        
-        Args:
-            video_file_obj: VideoFile Django model instance
-            metadata: Extracted metadata dictionary
         """
         try:
-            # Import here to avoid circular imports
             from endoreg_db.models import SensitiveMeta
-            metadata = self.extract_metadata_deepseek(metadata.get('representative_ocr_text', ''))
-            
-            # Get or create SensitiveMeta for this video file
+            # Hol den OCR-Text, führe unified Extraktion aus:
+            text = (metadata or {}).get('representative_ocr_text', '') or ''
+            extracted = self.extract_metadata(text)  # LLM→spaCy
+
+            # merge: extrahierte Felder überschreiben nur leere/Unknown
+            merged = {**(metadata or {})}
+            for k, v in (extracted or {}).items():
+                if v not in (None, "", "Unknown"):
+                    if not merged.get(k) or merged.get(k) in (None, "", "Unknown"):
+                        merged[k] = v
+
             sensitive_meta, created = SensitiveMeta.objects.get_or_create(
                 video_file=video_file_obj,
                 defaults={
-                    'patient_first_name': metadata.get('patient_first_name'),
-                    'patient_last_name': metadata.get('patient_last_name'),
-                    'patient_dob': metadata.get('patient_dob'),
-                    'casenumber': metadata.get('casenumber'),
-                    'patient_gender': metadata.get('patient_gender'),
-                    'examination_date': metadata.get('examination_date'),
-                    'examination_time': metadata.get('examination_time'),
-                    'examiner': metadata.get('examiner'),
-                    'representative_ocr_text': metadata.get('representative_ocr_text', ''),
+                    'patient_first_name': merged.get('patient_first_name'),
+                    'patient_last_name': merged.get('patient_last_name'),
+                    'patient_dob': merged.get('patient_dob'),
+                    'casenumber': merged.get('casenumber'),
+                    'patient_gender': merged.get('patient_gender'),
+                    'examination_date': merged.get('examination_date'),
+                    'examination_time': merged.get('examination_time'),
+                    'examiner': merged.get('examiner'),
+                    'representative_ocr_text': merged.get('representative_ocr_text', ''),
                 }
             )
-            
-            # If not created, update existing with non-empty values
+
             if not created:
                 updated = False
-                for field in ['patient_first_name', 'patient_last_name', 'patient_dob', 
-                             'casenumber', 'patient_gender', 'examination_date', 
-                             'examination_time', 'examiner', 'representative_ocr_text']:
-                    value = metadata.get(field)
-                    if value and value not in [None, '', 'Unknown']:
-                        current_value = getattr(sensitive_meta, field, None)
-                        if not current_value or current_value in [None, '', 'Unknown']:
-                            setattr(sensitive_meta, field, value)
-                            updated = True
-                
+                for field in [
+                    'patient_first_name','patient_last_name','patient_dob','casenumber',
+                    'patient_gender','examination_date','examination_time','examiner',
+                    'representative_ocr_text'
+                ]:
+                    nv = merged.get(field)
+                    cv = getattr(sensitive_meta, field, None)
+                    if nv and nv not in (None, "", "Unknown") and (not cv or cv in (None, "", "Unknown")):
+                        setattr(sensitive_meta, field, nv)
+                        updated = True
                 if updated:
                     sensitive_meta.save()
-            
+
             logger.info(f"{'Created' if created else 'Updated'} SensitiveMeta for video {video_file_obj.id}")
-            
+
         except Exception as e:
             logger.error(f"Failed to update video sensitive metadata: {e}")
 
@@ -1611,38 +1619,45 @@ class FrameCleaner:
                 confs.append(conf_int)
         return confs
 
+    def extract_metadata(self, text: str) -> Dict[str, Any]:
+        """LLM-first mit automatischem Modell-Fallback; spaCy als Notanker."""
+        if not text or not text.strip():
+            return {}
+
+        try:
+            meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
+            if meta_obj:
+                meta = meta_obj.model_dump()
+            else:
+                meta = {}
+        except Exception as e:
+            logger.warning(f"Ollama extraction failed: {e}")
+            meta = {}
+
+        # LLM fehlgeschlagen/leer → spaCy-Extractor fallback
+        if not meta:
+            try:
+                # Der spaCy-Extractor kann je nach Implementierung callable sein oder eine Methode besitzen.
+                # Versuche __call__ zuerst, sonst 'extract'/'__call__'/'patient_extractor' heuristisch.
+                if callable(self.PatientDataExtractor):
+                    spacy_meta = self.PatientDataExtractor(text)
+                elif hasattr(self.PatientDataExtractor, "extract"):
+                    spacy_meta = self.PatientDataExtractor.extract(text)
+                elif hasattr(self.PatientDataExtractor, "patient_extractor"):
+                    spacy_meta = self.PatientDataExtractor.patient_extractor(text)
+                else:
+                    spacy_meta = {}
+                if isinstance(spacy_meta, dict):
+                    meta = spacy_meta
+            except Exception as e:
+                logger.error(f"spaCy fallback failed: {e}")
+                meta = {}
+
+        return meta or {}
+
     def extract_metadata_deepseek(self, text: str) -> Dict[str, Any]:
-        """Extract metadata using DeepSeek via Ollama structured output."""
-        logger.info("Attempting metadata extraction with DeepSeek (Ollama Structured Output)")
-        # Use the wrapper that handles retries and returns {} on failure
-        meta = extract_with_fallback(text, model="deepseek-r1:1.5b")
-        if not meta:
-            logger.warning("DeepSeek Ollama extraction failed, returning empty dict.")
-        else:
-            logger.info("DeepSeek Ollama extraction successful.")
-        return meta
-
-    def extract_metadata_medllama(self, text: str) -> Dict[str, Any]:
-        """Extract metadata using MedLLaMA via Ollama structured output."""
-        logger.info("Attempting metadata extraction with MedLLaMA (Ollama Structured Output)")
-        # Use the wrapper that handles retries and returns {} on failure
-        meta = extract_with_fallback(text, model="rjmalagon/medllama3-v20:fp16")
-        if not meta:
-            logger.warning("MedLLaMA Ollama extraction failed, returning empty dict.")
-        else:
-            logger.info("MedLLaMA Ollama extraction successful.")
-        return meta
-
-    def extract_metadata_llama3(self, text: str) -> Dict[str, Any]:
-        """Extract metadata using Llama3 via Ollama structured output."""
-        logger.info("Attempting metadata extraction with Llama3 (Ollama Structured Output)")
-        # Use the wrapper that handles retries and returns {} on failure
-        meta = extract_with_fallback(text, model="llama3:8b")  # Or llama3:70b if available/needed
-        if not meta:
-            logger.warning("Llama3 Ollama extraction failed, returning empty dict.")
-        else:
-            logger.info("Llama3 Ollama extraction successful.")
-        return meta
+        """Extract metadata using the unified extractor (compatibility wrapper)."""
+        return self.extract_metadata(text)
 
     def _iter_video_adaptive(
         self,
