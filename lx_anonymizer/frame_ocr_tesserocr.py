@@ -19,6 +19,7 @@ Performance Benefits over pytesseract:
 import logging
 import cv2
 import numpy as np
+import os
 import tesserocr
 from PIL import Image, ImageEnhance, ImageFilter
 from typing import Dict, Any, Tuple, Optional, List
@@ -49,12 +50,14 @@ class TesseOCRFrameProcessor:
         """
         self.language = language
         self._lock = threading.Lock()
-    
+        
+        # Determine tessdata path from environment or system defaults
+        tessdata_path = self._get_tessdata_path()
         
         # Initialize Tesseract API - this is the key optimization!
         try:
             self.api = tesserocr.PyTessBaseAPI(lang=language, path=tessdata_path)
-            logger.info(f"TesseOCR initialized with language: {language}")
+            logger.info(f"TesseOCR initialized with language: {language}, tessdata_path: {tessdata_path}")
             
             # Set optimal OCR parameters for video frames
             self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)  # PSM 6 equivalent
@@ -102,6 +105,72 @@ class TesseOCRFrameProcessor:
                 self.api.End()
             except Exception as e:
                 logger.debug(f"Error cleaning up Tesseract API: {e}")
+    
+    def _get_tessdata_path(self) -> Optional[str]:
+        """
+        Determine the correct tessdata directory for tesserocr.
+        
+        IMPORTANT: tesserocr's PyTessBaseAPI(path=...) expects the tessdata/ directory itself!
+        This is DIFFERENT from TESSDATA_PREFIX (which points to the parent for CLI).
+        
+        Returns:
+            Path to tessdata/ directory itself, or None to use system default
+        """
+        import glob
+        
+        # 1. Check environment variable (set by devenv.nix)
+        # TESSDATA_PREFIX points to parent (/nix/store/.../share), so append /tessdata
+        env_tessdata_parent = os.environ.get('TESSDATA_PREFIX')
+        if env_tessdata_parent:
+            # If it already ends with /tessdata, use as-is
+            if env_tessdata_parent.endswith('/tessdata') and os.path.isdir(env_tessdata_parent):
+                logger.info(f"Using TESSDATA_PREFIX directly: {env_tessdata_parent}")
+                return env_tessdata_parent
+            # If it's the parent, append /tessdata
+            tessdata_dir = os.path.join(env_tessdata_parent, 'tessdata')
+            if os.path.isdir(tessdata_dir):
+                logger.info(f"Using tessdata from TESSDATA_PREFIX parent: {tessdata_dir} (parent: {env_tessdata_parent})")
+                return tessdata_dir
+        
+        # 2. Check common NixOS locations - look for tessdata directory
+        nix_patterns = [
+            '/nix/store/*/share/tessdata',
+            '/run/current-system/sw/share/tessdata',
+        ]
+        
+        for nix_pattern in nix_patterns:
+            if '*' in nix_pattern:
+                # Expand glob pattern for NixOS store paths
+                matches = glob.glob(nix_pattern)
+                if matches:
+                    # Prefer paths with language files
+                    for tessdata_dir in matches:
+                        if os.path.isdir(tessdata_dir):
+                            # Quick check for language files
+                            traineddata_files = [f for f in os.listdir(tessdata_dir) if f.endswith('.traineddata')]
+                            if traineddata_files:
+                                logger.info(f"Using NixOS tessdata directory: {tessdata_dir} (found {len(traineddata_files)} language files)")
+                                return tessdata_dir
+                            else:
+                                logger.warning(f"Skipping {tessdata_dir} - no .traineddata files found")
+            elif os.path.isdir(nix_pattern):
+                logger.info(f"Using NixOS tessdata directory: {nix_pattern}")
+                return nix_pattern
+        
+        # 3. Check standard Linux paths - tessdata dir itself
+        standard_tessdata_paths = [
+            '/usr/share/tessdata',
+            '/usr/local/share/tessdata',
+        ]
+        
+        for tessdata_path in standard_tessdata_paths:
+            if os.path.isdir(tessdata_path):
+                logger.info(f"Using standard tessdata directory: {tessdata_path}")
+                return tessdata_path
+        
+        # 4. Let tesserocr use its default
+        logger.warning("No tessdata path found in environment or standard locations, using tesserocr default")
+        return None
     
     def preprocess_frame_for_ocr(self, frame: np.ndarray, roi: Optional[Dict[str, Any]] = None) -> Image.Image:
         """

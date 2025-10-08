@@ -30,7 +30,9 @@ in
     cudaPackages.cuda_nvcc
     stdenv.cc.cc
     glib
-    tesseract
+    (tesseract.override {
+      enableLanguages = [ "eng" "deu" ];  # English + German traineddata
+    })
     ollama
     python3Packages.pip
     cmake
@@ -50,6 +52,9 @@ in
     PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
     UV_PYTHON_DOWNLOADS = "managed";
     UV_PYTHON_PREFERENCE = "system";
+    # Note: TESSDATA_PREFIX should point to parent of tessdata/ for CLI tools
+    # but tesserocr needs the tessdata/ dir itself (handled in Python code)
+    TESSDATA_PREFIX = "${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share";
   };
 
 
@@ -61,10 +66,10 @@ in
       lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
     export OLLAMA_BIN=/nix/store/nrcs8aijwjwq450chf1qlm9xxcp8n0iw-ollama-0.6.5/bin/ollama
-
+    export TESSDATA_PREFIX="${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share"
   '';
 
-    env.TESSDATA_PREFIX = "${pkgs.tesseract}/share/tessdata";
+    env.TESSDATA_PREFIX = "${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share";
 
 
   processes = {
