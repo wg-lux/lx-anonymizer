@@ -561,9 +561,11 @@ Respond in this exact JSON format:
                 # Extract fields
                 transcribed_text = data.get('text', '')
                 is_sensitive = data.get('has_pii', False)
-                metadata = data.get('meta', {})
+                meta_nested = data.get('meta', {})
                 
-                # Add source annotation
+                # Flatten metadata - extract from 'meta' key to top level
+                # This ensures compatibility with frame_metadata_extractor's merge_metadata
+                metadata = dict(meta_nested)  # Copy nested metadata to top level
                 metadata['source'] = 'minicpm_unified'
                 
                 return is_sensitive, metadata, transcribed_text

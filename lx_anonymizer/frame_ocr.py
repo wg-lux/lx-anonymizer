@@ -197,7 +197,7 @@ class FrameOCR:
         """
         try:
             # Preprocess frame
-            #processed_image = self.preprocess_frame_for_ocr(frame, roi)
+            processed_image = self.preprocess_frame_for_ocr(frame, roi)
             
             # Select OCR configuration
             config = self.high_quality_config if high_quality else self.frame_ocr_config
@@ -209,7 +209,7 @@ class FrameOCR:
             
             # Extract text with detailed data
             ocr_data = pytesseract.image_to_data(
-                frame,
+                processed_image,
                 lang=config['lang'],
                 config=tesseract_config,
                 output_type=pytesseract.Output.DICT

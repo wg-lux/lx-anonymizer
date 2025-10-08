@@ -26,7 +26,6 @@ from typing import List, Optional, Tuple, Dict, Any, Union, Iterator
 import cv2
 import numpy as np
 from PIL import Image
-import pytesseract
 
 from lx_anonymizer.frame_ocr import FrameOCR
 from lx_anonymizer.frame_metadata_extractor import FrameMetadataExtractor
@@ -880,7 +879,7 @@ class FrameCleaner:
                     roi=endoscope_roi,
                     high_quality=True,
                 )
-                logger.debug(f"Fallback OCR extracted text length: {len(ocr_text or '')}")
+                logger.info(f"Fallback OCR extracted text length: {len(ocr_text or '')}")
                 try:
                     frame_metadata = (
                         self.frame_metadata_extractor.extract_metadata_from_frame_text(
@@ -1223,21 +1222,27 @@ class FrameCleaner:
             True if frame contains sensitive data, False otherwise
         """
         try:
-            # Load image and apply OCR
+            # Load image and convert to numpy array for FrameOCR
             image = Image.open(frame_path)
             
-            # Convert to grayscale for better OCR
+            # Convert to grayscale numpy array
             if image.mode != 'L':
                 image = image.convert('L')
             
-            # Apply OCR
-            ocr_text = pytesseract.image_to_string(image, lang='deu')
+            frame_array = np.array(image)
+            
+            # Use FrameOCR with preprocessing instead of raw pytesseract
+            ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                frame_array,
+                roi=None,  # Could be enhanced with ROI if available
+                high_quality=True
+            )
             
             if not ocr_text.strip():
                 logger.debug(f"No text detected in frame {frame_path.name}")
                 return False
             
-            logger.debug(f"OCR text from {frame_path.name}: {ocr_text[:100]}...")
+            logger.debug(f"OCR text from {frame_path.name} (conf={ocr_conf:.3f}): {ocr_text[:100]}...")
             
             # Use the same name detection logic as report_reader
             patient_info = report_reader.patient_extractor(ocr_text)
@@ -1276,32 +1281,42 @@ class FrameCleaner:
             True if frame contains sensitive data, False otherwise
         """
         try:
-            # Load image and apply OCR
+            # Load image and convert to numpy array for FrameOCR
             image = Image.open(frame_path)
             
-            # Convert to grayscale for better OCR
+            # Convert to grayscale numpy array
             if image.mode != 'L':
                 image = image.convert('L')
             
-            # Apply OCR
-            ocr_text = pytesseract.image_to_string(image, lang='deu')
+            frame_array = np.array(image)
+            
+            # Use FrameOCR with preprocessing instead of raw pytesseract
+            ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                frame_array,
+                roi=None,  # Could be enhanced with ROI if available
+                high_quality=True
+            )
             
             if not ocr_text.strip():
                 logger.debug(f"No text detected in frame {frame_path.name}")
-                return False
+                return False, None
             
-            logger.debug(f"OCR text from {frame_path.name}: {ocr_text[:100]}...")
+            logger.debug(f"OCR text from {frame_path.name} (conf={ocr_conf:.3f}): {ocr_text[:100]}...")
             
             # Use LLM-powered metadata extraction
-            has_sensitive, meta = self._detect_sensitive_meta_llm(
-                ocr_text, report_reader, llm_model="deepseek"
-            )
-            
-            if has_sensitive:
-                logger.warning(f"LLM detected sensitive data in frame {frame_path.name}: {meta}")
-                return True, meta
-            
-            return False, None
+            try:
+                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                
+                if is_sensitive:
+                    logger.warning(f"Detected sensitive data in frame {frame_path.name}: {frame_metadata}")
+                    return True, frame_metadata
+                
+                return False, None
+                
+            except Exception as e:
+                logger.error(f"Error in LLM metadata extraction: {e}")
+                return False, None
             
         except Exception as e:
             logger.error(f"Error processing frame {frame_path}: {e}")
@@ -1612,30 +1627,25 @@ class FrameCleaner:
         """
         Yield (ocr_text, avg_confidence) for every frame in frame_paths.
 
-        Confidence is the mean of Tesseract word-level confidences,
-        normalised to [0,1]. Empty-text frames are skipped.
+        Uses FrameOCR with preprocessing for better quality.
+        Confidence is normalised to [0,1]. Empty-text frames are skipped.
         """
         for fp in frame_paths:
-            # load once, convert to L for better OCR accuracy
+            # Load image and convert to numpy array
             img = Image.open(fp).convert('L')
-
-            # word-level OCR with confidences
-            data = pytesseract.image_to_data(
-                img, lang='deu',
-                output_type=pytesseract.Output.DICT
+            frame_array = np.array(img)
+            
+            # Use FrameOCR with preprocessing instead of raw pytesseract
+            ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
+                frame_array,
+                roi=None,  # Could be enhanced with ROI if available
+                high_quality=True
             )
-
-            words = [w for w in data["text"] if w.strip()]
-            if not words:
-                continue                      # nothing recognisable
-
-            # average confidence; Tesseract returns -1 for “no conf”
-            confs = [
-                int(c) for c in data["conf"]
-                if c.isdigit() and int(c) >= 0
-            ]
-            avg_conf = (sum(confs) / len(confs) / 100) if confs else 0.0
-            yield " ".join(words), avg_conf
+            
+            if not ocr_text.strip():
+                continue  # nothing recognisable
+            
+            yield ocr_text, avg_conf
             
     def _iter_video(self, video_path: Path, total_frames: int) -> Iterator[Tuple[int, np.ndarray, int]]:
         """
