@@ -34,6 +34,7 @@ in
       enableLanguages = [ "eng" "deu" ];  # English + German traineddata
     })
     ollama
+    uv  # Python package manager
     python3Packages.pip
     cmake
     gcc
@@ -50,7 +51,7 @@ in
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
     PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
-    UV_PYTHON_DOWNLOADS = "managed";
+    UV_PYTHON_DOWNLOADS = "never";  # Use system Python from Nix, don't download
     UV_PYTHON_PREFERENCE = "system";
     # Note: TESSDATA_PREFIX should point to parent of tessdata/ for CLI tools
     # but tesserocr needs the tessdata/ dir itself (handled in Python code)
