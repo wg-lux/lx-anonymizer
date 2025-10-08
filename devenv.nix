@@ -2,7 +2,7 @@
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
-    python311Full
+    python311
     stdenv.cc.cc
     git
     direnv
