@@ -69,7 +69,6 @@ in
     export TESSDATA_PREFIX="${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share"
   '';
 
-    env.TESSDATA_PREFIX = "${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share";
 
 
   processes = {
