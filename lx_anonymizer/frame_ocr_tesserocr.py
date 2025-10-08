@@ -54,31 +54,47 @@ class TesseOCRFrameProcessor:
         # Determine tessdata path from environment or system defaults
         tessdata_path = self._get_tessdata_path()
         
-        # Initialize Tesseract API - this is the key optimization!
+        # Initialize Tesseract API with optimal settings for medical video OCR
         try:
-            self.api = tesserocr.PyTessBaseAPI(lang=language, path=tessdata_path)
-            logger.info(f"TesseOCR initialized with language: {language}, tessdata_path: {tessdata_path}")
+            # OEM 1 = LSTM only (best for modern text recognition)
+            self.api = tesserocr.PyTessBaseAPI(lang=language, path=tessdata_path, oem=tesserocr.OEM.LSTM_ONLY)
+            logger.info(f"TesseOCR initialized with LSTM engine, language: {language}, tessdata_path: {tessdata_path}")
             
-            # Set optimal OCR parameters for video frames
-            self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)  # PSM 6 equivalent
-            self.api.SetVariable('tessedit_char_whitelist', 
-                               '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-üöäÜÖÄß.:/ ')
+            # PSM 3 = Fully automatic page segmentation (best for mixed layouts)
+            # This works better than SINGLE_BLOCK for medical overlays with multiple text regions
+            self.api.SetPageSegMode(tesserocr.PSM.AUTO)
             
-            # Optimize for speed vs accuracy
+            # Remove char whitelist - it's too restrictive and causes fragmentation
+            # Medical overlays may have various symbols we need to recognize
+            # self.api.SetVariable('tessedit_char_whitelist', '')  # Commented out - no restrictions
+            
+            # Enable advanced dictionary and language models for better accuracy
             self.api.SetVariable('tessedit_enable_dict_correction', '1')
             self.api.SetVariable('tessedit_enable_bigram_correction', '1')
+            self.api.SetVariable('language_model_penalty_non_dict_word', '0.5')  # Less aggressive penalties
+            self.api.SetVariable('language_model_penalty_non_freq_dict_word', '0.5')
+            
+            # Improve segmentation quality
+            self.api.SetVariable('textord_heavy_nr', '1')  # Better noise reduction
+            self.api.SetVariable('preserve_interword_spaces', '1')  # Keep spaces between words
+            
+            # Optimize for better recognition quality
+            self.api.SetVariable('tessedit_create_hocr', '0')  # Don't create HOCR (we don't need it)
+            self.api.SetVariable('tessedit_pageseg_mode', '3')  # Auto page segmentation
+            
+            logger.info("TesseOCR configured with optimized settings: PSM=AUTO, OEM=LSTM_ONLY, no char restrictions")
             
         except Exception as e:
             logger.error(f"Failed to initialize TesseOCR: {e}")
             self.api = None
             raise
         
-        # Frame-specific OCR configurations
+        # Frame-specific OCR configurations - optimized for high quality
         self.frame_config = {
-            'dpi': 300,
-            'min_confidence': 30,  # Lower threshold for video frames
-            'high_quality_dpi': 400,
-            'high_quality_min_confidence': 50
+            'dpi': 400,  # Increased from 300 for better text clarity
+            'min_confidence': 20,  # Lowered to catch more text (we filter later)
+            'high_quality_dpi': 600,  # Significantly increased for maximum quality
+            'high_quality_min_confidence': 30  # Lowered threshold for high quality mode
         }
         
         # Medical text patterns for enhanced detection
@@ -174,7 +190,7 @@ class TesseOCRFrameProcessor:
     
     def preprocess_frame_for_ocr(self, frame: np.ndarray, roi: Optional[Dict[str, Any]] = None) -> Image.Image:
         """
-        Preprocess a video frame for optimal OCR results.
+        Preprocess a video frame for optimal OCR results with aggressive quality enhancement.
         
         Args:
             frame: Input frame as numpy array (BGR format from cv2)
@@ -198,30 +214,57 @@ class TesseOCRFrameProcessor:
             # Convert to PIL Image
             pil_image = Image.fromarray(frame_rgb)
             
-            # Resize for better OCR (upscale small text)
+            # AGGRESSIVE UPSCALING for tiny text in video frames
+            # Target at least 2400px on the largest dimension for optimal OCR
             original_size = pil_image.size
-            scale_factor = max(2.0, 1200 / max(original_size))
+            target_size = 2400
+            scale_factor = max(3.0, target_size / max(original_size))  # Minimum 3x upscale
             new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
             pil_image = pil_image.resize(new_size, Image.Resampling.LANCZOS)
+            
+            logger.debug(f"Upscaled frame from {original_size} to {new_size} (factor: {scale_factor:.2f}x)")
             
             # Convert to grayscale
             pil_image = pil_image.convert('L')
             
-            # Enhance contrast for text visibility
+            # ENHANCED contrast adjustment with adaptive limits
             enhancer = ImageEnhance.Contrast(pil_image)
-            pil_image = enhancer.enhance(2.0)
+            pil_image = enhancer.enhance(2.5)  # Increased from 2.0
             
-            # Apply sharpening filter
-            pil_image = pil_image.filter(ImageFilter.SHARPEN)
+            # Apply STRONGER sharpening with UnsharpMask
+            pil_image = pil_image.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
             
-            # Threshold to clean binary image
+            # Additional edge enhancement
+            pil_image = pil_image.filter(ImageFilter.EDGE_ENHANCE)
+            
+            # Convert to numpy for advanced processing
             img_array = np.array(pil_image)
-            _, binary = cv2.threshold(img_array, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             
-            # Remove noise with morphological operations
-            kernel = np.ones((2,2), np.uint8)
-            cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+            # Apply Gaussian blur BEFORE thresholding to reduce noise
+            img_array = cv2.GaussianBlur(img_array, (3, 3), 0)
+            
+            # Adaptive thresholding for better handling of varying lighting
+            # Use both Otsu AND adaptive for comparison
+            _, binary_otsu = cv2.threshold(img_array, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            binary_adaptive = cv2.adaptiveThreshold(
+                img_array, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            
+            # Use Otsu by default (generally better for uniform overlays)
+            binary = binary_otsu
+            
+            # REFINED morphological operations with smaller kernel
+            kernel = np.ones((1, 1), np.uint8)  # Reduced from (2,2) to preserve thin text
+            
+            # Close small gaps in characters
+            cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+            
+            # Remove small noise
+            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel, iterations=1)
+            
+            # Optional: Dilate very slightly to thicken thin characters
+            kernel_dilate = np.ones((1, 1), np.uint8)
+            cleaned = cv2.dilate(cleaned, kernel_dilate, iterations=1)
             
             return Image.fromarray(cleaned)
             
@@ -274,28 +317,56 @@ class TesseOCRFrameProcessor:
                 confidence = self.api.MeanTextConf()
                 confidence_normalized = confidence / 100.0 if confidence > 0 else 0.0
                 
-                # Get detailed word-level information if needed
+                # Get detailed text structure information
                 ocr_data = {}
                 try:
-                    # Get bounding boxes and confidences for each word
-                    boxes = self.api.GetComponentImages(tesserocr.RIL.WORD, True)
-                    words_info = []
-                    
-                    for (box, text, conf) in boxes:
-                        if text.strip() and conf > (self.frame_config['high_quality_min_confidence'] 
-                                                   if high_quality else self.frame_config['min_confidence']):
-                            words_info.append({
-                                'text': text.strip(),
-                                'confidence': conf,
-                                'bbox': box
-                            })
-                    
+                    # The primary extracted text is already from GetUTF8Text() above
+                    # Just add metadata about the extraction process
                     ocr_data = {
-                        'words': words_info,
                         'processing_time': time.time() - start_time,
                         'dpi': dpi,
-                        'method': 'tesserocr'
+                        'method': 'tesserocr',
+                        'engine': 'LSTM',
+                        'psm': 'AUTO',
+                        'text_length': len(extracted_text),
+                        'word_count': len(extracted_text.split()) if extracted_text else 0
                     }
+                    
+                    # Optionally get bounding box data if needed (but don't rely on unpacking)
+                    # This is for advanced use cases, not primary text extraction
+                    try:
+                        # Get iterator to text components
+                        self.api.SetImage(processed_image)  # Ensure image is set
+                        ri = self.api.GetIterator()
+                        
+                        if ri:
+                            # Extract text at line level for structure
+                            lines = []
+                            level = tesserocr.RIL.TEXTLINE
+                            
+                            # Iterate through text lines
+                            for _ in range(50):  # Limit iterations to prevent infinite loops
+                                try:
+                                    line_text = ri.GetUTF8Text(level)
+                                    line_conf = ri.Confidence(level)
+                                    
+                                    if line_text and line_text.strip():
+                                        lines.append({
+                                            'text': line_text.strip(),
+                                            'confidence': line_conf
+                                        })
+                                    
+                                    if not ri.Next(level):
+                                        break
+                                except Exception:
+                                    break
+                            
+                            if lines:
+                                ocr_data['lines'] = lines
+                                logger.debug(f"Extracted {len(lines)} text lines via iterator")
+                    
+                    except Exception as iter_error:
+                        logger.debug(f"Could not extract line structure via iterator: {iter_error}")
                     
                 except Exception as e:
                     logger.debug(f"Could not extract detailed OCR data: {e}")

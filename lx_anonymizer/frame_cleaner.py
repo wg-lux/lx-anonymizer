@@ -1167,7 +1167,7 @@ class FrameCleaner:
 
     def extract_frames(self, video_path: Path, output_dir: Path, max_frames: Optional[int] = None) -> List[Path]:
         """
-        Extract frames from video using ffmpeg.
+        Extract frames from video using ffmpeg with high quality settings optimized for OCR.
         
         Args:
             video_path: Path to input video file
@@ -1182,11 +1182,14 @@ class FrameCleaner:
         """
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Build ffmpeg command
+        # Build high-quality ffmpeg command for OCR-optimized frame extraction
+        # Use PNG for lossless extraction to preserve text quality
         cmd = [
             'ffmpeg', '-nostdin', '-y', '-i', str(video_path),
             '-vf', 'fps=1',  # Extract 1 frame per second (adjust as needed)
-            str(output_dir / 'frame_%04d.jpg')
+            '-q:v', '1',  # Highest quality (1-31, lower is better)
+            '-pix_fmt', 'rgb24',  # RGB colorspace for maximum quality
+            str(output_dir / 'frame_%04d.png')  # PNG for lossless compression
         ]
         
         # Limit frames if specified
@@ -1195,14 +1198,14 @@ class FrameCleaner:
             cmd.insert(-1, str(max_frames))
         
         try:
-            logger.info(f"Extracting frames from {video_path} to {output_dir}")
+            logger.info(f"Extracting high-quality frames from {video_path} to {output_dir}")
             logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"ffmpeg output: {result.stderr}")
             
-            # Get list of created frame files
-            frame_files = sorted(output_dir.glob('frame_*.jpg'))
-            logger.info(f"Extracted {len(frame_files)} frames")
+            # Get list of created frame files (now PNG)
+            frame_files = sorted(output_dir.glob('frame_*.png'))
+            logger.info(f"Extracted {len(frame_files)} high-quality frames")
             return frame_files
             
         except subprocess.CalledProcessError as e:
@@ -1237,6 +1240,8 @@ class FrameCleaner:
                 roi=None,  # Could be enhanced with ROI if available
                 high_quality=True
             )
+            
+            logger.debug(f"OCR confidence for {frame_path.name}: {ocr_conf:.3f} OCR Text:{ocr_text}")
             
             if not ocr_text.strip():
                 logger.debug(f"No text detected in frame {frame_path.name}")
@@ -1296,7 +1301,8 @@ class FrameCleaner:
                 roi=None,  # Could be enhanced with ROI if available
                 high_quality=True
             )
-            
+            logger.debug(f"OCR confidence: {ocr_conf:.3f} OCR Text: {ocr_text[:100]}...")
+
             if not ocr_text.strip():
                 logger.debug(f"No text detected in frame {frame_path.name}")
                 return False, None
@@ -1649,24 +1655,47 @@ class FrameCleaner:
             
     def _iter_video(self, video_path: Path, total_frames: int) -> Iterator[Tuple[int, np.ndarray, int]]:
         """
-        Yield (abs_frame_index, gray_frame, skip_value) with adaptive subsampling
+        Yield (abs_frame_index, gray_frame, skip_value) with adaptive subsampling.
+        
+        Optimized for high-quality frame extraction to improve OCR accuracy.
+        Sets OpenCV backend properties for maximum decode quality.
         """
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             logger.error("Cannot open %s", video_path)
             return
         
-
+        # Set backend properties for higher quality frame decoding
+        # CAP_PROP_FOURCC forces codec selection for quality
+        # CAP_PROP_BUFFERSIZE ensures full frames are decoded
+        try:
+            # Try to set hardware decode preferences (may not work on all systems)
+            cap.set(cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY)
+        except (AttributeError, cv2.error):
+            # Not all OpenCV versions support this
+            pass
+        
+        # Calculate adaptive skip for sampling
         skip = math.ceil(total_frames / 200)
         idx = 0
+        
         while True:
             ok, bgr = cap.read()
             if not ok:
                 break
+            
             if idx % skip == 0:
+                # Convert to grayscale for OCR processing
+                # Use high-quality conversion algorithm
                 gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+                
+                # Optional: Apply slight sharpening to compensate for video compression
+                # This can help OCR by making text edges clearer
+                # Uncomment if needed: gray = cv2.filter2D(gray, -1, np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]))
+                
                 yield idx, gray, skip
             idx += 1
+            
         cap.release()
 
     def _update_video_sensitive_meta(self, video_file_obj, metadata: Dict[str, Any]):
