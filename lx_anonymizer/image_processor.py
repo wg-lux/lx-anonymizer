@@ -4,6 +4,7 @@ from .custom_logger import get_logger
 from .image_reassembly import reassemble_image
 from .pipeline_manager import process_images_with_OCR_and_NER
 from .gpu_management import clear_gpu_memory
+from .llm_phi4 import analyze_text_with_phi4, analyze_full_image_with_context
 import cv2
 
 logger = get_logger(__name__)

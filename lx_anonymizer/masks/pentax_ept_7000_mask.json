@@ -1,0 +1,26 @@
+{
+  "image_width": 1920,
+  "image_height": 1080,
+  "endoscope_image_x": 600,
+  "endoscope_image_y": 50,
+  "endoscope_image_width": 1300,
+  "endoscope_image_height": 1000,
+  "description": "Mask configuration for Pentax EPT-7000 endoscope processor",
+  "notes": [
+    "PLACEHOLDER COORDINATES - Verify with real Pentax EPT-7000 video footage",
+    "Measurement instructions:",
+    "1. Open reference video in video player with frame info",
+    "2. Identify leftmost visible endoscope pixel (X coordinate)",
+    "3. Identify topmost visible endoscope pixel (Y coordinate)",
+    "4. Measure endoscope image width (typically 1300-1350px for HD)",
+    "5. Measure endoscope image height (typically 1000-1080px for HD)",
+    "6. Update this file with measured values",
+    "7. Test masking with sample video to verify black bars are correct"
+  ],
+  "device_info": {
+    "manufacturer": "Pentax",
+    "model": "EPT-7000",
+    "typical_resolution": "1920x1080",
+    "endoscope_position": "center-right with narrow left metadata strip"
+  }
+}

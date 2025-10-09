@@ -1,0 +1,15 @@
+{
+  "image_width": 1920,
+  "image_height": 1080,
+  "endoscope_image_x": 550,
+  "endoscope_image_y": 0,
+  "endoscope_image_width": 1350,
+  "endoscope_image_height": 1080,
+  "description": "Generic mask configuration - fallback for unknown devices",
+  "notes": [
+    "This is a conservative fallback mask that preserves the endoscope image",
+    "while masking typical metadata areas (left strip ~550px wide)",
+    "Use device-specific masks when available for better accuracy"
+  ],
+  "usage": "Automatically used when device-specific mask file not found"
+}
