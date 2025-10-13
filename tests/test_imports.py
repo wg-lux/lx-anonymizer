@@ -11,18 +11,18 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 def test_package_imports():
     """Test that all main components can be imported from the package."""
     try:
-        from lx_anonymizer.lx_anonymizer.report_reader import ReportReader
-        from lx_anonymizer.lx_anonymizer.spacy_extractor import (
-            PatientDataExtractor, ExaminerDataExtractor, 
-            EndoscopeDataExtractor, ExaminationDataExtractor
+        from lx_anonymizer.report_reader import ReportReader
+        from lx_anonymizer.spacy_extractor import (
+            PatientDataExtractor, ExaminerDataExtractor,
+            EndoscopeDataExtractor, ExaminationDataExtractor,
         )
-        from lx_anonymizer.lx_anonymizer.text_anonymizer import anonymize_text
-        from lx_anonymizer.lx_anonymizer.determine_gender import determine_gender
+        from lx_anonymizer.text_anonymizer import anonymize_text
+        from lx_anonymizer.determine_gender import determine_gender
         import_success = True
     except ImportError as e:
         print(f"Import error: {e}")
         import_success = False
-    
+
     assert import_success, "Failed to import required modules"
 
 def test_shortcut_imports():

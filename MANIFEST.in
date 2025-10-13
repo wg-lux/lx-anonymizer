@@ -1,0 +1,4 @@
+include LICENSE
+include README.md
+recursive-include lx_anonymizer/names_dict *
+recursive-include lx_anonymizer/devices *

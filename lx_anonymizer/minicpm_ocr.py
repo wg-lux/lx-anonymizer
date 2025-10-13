@@ -26,29 +26,18 @@ import os
 
 logger = logging.getLogger(__name__)
 
-min_storage_gb = 200.0  # Minimum free storage required before download
+MIN_STORAGE_GB_DEFAULT = 200.0  # Minimum free storage required before download
+MODEL_SIZE_ESTIMATES: Dict[str, float] = {
+    "openbmb/MiniCPM-o-2_6": 12.0,
+    "openbmb/MiniCPM-o-2_6-int4": 4.0,
+}
+
 
 class StorageError(Exception):
     """Raised when there's insufficient storage for model operations."""
     pass
 
-def _can_load_model() -> bool:
-    """Check if the model can be loaded based on current storage."""
-    storage_info = min_storage_gb
-    
-    if storage_info['free_gb'] < min_storage_gb:
-        logger.error(f"Insufficient storage: {storage_info['free_gb']:.1f}GB free, "
-                        f"required: {min_storage_gb}GB")
-        return False
-    
-    if storage_info['hf_cache_gb'] > self.max_cache_size_gb:
-        logger.warning(f"HuggingFace cache too large: {storage_info['hf_cache_gb']:.1f}GB, "
-                        f"max allowed: {max_cache_size_gb}GB")
-        return False
-    
-    return True
-
-def _get_storage_info(self) -> Dict[str, float]:
+def _get_storage_info(hf_cache_dir: Path) -> Dict[str, float]:
     """Get current storage information in GB."""
     try:
         # Get filesystem stats
@@ -56,9 +45,9 @@ def _get_storage_info(self) -> Dict[str, float]:
         
         # Get HuggingFace cache size
         hf_cache_size = 0
-        if self.hf_cache_dir.exists():
+        if hf_cache_dir.exists():
             hf_cache_size = sum(
-                f.stat().st_size for f in self.hf_cache_dir.rglob('*') 
+                f.stat().st_size for f in hf_cache_dir.rglob('*') 
                 if f.is_file()
             )
         
@@ -80,6 +69,37 @@ def _get_storage_info(self) -> Dict[str, float]:
         }
     
 
+def _can_load_model(
+    model_name: str = "openbmb/MiniCPM-o-2_6",
+    min_storage_gb: float = MIN_STORAGE_GB_DEFAULT,
+    storage_buffer_gb: float = 5.0,
+) -> bool:
+    """Determine whether the MiniCPM model can be loaded safely."""
+
+    hf_cache_dir = Path.home() / ".cache" / "huggingface"
+    storage_info = _get_storage_info(hf_cache_dir)
+
+    estimated_model_size = MODEL_SIZE_ESTIMATES.get(model_name, 10.0)
+    required_free = max(min_storage_gb, estimated_model_size + storage_buffer_gb)
+
+    if storage_info["free_gb"] < required_free:
+        logger.warning(
+            "Insufficient storage to load %s. Free: %.1fGB, required: %.1fGB",
+            model_name,
+            storage_info["free_gb"],
+            required_free,
+        )
+        return False
+
+    try:
+        import transformers  # noqa: F401
+    except ImportError:
+        logger.warning("transformers package not available; MiniCPM loading disabled")
+        return False
+
+    return True
+
+
 class MiniCPMVisionOCR:
     """
     MiniCPM-o 2.6 based OCR and sensitivity detection for medical frames.
@@ -97,7 +117,7 @@ class MiniCPMVisionOCR:
         device: Optional[str] = None,
         fallback_to_tesseract: bool = True,
         confidence_threshold: float = 0.7,
-        min_storage_gb: float = 200.0,  # Minimum free storage required
+    min_storage_gb: float = MIN_STORAGE_GB_DEFAULT,  # Minimum free storage required
         max_cache_size_gb: float = 200.0,  # Maximum HuggingFace cache size
         auto_cleanup: bool = True  # Whether to auto-cleanup on low storage
     ):
@@ -148,7 +168,7 @@ class MiniCPMVisionOCR:
 
     def _check_and_manage_storage(self):
         """Check storage capacity and clean up if necessary."""
-        storage_info = _get_storage_info()
+        storage_info = _get_storage_info(self.hf_cache_dir)
         
         logger.info(f"Storage check: {storage_info['free_gb']:.1f}GB free, "
                    f"HF cache: {storage_info['hf_cache_gb']:.1f}GB")
@@ -161,7 +181,7 @@ class MiniCPMVisionOCR:
                 self._cleanup_hf_cache()
                 
                 # Re-check after cleanup
-                storage_info = _get_storage_info()
+                storage_info = _get_storage_info(self.hf_cache_dir)
                 
             if storage_info['free_gb'] < self.min_storage_gb:
                 error_msg = (
@@ -295,18 +315,13 @@ class MiniCPMVisionOCR:
         """
         # MiniCPM-o 2.6 is approximately 8-12GB depending on precision
         # Being conservative with estimate
-        model_size_estimates = {
-            "openbmb/MiniCPM-o-2_6": 12.0,  # ~12GB for full model
-            "openbmb/MiniCPM-o-2_6-int4": 4.0,  # ~4GB for quantized
-        }
-        
-        return model_size_estimates.get(self.model_name, 10.0)  # Default 10GB
+        return MODEL_SIZE_ESTIMATES.get(self.model_name, 10.0)
     
     def _load_model(self):
         """Load MiniCPM-o 2.6 model and tokenizer with storage checks."""
         try:
             # Check if we should skip model loading due to storage constraints
-            storage_info = _get_storage_info()
+            storage_info = _get_storage_info(self.hf_cache_dir)
             estimated_model_size = self._estimate_model_size()
             
             if storage_info['free_gb'] < estimated_model_size + 5:  # 5GB buffer
@@ -351,7 +366,7 @@ class MiniCPMVisionOCR:
             self.model.eval()
             
             # Log final storage status
-            final_storage = _get_storage_info()
+            final_storage = _get_storage_info(self.hf_cache_dir)
             logger.info(f"MiniCPM-o 2.6 model loaded successfully. "
                        f"Storage: {final_storage['free_gb']:.1f}GB free, "
                        f"HF cache: {final_storage['hf_cache_gb']:.1f}GB")

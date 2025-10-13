@@ -1244,6 +1244,7 @@ def integrate_with_frame_cleaner(frame_cleaner_instance, video_path: str) -> Dic
     Returns:
         Angereicherte Metadaten
     """
+    from pathlib import Path
     
     # 1. Simuliere Frame-Sampling (angepasst an FrameCleaner-Architektur)
     frames_data = []

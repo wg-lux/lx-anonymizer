@@ -33,7 +33,7 @@ def initialize_phi4():
         return model, tokenizer, pipe
     except Exception as e:
         logger.error(f"Error initializing Phi-4 model: {e}")
-        return None, None
+        return None, None, None
 
 def analyze_text_with_phi4(model, tokenizer, text, csv_path, image_path):
     

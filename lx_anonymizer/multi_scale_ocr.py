@@ -1,6 +1,6 @@
 from PIL import Image
 import numpy as np
-from typing import List, Tuple, Union, Dict, Callable, Optional
+from typing import List, Tuple, Union, Dict, Callable, Optional, Any
 import pytesseract
 from .custom_logger import logger
 from .ocr_preprocessing import preprocess_image
