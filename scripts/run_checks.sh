@@ -12,8 +12,6 @@ if ! command -v uv >/dev/null 2>&1; then
 #   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-uv sync --extra dev --extra llm --extra ocr
-
 # Run linting
 uv run flake8
 
