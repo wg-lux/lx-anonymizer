@@ -24,7 +24,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Sync dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra django --extra ocr
 
       - name: Lint with flake8
         run: uv run flake8
