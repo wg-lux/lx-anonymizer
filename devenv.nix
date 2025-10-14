@@ -100,7 +100,7 @@ in
   };
 
   enterShell = ''
-    export SYNC_CMD="uv sync --extra dev --extra ocr --extra llm --extra models"
+    export SYNC_CMD="uv sync --extra dev --extra ocr --extra llm
     # uv run python env_setup.py # modifies env
        
 
