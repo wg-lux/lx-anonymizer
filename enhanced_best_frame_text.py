@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class EnhancedBestFrameText:
     """
     Improved frame text selector that prioritizes quality over quantity.
