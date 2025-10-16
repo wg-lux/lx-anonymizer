@@ -21,7 +21,7 @@ import time
 import shutil
 
 from pathlib import Path
-from tkinter import N
+# from tkinter import N
 from typing import List, Optional, Tuple, Dict, Any, Union, Iterator
 import cv2
 import numpy as np
@@ -1569,6 +1569,7 @@ class FrameCleaner:
         Update VideoFile's SensitiveMeta with extracted metadata from frames.
         """
         try:
+            #TODO should be in endoreg-db since this would cause a circular dependency @maxhild
             from endoreg_db.models import SensitiveMeta
             # Hol den OCR-Text, führe unified Extraktion aus:
             text = (metadata or {}).get('representative_ocr_text', '') or ''

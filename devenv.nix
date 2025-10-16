@@ -3,7 +3,7 @@ let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
     # python312
-    python312Packages.tkinter
+    # python312Packages.tkinter
     stdenv.cc.cc
     git
     direnv
@@ -50,7 +50,7 @@ in
     ollama
     uv  # Python package manager
     # python312
-    python312Packages.tkinter
+    # python312Packages.tkinter
     python312Packages.pip
     libglvnd
     cmake
@@ -84,6 +84,10 @@ in
       lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
     export TESSDATA_PREFIX="${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share"
+  '';
+
+  scripts.uvs.exec = ''
+    uv sync --extra dev --extra ocr --extra llm
   '';
 
 
@@ -140,5 +144,6 @@ in
     else
       echo "Warning: .env file not found. Please run 'devenv tasks run env:build' to create it."
     fi
+    env-setup
   '';
 }
