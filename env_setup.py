@@ -30,7 +30,7 @@ def _dump_dotenv(env: Dict[str, str]) -> str:
 
 def main() -> None:
     # Projektroot: /home/admin/dev/lx-annotate
-    base_dir = Path(__file__).resolve().parents[2]
+    base_dir = Path(__file__).resolve().parents[0]
     env_path = base_dir / ".env"
 
     logger.info(f"Project root: {base_dir}")

@@ -86,7 +86,7 @@ def person_meta(name) -> Tuple[str, str, Tuple[int, int, int], str]: # Corrected
         with open(male_last_names_file, 'r') as file:
             index = getindex(file)
             last_name = male_last_names[index]
-        gender= "Männlich"
+        gender_label = "Männlich"
     elif gender_guess in ['female', 'mostly_female']:
         logger.info("Female gender")
         with open(female_first_names_file, 'r') as file:
@@ -95,7 +95,7 @@ def person_meta(name) -> Tuple[str, str, Tuple[int, int, int], str]: # Corrected
         with open(female_last_names_file, 'r') as file:
             index = getindex(file)
             last_name = female_last_names[index]
-        gender= "Weiblich"
+        gender_label = "Weiblich"
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
         with open(neutral_first_names_file, 'r') as file:
@@ -104,9 +104,9 @@ def person_meta(name) -> Tuple[str, str, Tuple[int, int, int], str]: # Corrected
         with open(neutral_last_names_file, 'r') as file:
             index = getindex(file)
             last_name = neutral_last_names[index]
-        gender= "Neutral"
-    dob= random.randint(1, 28), random.randint(1, 12), random.randint(1950, 2020)
-    return first_name, last_name, dob, gender
+        gender_label = "Neutral"
+    dob = (random.randint(1, 28), random.randint(1, 12), random.randint(1950, 2020))
+    return first_name, last_name, dob, gender_label
 
 def getindex(file):
     # Only usable on opened file objects
@@ -165,7 +165,7 @@ def gender_and_handle_separate_names(words, first_name_box, last_name_box, image
             index = getindex(file)
             female_last_name = female_last_names[index]
         name = f"{female_first_name} {female_last_name}"
-        output_image_path = add_name_to_image(male_last_name, female_last_name, "female", first_name_box, last_name_box, device)
+        output_image_path = add_name_to_image(female_first_name, female_last_name, "female", first_name_box, last_name_box, device)
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
         with open(neutral_first_names_file, 'r') as file:

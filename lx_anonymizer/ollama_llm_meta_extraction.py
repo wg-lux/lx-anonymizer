@@ -16,8 +16,15 @@ from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_fixed
 import time
 
+from .schema import PatientMeta
+from .spacy_regex import PatientDataExtractorLg
+
 # Konfiguriere Logging
 logger = logging.getLogger(__name__)
+
+DEFAULT_EXTRACTION_MODEL = "qwen2.5:1.5b-instruct"
+_REGEX_FALLBACK_LOG_MARKER = "metadata_extraction_path=regex_fallback"
+_PYDANTIC_SUCCESS_LOG_MARKER = "metadata_extraction_path=pydantic_success"
 
 class PatientMetadata(BaseModel):
     """Pydantic-Modell für Patientenmetadaten mit Validierung."""
@@ -250,6 +257,167 @@ Verwende für examination_date das Format aus dem Text (DD.MM.YYYY wenn möglich
             "available_models": self.available_models,
             "total_models": len(self.available_models)
         }
+
+
+def _safe_keys_view(data: Optional[Dict[str, Any]]) -> List[str]:
+    """Return a deterministic, PHI-safe view of dict keys."""
+    if not isinstance(data, dict):
+        return []
+
+    try:
+        return sorted(data.keys())
+    except Exception:
+        return []
+
+
+def _extract_json_block(text: Optional[str]) -> Optional[str]:
+    """Extract the first valid JSON object embedded within text."""
+    if not text:
+        return None
+
+    candidate_start = text.find("{")
+    while candidate_start != -1:
+        depth = 0
+        in_string = False
+        escaped = False
+        for idx in range(candidate_start, len(text)):
+            char = text[idx]
+
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+                continue
+
+            if char == '{':
+                depth += 1
+            elif char == '}' and depth > 0:
+                depth -= 1
+                if depth == 0:
+                    segment = text[candidate_start: idx + 1]
+                    try:
+                        json.loads(segment)
+                        return segment
+                    except json.JSONDecodeError:
+                        break
+
+        candidate_start = text.find("{", candidate_start + 1)
+
+    return None
+
+
+def chat(**payload: Any) -> Dict[str, Any]:
+    """Call Ollama's chat endpoint (wrapper for patchability in tests)."""
+    import ollama
+
+    return ollama.chat(**payload)
+
+
+try:
+    extractor_instance = PatientDataExtractorLg()
+except Exception as exc:  # pragma: no cover - spaCy model might be unavailable in CI
+    logger.warning("Failed to initialize PatientDataExtractorLg: %s", exc)
+
+    class _FallbackExtractor:
+        def regex_extract_llm_meta(self, text: str) -> Dict[str, Any]:
+            return {}
+
+    extractor_instance = _FallbackExtractor()
+
+
+def _regex_fallback(
+    extractor: Any,
+    cleaned_json_str: Optional[str],
+    raw_response_content: Optional[str],
+    model: str,
+) -> Dict[str, Any]:
+    """Execute the regex fallback extraction path."""
+    try:
+        source = raw_response_content or cleaned_json_str or ""
+        result = extractor.regex_extract_llm_meta(source)
+        if not isinstance(result, dict):
+            result = {}
+
+        logger.info("%s model=%s", _REGEX_FALLBACK_LOG_MARKER, model)
+        logger.debug(
+            "Content used for regex extraction available=%s raw_available=%s",
+            bool(cleaned_json_str),
+            bool(raw_response_content),
+        )
+        logger.debug("metadata_keys_regex=%s", _safe_keys_view(result))
+        return result
+    except Exception as exc:
+        logger.error(
+            "Regex extraction failed: %s; returning empty metadata. model=%s",
+            exc,
+            model,
+        )
+        return {}
+
+
+def extract_meta_ollama(
+    text: str,
+    *,
+    model: str = DEFAULT_EXTRACTION_MODEL,
+    extractor: Optional[Any] = None,
+    temperature: float = 0.0,
+) -> Dict[str, Any]:
+    """Extract patient metadata using Ollama with Pydantic + regex fallback."""
+
+    extractor = extractor or extractor_instance
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a medical report extraction assistant. "
+                    "Return only JSON with patient metadata fields."
+                ),
+            },
+            {"role": "user", "content": text},
+        ],
+        "stream": False,
+        "options": {"temperature": temperature},
+    }
+
+    try:
+        response = chat(**payload)
+    except Exception as exc:
+        logger.error("Ollama chat failed: %s", exc)
+        return {}
+
+    message = response.get("message") or {}
+    raw_content = message.get("content") or ""
+    cleaned_json_str = _extract_json_block(raw_content)
+
+    try:
+        if not cleaned_json_str:
+            raise ValueError("No JSON content returned")
+
+        validated_model = PatientMeta.model_validate_json(cleaned_json_str)
+        result = validated_model.model_dump(mode="json")
+
+        logger.info("%s model=%s", _PYDANTIC_SUCCESS_LOG_MARKER, model)
+        logger.debug("metadata_keys_pydantic=%s", _safe_keys_view(result))
+        return result
+
+    except (ValidationError, json.JSONDecodeError, ValueError) as exc:
+        logger.warning(
+            "Pydantic/JSON validation failed: %s; falling back to regex. model=%s",
+            exc,
+            model,
+        )
+
+    return _regex_fallback(extractor, cleaned_json_str, raw_content, model)
 
 # Factory-Funktion für einfache Verwendung
 def create_ollama_extractor() -> OllamaOptimizedExtractor:

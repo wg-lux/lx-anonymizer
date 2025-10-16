@@ -3,6 +3,7 @@
 uv.lock
 lx_anonymizer/agl-anonymizer/*
 lx_anonymizer/agl-anonymizer-temp/*
+.devenv.flake.nix
 
 agl-anonymizer/*
 agl-anonymizer-temp/*
@@ -15,7 +16,10 @@ __pycache__/
 # C extensions
 *.so
 
-# data
+# data artefacts and large runtime outputs
+data/
+study_data/
+logs/
 **~/etc
 **/etc/
 **/data/
@@ -24,6 +28,8 @@ __pycache__/
 **/images/
 **/logs/
 ./logs/
+logs/**/*.jsonl
+*.log
 
 
 

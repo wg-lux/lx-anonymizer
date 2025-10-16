@@ -1,7 +1,12 @@
+import importlib
+
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 # import fitz
-# import pypdf
+try:
+    import pypdf  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    pypdf = None  # type: ignore[assignment]
 import os
 import cv2
 import numpy as np
@@ -12,7 +17,11 @@ import json
 
 
 def download_model(model_name):
-    spacy.cli.download(model_name)
+    download_fn = getattr(spacy.util, "download_model", None)
+    if download_fn is not None:
+        download_fn(model_name)
+    else:
+        raise ImportError("spaCy download utility not available")
 
 os.environ['TESSDATA_PREFIX'] = '/opt/homebrew/share/tessdata'
 pytesseract.pytesseract.tesseract_cmd = '/opt/homebrew/bin/tesseract'
@@ -106,6 +115,9 @@ def process_image(image, use_mock=False):
     return image
 
 def convert_pdf_to_images(pdf_data):
+    if pypdf is None:
+        raise ImportError("pypdf is required to convert PDFs to images")
+
     images = []
 
     with open(pdf_data, 'rb') as file:
@@ -134,7 +146,12 @@ def crop_image(image, coordinates):
     return image.crop(coordinates)
 
 def extract_coordinates(htmlwithcoords):
-    from bs4 import BeautifulSoup
+    try:
+        bs4_module = importlib.import_module("bs4")
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError("BeautifulSoup (bs4) is required for HTML parsing in this script") from exc
+
+    BeautifulSoup = getattr(bs4_module, "BeautifulSoup")
 
     soup = BeautifulSoup(htmlwithcoords, 'html.parser')
     coordinates = []

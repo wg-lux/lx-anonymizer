@@ -63,7 +63,7 @@ def _get_storage_info(self) -> Dict[str, float]:
 
         # Get HuggingFace cache size
         hf_cache_size = 0
-        if self.hf_cache_dir.exists():
+        if hf_cache_dir.exists():
             hf_cache_size = sum(
                 f.stat().st_size for f in self.hf_cache_dir.rglob('*') if f.is_file()
             )
