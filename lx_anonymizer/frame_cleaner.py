@@ -77,7 +77,7 @@ class FrameCleaner:
         
         # Initialize MiniCPM-o 2.6 if enabled
         self.use_minicpm = use_minicpm
-        self.minicpm_ocr = None
+        self.minicpm_ocr = create_minicpm_ocr() if use_minicpm else None
         self._log_hf_cache_info()
         
         # Initialize the optimized ollama processing pipeline (guarded)
@@ -838,174 +838,88 @@ class FrameCleaner:
             logger.error(f"Streaming frame removal error: {e}")
             return False
 
-    def _process_frame(
+    def _unified_metadata_extract(self, text: str) -> Dict[str, Any]:
+        """Hierarchische Metadaten-Extraktion: LLM → spaCy → Regex-Fallback."""
+        meta = {}
+        if self.use_llm and self.ollama_extractor:
+            try:
+                meta = self.ollama_extractor.extract_metadata(text).model_dump()
+            except Exception:
+                meta = {}
+        if not meta and hasattr(self.PatientDataExtractor, "extract"):
+            try:
+                meta = self.PatientDataExtractor.extract(text)
+            except Exception:
+                meta = {}
+        if not meta:
+            meta = self.frame_metadata_extractor.extract_metadata_from_frame_text(text)
+        return meta
+
+    def _process_frame_single(
         self,
         gray_frame: np.ndarray,
-        endoscope_roi: dict | None,
+        endoscope_roi: dict | None = None,
         frame_id: int | None = None,
+        extended: bool = False,
+        collect_for_batch: bool = False,
     ) -> tuple[bool, dict, str, float]:
         """
-        Centralised OCR + metadata extraction for ONE frame.
-
-        Returns:
-            is_sensitive, frame_metadata, ocr_text, ocr_conf
+        Konsolidierte Einzel-Frame-Verarbeitung mit OCR, Metadaten und optionaler Batch-Sammlung.
         """
         logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
-        
+        ocr_text, ocr_conf, frame_metadata, is_sensitive = None, 0.0, {}, False
+
         if self.use_minicpm and self.minicpm_ocr:
-            pil_img = (
-                Image.fromarray(gray_frame, mode="L")
-                .convert("RGB")
-            )
-            try:
-                is_sensitive, frame_metadata, ocr_text = (
-                    # using minicpm
-                    self.minicpm_ocr.detect_sensitivity_unified(
-                        pil_img,
-                        context="endoscopy video frame",
-                    )
-                )
-                logger.debug(f"MiniCPM extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
-            except ValueError as ve:
-                logger.error(f"MiniCPM-o 2.6 processing failed: {ve}")
-                self.use_minicpm = False
-                self.minicpm_ocr = False
-                logger.warning(
-                    "MiniCPM-o 2.6 failed to detect sensitivity or text, falling back to traditional OCR."
-                )
-                # Fallback to traditional OCR
-                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
-                    gray_frame,
-                    roi=endoscope_roi,
-                    high_quality=True,
-                )
-                logger.info(f"Fallback OCR extracted text length: {len(ocr_text or '')}")
-                try:
-                    frame_metadata = (
-                        self.frame_metadata_extractor.extract_metadata_from_frame_text(
-                            ocr_text
-                        ) if ocr_text else {}
-                    )
-                    logger.debug(f"Fallback extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
-                except Exception:
-                    logger.exception("Failed to extract patient data from OCR text in fallback")
-                    frame_metadata = {}
-                    
-                is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
-                    frame_metadata
-                )
-            except Exception as e:
-                logger.error(f"MiniCPM-o 2.6 processing failed: {e}")
-                self.use_minicpm = False
-                self.minicpm_ocr = False
-                logger.warning(
-                    "MiniCPM-o 2.6 failed to detect sensitivity or text, falling back to traditional OCR."
-                )
-                # Fallback to traditional OCR
-                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
-                    gray_frame,
-                    roi=endoscope_roi,
-                    high_quality=True,
-                )
-                logger.debug(f"Exception fallback OCR extracted text length: {len(ocr_text or '')}")
-                try:
-                    frame_metadata = (
-                        self.frame_metadata_extractor.extract_metadata_from_frame_text(
-                            ocr_text
-                        ) if ocr_text else {}
-                    )
-                    logger.debug(f"Exception fallback extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
-                except Exception:
-                    logger.exception("Failed to extract patient data from OCR text in exception fallback")
-                    frame_metadata = {}
-                    
-                is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
-                    frame_metadata
-                )
-            # MiniCPM does not provide a confidence value – treat as 1.0
-            ocr_conf = 1.0
+            ocr_text, ocr_conf, frame_metadata, is_sensitive = self._ocr_with_minicpm(gray_frame)
         else:
-            # Enhanced OCR integration - use diagnostic OCR if available
-            if self.use_enhanced_ocr:
-                logger.debug("Using Enhanced OCR with gibberish detection")
-                try:
-                    ocr_text, ocr_conf, ocr_data = self.frame_ocr.extract_text_from_frame(
-                        gray_frame,
-                        roi=endoscope_roi,
-                        high_quality=True
-                    )
-                    logger.debug(f"Enhanced OCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
-                    
-                    frame_metadata = (
-                        self.frame_metadata_extractor.extract_metadata_from_frame_text(
-                            ocr_text
-                        ) if ocr_text else {}
-                    )
-                    
-                    is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
-                        frame_metadata
-                    )
-                    
-                    # Add enhanced text to quality-based best frame collection
-                    if ocr_text:
-                        if hasattr(self.best_frame_text, 'push'):
-                            # Standard BestFrameText API expects only 2 positional arguments
-                            try:
-                                # Use standard API with text and confidence
-                                self.best_frame_text.push(ocr_text, ocr_conf)
-                            except TypeError:
-                                # Fallback in case of API changes
-                                logger.warning("BestFrameText.push() failed, using fallback storage")
-                                if not hasattr(self, '_text_collection'):
-                                    self._text_collection = []
-                                self._text_collection.append((ocr_text, ocr_conf))
-                        else:
-                            # Standard BestFrameText API with add_text method
-                            logger.warning("BestFrameText does not have push method - using fallback")
-                            # Store in internal collection for later processing
-                            if not hasattr(self, '_text_collection'):
-                                self._text_collection = []
-                            self._text_collection.append((ocr_text, ocr_conf))
-                    
-                except Exception as e:
-                    logger.warning(f"Enhanced OCR failed, falling back to standard OCR: {e}")
-                    # Fallback to standard OCR
-                    ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
-                        gray_frame,
-                        roi=endoscope_roi,
-                        high_quality=True,
-                    )
-                    logger.debug(f"Standard OCR fallback text length: {len(ocr_text or '')}")
-            else:
-                # Standard OCR
-                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
-                    gray_frame,
-                    roi=endoscope_roi,
-                    high_quality=True,
-                )
-                logger.debug(f"Traditional OCR extracted text length: {len(ocr_text or '')}")
-                
-                # Add text to standard best frame collection
-                if ocr_text:
-                    self.best_frame_text.push(ocr_text, ocr_conf, is_sensitive=None)
-            try:
-                frame_metadata = (
-                    self.frame_metadata_extractor.extract_metadata_from_frame_text(
-                        ocr_text
-                    ) if ocr_text else {}
-                )
-                logger.debug(f"Traditional extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
-            except Exception:
-                logger.exception("Failed to extract patient data from OCR text")
-                frame_metadata = {}
-                
-            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
-                frame_metadata
-            )
+            ocr_text, ocr_conf, frame_metadata, is_sensitive = self._ocr_with_tesserocr(gray_frame, endoscope_roi)
+
+        # Einheitliche Metadaten-Extraktion
+        if ocr_text:
+            meta_unified = self._unified_metadata_extract(ocr_text)
+            frame_metadata = self.frame_metadata_extractor.merge_metadata(frame_metadata, meta_unified)
+
+        # Optional: Für Batch-Enrichment sammeln
+        if collect_for_batch and ocr_text:
+            self.frame_collection.append({
+                "frame_id": frame_id,
+                "ocr_text": ocr_text,
+                "meta": frame_metadata,
+                "is_sensitive": is_sensitive,
+            })
+
+        # Optional: BestFrameText für Preview
+        if hasattr(self.best_frame_text, "push"):
+            self.best_frame_text.push(ocr_text, ocr_conf)
 
         return is_sensitive, frame_metadata, ocr_text, ocr_conf
 
-    # ------------------------------------------------------------------ main
+    def process_frames(
+        self,
+        frames: list[np.ndarray],
+        endoscope_roi: dict | None = None,
+        extended: bool = False,
+    ) -> list[tuple[bool, dict, str, float]]:
+        """
+        Batch-Verarbeitung aller Frames mit optionalem Batch-Enrichment.
+        """
+        results = []
+        self.frame_collection = []  # Reset für neuen Batch
+        for i, gray_frame in enumerate(frames):
+            logger.debug(f"Processing batch frame {i + 1}/{len(frames)}")
+            is_sensitive, meta, text, conf = self._process_frame_single(
+                gray_frame, endoscope_roi=endoscope_roi, frame_id=i, extended=extended, collect_for_batch=extended
+            )
+            results.append((is_sensitive, meta, text, conf))
+        # Nach Batch: Metadaten-Anreicherung
+        if extended and self.frame_collection:
+            batch_meta = self._extract_enriched_metadata_batch()
+            if batch_meta:
+                logger.info(f"Merging batch-enriched metadata with accumulated results")
+                for idx, (is_sensitive, meta, text, conf) in enumerate(results):
+                    results[idx] = (is_sensitive, self.frame_metadata_extractor.merge_metadata(meta, batch_meta), text, conf)
+        return results
+
     def clean_video(
         self,
         video_path: Path,
@@ -1016,22 +930,18 @@ class FrameCleaner:
         processor_rois: Optional[Dict[str, Dict[str, Any]]] = None,
         output_path: Optional[Path] = None,
         technique: str = "mask_overlay",
+        extended: bool = False,
     ) -> tuple[Path, Dict[str, Any]]:
         """
-        Refactored version: single code path, fewer duplicated branches.
+        Refactored version: single code path, fewer duplicated branches. Jetzt mit Batch-Metadaten-Logik.
         """
-
         if tmp_dir is None:
             tmp_dir = Path(tempfile.mkdtemp(prefix="frame_cleaner_"))
-
         if device_name is None:
             device_name = "olympus_cv_1500"
-
         output_video = (
             output_path or video_path.with_stem(f"{video_path.stem}_anony")
         )
-
-        # -------- initialise extracted‑metadata accumulator -----------------
         accumulated: dict[str, Any] = {
             "patient_first_name": None,
             "patient_last_name": None,
@@ -1044,67 +954,41 @@ class FrameCleaner:
             "representative_ocr_text": None,
             "source": "frame_extraction",
         }
-
         cap = cv2.VideoCapture(str(video_path))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
-
-        # ------ choose sampling parameters ----------------------------------
         long_video = total_frames > 10_000
         max_samples = (
             min(500, total_frames // 20) if long_video else total_frames
         )
-
         logger.info(
             "%s video detected (%d frames). Sampling ≤%d frames.",
             "Long" if long_video else "Short",
             total_frames,
             max_samples,
         )
-
-        # --------------------------------------------------------------------
         sensitive_idx: list[int] = []
         sampled = 0
-
+        self.frame_collection = []  # Reset für neuen Batch
         for idx, gray_frame, stride in self._iter_video(
             video_path, total_frames
         ):
-            indicator = 5 + (idx // 1000)
             if sampled >= max_samples:
                 break
             sampled += 1
-
-            is_sensitive, frame_meta, ocr_text, ocr_conf = self._process_frame(
-                gray_frame, endoscope_roi, frame_id=idx
+            is_sensitive, frame_meta, ocr_text, ocr_conf = self._process_frame_single(
+                gray_frame, endoscope_roi, frame_id=idx, extended=extended, collect_for_batch=extended
             )
-
-            # merge metadata for every frame (high recall)
             accumulated = self.frame_metadata_extractor.merge_metadata(
                 accumulated, frame_meta
             )
-
-            # collect text for preview (loose gates handled inside)
-            if ocr_text:
-                if is_sensitive and indicator % 5 == 0:
-                    # Höherwertige OCR (TrOCR) + LLM-Metadaten auf sensitiven Stichproben
-                    ext_text = trocr_full_image_ocr(gray_frame)
-                    ext_meta = self.extract_metadata(ext_text) or {}
-                    logger.debug(f"Sensitive text detected in frame {idx}. Extended processing.")
-
-                    # Vergleiche Anzahl sinnvoll gesetzter Felder und merge ggf.
-                    base_count = len([v for v in (frame_meta or {}).values() if v not in (None, '', 'Unknown')])
-                    ext_count  = len([v for v in ext_meta.values() if v not in (None, '', 'Unknown')])
-                    if ext_count > base_count:
-                        accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, ext_meta)
-
             if is_sensitive:
                 sensitive_idx.append(idx)
-
-        
-        # Entfernt: verwaister Merge aus self.metadata (nicht vorhanden)
-        # if hasattr(self, 'metadata') and self.metadata:
-        #     accumulated.update(self.metadata)
-        
+        # Batch-Metadaten-Anreicherung nach Frame-Loop
+        if extended and self.frame_collection:
+            batch_enriched = self._extract_enriched_metadata_batch()
+            if batch_enriched:
+                accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, batch_enriched)
         sensitive_ratio = (
             len(sensitive_idx) / total_frames if total_frames else 0.0
         )
@@ -1114,12 +998,8 @@ class FrameCleaner:
             total_frames,
             100 * sensitive_ratio,
         )
-
-        # ------------- decide between frame removal and masking -------------
-        # if sensitive_ratio < 0.1 could be applied or default to masking
         try:
             if technique == "remove_frames":
-                # ---- low ratio ➞ remove individual frames ------------------
                 logger.info("Using frame‑removal strategy.")
                 ok = self.remove_frames_from_video_streaming(
                     video_path,
@@ -1128,40 +1008,26 @@ class FrameCleaner:
                     total_frames=total_frames,
                 )
             elif technique == "mask_overlay":
-                # ---- high ratio ➞ mask overlay area -------------------------
                 logger.info("Using masking strategy.")
                 if endoscope_roi and self._validate_roi(endoscope_roi):
-                    mask_cfg = self._create_mask_config_from_roi(
-                        endoscope_roi, processor_rois
-                    )
+                    mask_cfg = endoscope_roi
                 else:
-                    mask_cfg = self._load_mask(device_name)
-
+                    mask_cfg = {"image_width": 1920, "image_height": 1080}
                 ok = self._mask_video_streaming(
                     video_path, mask_cfg, output_video, use_named_pipe=True
                 )
-
             if not ok:
                 logger.error("Processing failed – copying original video.")
                 shutil.copy2(video_path, output_video)
-
         except Exception:
             logger.exception("Processing failed – copying original video.")
             shutil.copy2(video_path, output_video)
-        
         finally:
-            # Clean up temporary files
             if tmp_dir.exists():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-                
-        
-
-        # ----------------------- persist metadata ---------------------------
         if video_file_obj:
             self._update_video_sensitive_meta(video_file_obj, accumulated)
-
         return output_video, accumulated
-
             
 
 
@@ -1676,7 +1542,7 @@ class FrameCleaner:
             pass
         
         # Calculate adaptive skip for sampling
-        skip = math.ceil(total_frames / 200)
+        skip = math.ceil(total_frames / 50)
         idx = 0
         
         while True:
@@ -1691,7 +1557,7 @@ class FrameCleaner:
                 
                 # Optional: Apply slight sharpening to compensate for video compression
                 # This can help OCR by making text edges clearer
-                # Uncomment if needed: gray = cv2.filter2D(gray, -1, np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]))
+                gray = cv2.filter2D(gray, -1, np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]]))
                 
                 yield idx, gray, skip
             idx += 1
@@ -1966,10 +1832,12 @@ class FrameCleaner:
                     is_sensitive = False  # Fail-safe: treat as non-sensitive on error
                 
                 if is_sensitive:
-                    self.reservoir.append(ocr_text)        # no thresholds needed
                     sensitive_frame_indices.append(frame_idx)
                     hits_count += 1
                     logger.info(f"Found sensitive data in frame {frame_idx}")
+                    if len(ocr_text) < len(best_text):
+                        best_text = ocr_text
+                        logger.debug(f"OCR text: {ocr_text}")
                 
                 # Send result back to iterator and get next frame
                 try:
@@ -2186,3 +2054,46 @@ class FrameCleaner:
         self.frame_collection.clear()
         self.ocr_text_collection.clear()
         logger.debug("Frame collection reset for new video")
+    
+    def _ocr_with_minicpm(self, gray_frame: np.ndarray) -> tuple[str, float, dict, bool]:
+        """
+        OCR mit MiniCPM LLM-basiertem Modell. Fallback auf TesserOCR bei Fehler.
+        """
+        try:
+            pil_img = Image.fromarray(gray_frame, mode="L").convert("RGB")
+            is_sensitive, frame_metadata, ocr_text = self.minicpm_ocr.detect_sensitivity_unified(
+                pil_img, context="endoscopy video frame"
+            )
+            logger.debug(f"MiniCPM extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
+            return ocr_text, 1.0, frame_metadata, is_sensitive
+        except ValueError as ve:
+            logger.error(f"MiniCPM processing failed: {ve}")
+            logger.warning("MiniCPM failed – falling back to TesserOCR")
+            self.use_minicpm = False
+            self.minicpm_ocr = None
+            return self._ocr_with_tesserocr(gray_frame)
+        except Exception as e:
+            logger.exception(f"Unexpected MiniCPM error: {e}")
+            return "", 0.0, {}, False
+
+    def _ocr_with_tesserocr(self, gray_frame: np.ndarray, endoscope_roi: dict | None = None) -> tuple[str, float, dict, bool]:
+        """
+        OCR mit TesserOCR und Metadatenextraktion.
+        """
+        try:
+            logger.debug("Using TesserOCR OCR engine")
+            ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(
+                gray_frame, roi=endoscope_roi, high_quality=True
+            )
+            logger.debug(f"TesserOCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
+            frame_metadata = (
+                self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                if ocr_text else {}
+            )
+            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+            if hasattr(self.best_frame_text, "push"):
+                self.best_frame_text.push(ocr_text, ocr_conf)
+            return ocr_text, ocr_conf, frame_metadata, is_sensitive
+        except Exception as e:
+            logger.exception(f"TesserOCR OCR failed: {e}")
+            return "", 0.0, {}, False
