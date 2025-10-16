@@ -21,7 +21,6 @@ import time
 import shutil
 
 from pathlib import Path
-from tkinter import N
 from typing import List, Optional, Tuple, Dict, Any, Union, Iterator
 import cv2
 import numpy as np
@@ -845,10 +844,11 @@ class FrameCleaner:
             try:
                 meta = self.ollama_extractor.extract_metadata(text).model_dump()
             except Exception:
+                
                 meta = {}
-        if not meta and hasattr(self.PatientDataExtractor, "extract"):
+        if not meta and self.PatientDataExtractor:
             try:
-                meta = self.PatientDataExtractor.extract(text)
+                meta = self.PatientDataExtractor(text)
             except Exception:
                 meta = {}
         if not meta:
