@@ -2,7 +2,8 @@
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
-    python312
+    # python312
+    python312Packages.tkinter
     stdenv.cc.cc
     git
     direnv
@@ -29,7 +30,7 @@ in
 
   languages.python = {
     enable = true;
-    package = pkgs.python312;
+    package = pkgs.python3.withPackages(ps: with ps; [tkinter]); #known devenv issue with python3Packages since python3Full was deprecated
     uv = {
       enable = true;
       sync.enable = true;
@@ -48,8 +49,10 @@ in
     })
     ollama
     uv  # Python package manager
-    python312Packages.pip
+    # python312
     python312Packages.tkinter
+    python312Packages.pip
+    libglvnd
     cmake
     gcc
     pkg-config
@@ -100,7 +103,7 @@ in
   };
 
   enterShell = ''
-    export SYNC_CMD="uv sync --extra dev --extra ocr --extra llm
+    export SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
     # uv run python env_setup.py # modifies env
        
 
