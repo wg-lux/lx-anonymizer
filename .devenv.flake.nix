@@ -3,12 +3,12 @@
     let
       version = "1.8.1";
 system = "x86_64-linux";
-devenv_root = "/home/admin/dev/lx-annotate/libs/lx-anonymizer";
+devenv_root = "/home/admin/lx-anonymizer";
 devenv_dotfile = ./.devenv;
 devenv_dotfile_string = ".devenv";
 container_name = null;
 devenv_tmpdir = "/run/user/1000";
-devenv_runtime = "/run/user/1000/devenv-21ccaba";
+devenv_runtime = "/run/user/1000/devenv-18a2527";
 devenv_istesting = false;
 devenv_direnvrc_latest_version = 1;
 
@@ -26,12 +26,12 @@ devenv_direnvrc_latest_version = 1;
         let
           version = "1.8.1";
 system = "x86_64-linux";
-devenv_root = "/home/admin/dev/lx-annotate/libs/lx-anonymizer";
+devenv_root = "/home/admin/lx-anonymizer";
 devenv_dotfile = ./.devenv;
 devenv_dotfile_string = ".devenv";
 container_name = null;
 devenv_tmpdir = "/run/user/1000";
-devenv_runtime = "/run/user/1000/devenv-21ccaba";
+devenv_runtime = "/run/user/1000/devenv-18a2527";
 devenv_istesting = false;
 devenv_direnvrc_latest_version = 1;
 

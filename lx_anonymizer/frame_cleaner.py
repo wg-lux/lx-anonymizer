@@ -987,10 +987,8 @@ class FrameCleaner:
         self,
         video_path: Path,
         video_file_obj=None,
-        tmp_dir: Optional[Path] = None,
         device_name: Optional[str] = None,
-        endoscope_roi: Optional[Dict[str, Any]] = None,
-        processor_rois: Optional[Dict[str, Dict[str, Any]]] = None,
+        endoscope_roi: Optional[dict[str, int]] = None,
         output_path: Optional[Path] = None,
         technique: str = "mask_overlay",
     ) -> tuple[Path, Dict[str, Any]]:
@@ -998,8 +996,6 @@ class FrameCleaner:
         Refactored version: single code path, fewer duplicated branches.
         """
 
-        if tmp_dir is None:
-            tmp_dir = Path(tempfile.mkdtemp(prefix="frame_cleaner_"))
 
         if device_name is None:
             device_name = "olympus_cv_1500"
@@ -1100,7 +1096,7 @@ class FrameCleaner:
                 logger.info("Using masking strategy.")
                 if endoscope_roi and self._validate_roi(endoscope_roi):
                     mask_cfg = self._create_mask_config_from_roi(
-                        endoscope_roi, processor_rois
+                        endoscope_roi
                     )
                 else:
                     mask_cfg = self._load_mask(device_name)
@@ -1116,11 +1112,6 @@ class FrameCleaner:
         except Exception:
             logger.exception("Processing failed – copying original video.")
             shutil.copy2(video_path, output_video)
-        
-        finally:
-            # Clean up temporary files
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir, ignore_errors=True)
 
         # ----------------------- persist metadata ---------------------------
         if video_file_obj:
@@ -1519,15 +1510,13 @@ class FrameCleaner:
 
     def _create_mask_config_from_roi(
         self, 
-        endoscope_roi: Dict[str, Any], 
-        processor_rois: Optional[Dict[str, Dict[str, Any]]] = None
-    ) -> Dict[str, Any]:
+        endoscope_roi: dict[str, int], 
+    ) -> dict[str, int]:
         """
         Create mask configuration from processor ROI information.
         
         Args:
             endoscope_roi: Endoscope ROI from processor
-            processor_rois: All processor ROIs (optional, for context)
             
         Returns:
             Mask configuration dictionary compatible with _mask_video
