@@ -7,6 +7,8 @@ let
     git
     direnv
     glib
+    zlib
+    libglvnd
     ollama
     cmake          # build system
     gcc            # C/C++ compiler tool-chain
@@ -22,17 +24,34 @@ let
 
 in
 {
-  dotenv.enable = false;
-  dotenv.disableHint = true;
+  dotenv.enable = true;
+  dotenv.disableHint = false;
+
+  languages.python = {
+    enable = true;
+    package = pkgs.python3.withPackages(ps: with ps; [tkinter]); #known devenv issue with python3Packages since python3Full was deprecated
+    uv = {
+      enable = true;
+      sync.enable = true;
+    };
+  };
+  
 
   packages = with pkgs; [
     git
     cudaPackages.cuda_nvcc
     stdenv.cc.cc
     glib
-    tesseract
+    zlib
+    (tesseract.override {
+      enableLanguages = [ "eng" "deu" ];  # English + German traineddata
+    })
     ollama
-    python3Packages.pip
+    uv  # Python package manager
+    # python312
+    python312Packages.tkinter
+    python312Packages.pip
+    libglvnd
     cmake
     gcc
     pkg-config
@@ -53,6 +72,7 @@ in
   };
 
 
+
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
 
   scripts.env-setup.exec = ''
@@ -60,11 +80,9 @@ in
       with pkgs;
       lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
-    export OLLAMA_BIN=/nix/store/nrcs8aijwjwq450chf1qlm9xxcp8n0iw-ollama-0.6.5/bin/ollama
-
+    export TESSDATA_PREFIX="${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share"
   '';
 
-    env.TESSDATA_PREFIX = "${pkgs.tesseract}/share/tessdata";
 
 
   processes = {

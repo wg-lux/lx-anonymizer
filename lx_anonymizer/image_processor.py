@@ -1,9 +1,11 @@
 from pathlib import Path
 import uuid
+import os
 from .custom_logger import get_logger
 from .image_reassembly import reassemble_image
 from .pipeline_manager import process_images_with_OCR_and_NER
 from .gpu_management import clear_gpu_memory
+from .llm import analyze_text_with_phi4, analyze_full_image_with_context
 import cv2
 
 logger = get_logger(__name__)
@@ -101,33 +103,27 @@ def process_image(
         file_extension = os.path.splitext(processed_image_path)[1]
         result_path = results_dir / f"processed_{uuid.uuid4()}{file_extension}"
         try:
-            if cv2.imread(str(processed_image_path)) is None:
+            img_to_save = cv2.imread(str(processed_image_path))
+            if img_to_save is None:
                 logger.error(f"Failed to read image: {processed_image_path}")
             else:
                 # Copy the image to the results directory
-                cv2.imwrite(
-                    str(result_path), 
-                    cv2.imread(str(processed_image_path))
-                )
-                logger.debug(f"Image copied successfully to: {result_path}")
+                success = cv2.imwrite(str(result_path), img_to_save)
+                if not success:
+                    logger.error(f"Failed to write image to: {result_path}")
+                else:
+                    logger.debug(f"Image copied successfully to: {result_path}")
         except Exception as e:
             logger.error(f"Failed to save image to results with error {e}")
                 
         processed_image_path = result_path
     
     return processed_image_path, result
-
 def resize_image(image_path: Path, max_width=1024, max_height=1024):
     try:
-        if cv2.imread(str(image_path)) is None:
-            logger.error(f"Failed to read image: {image_path}")
-            # Handle the error or return gracefully
-        else:
-            image=cv2.imread(str(image_path))
+        image = cv2.imread(str(image_path))
     except Exception as e:
-        logger.error(f"Error copying processed image: {e}")
-        # Handle the exception or return gracefully    if image is None:
-        logger.error(f"Unable to read image for resizing: {image_path}")
+        logger.error(f"Error reading image: {e}")
         return
     if image is None:
         logger.error(f"Unable to read image for resizing: {image_path}")
@@ -138,12 +134,13 @@ def resize_image(image_path: Path, max_width=1024, max_height=1024):
         new_size = (int(width * scaling_factor), int(height * scaling_factor))
         resized_image = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
         try:
-            if cv2.imwrite(str(image_path)) is None:
+            success = cv2.imwrite(str(image_path), resized_image)  # Saving image
+            if not success:
                 logger.error("Failed to write image")
             else:
-                cv2.imwrite(str(image_path), resized_image)  # Saving image
                 logger.debug(f"Image saved successfully: {image_path}")
         except Exception as e:
             logger.error(f"Error saving image: {e}")
 
+        logger.debug(f"Image resized to {new_size}")
         logger.debug(f"Image resized to {new_size}")

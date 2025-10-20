@@ -101,21 +101,54 @@ def tesseract_full_image_ocr(image_path):
 
     return full_text.strip(), word_boxes
 
-def trocr_full_image_ocr(image_path):
-    if hasattr(image_path, "convert"):
-        image = image_path.convert("RGB")
-    else:
-        image = Image.open(image_path).convert("RGB")    # 1. Full text in a single chunk
-    processor, model, _, device = model_service.load_trocr_model()
+def trocr_full_image_ocr(image_input):
+    """
+    Perform OCR on the entire image using TrOCR.
+    Accepts:
+      - numpy.ndarray (BGR/RGB/Gray)
+      - PIL.Image.Image
+      - Pfad/Datei-ähnliches Objekt
+    Fallback zu Tesseract, wenn TrOCR-Modelle nicht verfügbar sind.
+    """
+    # 1) In PIL.Image umwandeln
+    try:
+        if isinstance(image_input, np.ndarray):
+            # np.ndarray -> PIL
+            pil_img = Image.fromarray(image_input).convert("RGB")
+        elif hasattr(image_input, "convert"):
+            # PIL.Image
+            pil_img = image_input.convert("RGB")
+        else:
+            # Pfad oder Dateiobjekt
+            pil_img = Image.open(image_input).convert("RGB")
+    except Exception as e:
+        logger.warning(f"Failed to prepare image for TrOCR: {e}. Falling back to Tesseract.")
+        try:
+            if hasattr(image_input, "convert"):
+                fb_img = image_input.convert("RGB")
+            elif isinstance(image_input, np.ndarray):
+                fb_img = Image.fromarray(image_input).convert("RGB")
+            else:
+                fb_img = Image.open(image_input).convert("RGB")
+            return pytesseract.image_to_string(fb_img, config='--psm 6').strip()
+        except Exception:
+            return ""
 
-    pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(device)
+    # 2) Modelle laden
+    processor, model, tokenizer, device = model_service.load_trocr_model()
+    if processor is None or model is None:
+        logger.warning("TrOCR model not available, falling back to Tesseract")
+        return pytesseract.image_to_string(pil_img, config='--psm 6').strip()
+
+    # 3) Inferenz
+    pixel_values = processor(images=pil_img, return_tensors="pt").pixel_values.to(device)
     outputs = model.generate(
-        pixel_values, 
-        output_scores=True, 
-        do_sample=False,            # Use beam search for more deterministic results
-        num_beams=5,                # Example beam count for better exploration
-        return_dict_in_generate=True, 
-        max_new_tokens=30000          # Increase max tokens to allow for longer text
+        pixel_values,
+        output_scores=True,
+        do_sample=False,
+        num_beams=5,
+        return_dict_in_generate=True,
+        max_new_tokens=512,
     )
     return processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0].strip()
 

@@ -62,6 +62,7 @@ class PatientDataExtractorLg:
         first name / last name / dob / casenumber / gender.
 
         Returns a dict with the same keys as PatientMeta – values may be None
+        
         """
         doc = self.nlp(text)
         meta = {k: None for k in self._FIELDS}      # initialise blanks

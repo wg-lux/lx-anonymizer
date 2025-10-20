@@ -7,6 +7,7 @@ from .report_reader import ReportReader
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .text_anonymizer import anonymize_text
 from .frame_cleaner import FrameCleaner
+from . import ollama_llm
 
 __all__ = [
     'ReportReader',
@@ -16,5 +17,5 @@ __all__ = [
     'ExaminationDataExtractor',
     'anonymize_text',
     'FrameCleaner',
-    'MetaExtraction'
+    'ollama_llm'
 ]

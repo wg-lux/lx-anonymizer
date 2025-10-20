@@ -33,7 +33,7 @@ def initialize_phi4():
         return model, tokenizer, pipe
     except Exception as e:
         logger.error(f"Error initializing Phi-4 model: {e}")
-        return None, None
+        return None, None, None
 
 def analyze_text_with_phi4(model, tokenizer, text, csv_path, image_path):
     
@@ -88,7 +88,7 @@ def analyze_full_image_with_context(image_path, csv_path, csv_dir):
                     )
 
         # Create enhanced prompt with context
-        prompt = f"""Analyze this text from an image and extract all person names. The text contains medical/hospital data with patient and staff names.
+        prompt = f"""Analyze this text from an image and eqxtract all person names. The text contains medical/hospital data with patient and staff names.
 
     Full Image Text:
     {full_text}

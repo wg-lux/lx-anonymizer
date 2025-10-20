@@ -15,6 +15,8 @@ import re
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, date
 import dateparser
+from typing import Any, Dict
+
 
 logger = logging.getLogger(__name__)
 
@@ -67,15 +69,16 @@ class FrameMetadataExtractor:
         ]
         
         self.examiner_patterns = [
-            r'Arzt[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]+)',
-            r'Dr[\.:\s]*([A-Za-zäöüÄÖÜß\s\-\.]+)',
-            r'Untersucher[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]+)',
-            r'Examiner[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]+)',
+            r'Arzt[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)',  # Limited length, word boundary
+            r'Dr[\.:\s]+([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)',
+            r'Untersucher[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)',
+            r'Examiner[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)',
         ]
         
         self.gender_patterns = [
             r'(männlich|weiblich|male|female|m|f|w)',
         ]
+        self.logger = logging.getLogger(__name__)
     
     def extract_metadata_from_frame_text(self, text: str) -> Dict[str, Any]:
         """
@@ -252,14 +255,66 @@ class FrameMetadataExtractor:
                     examiner = matches[0].strip()
                     # Clean up common artifacts
                     examiner = re.sub(r'\s+', ' ', examiner)
-                    if len(examiner) > 2:  # Minimum reasonable name length
+                    
+                    # Validate examiner candidate
+                    if self._is_valid_examiner(examiner):
                         return examiner
+                    else:
+                        logger.debug(f"Rejected invalid examiner candidate: {examiner}")
             
             return None
             
         except Exception as e:
             logger.error(f"Examiner extraction failed: {e}")
             return None
+    
+    def _is_valid_examiner(self, examiner: str) -> bool:
+        """
+        Validate if a string is a plausible examiner name.
+        
+        Args:
+            examiner: Candidate examiner name
+            
+        Returns:
+            True if examiner appears valid, False if it looks like OCR garbage
+        """
+        if not examiner or not isinstance(examiner, str):
+            return False
+        
+        # Strict validation for examiner names
+        # Must be reasonable length and have proper word structure
+        if len(examiner) < 3 or len(examiner) > 50:
+            return False
+        
+        # Check for excessive special characters (sign of OCR garbage)
+        special_char_count = sum(1 for c in examiner if c in '.-')
+        total_chars = len(examiner)
+        if total_chars > 0 and (special_char_count / total_chars) > 0.3:
+            # More than 30% special characters = probably garbage
+            logger.debug(f"Rejected examiner: too many special chars ({special_char_count}/{total_chars})")
+            return False
+        
+        # Check for reasonable word structure
+        # Must have at least one proper word with >= 3 characters
+        words = examiner.split()
+        valid_words = [
+            w for w in words 
+            if len(w) >= 3 and w.replace('-', '').replace('.', '').isalpha()
+        ]
+        
+        # Require at least one substantial word (not just "Dr." or "M.")
+        # and the majority of words should be valid
+        if not valid_words or len(valid_words) < len(words) / 2:
+            logger.debug(f"Rejected examiner: insufficient valid words (got {len(valid_words)}/{len(words)})")
+            return False
+        
+        # Additional check: ratio of single-character "words" indicates garbage
+        single_char_words = sum(1 for w in words if len(w) == 1)
+        if len(words) > 2 and single_char_words > len(words) / 2:
+            logger.debug(f"Rejected examiner: too many single-char words ({single_char_words}/{len(words)})")
+            return False
+        
+        return True
     
     def _extract_gender(self, text: str) -> Optional[str]:
         """Extract gender from text."""
@@ -342,22 +397,66 @@ class FrameMetadataExtractor:
         
         return False
     
+
+    _SENTINELS = {"unknown", "none", "n/a", "na", "unbekannt"}
+
+    def _is_blank(self, v: Any) -> bool:
+        if v is None:
+            return True
+        if isinstance(v, str):
+            s = v.strip()
+            return not s or s.lower() in self._SENTINELS
+        return False  # keep 0, False, [], {} as valid
+
     def merge_metadata(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Merge new metadata with existing, preferring non-empty values.
-        
-        Args:
-            existing: Existing metadata dictionary
-            new: New metadata to merge
-            
-        Returns:
-            Merged metadata dictionary
-        """
-        merged = existing.copy()
-        
-        for key, value in new.items():
-            if value and value not in [None, '', 'Unknown']:
-                if not merged.get(key) or merged[key] in [None, '', 'Unknown']:
-                    merged[key] = value
-        
+        merged = dict(existing or {})
+        for k, nv in (new or {}).items():
+            if self._is_blank(nv):
+                continue
+            cv = merged.get(k)
+
+            # fill if missing/blank
+            if self._is_blank(cv):
+                # Special validation for examiner field
+                if k == "examiner" and not self._is_valid_examiner(nv):
+                    logger.debug(f"Skipping invalid examiner candidate during merge: {nv}")
+                    continue
+                merged[k] = nv
+                continue
+
+            # optional upgrade heuristics
+            if isinstance(cv, str) and isinstance(nv, str):
+                # Special handling for examiner field: always prefer valid over invalid
+                if k == "examiner":
+                    cv_valid = self._is_valid_examiner(cv)
+                    nv_valid = self._is_valid_examiner(nv)
+                    
+                    if nv_valid and not cv_valid:
+                        # New value is valid, current is garbage - replace
+                        logger.info(f"Replacing invalid examiner '{cv}' with valid '{nv}'")
+                        merged[k] = nv
+                        continue
+                    elif not nv_valid:
+                        # New value is invalid - skip it
+                        logger.debug(f"Keeping existing examiner '{cv}', rejecting invalid '{nv}'")
+                        continue
+                    # Both valid: fall through to length check below
+                
+                # General string upgrade: prefer longer, different values
+                if len(nv.strip()) > len(cv.strip()) and nv.strip().lower() != cv.strip().lower():
+                    merged[k] = nv
+            elif isinstance(cv, dict) and isinstance(nv, dict):
+                merged[k] = self.merge_metadata(cv, nv)  # recursive
+            elif isinstance(cv, list) and isinstance(nv, list):
+                # simple union preserving order
+                seen = set()
+                out = []
+                for x in cv + nv:
+                    key = (type(x), str(x))
+                    if key not in seen:
+                        seen.add(key)
+                        out.append(x)
+                merged[k] = out
+            # else: keep existing
+        self.logger.info(f"Merged metadata: {merged}")
         return merged

@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 import base64
 import io
+import importlib
 from PIL import Image
 import pytesseract
 import ollama
 from .custom_logger import get_logger
-
 logger = get_logger(__name__)
 
 
@@ -389,10 +389,25 @@ class OllamaLLMProcessor:
                 })
             
             return validated
+
+
             
         except Exception as e:
             logger.error(f"Error validating names with Ollama: {e}")
             return []
+
+
+def _get_processor_class():
+    """Return the processor class so tests can patch it via ``lx_anonymizer.ollama_llm``."""
+
+    try:
+        module = importlib.import_module("lx_anonymizer.ollama_llm")
+        processor_cls = getattr(module, "OllamaLLMProcessor", OllamaLLMProcessor)
+        if processor_cls is None:
+            return OllamaLLMProcessor
+        return processor_cls
+    except Exception:
+        return OllamaLLMProcessor
 
 
 def analyze_full_image_with_ollama(image_path: Path, csv_path: Optional[Path] = None, 
@@ -410,7 +425,8 @@ def analyze_full_image_with_ollama(image_path: Path, csv_path: Optional[Path] = 
     """
     try:
         # Initialize Ollama processor
-        processor = OllamaLLMProcessor()
+        processor_cls = _get_processor_class()
+        processor = processor_cls()
         
         # Load context data from CSV if available
         context_data = {}
@@ -508,7 +524,8 @@ def initialize_ollama_processor(model_name: str = "llama3.2-vision:latest") -> O
         Optional[OllamaLLMProcessor]: Processor instance or None if failed
     """
     try:
-        return OllamaLLMProcessor(model_name=model_name)
+        processor_cls = _get_processor_class()
+        return processor_cls(model_name=model_name)
     except Exception as e:
         logger.error(f"Failed to initialize Ollama processor: {e}")
         return None
@@ -528,7 +545,8 @@ def analyze_text_with_ollama(text: str, csv_path: Optional[Path] = None,
         List[str]: List of extracted names
     """
     try:
-        processor = OllamaLLMProcessor()
+        processor_cls = _get_processor_class()
+        processor = processor_cls()
         
         # Load context from CSV if available
         context = ""
