@@ -1,9 +1,14 @@
-{ pkgs, lib, config, inputs, buildInputs, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  inputs,
+  buildInputs,
+  ...
+}:
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
-    # python312
-    # python312Packages.tkinter
     stdenv.cc.cc
     git
     direnv
@@ -11,8 +16,8 @@ let
     zlib
     libglvnd
     ollama
-    cmake          # build system
-    gcc            # C/C++ compiler tool-chain
+    cmake # build system
+    gcc # C/C++ compiler tool-chain
     pkg-config
     protobuf
   ];
@@ -30,13 +35,12 @@ in
 
   languages.python = {
     enable = true;
-    package = pkgs.python3.withPackages(ps: with ps; [tkinter]); #known devenv issue with python3Packages since python3Full was deprecated
+    package = pkgs.python3.withPackages (ps: with ps; [ tkinter ]); # known devenv issue with python3Packages since python3Full was deprecated
     uv = {
       enable = true;
       sync.enable = true;
     };
   };
-  
 
   packages = with pkgs; [
     git
@@ -45,12 +49,13 @@ in
     glib
     zlib
     (tesseract.override {
-      enableLanguages = [ "eng" "deu" ];  # English + German traineddata
+      enableLanguages = [
+        "eng"
+        "deu"
+      ];
     })
     ollama
-    uv  # Python package manager
-    # python312
-    # python312Packages.tkinter
+    uv
     python312Packages.pip
     libglvnd
     cmake
@@ -63,34 +68,31 @@ in
 
   env = {
     LD_LIBRARY_PATH = "${
-      with pkgs;
-      lib.makeLibraryPath buildInputs
+      with pkgs; lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
-    PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
-    # UV_PYTHON_DOWNLOADS = "never";  # Use system Python from Nix, don't download
-    # UV_PYTHON_PREFERENCE = "system";
-    # Note: TESSDATA_PREFIX should point to parent of tessdata/ for CLI tools
-    # but tesserocr needs the tessdata/ dir itself (handled in Python code)
-    TESSDATA_PREFIX = "${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share";
+    PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
   };
-
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
 
   scripts.env-setup.exec = ''
     export LD_LIBRARY_PATH="${
-      with pkgs;
-      lib.makeLibraryPath buildInputs
+      with pkgs; lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
-    export TESSDATA_PREFIX="${pkgs.tesseract.override { enableLanguages = [ "eng" "deu" ]; }}/share"
+    export TESSDATA_PREFIX="${
+      pkgs.tesseract.override {
+        enableLanguages = [
+          "eng"
+          "deu"
+        ];
+      }
+    }/share"
   '';
 
   scripts.uvs.exec = ''
     uv sync --extra dev --extra ocr --extra llm
   '';
-
-
 
   processes = {
     #ollama-pull-llama.exec = "ollama pull llama3.3";
@@ -100,7 +102,7 @@ in
     #ollama-pull-med-model.exec = "ollama pull rjmalagon/medllama3-v20:fp16";
     #ollama-run-med-model.exec = "ollama run rjmalagon/medllama3-v20:fp16";
     ollama-verify.exec = "curl http://127.0.0.1:11434/api/models";
-    };
+  };
 
   tasks = {
     "ollama:serve".exec = "export OLLAMA_DEBUG=1 && ollama serve";

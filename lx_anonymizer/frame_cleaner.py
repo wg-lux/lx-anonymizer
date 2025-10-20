@@ -845,10 +845,11 @@ class FrameCleaner:
             try:
                 meta = self.ollama_extractor.extract_metadata(text).model_dump()
             except Exception:
+                
                 meta = {}
-        if not meta and hasattr(self.PatientDataExtractor, "extract"):
+        if not meta and self.PatientDataExtractor:
             try:
-                meta = self.PatientDataExtractor.extract(text)
+                meta = self.PatientDataExtractor(text)
             except Exception:
                 meta = {}
         if not meta:
@@ -924,10 +925,8 @@ class FrameCleaner:
         self,
         video_path: Path,
         video_file_obj=None,
-        tmp_dir: Optional[Path] = None,
         device_name: Optional[str] = None,
-        endoscope_roi: Optional[Dict[str, Any]] = None,
-        processor_rois: Optional[Dict[str, Dict[str, Any]]] = None,
+        endoscope_roi: Optional[dict[str, int]] = None,
         output_path: Optional[Path] = None,
         technique: str = "mask_overlay",
         extended: bool = False,
@@ -935,8 +934,8 @@ class FrameCleaner:
         """
         Refactored version: single code path, fewer duplicated branches. Jetzt mit Batch-Metadaten-Logik.
         """
-        if tmp_dir is None:
-            tmp_dir = Path(tempfile.mkdtemp(prefix="frame_cleaner_"))
+
+
         if device_name is None:
             device_name = "olympus_cv_1500"
         output_video = (
@@ -1010,7 +1009,9 @@ class FrameCleaner:
             elif technique == "mask_overlay":
                 logger.info("Using masking strategy.")
                 if endoscope_roi and self._validate_roi(endoscope_roi):
-                    mask_cfg = endoscope_roi
+                    mask_cfg = self._create_mask_config_from_roi(
+                        endoscope_roi
+                    )
                 else:
                     mask_cfg = {"image_width": 1920, "image_height": 1080}
                 ok = self._mask_video_streaming(
@@ -1022,9 +1023,8 @@ class FrameCleaner:
         except Exception:
             logger.exception("Processing failed – copying original video.")
             shutil.copy2(video_path, output_video)
-        finally:
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        # ----------------------- persist metadata ---------------------------
         if video_file_obj:
             self._update_video_sensitive_meta(video_file_obj, accumulated)
         return output_video, accumulated
@@ -1448,15 +1448,13 @@ class FrameCleaner:
 
     def _create_mask_config_from_roi(
         self, 
-        endoscope_roi: Dict[str, Any], 
-        processor_rois: Optional[Dict[str, Dict[str, Any]]] = None
-    ) -> Dict[str, Any]:
+        endoscope_roi: dict[str, int], 
+    ) -> dict[str, int]:
         """
         Create mask configuration from processor ROI information.
         
         Args:
             endoscope_roi: Endoscope ROI from processor
-            processor_rois: All processor ROIs (optional, for context)
             
         Returns:
             Mask configuration dictionary compatible with _mask_video
