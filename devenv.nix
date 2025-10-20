@@ -2,7 +2,7 @@
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
-    python311Full
+    python311
     stdenv.cc.cc
     git
     direnv
@@ -67,8 +67,6 @@ in
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
     PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
-    UV_PYTHON_DOWNLOADS = "managed";
-    UV_PYTHON_PREFERENCE = "system";
   };
 
 
