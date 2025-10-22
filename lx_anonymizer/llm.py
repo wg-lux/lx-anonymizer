@@ -1,11 +1,13 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline 
-import torch
-from .custom_logger import get_logger
-from PIL import Image
-import pytesseract
-from pathlib import Path
-import uuid
 import csv
+import uuid
+from pathlib import Path
+
+import pytesseract
+import torch
+from PIL import Image
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+from .custom_logger import get_logger
 from .ocr import cleanup_gpu
 
 logger = get_logger(__name__)
@@ -183,4 +185,5 @@ def process_with_phi4(image_path):
         logger.error(f"Error in Phi-4 processing: {e}")
         return None
     finally:
+        cleanup_gpu()    finally:
         cleanup_gpu()

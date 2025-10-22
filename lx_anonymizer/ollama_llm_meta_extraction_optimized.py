@@ -33,8 +33,9 @@ class PatientMetadata(BaseModel):
     # Untersuchungsdaten
     examination_date: Optional[str] = None
     examination_time: Optional[str] = None
-    examiner: Optional[str] = None
-    
+    examiner_first_name: Optional[str] = None
+    examiner_last_name: Optional[str] = None
+
     # Administrative Daten
     casenumber: Optional[str] = None
     case_id: Optional[str] = None
@@ -222,7 +223,8 @@ PATIENTENDATEN:
 UNTERSUCHUNGSDATEN:
 - examination_date: Datum der Untersuchung (Format: DD.MM.YYYY)
 - examination_time: Uhrzeit der Untersuchung (Format: HH:MM)
-- examiner: Name des Arztes/Untersuchers
+- examiner_first_name: Vorname des Arztes/Untersuchers
+- examiner_last_name: Nachname des Arztes/Untersuchers
 
 ADMINISTRATIVE DATEN:
 - casenumber: Fallnummer, Case-ID, Patienten-ID oder ähnliche Kennzeichnung
@@ -255,8 +257,9 @@ JSON:"""
                 # Untersuchungsdaten
                 "examination_date": {"type": ["string", "null"]},
                 "examination_time": {"type": ["string", "null"]},
-                "examiner": {"type": ["string", "null"]},
-                
+                "examiner_first_name": {"type": ["string", "null"]},
+                "examiner_last_name": {"type": ["string", "null"]},
+
                 # Administrative Daten
                 "casenumber": {"type": ["string", "null"]},
                 "case_id": {"type": ["string", "null"]},
@@ -297,16 +300,17 @@ JSON:"""
             
             if response.status_code == 200:
                 result = response.json()
+                content = result.get("message", {}).get("content", "") or result.get("content", "")
+
+                # Validiere Antwort
+                if not content:
+                    logger.warning(f"⚠️ Leere Antwort vom Modell: {result}")
+
                 
-                # Validiere Antwortstruktur
-                if "message" not in result or "content" not in result["message"]:
-                    logger.error(f"❌ Unerwartete API-Antwortstruktur: {result}")
-                    raise requests.RequestException("Unvollständige API-Antwort")
-                
-                content_length = len(result["message"]["content"])
+                content_length = len(content)
                 logger.debug(f"✅ API-Response erhalten: {content_length} Zeichen")
                 
-                return result
+                return content
             else:
                 error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
                 logger.error(f"❌ API-Fehler: {error_msg}")
@@ -359,7 +363,7 @@ JSON:"""
             PatientMetadata Objekt oder None bei Fehler
         """
         # Überprüfe zuerst den Cache
-        cached_metadata = self.cache.get(text)
+        cached_metadata = self.cache.get(text) if self.cache is not None else None
         if cached_metadata:
             logger.info("✅ Metadaten aus Cache geladen")
             return cached_metadata
@@ -403,7 +407,7 @@ JSON:"""
                 
                 # API-Request mit Retry-Logik
                 response = self._make_api_request(payload)
-                content = response["message"]["content"]
+                content = response.get("message", {}).get("content", "") or response.get("content", "")
                 
                 # Performance-Metriken loggen
                 duration = time.time() - start_time
@@ -703,10 +707,14 @@ JSON:"""
             score += 0.05
             
         # Examiner (zusätzlicher Kontext)
-        examiner = metadata_dict.get("examiner", "") or ""
-        if examiner and examiner.lower() not in ["unknown", "", "null"]:
+        examiner_first_name = metadata_dict.get("examiner_first_name", "") or ""
+        if examiner_first_name and examiner_first_name.lower() not in ["unknown", "", "null"]:
             score += 0.05
-            
+
+        examiner_last_name = metadata_dict.get("examiner_last_name", "") or ""
+        if examiner_last_name and examiner_last_name.lower() not in ["unknown", "", "null"]:
+            score += 0.05
+
         # Patient ID (administrative Identifikation)
         patient_id = metadata_dict.get("patient_id", "") or ""
         if patient_id and patient_id.lower() not in ["unknown", "", "null"]:
@@ -910,9 +918,18 @@ class EnrichedMetadataExtractor:
             if llm_metadata:
                 enriched_metadata["llm_extracted"] = {
                     "patient_name": llm_metadata.patient_name,
+                    "patient_first_name": llm_metadata.patient_first_name,
+                    "patient_last_name": llm_metadata.patient_last_name,
                     "patient_age": llm_metadata.patient_age,
-                    "examination_date": llm_metadata.examination_date,
+                    "patient_dob": llm_metadata.patient_dob,
                     "gender": llm_metadata.gender,
+                    "examination_date": llm_metadata.examination_date,
+                    "examination_time": llm_metadata.examination_time,
+                    "examiner_first_name": llm_metadata.examiner_first_name,
+                    "examiner_last_name": llm_metadata.examiner_last_name,
+                    "casenumber": llm_metadata.casenumber,
+                    "case_id": llm_metadata.case_id,
+                    "patient_id": llm_metadata.patient_id,
                     "additional_info": llm_metadata.additional_info
                 }
         

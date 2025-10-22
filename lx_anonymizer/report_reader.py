@@ -1,29 +1,38 @@
-from pathlib import Path
-from faker import Faker
-import json
-import re
-import gender_guesser.detector as gender_detector
-from typing import List, Optional, Dict, Any # Added Optional, Dict, Any
-import os
-import warnings
 import hashlib
-import pdfplumber
-from PIL import Image
+import json
 import logging
-from .settings import DEFAULT_SETTINGS
-from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
-from .text_anonymizer import anonymize_text
+import os
+import re
+import warnings
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional  # Added Optional, Dict, Any
+
+import dateparser
+import gender_guesser.detector as gender_detector
+import pdfplumber
+from faker import Faker
+from PIL import Image
+
+from lx_anonymizer.ollama_llm_meta_extraction_optimized import \
+    OllamaOptimizedExtractor
+
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
-from .ocr import tesseract_full_image_ocr #, trocr_full_image_ocr_on_boxes # Import OCR fallback
+from .ocr import \
+    tesseract_full_image_ocr  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
+from .ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
+from .ocr_preprocessing import (optimize_image_for_medical_text,
+                                    preprocess_image)
 from .pdf_operations import convert_pdf_to_images
-from .ensemble_ocr import ensemble_ocr  # Import the new ensemble OCR
-from .ocr_preprocessing import preprocess_image, optimize_image_for_medical_text
-from .sensitive_region_cropper import SensitiveRegionCropper  # Import the new cropper
-from datetime import datetime, date
-import dateparser
+from .sensitive_region_cropper import \
+    SensitiveRegionCropper  # Import the new cropper
+from .settings import DEFAULT_SETTINGS
+from .spacy_extractor import (EndoscopeDataExtractor, ExaminationDataExtractor,
+                              ExaminerDataExtractor, PatientDataExtractor)
+from .text_anonymizer import anonymize_text
 from .utils.ollama import ensure_ollama
-from lx_anonymizer.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+
 
 class ReportReader:
     def __init__(
@@ -453,7 +462,9 @@ class ReportReader:
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:
                         # Use the existing ollama_service for correction
-                        from .ollama_service import ollama_service # Import locally if needed
+                        from .ollama_service import \
+                            ollama_service  # Import locally if needed
+
                         # Ensure the desired correction model is set up if different from extraction
                         # ollama_service.setup_ollama("deepseek-r1:1.5b") # Or another model
                         corrected_text = ollama_service.correct_ocr_text_in_chunks(text) # Use chunking
@@ -632,6 +643,7 @@ class ReportReader:
                 try:
                     # Import hier um Circular Import zu vermeiden
                     from .main_with_reassembly import main
+
                     # Fallback auf die alte Methode, falls Cropping fehlschlägt
                     logger.info("Versuche Fallback-Cropping mit main_with_reassembly...")
                     anonymized_pdf_path, data, original_path = main(
@@ -667,9 +679,10 @@ class ReportReader:
         Returns:
             Liste der erstellten Visualisierungsdateien
         """
-        from .pdf_operations import convert_pdf_to_images
-        from .ocr import tesseract_full_image_ocr
         from pathlib import Path
+
+        from .ocr import tesseract_full_image_ocr
+        from .pdf_operations import convert_pdf_to_images
         
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -684,6 +697,20 @@ class ReportReader:
             if page_num >= len(images):
                 continue
                 
+            image = images[page_num]
+            full_text, word_boxes = tesseract_full_image_ocr(image)
+            
+            vis_filename = f"{pdf_name}_page_{page_num + 1}_analysis.png"
+            vis_path = output_dir / vis_filename
+            
+            self.sensitive_cropper.visualize_sensitive_regions(
+                image, word_boxes, str(vis_path)
+            )
+            
+            visualization_files.append(str(vis_path))
+            logger.info(f"Visualisierung erstellt: {vis_filename}")
+        
+        return visualization_files
             image = images[page_num]
             full_text, word_boxes = tesseract_full_image_ocr(image)
             

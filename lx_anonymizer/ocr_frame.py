@@ -1,10 +1,12 @@
 import logging
+from typing import Any, Dict, Optional, Tuple
+
 import cv2
 import numpy as np
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
-from typing import Dict, Any, Tuple, Optional
-from .frame_ocr_tesserocr import TesseOCRFrameProcessor
+
+from .ocr_frame_tesserocr import TesseOCRFrameProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,9 @@ class FrameOCR:
             self.tesserocr_processor = TesseOCRFrameProcessor(language="deu")
             logger.info("FrameOCR initialized with TesseOCR acceleration")
         except Exception as e:
-            logger.warning(f"Failed to initialize TesseOCR, falling back to PyTesseract: {e}")
+            logger.warning(
+                f"Failed to initialize TesseOCR, falling back to PyTesseract: {e}"
+            )
             self.tesserocr_processor = None
 
         self.pytesseract_config = {
@@ -38,7 +42,7 @@ class FrameOCR:
         self,
         frame: np.ndarray,
         roi: Optional[Dict[str, Any]] = None,
-        high_quality: bool = True
+        high_quality: bool = True,
     ) -> Tuple[str, float, Dict[str, Any]]:
         """
         Extract text + confidence + meta from a single frame.
@@ -47,7 +51,9 @@ class FrameOCR:
         # Prefer tesserocr for performance
         if self.tesserocr_processor:
             try:
-                return self.tesserocr_processor.extract_text_from_frame(frame, roi, high_quality)
+                return self.tesserocr_processor.extract_text_from_frame(
+                    frame, roi, high_quality
+                )
             except Exception as e:
                 logger.error(f"TesseOCR failed, falling back to PyTesseract: {e}")
 
@@ -59,7 +65,7 @@ class FrameOCR:
         self,
         frame: np.ndarray,
         roi: Optional[Dict[str, Any]] = None,
-        high_quality: bool = True
+        high_quality: bool = True,
     ) -> Tuple[str, float, Dict[str, Any]]:
         """Simplified pytesseract fallback for emergency OCR."""
         try:
@@ -87,20 +93,24 @@ class FrameOCR:
             return "", 0.0, {}
 
     # ---------------- Preprocessing ----------------
-    def _preprocess_frame(self, frame: np.ndarray, roi: Optional[Dict[str, Any]]) -> Image.Image:
+    def _preprocess_frame(
+        self, frame: np.ndarray, roi: Optional[Dict[str, Any]]
+    ) -> Image.Image:
         """Light preprocessing for pytesseract fallback."""
         try:
             img = frame
             if roi and self._validate_roi(roi):
                 x, y, w, h = map(int, (roi["x"], roi["y"], roi["width"], roi["height"]))
-                img = img[y:y + h, x:x + w]
+                img = img[y : y + h, x : x + w]
 
             if img.ndim == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
             pil = Image.fromarray(img).convert("L")
             pil = ImageEnhance.Contrast(pil).enhance(2.0)
-            pil = pil.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+            pil = pil.filter(
+                ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3)
+            )
             return pil
         except Exception as e:
             logger.error(f"Preprocessing failed: {e}")
@@ -111,6 +121,12 @@ class FrameOCR:
     def _validate_roi(roi: Dict[str, Any]) -> bool:
         """Validate ROI dictionary structure."""
         try:
-            return all(k in roi for k in ("x", "y", "width", "height")) and roi["width"] > 0 and roi["height"] > 0
+            return (
+                all(k in roi for k in ("x", "y", "width", "height"))
+                and roi["width"] > 0
+                and roi["height"] > 0
+            )
+        except Exception:
+            return False
         except Exception:
             return False
