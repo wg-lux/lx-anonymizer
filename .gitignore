@@ -4,6 +4,7 @@ uv.lock
 lx_anonymizer/agl-anonymizer/*
 lx_anonymizer/agl-anonymizer-temp/*
 .devenv.flake.nix
+debug/
 
 agl-anonymizer/*
 agl-anonymizer-temp/*
