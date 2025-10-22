@@ -308,5 +308,6 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
     else:
         logger.info("Tesseract produced better results (more content)")
         return tesseract_text
-        logger.info("Tesseract produced better results (more content)")
-        return tesseract_text
+     else:
+         logger.info("Tesseract produced better results (more content)")
+         return tesseract_text
