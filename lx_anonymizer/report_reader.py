@@ -711,17 +711,4 @@ class ReportReader:
             logger.info(f"Visualisierung erstellt: {vis_filename}")
         
         return visualization_files
-            image = images[page_num]
-            full_text, word_boxes = tesseract_full_image_ocr(image)
-            
-            vis_filename = f"{pdf_name}_page_{page_num + 1}_analysis.png"
-            vis_path = output_dir / vis_filename
-            
-            self.sensitive_cropper.visualize_sensitive_regions(
-                image, word_boxes, str(vis_path)
-            )
-            
-            visualization_files.append(str(vis_path))
-            logger.info(f"Visualisierung erstellt: {vis_filename}")
-        
-        return visualization_files
+

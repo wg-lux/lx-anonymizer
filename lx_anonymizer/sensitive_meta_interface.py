@@ -16,7 +16,10 @@ class SensitiveMeta:
     center: Optional[str] = None
 
     def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
+        if hasattr(self, key):
+            return getattr(self, key)
+        else:
+            raise KeyError(f"Invalid key '{key}' for SensitiveMeta")
 
     def __setitem__(self, key: str, value: Any) -> None:
         if hasattr(self, key):

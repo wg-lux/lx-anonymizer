@@ -405,25 +405,3 @@ def split_and_check(phrase):
     
     return []
 
-# Example usage
-if __name__ == "__main__":
-    file_path = "your_file_path.jpg"
-    modified_images_map, result = process_images_with_OCR_and_NER(file_path)
-    for res in result['combined_results']:
-        logger.info(res)
-                return entities
-                
-        flair_entities = flair_NER_German(part)
-        if flair_entities:
-            entities = [(entity.text, 'PER') for entity in flair_entities if entity.tag == 'PER']
-            if entities:
-                return entities
-    
-    return []
-
-# Example usage
-if __name__ == "__main__":
-    file_path = "your_file_path.jpg"
-    modified_images_map, result = process_images_with_OCR_and_NER(file_path)
-    for res in result['combined_results']:
-        logger.info(res)
