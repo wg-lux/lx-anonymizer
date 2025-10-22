@@ -7,7 +7,6 @@ from .report_reader import ReportReader
 from .spacy_extractor import PatientDataExtractor, ExaminerDataExtractor, EndoscopeDataExtractor, ExaminationDataExtractor
 from .text_anonymizer import anonymize_text
 from .frame_cleaner import FrameCleaner
-from .ocr import 
 from . import ollama_llm
 
 __all__ = [

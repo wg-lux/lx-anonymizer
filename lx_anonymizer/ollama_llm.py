@@ -16,6 +16,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from .ollama_llm_processor import (
+    OllamaLLMProcessor,
+    analyze_full_image_with_ollama,
+    analyze_text_with_ollama,
+    initialize_ollama_processor,
+    replace_phi4_with_ollama,
+)
+
 try:  # pillow is an optional dependency
     from PIL import Image  # type: ignore
 except Exception:  # pragma: no cover - exercised only without Pillow
@@ -53,13 +61,7 @@ try:
 except Exception:  # pragma: no cover - exercised only without pytesseract
     pytesseract = SimpleNamespace(image_to_string=_missing_dependency("pytesseract"))  # type: ignore[assignment]
 
-from .ollama_llm_processor import (
-    OllamaLLMProcessor,
-    analyze_full_image_with_ollama,
-    analyze_text_with_ollama,
-    initialize_ollama_processor,
-    replace_phi4_with_ollama,
-)
+
 
 __all__ = [
     "OllamaLLMProcessor",

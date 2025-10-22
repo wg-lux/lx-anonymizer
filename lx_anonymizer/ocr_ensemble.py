@@ -343,5 +343,3 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
     )
 
     return results[best_index], confidences[best_index]
-
-    return results[best_index], confidences[best_index]
