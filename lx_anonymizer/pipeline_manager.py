@@ -1,25 +1,32 @@
-from .ocr import trocr_on_boxes, tesseract_on_boxes, tesseract_full_image_ocr
-from .spacy_NER import spacy_NER_German
-from .flair_NER import flair_NER_German
-from .names_generator import gender_and_handle_full_names, gender_and_handle_separate_names, gender_and_handle_device_names
-import re
-from .blur import blur_function
-from .device_reader import read_name_boxes, read_background_color
-from .east_text_detection import east_text_detection
-from .tesseract_text_detection import tesseract_text_detection
-from .craft_text_detection import craft_text_detection
-import cv2
-import json
-from pathlib import Path
-import uuid
-from .directory_setup import create_temp_directory, create_blur_directory
 import csv
-from .custom_logger import get_logger
-import torch
+import json
+import re
+import uuid
+from pathlib import Path
+
+import cv2
 import pymupdf
-from .lx_anonymizer.lx_anonymizer.llm_phi4 import analyze_full_image_with_context, analyze_text_with_phi4
-from .box_operations import find_or_create_close_box, combine_boxes, close_to_box, filter_empty_boxes, get_dominant_color
-from .fuzzy_matching import fuzzy_match_snippet, correct_box_for_new_text
+import torch
+
+from .blur import blur_function
+from .box_operations import (close_to_box, combine_boxes, filter_empty_boxes,
+                             find_or_create_close_box, get_dominant_color)
+from .craft_text_detection import craft_text_detection
+from .custom_logger import get_logger
+from .device_reader import read_background_color, read_name_boxes
+from .directory_setup import create_blur_directory, create_temp_directory
+from .east_text_detection import east_text_detection
+from .flair_NER import flair_NER_German
+from .fuzzy_matching import correct_box_for_new_text, fuzzy_match_snippet
+from .lx_anonymizer.lx_anonymizer.llm_phi4 import (
+    analyze_full_image_with_context, analyze_text_with_phi4)
+from .names_generator import (gender_and_handle_device_names,
+                              gender_and_handle_full_names,
+                              gender_and_handle_separate_names)
+from .ocr import (tesseract_full_image_ocr, tesseract_on_boxes,
+                      trocr_on_boxes)
+from .spacy_NER import spacy_NER_German
+from .tesseract_text_detection import tesseract_text_detection
 
 # Configure logging
 logger = get_logger(__name__)
@@ -241,7 +248,8 @@ def process_text(extracted_text):
     cleaned_text = cleaned_text.replace("\n", " ")
     return cleaned_text
 
-from typing import List, Tuple, Dict, Optional # Added Optional
+from typing import Dict, List, Optional, Tuple  # Added Optional
+
 
 def process_ocr_results(
     image_path: str,
@@ -397,9 +405,3 @@ def split_and_check(phrase):
     
     return []
 
-# Example usage
-if __name__ == "__main__":
-    file_path = "your_file_path.jpg"
-    modified_images_map, result = process_images_with_OCR_and_NER(file_path)
-    for res in result['combined_results']:
-        logger.info(res)

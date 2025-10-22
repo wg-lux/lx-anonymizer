@@ -9,6 +9,7 @@
 let
   appName = "lx_anonymizer";
   buildInputs = with pkgs; [
+    python311
     stdenv.cc.cc
     git
     direnv
@@ -71,7 +72,7 @@ in
       with pkgs; lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
-    PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
+    PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";

@@ -163,10 +163,10 @@ class TesseOCRFrameProcessor:
         else:
             img = frame
 
-        #if roi and self._validate_roi(roi):
-            #x, y, w, h = map(int, (roi["x"], roi["y"], roi["width"], roi["height"]))
-            #img = img[y:y + h, x:x + w]
-            #logger.debug(f"ROI: {x},{y},{w},{h} (frame size now {img.shape})")
+        if roi and self._validate_roi(roi):
+            x, y, w, h = map(int, (roi["x"], roi["y"], roi["width"], roi["height"]))
+            img = img[y:y + h, x:x + w]
+            logger.debug(f"ROI: {x},{y},{w},{h} (frame size now {img.shape})")
         pil_image = Image.fromarray(img)
         if min(pil_image.size) < 400:
             pil_image = pil_image.resize(
@@ -250,18 +250,23 @@ class TesseOCRFrameProcessor:
                 self.api.SetVariable("user_defined_dpi", str(dpi))
 
                 # Detect candidate text boxes
-                regions = self._detect_text_regions(gray)
-
+                
+                if not roi:
+                    regions = self._detect_text_regions(gray)
+                    has_roi = False
+                else:
+                    regions = []
+                    has_roi = True
                 text_parts: List[str] = []
-                if not regions:
-                    # Fallback: OCR whole image
+                if has_roi:
+                    # if rois are present: OCR whole image, image was already cropped
                     self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
                     self.api.SetImage(Image.fromarray(gray))
                     txt = (self.api.GetUTF8Text() or "").strip()
                     if txt:
                         text_parts.append(txt)
                 else:
-                    # OCR each detected region
+                    # OCR each detected region, if any
                     for (x, y, w, h) in regions:
                         sub = gray[y:y + h, x:x + w]
                         self.api.SetPageSegMode(self._choose_psm_for_box(w, h))
