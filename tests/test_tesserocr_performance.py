@@ -14,9 +14,11 @@ import cv2
 import numpy as np
 from PIL import Image
 
-# Add the libs path to sys.path
-sys.path.insert(0, "/home/admin/dev/lx-annotate/libs/lx-anonymizer")
-
+# Add project root to sys.path (repo-relative)
+from pathlib import Path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 try:
     from lx_anonymizer.ocr_frame import FrameOCR
     from lx_anonymizer.ocr_frame_tesserocr import TesseOCRFrameProcessor
@@ -91,7 +93,7 @@ def benchmark_ocr_performance():
 
     # Test pytesseract-based FrameOCR
     print("🐌 Testing pytesseract-based FrameOCR...")
-    frame_ocr_pytesseract = FrameOCR(use_fast_ocr=False)
+    frame_ocr_pytesseract = FrameOCR()
 
     start_time = time.time()
     pytesseract_results = []
@@ -110,7 +112,7 @@ def benchmark_ocr_performance():
 
     # Test TesseOCR-based FrameOCR
     print("🚀 Testing TesseOCR-based FrameOCR...")
-    frame_ocr_tesserocr = FrameOCR(use_fast_ocr=True)
+    frame_ocr_tesserocr = FrameOCR()
 
     start_time = time.time()
     tesserocr_results = []
@@ -188,5 +190,4 @@ if __name__ == "__main__":
         print(f"❌ Benchmark failed: {e}")
         import traceback
 
-        traceback.print_exc()
         traceback.print_exc()

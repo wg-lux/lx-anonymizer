@@ -5,7 +5,6 @@ import pytesseract
 import torch
 from django.template.loader_tags import do_block
 from PIL import Image
-from torch.cuda import temperature
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel, pipeline
 
 from .craft_text_detection import craft_text_detection  # Neuer Import für CRAFT

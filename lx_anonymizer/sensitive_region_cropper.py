@@ -637,4 +637,3 @@ def crop_sensitive_regions_from_pdf(
             cropper.visualize_sensitive_regions(image, word_boxes, str(vis_path))
 
     return results
-    return results

@@ -310,7 +310,7 @@ JSON:"""
                 content_length = len(content)
                 logger.debug(f"✅ API-Response erhalten: {content_length} Zeichen")
                 
-                return content
+                return result
             else:
                 error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
                 logger.error(f"❌ API-Fehler: {error_msg}")
