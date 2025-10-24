@@ -12,7 +12,7 @@ Separated from PDF processing logic to maintain clean architecture.
 
 import logging
 import re
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Dict, Optional, Tuple
 
 import dateparser
@@ -179,7 +179,6 @@ class FrameMetadataExtractor:
         except Exception as e:
             logger.error(f"Patient name extraction failed: {e}")
             return None, None
-        
 
     def _extract_date_of_birth(self, text: str) -> Optional[date]:
         """Extract date of birth from text."""
@@ -293,34 +292,24 @@ class FrameMetadataExtractor:
         total_chars = len(examiner)
         if total_chars > 0 and (special_char_count / total_chars) > 0.3:
             # More than 30% special characters = probably garbage
-            logger.debug(
-                f"Rejected examiner: too many special chars ({special_char_count}/{total_chars})"
-            )
+            logger.debug(f"Rejected examiner: too many special chars ({special_char_count}/{total_chars})")
             return False
 
         # Check for reasonable word structure
         # Must have at least one proper word with >= 3 characters
         words = examiner.split()
-        valid_words = [
-            w
-            for w in words
-            if len(w) >= 3 and w.replace("-", "").replace(".", "").isalpha()
-        ]
+        valid_words = [w for w in words if len(w) >= 3 and w.replace("-", "").replace(".", "").isalpha()]
 
         # Require at least one substantial word (not just "Dr." or "M.")
         # and the majority of words should be valid
         if not valid_words or len(valid_words) < len(words) / 2:
-            logger.debug(
-                f"Rejected examiner: insufficient valid words (got {len(valid_words)}/{len(words)})"
-            )
+            logger.debug(f"Rejected examiner: insufficient valid words (got {len(valid_words)}/{len(words)})")
             return False
 
         # Additional check: ratio of single-character "words" indicates garbage
         single_char_words = sum(1 for w in words if len(w) == 1)
         if len(words) > 2 and single_char_words > len(words) / 2:
-            logger.debug(
-                f"Rejected examiner: too many single-char words ({single_char_words}/{len(words)})"
-            )
+            logger.debug(f"Rejected examiner: too many single-char words ({single_char_words}/{len(words)})")
             return False
 
         return True
@@ -348,9 +337,7 @@ class FrameMetadataExtractor:
         """Parse German date format (DD.MM.YYYY) to date object."""
         try:
             # Use dateparser with German settings
-            parsed = dateparser.parse(
-                date_str, languages=["de"], settings={"DATE_ORDER": "DMY"}
-            )
+            parsed = dateparser.parse(date_str, languages=["de"], settings={"DATE_ORDER": "DMY"})
 
             if parsed:
                 return parsed.date()
@@ -419,9 +406,7 @@ class FrameMetadataExtractor:
             return not s or s.lower() in self._SENTINELS
         return False  # keep 0, False, [], {} as valid
 
-    def merge_metadata(
-        self, existing: Dict[str, Any], new: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def merge_metadata(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
         merged = dict(existing or {})
         for k, nv in (new or {}).items():
             if self._is_blank(nv):

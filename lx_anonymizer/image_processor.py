@@ -1,94 +1,125 @@
-from pathlib import Path
-import uuid
 import os
-from .custom_logger import get_logger
-from .image_reassembly import reassemble_image
-from .pipeline_manager import process_images_with_OCR_and_NER
-from .gpu_management import clear_gpu_memory
-from .llm import analyze_text_with_phi4, analyze_full_image_with_context
+import uuid
+from pathlib import Path
+
 import cv2
+import pytesseract
+from PIL import Image
+
+from .custom_logger import get_logger
+from .gpu_management import clear_gpu_memory
+from .image_reassembly import reassemble_image
+from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from .pipeline_manager import process_images_with_OCR_and_NER
 
 logger = get_logger(__name__)
 
+
 def process_image(
-    img_path, 
-    east_path, 
-    device, 
-    min_confidence, 
-    width, 
-    height, 
-    results_dir, 
-    temp_dir, 
+    img_path,
+    east_path,
+    device,
+    min_confidence,
+    width,
+    height,
+    results_dir,
+    temp_dir,
     text_extracted=None,
-    skip_blur=False, 
+    skip_blur=False,
     skip_reassembly=False,
-    disable_llm=False
+    disable_llm=False,
 ):
     """
     Process a single image or PDF page
-    
+
     Parameters:
     - img_path: Path to the image
     - east_path: Path to the EAST model
     - device: Device configuration name
     - min_confidence: Minimum confidence for text detection
     - width: Width for resizing
-    - height: Height for resizing 
+    - height: Height for resizing
     - results_dir: Directory to save results
     - temp_dir: Temporary directory for processing
     - text_extracted: Optional extracted text from PDF
     - skip_blur: Whether to skip blurring operations
     - skip_reassembly: Whether to skip PDF reassembly
     - disable_llm: Whether to disable LLM analysis
-    
+
     Returns:
     - Path to the processed image
     - Anonymization data dictionary
     """
     logger.info(f"Processing image: {img_path}")
-    
-    # If we have pre-extracted text and LLM is enabled, analyze it
-    if text_extracted and not disable_llm:
-        logger.info("Analyzing extracted text with LLM")
-        csv_path = temp_dir / f"text_analysis_{uuid.uuid4()}.csv"
-        text_results, _ = analyze_text_with_phi4(
-            text_extracted, 
-            csv_path=csv_path,
-            image_path=img_path
-        )
-    
+
     # If we're skipping the blur operations but want analysis, use LLM
     if skip_blur and not disable_llm:
         logger.info("Skipping blur operations, performing analysis only")
-        
-        # Use LLM to analyze the image directly
-        csv_path = temp_dir / f"image_analysis_{uuid.uuid4()}.csv"
-        llm_results, llm_csv_path = analyze_full_image_with_context(img_path, csv_path, temp_dir)
-        
+
+        # Create OllamaOptimizedExtractor instance
+        extractor = OllamaOptimizedExtractor()
+
+        # Extract text from image for LLM analysis
+        try:
+            image = Image.open(img_path).convert("RGB")
+            ocr_text = pytesseract.image_to_string(image)
+        except Exception as e:
+            logger.warning(f"Failed to extract OCR text: {e}")
+            ocr_text = ""
+
+        # Use LLM to analyze the extracted text
+        if ocr_text:
+            llm_metadata = extractor.extract_metadata(ocr_text)
+            if llm_metadata:
+                llm_results = {
+                    "patient_name": llm_metadata.patient_name,
+                    "patient_age": llm_metadata.patient_age,
+                    "examination_date": llm_metadata.examination_date,
+                    "gender": llm_metadata.gender,
+                    "casenumber": llm_metadata.casenumber,
+                    "examiner_first_name": llm_metadata.examiner_first_name,
+                    "examiner_last_name": llm_metadata.examiner_last_name,
+                }
+            else:
+                llm_results = {}
+        else:
+            llm_results = {}
+
         # Combine analysis results if we have text
         if text_extracted and not disable_llm:
-            combined_results = {
-                "image_analysis": llm_results,
-                "text_analysis": text_results
-            }
+            # Create analysis for text_extracted as well
+            text_metadata = extractor.extract_metadata(text_extracted)
+            if text_metadata:
+                text_results = {
+                    "patient_name": text_metadata.patient_name,
+                    "patient_age": text_metadata.patient_age,
+                    "examination_date": text_metadata.examination_date,
+                    "gender": text_metadata.gender,
+                    "casenumber": text_metadata.casenumber,
+                    "examiner_first_name": text_metadata.examiner_first_name,
+                    "examiner_last_name": text_metadata.examiner_last_name,
+                }
+            else:
+                text_results = {}
+            combined_results = {"image_analysis": llm_results, "text_analysis": text_results}
         else:
             combined_results = {"image_analysis": llm_results}
-            
+
         # Return the original image path and the analysis results
         return img_path, combined_results
-    
+
     # Normal processing path with OCR, NER, and optional blurring
     modified_images_map, result = process_images_with_OCR_and_NER(
-        Path(img_path), 
+        Path(img_path),
         east_path=east_path,
         device=device,
         min_confidence=min_confidence,
         width=width,
         height=height,
         skip_blur=skip_blur,
-        skip_reassembly=skip_reassembly
+        skip_reassembly=skip_reassembly,
     )
-    
+
     # Get the processed image path
     if modified_images_map:
         # Get the last modified image (the final result)
@@ -97,7 +128,7 @@ def process_image(
     else:
         # If no modification was done, return the original
         processed_image_path = img_path
-        
+
     # If we have a processed path, copy it to the results directory
     if processed_image_path != img_path:
         file_extension = os.path.splitext(processed_image_path)[1]
@@ -115,10 +146,12 @@ def process_image(
                     logger.debug(f"Image copied successfully to: {result_path}")
         except Exception as e:
             logger.error(f"Failed to save image to results with error {e}")
-                
+
         processed_image_path = result_path
-    
+
     return processed_image_path, result
+
+
 def resize_image(image_path: Path, max_width=1024, max_height=1024):
     try:
         image = cv2.imread(str(image_path))

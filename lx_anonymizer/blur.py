@@ -1,10 +1,10 @@
 import cv2
 import uuid
-from directory_setup import create_temp_directory, create_blur_directory
-from box_operations import get_dominant_color
-from region_detector import expand_roi
+from .directory_setup import create_temp_directory, create_blur_directory
+from .box_operations import get_dominant_color
+from .region_detector import expand_roi
 from pathlib import Path
-from custom_logger import get_logger
+from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 

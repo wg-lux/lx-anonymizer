@@ -4,14 +4,15 @@ from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 
-'''
+"""
 Box Operations
 
 The functions in this script define operations on coordinate 
 bounding boxes in images.
 
 
-'''
+"""
+
 
 def filter_empty_boxes(ocr_results, min_text_len=2):
     """
@@ -19,33 +20,37 @@ def filter_empty_boxes(ocr_results, min_text_len=2):
     Returns only entries where text length >= min_text_len
     """
     filtered = []
-    for (text, box) in ocr_results:
+    for text, box in ocr_results:
         if len(text.strip()) >= min_text_len:
             filtered.append((text, box))
     return filtered
 
-def get_dominant_color(image, box):
+
+def get_dominant_color(image, box=None):
     """
     Get the dominant color in a given box region of the image.
     :param image: The input image
     :param box: The bounding box (startX, startY, endX, endY)
     :return: The dominant color as a tuple (B, G, R)
     """
+    if not box:
+        return image.shape[0:3][::-1]  # Return white if box is invalid
     (startX, startY, endX, endY) = box
     region = image[startY:endY, startX:endX]
     pixels = np.float32(region.reshape(-1, 3))
-    
+
     n_colors = 1
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
     flags = cv2.KMEANS_RANDOM_CENTERS
-    
+
     _, labels, palette = cv2.kmeans(pixels, n_colors, None, criteria, 10, flags)
     _, counts = np.unique(labels, return_counts=True)
-    
+
     dominant = palette[np.argmax(counts)]
-    
+
     logger.debug(f"Found dominant color: {dominant}")
     return tuple(map(int, dominant))
+
 
 def make_box_from_name(image, name, padding=2):
     """
@@ -74,7 +79,8 @@ def make_box_from_name(image, name, padding=2):
     logger.debug(f"Created bounding box for name '{name}': ({startX}, {startY}, {endX}, {endY})")
     return (startX, startY, endX, endY)
 
-def make_box_from_device_list(x,y,w,h):
+
+def make_box_from_device_list(x, y, w, h):
     """
     This Function will read the x and y coordinates from the device list and generate box coordinates in a way
     that OpenCV can use them.
@@ -86,17 +92,18 @@ def make_box_from_device_list(x,y,w,h):
         h (Int): Height
 
     """
-    startX=x 
-    startY=y 
-    endX=x+w 
-    endY=y+h
+    startX = x
+    startY = y
+    endX = x + w
+    endY = y + h
     logger.debug(f"Created bounding box from device list: ({startX}, {startY}, {endX}, {endY})")
     return startX, startY, endX, endY
+
 
 def extend_boxes_if_needed(image, boxes, extension_margin=10, color_threshold=30):
     """
     Extends the Box in one direction or the other. This ensures, that the Box coordinates fit over the names.
-    
+
     Args:
         image (_type_): NumPy Array representing the image (as used in cv2)
         boxes (_type_): Array of the Box Coordinates, that were detected in the image
@@ -150,7 +157,7 @@ def find_or_create_close_box(phrase_box, boxes, image_width, min_offset=20):
     """Dynamic box creation based on text length"""
     (startX, startY, endX, endY) = phrase_box
     same_line_boxes = [box for box in boxes if abs(box[1] - startY) <= 10]
-    
+
     # Calculate required width based on text length
     box_width = endX - startX
     required_offset = max(box_width + min_offset, min_offset)
@@ -166,6 +173,7 @@ def find_or_create_close_box(phrase_box, boxes, image_width, min_offset=20):
     new_endX = min(new_startX + box_width, image_width)
     new_box = (new_startX, startY, new_endX, endY)
     return new_box
+
 
 def combine_boxes(text_with_boxes):
     if not text_with_boxes:
@@ -186,12 +194,13 @@ def combine_boxes(text_with_boxes):
 
         if last_startY == current_startY and (current_startX - last_endX) <= 10:
             merged_box = (min(last_startX, current_startX), last_startY, max(last_endX, current_endX), last_endY)
-            merged_text = last_text + ' ' + current_text
+            merged_text = last_text + " " + current_text
             merged_text_with_boxes[-1] = (merged_text, merged_box)
         else:
             merged_text_with_boxes.append(current)
 
     return merged_text_with_boxes
+
 
 def close_to_box(name_box, phrase_box):
     (startX, startY, _, _) = phrase_box

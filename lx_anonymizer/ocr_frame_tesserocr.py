@@ -13,14 +13,14 @@ import cv2
 import numpy as np
 import os
 import tesserocr
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 from typing import Dict, Any, Tuple, Optional, List
 import re
 import threading
 import time
 import glob
 import unicodedata
-from lx_anonymizer.debug.ocr_debug import visualize_ocr_regions
+
 logger = logging.getLogger(__name__)
 
 # ---------------- Global processor cache (per language) ----------------
@@ -48,15 +48,15 @@ class TesseOCRFrameProcessor:
         }
 
         # Heuristics for text-region detection
-        self._roi_min_area = 50                     # px^2
-        self._roi_aspect_min = 1.2                  # width / height
+        self._roi_min_area = 50  # px^2
+        self._roi_aspect_min = 1.2  # width / height
         self._roi_aspect_max = 20.0
-        self._roi_min_height = 10                   # px
-        self._max_area_ratio = 0.5                  # discard giant blobs
+        self._roi_min_height = 10  # px
+        self._max_area_ratio = 0.5  # discard giant blobs
 
         # Preprocessing parameters
         self._contrast_gain = 2.0
-        self._upscale_target_min_dim = 1000         # px
+        self._upscale_target_min_dim = 1000  # px
         self._upscale_max_factor = 4.0
 
         # Stats
@@ -67,9 +67,9 @@ class TesseOCRFrameProcessor:
     def _initialize_api(self) -> None:
         tessdata_path = self._get_tessdata_path()
         self.api = tesserocr.PyTessBaseAPI(
-            lang=self.language,               # German prioritized
+            lang=self.language,  # German prioritized
             path=tessdata_path,
-            oem=tesserocr.OEM.DEFAULT,        # allow legacy fallback for tricky fonts
+            oem=tesserocr.OEM.DEFAULT,  # allow legacy fallback for tricky fonts
         )
         # Default PSM: single block (we switch per-ROI later)
         self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
@@ -87,13 +87,9 @@ class TesseOCRFrameProcessor:
         # German bias & safe charset
         self.api.SetVariable("language_model_penalty_non_dict_word", "1")
         self.api.SetVariable("language_model_penalty_non_freq_dict_word", "1")
-        self.api.SetVariable(
-            "tessedit_char_whitelist",
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-"
-        )
+        self.api.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-")
 
-        logger.info("TesseOCR initialized (OEM=DEFAULT, PSM=SINGLE_BLOCK, lang=%s, path=%s)",
-                    self.language, tessdata_path)
+        logger.info("TesseOCR initialized (OEM=DEFAULT, PSM=SINGLE_BLOCK, lang=%s, path=%s)", self.language, tessdata_path)
 
     # ---------------- tessdata discovery ----------------
     def _get_tessdata_path(self) -> Optional[str]:
@@ -155,7 +151,6 @@ class TesseOCRFrameProcessor:
             return tesserocr.PSM.SINGLE_BLOCK
         return tesserocr.PSM.SPARSE_TEXT
 
-
     # ---------------- Preprocessing ----------------
     def _preprocess_to_gray(self, frame, roi=None):
         if frame.ndim == 3:
@@ -165,23 +160,15 @@ class TesseOCRFrameProcessor:
 
         if roi and self._validate_roi(roi):
             x, y, w, h = map(int, (roi["x"], roi["y"], roi["width"], roi["height"]))
-            img = img[y:y + h, x:x + w]
+            img = img[y : y + h, x : x + w]
             logger.debug(f"ROI: {x},{y},{w},{h} (frame size now {img.shape})")
         pil_image = Image.fromarray(img)
         if min(pil_image.size) < 400:
-            pil_image = pil_image.resize(
-                (int(pil_image.width * 2), int(pil_image.height * 2)),
-                Image.Resampling.LANCZOS
-            )
+            pil_image = pil_image.resize((int(pil_image.width * 2), int(pil_image.height * 2)), Image.Resampling.LANCZOS)
 
         gray = np.array(pil_image.convert("L"))
         gray = cv2.bilateralFilter(gray, 3, 50, 50)
-        binary = cv2.adaptiveThreshold(
-            gray, 255,
-            cv2.ADAPTIVE_THRESH_MEAN_C,
-            cv2.THRESH_BINARY_INV,
-            31, 5
-        )
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 5)
         kernel = np.ones((2, 2), np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
         return binary
@@ -219,8 +206,10 @@ class TesseOCRFrameProcessor:
                     continue
                 # Optional padding to avoid clipping glyphs
                 pad = 2
-                x0 = max(0, x - pad); y0 = max(0, y - pad)
-                x1 = min(W, x + w + pad); y1 = min(H, y + h + pad)
+                x0 = max(0, x - pad)
+                y0 = max(0, y - pad)
+                x1 = min(W, x + w + pad)
+                y1 = min(H, y + h + pad)
                 rois.append((x0, y0, x1 - x0, y1 - y0))
 
             rois.sort(key=lambda b: (b[1], b[0]))
@@ -230,12 +219,7 @@ class TesseOCRFrameProcessor:
             return []
 
     # ---------------- OCR core ----------------
-    def extract_text_from_frame(
-        self,
-        frame: np.ndarray,
-        roi: Optional[Dict[str, Any]] = None,
-        high_quality: bool = True
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    def extract_text_from_frame(self, frame: np.ndarray, roi: Optional[Dict[str, Any]] = None, high_quality: bool = True) -> Tuple[str, float, Dict[str, Any]]:
         if not self.api:
             logger.error("TesseOCR API not initialized.")
             return "", 0.0, {}
@@ -250,7 +234,7 @@ class TesseOCRFrameProcessor:
                 self.api.SetVariable("user_defined_dpi", str(dpi))
 
                 # Detect candidate text boxes
-                
+
                 if not roi:
                     regions = self._detect_text_regions(gray)
                     has_roi = False
@@ -267,14 +251,13 @@ class TesseOCRFrameProcessor:
                         text_parts.append(txt)
                 else:
                     # OCR each detected region, if any
-                    for (x, y, w, h) in regions:
-                        sub = gray[y:y + h, x:x + w]
+                    for x, y, w, h in regions:
+                        sub = gray[y : y + h, x : x + w]
                         self.api.SetPageSegMode(self._choose_psm_for_box(w, h))
                         self.api.SetImage(Image.fromarray(sub))
                         part = (self.api.GetUTF8Text() or "").strip()
                         if part:
                             text_parts.append(part)
-                
 
                 # Combine & normalize
                 text = " ".join(text_parts)
@@ -293,12 +276,10 @@ class TesseOCRFrameProcessor:
                     # Choose largest detected region by area
                     largest = max(regions, key=lambda b: b[2] * b[3])
                     x, y, w, h = largest
-                    sub = gray[y:y + h, x:x + w]
+                    sub = gray[y : y + h, x : x + w]
 
                     # Retry with high DPI and tighter PSM
-                    logger.debug(
-                        f"Low confidence ({conf:.2f}) → retrying largest region {w}x{h} with SINGLE_BLOCK @600 dpi"
-                    )
+                    logger.debug(f"Low confidence ({conf:.2f}) → retrying largest region {w}x{h} with SINGLE_BLOCK @600 dpi")
                     self.api.SetVariable("user_defined_dpi", "600")
                     self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
                     self.api.SetImage(Image.fromarray(sub))
@@ -319,15 +300,15 @@ class TesseOCRFrameProcessor:
                 text = unicodedata.normalize("NFC", text)
                 text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
                 texts, confs = [], []
-                for (x, y, w, h) in regions:
-                    sub = gray[y:y+h, x:x+w]
+                for x, y, w, h in regions:
+                    sub = gray[y : y + h, x : x + w]
                     self.api.SetPageSegMode(self._choose_psm_for_box(w, h))
                     self.api.SetImage(Image.fromarray(sub))
                     t = (self.api.GetUTF8Text() or "").strip()
                     c = max(self.api.MeanTextConf(), 0) / 100.0
                     texts.append(t)
                     confs.append(c)
-                #visualize_ocr_regions(gray, regions, texts, confs, title=f"Frame debug ({len(regions)} regions)")
+                # visualize_ocr_regions(gray, regions, texts, confs, title=f"Frame debug ({len(regions)} regions)")
 
                 # Package metadata
                 meta = {
@@ -358,10 +339,7 @@ class TesseOCRFrameProcessor:
 
     # ---------------- Batch ----------------
     def extract_text_from_frame_batch(
-        self,
-        frames: List[np.ndarray],
-        roi: Optional[Dict[str, Any]] = None,
-        high_quality: bool = True
+        self, frames: List[np.ndarray], roi: Optional[Dict[str, Any]] = None, high_quality: bool = True
     ) -> List[Tuple[str, float, Dict[str, Any]]]:
         out: List[Tuple[str, float, Dict[str, Any]]] = []
         t0 = time.time()
@@ -399,12 +377,8 @@ def get_tesseocr_processor(language: str = "deu"):
         return proc
 
 
-
 def extract_text_from_frame_fast(
-    frame: np.ndarray,
-    roi: Optional[Dict[str, Any]] = None,
-    high_quality: bool = True,
-    language: str = "deu"
+    frame: np.ndarray, roi: Optional[Dict[str, Any]] = None, high_quality: bool = True, language: str = "deu"
 ) -> Tuple[str, float, Dict[str, Any]]:
     proc = get_tesseocr_processor(language)
     return proc.extract_text_from_frame(frame, roi, high_quality)

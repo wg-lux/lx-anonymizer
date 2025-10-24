@@ -1,5 +1,5 @@
 from hezar.models import Model
-from hezar.utils import load_image, draw_boxes
+from hezar.utils import load_image
 from .custom_logger import get_logger
 from pathlib import Path
 import cv2
@@ -13,14 +13,15 @@ from PIL import Image
 
 logger = get_logger(__name__)
 
+
 def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320):
     """
     Performs CRAFT text detection on the input image.
-    
+
     Accepts either:
       - A file path (str or pathlib.Path), or
       - A PIL.Image.Image object.
-      
+
     The function converts the input to a format suitable for both OpenCV (for dimension calculations)
     and the text detection model.
     """
@@ -40,7 +41,7 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
             image = image_input  # Use the provided PIL image directly.
         else:
             raise ValueError(f"Unsupported image input type: {type(image_input)}")
-        
+
         # Original image dimensions.
         (origH, origW) = orig.shape[:2]
         rW = origW / float(width)
@@ -54,19 +55,19 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
         # Run the model prediction with your desired thresholds.
         outputs = model.predict(
             image,
-            text_threshold=0.5,    # Higher threshold for more confident word detection
-            link_threshold=0.3,    # Lower threshold to better separate words
-            low_text=0.4,          # Balance between detection and separation
-            poly=False,            # Use rectangles for simpler processing
+            text_threshold=0.5,  # Higher threshold for more confident word detection
+            link_threshold=0.3,  # Lower threshold to better separate words
+            low_text=0.4,  # Balance between detection and separation
+            poly=False,  # Use rectangles for simpler processing
         )
         logger.info("Detection complete.")
 
         # Filtering parameters for text regions.
-        min_width = 15                   # Minimum width for a word
-        max_width = int(origW * 0.2)       # Maximum 20% of image width
-        min_height = 8                   # Minimum height for a word
-        max_height = int(origH * 0.1)      # Maximum 10% of image height
-        aspect_ratio_threshold = 10.0     # Maximum width/height ratio
+        min_width = 15  # Minimum width for a word
+        max_width = int(origW * 0.2)  # Maximum 20% of image width
+        min_height = 8  # Minimum height for a word
+        max_height = int(origH * 0.1)  # Maximum 10% of image height
+        aspect_ratio_threshold = 10.0  # Maximum width/height ratio
 
         output_boxes = []
         output_confidences = []
@@ -94,26 +95,17 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
                     box_height = endY - startY
 
                     # Apply size and aspect ratio filters.
-                    if (min_width <= box_width <= max_width and 
-                        min_height <= box_height <= max_height and 
-                        box_width / box_height <= aspect_ratio_threshold):
-                        
+                    if min_width <= box_width <= max_width and min_height <= box_height <= max_height and box_width / box_height <= aspect_ratio_threshold:
                         # Ensure coordinates are within image bounds.
                         startX = max(0, min(startX, origW - 1))
                         startY = max(0, min(startY, origH - 1))
                         endX = max(0, min(endX, origW))
                         endY = max(0, min(endY, origH))
-                        
+
                         # Only add valid boxes with a sufficient area.
                         if startX < endX and startY < endY and (endX - startX) * (endY - startY) >= 100:
                             output_boxes.append((startX, startY, endX, endY))
-                            output_confidences.append({
-                                "startX": startX,
-                                "startY": startY,
-                                "endX": endX,
-                                "endY": endY,
-                                "confidence": min_confidence
-                            })
+                            output_confidences.append({"startX": startX, "startY": startY, "endX": endX, "endY": endY, "confidence": min_confidence})
 
         if output_boxes:
             logger.info(f"Detected {len(output_boxes)} text regions")
@@ -123,36 +115,37 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
             output_boxes = sort_boxes(output_boxes, vertical_threshold=5)
             # Optionally, extend boxes with minimal margins.
             output_boxes = extend_boxes_if_needed(orig, output_boxes, extension_margin=2)
-            
+
         return output_boxes, json.dumps(output_confidences)
-        
+
     except Exception as e:
         logger.error(f"Error in CRAFT text detection: {str(e)}")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         raise
 
+
 def merge_close_boxes(boxes, horizontal_threshold=8):
     """Merge boxes that are horizontally very close and likely part of the same word."""
     if not boxes:
         return boxes
-    
+
     merged = []
     current_box = list(boxes[0])
-    
+
     for box in boxes[1:]:
         # Check if boxes are close horizontally and on the same line.
-        if (abs(box[0] - current_box[2]) < horizontal_threshold and 
-            abs(box[1] - current_box[1]) < 5):  # Vertical alignment threshold.
+        if abs(box[0] - current_box[2]) < horizontal_threshold and abs(box[1] - current_box[1]) < 5:  # Vertical alignment threshold.
             # Merge boxes.
             current_box[2] = box[2]  # Extend to the end of the next box.
             current_box[3] = max(current_box[3], box[3])  # Take the max height.
         else:
             merged.append(tuple(current_box))
             current_box = list(box)
-    
+
     merged.append(tuple(current_box))
     return merged
+
 
 def sort_boxes(boxes, vertical_threshold=5):
     """Sort boxes by vertical position then horizontal position with a tighter threshold."""

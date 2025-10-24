@@ -3,16 +3,16 @@
     let
       version = "1.9.0";
 system = "x86_64-linux";
-devenv_root = "/home/admin/dev/lx-anonymizer";
-devenv_dotfile = "/home/admin/dev/lx-anonymizer/.devenv";
+devenv_root = "/home/admin/lx-anonymizer";
+devenv_dotfile = "/home/admin/lx-anonymizer/.devenv";
 devenv_dotfile_path = ./.devenv;
 devenv_tmpdir = "/run/user/1000";
-devenv_runtime = "/run/user/1000/devenv-e3f7f97";
+devenv_runtime = "/run/user/1000/devenv-18a2527";
 devenv_istesting = false;
 devenv_direnvrc_latest_version = 1;
 container_name = null;
 active_profiles = [ ];
-hostname = "gc-06";
+hostname = "gc-10";
 username = "admin";
 
         in {
@@ -29,16 +29,16 @@ username = "admin";
         let
           version = "1.9.0";
 system = "x86_64-linux";
-devenv_root = "/home/admin/dev/lx-anonymizer";
-devenv_dotfile = "/home/admin/dev/lx-anonymizer/.devenv";
+devenv_root = "/home/admin/lx-anonymizer";
+devenv_dotfile = "/home/admin/lx-anonymizer/.devenv";
 devenv_dotfile_path = ./.devenv;
 devenv_tmpdir = "/run/user/1000";
-devenv_runtime = "/run/user/1000/devenv-e3f7f97";
+devenv_runtime = "/run/user/1000/devenv-18a2527";
 devenv_istesting = false;
 devenv_direnvrc_latest_version = 1;
 container_name = null;
 active_profiles = [ ];
-hostname = "gc-06";
+hostname = "gc-10";
 username = "admin";
 
             devenv =
