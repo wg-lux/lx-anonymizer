@@ -25,25 +25,24 @@ import numpy as np
 from PIL import Image
 from spacy.lang import en
 
-from lx_anonymizer.best_frame_text import BestFrameText
-from lx_anonymizer.frame_metadata_extractor import FrameMetadataExtractor
-from lx_anonymizer.masking import MaskApplication
-from lx_anonymizer.ocr_frame import FrameOCR
-from lx_anonymizer.ocr_minicpm import (
+from .best_frame_text import BestFrameText
+from .frame_metadata_extractor import FrameMetadataExtractor
+from .masking import MaskApplication
+from .ocr_frame import FrameOCR
+from .ocr_minicpm import (
     _can_load_model,
     create_minicpm_ocr,
 )
-from lx_anonymizer.ollama_llm_meta_extraction_optimized import (
+from .ollama_llm_meta_extraction_optimized import (
     EnrichedMetadataExtractor,
     FrameSamplingOptimizer,
     OllamaOptimizedExtractor,
 )
-
-from lx_anonymizer.roi_processor import ROIProcessor
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
-from lx_anonymizer.spacy_extractor import PatientDataExtractor
-from lx_anonymizer.utils.ollama import ensure_ollama
-from lx_anonymizer.video_encoder import VideoEncoder
+from .roi_processor import ROIProcessor
+from .sensitive_meta_interface import SensitiveMeta
+from .spacy_extractor import PatientDataExtractor
+from .utils.ollama import ensure_ollama
+from .video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
 

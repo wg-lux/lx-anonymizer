@@ -1,13 +1,15 @@
 from __future__ import annotations
+
 import logging
 import math
 import os
 import random
-import unicodedata
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from lx_anonymizer.ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+
+from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +21,11 @@ _MEDICAL_RXS = [
     re.compile(r"(Jahr|Jahre|Tag|Tage|Monat|Monate)", re.I),
 ]
 
+
 def _is_punct_or_symbol(ch: str) -> bool:
     cat = unicodedata.category(ch)
     return cat.startswith("P") or cat.startswith("S")
+
 
 @dataclass
 class Candidate:
@@ -29,6 +33,7 @@ class Candidate:
     conf: float
     score: float
     meta: Dict[str, Any]
+
 
 class BestFrameText:
     """
@@ -61,7 +66,7 @@ class BestFrameText:
         self._topk: List[Candidate] = []
         if seed is not None:
             random.seed(seed)
-        
+
         # FIX: initialize extractor instance (was empty assignment causing syntax error)
         self.ollama_extraction = OllamaOptimizedExtractor()
 
@@ -121,7 +126,7 @@ class BestFrameText:
         self._topk.append(cand)
         self._topk.sort(key=lambda c: c.score, reverse=True)
         if len(self._topk) > self.K:
-            self._topk = self._topk[:self.K]
+            self._topk = self._topk[: self.K]
 
     def push(self, text: str, ocr_conf: float, *, is_sensitive: Optional[bool] = None, metadata: Optional[Dict[str, Any]] = None) -> None:
         if not text:
@@ -158,28 +163,27 @@ class BestFrameText:
           - 'best': highest score (not just longest)
           - 'average': join a few random reservoir samples (diverse), clipped
         """
-        
+
         # FIX: ensure local accumulator exists; attempt LLM summary if reservoir has metadata
         try:
             text = ""
             for c in self._reservoir:
-                text += c.meta.get('extracted_metadata', '')
+                text += c.meta.get("extracted_metadata", "")
             if text:
                 meta = self.ollama_extraction.extract_metadata(text)
                 if isinstance(meta, dict):
-                    best = meta.get('representative_text') or meta.get('best') or ""
+                    best = meta.get("representative_text") or meta.get("best") or ""
                 else:
                     best = str(meta)
                 average = "\n\n".join(c.text for c in random.sample(self._reservoir, min(preview_size, len(self._reservoir))))[:1500]
                 return {"best": best, "average": average}
         except Exception as e:
             logger.info(f"Ollama extraction failed: {e}, fallback to original reduce.")
-        
+
         if not self._reservoir and not self._topk:
             return {"best": "", "average": ""}
 
-        best = (self._topk[0].text if self._topk
-                else max(self._reservoir, key=lambda c: len(c.text)).text)
+        best = self._topk[0].text if self._topk else max(self._reservoir, key=lambda c: len(c.text)).text
 
         bag = self._reservoir if self._reservoir else self._topk
         samples = random.sample(bag, min(preview_size, len(bag)))

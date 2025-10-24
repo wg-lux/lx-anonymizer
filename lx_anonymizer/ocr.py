@@ -7,7 +7,18 @@ from django.template.loader_tags import do_block
 from PIL import Image
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel, pipeline
 
-from .craft_text_detection import craft_text_detection  # Neuer Import für CRAFT
+# Import CRAFT text detection if available (requires hezar)
+try:
+    from .craft_text_detection import craft_text_detection
+
+    CRAFT_AVAILABLE = True
+except ImportError:
+    CRAFT_AVAILABLE = False
+
+    def craft_text_detection(*args, **kwargs):
+        raise ImportError("CRAFT text detection requires 'hezar' package. Install with: pip install lx-anonymizer[llm]")
+
+
 from .custom_logger import get_logger
 from .model_service import model_service
 from .region_detector import expand_roi  # Ensure this module is correctly referenced
@@ -134,9 +145,7 @@ def trocr_full_image_ocr(image_input):
             # Pfad oder Dateiobjekt
             pil_img = Image.open(image_input).convert("RGB")
     except Exception as e:
-        logger.warning(
-            f"Failed to prepare image for TrOCR: {e}. Falling back to Tesseract."
-        )
+        logger.warning(f"Failed to prepare image for TrOCR: {e}. Falling back to Tesseract.")
         try:
             if hasattr(image_input, "convert"):
                 fb_img = image_input.convert("RGB")
@@ -155,9 +164,7 @@ def trocr_full_image_ocr(image_input):
         return pytesseract.image_to_string(pil_img, config="--psm 6").strip()
 
     # 3) Inferenz
-    pixel_values = processor(images=pil_img, return_tensors="pt").pixel_values.to(
-        device
-    )
+    pixel_values = processor(images=pil_img, return_tensors="pt").pixel_values.to(device)
     outputs = model.generate(
         pixel_values,
         output_scores=True,
@@ -166,9 +173,7 @@ def trocr_full_image_ocr(image_input):
         return_dict_in_generate=True,
         max_new_tokens=512,
     )
-    return processor.batch_decode(outputs.sequences, skip_special_tokens=True)[
-        0
-    ].strip()
+    return processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0].strip()
 
 
 def trocr_full_image_ocr_on_boxes(image_path):
@@ -197,15 +202,11 @@ def trocr_full_image_ocr_on_boxes(image_path):
     ocr_results = []
 
     if boxes:
-        logger.info(
-            f"CRAFT detected {len(boxes)} regions. Processing each region with TrOCR."
-        )
+        logger.info(f"CRAFT detected {len(boxes)} regions. Processing each region with TrOCR.")
         for box in boxes:
             (startX, startY, endX, endY) = box
             cropped_image = image.crop((startX, startY, endX, endY))
-            pixel_values = processor(
-                cropped_image, return_tensors="pt"
-            ).pixel_values.to(device)
+            pixel_values = processor(cropped_image, return_tensors="pt").pixel_values.to(device)
             outputs = model.generate(
                 pixel_values,
                 output_scores=True,
@@ -214,17 +215,13 @@ def trocr_full_image_ocr_on_boxes(image_path):
                 return_dict_in_generate=True,
                 max_new_tokens=50,
             )
-            recognized_text = tokenizer.batch_decode(
-                outputs.sequences, skip_special_tokens=True
-            )[0]
+            recognized_text = tokenizer.batch_decode(outputs.sequences, skip_special_tokens=True)[0]
             logger.debug(f"Box {box} yielded text: '{recognized_text}'")
             if recognized_text.strip():
                 ocr_results.append(recognized_text.strip())
         final_text = "\n".join(ocr_results)
         if not final_text.strip():
-            logger.warning(
-                "No text recognized in regions, falling back to full image OCR."
-            )
+            logger.warning("No text recognized in regions, falling back to full image OCR.")
             final_text = trocr_full_image_ocr(image)
     else:
         logger.info("No regions detected by CRAFT. Falling back to full image OCR.")
@@ -233,18 +230,12 @@ def trocr_full_image_ocr_on_boxes(image_path):
     return final_text
 
 
-def trocr_on_boxes(
-    image_path, boxes
-) -> Tuple[
-    List[Tuple[str, Tuple[int, int, int, int]]], List[float]
-]:  # Corrected return type hint
+def trocr_on_boxes(image_path, boxes) -> Tuple[List[Tuple[str, Tuple[int, int, int, int]]], List[float]]:  # Corrected return type hint
     try:
         if hasattr(image_path, "convert"):
             image = image_path.convert("RGB")
         else:
-            image = Image.open(image_path).convert(
-                "RGB"
-            )  # 1. Full text in a single chunk
+            image = Image.open(image_path).convert("RGB")  # 1. Full text in a single chunk
         extracted_text_with_boxes = []
         confidences = []
         # Ensure models are loaded
@@ -270,9 +261,7 @@ def trocr_on_boxes(
                 if cudasupport:
                     # Use CUDA with automatic mixed precision
                     with torch.amp.autocast(device_type="cuda"):
-                        pixel_values = processor(
-                            images=cropped_image, return_tensors="pt"
-                        ).pixel_values.to(device)
+                        pixel_values = processor(images=cropped_image, return_tensors="pt").pixel_values.to(device)
 
                         # Generate text with CUDA optimizations
                         outputs = model.generate(
@@ -283,9 +272,7 @@ def trocr_on_boxes(
                         )
                 else:
                     # CPU fallback
-                    pixel_values = processor(
-                        images=cropped_image, return_tensors="pt"
-                    ).pixel_values
+                    pixel_values = processor(images=cropped_image, return_tensors="pt").pixel_values
 
                     # Generate text without CUDA optimizations
                     outputs = model.generate(
@@ -296,30 +283,22 @@ def trocr_on_boxes(
                     )
 
                 # Decode the output tokens into readable text
-                generated_text = processor.batch_decode(
-                    outputs.sequences, skip_special_tokens=True
-                )[0]
+                generated_text = processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0]
 
                 # Calculate confidence score from the last token's scores
                 scores = outputs.scores  # List of logits for each generation step
                 if scores:
                     # Take the scores from the last generation step
                     last_scores = scores[-1]
-                    confidence_score = (
-                        torch.nn.functional.softmax(last_scores, dim=-1).max().item()
-                    )
+                    confidence_score = torch.nn.functional.softmax(last_scores, dim=-1).max().item()
                 else:
-                    confidence_score = (
-                        0.0  # Default confidence if scores are unavailable
-                    )
+                    confidence_score = 0.0  # Default confidence if scores are unavailable
 
                 # Append results to the lists
                 extracted_text_with_boxes.append((generated_text.strip(), expanded_box))
                 confidences.append(confidence_score)
 
-                logger.info(
-                    f"Processed box {idx + 1}/{len(boxes)}: '{generated_text.strip()}' with confidence {confidence_score:.4f}"
-                )
+                logger.info(f"Processed box {idx + 1}/{len(boxes)}: '{generated_text.strip()}' with confidence {confidence_score:.4f}")
 
             except Exception as e:
                 logger.info(f"Error processing box {idx + 1}/{len(boxes)}: {e}")
@@ -345,9 +324,7 @@ def fallback_full_ocr(image, processor, model, device):
     else:
         image = Image.open(image).convert("RGB")
     try:
-        pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(
-            device
-        )
+        pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(device)
         outputs = model.generate(pixel_values, max_new_tokens=150)
         return processor.batch_decode(outputs, skip_special_tokens=True)[0]
     except Exception as e:
@@ -390,9 +367,7 @@ def tesseract_on_boxes_pytesseract(image_path, boxes):
     if hasattr(image_path, "convert"):
         image = image_path.convert("RGB")
     else:
-        image = Image.open(image_path).convert(
-            "RGB"
-        )  # 1. Full text in a single chunk    extracted_text_with_boxes = []
+        image = Image.open(image_path).convert("RGB")  # 1. Full text in a single chunk    extracted_text_with_boxes = []
     confidences = []
     extracted_text_with_boxes = []
 
@@ -410,29 +385,17 @@ def tesseract_on_boxes_pytesseract(image_path, boxes):
             ocr_result = pytesseract.image_to_string(cropped_image, config="--psm 6")
 
             # Get confidence scores from pytesseract
-            details = pytesseract.image_to_data(
-                cropped_image, output_type=pytesseract.Output.DICT
-            )
-            text_confidences = [
-                int(conf)
-                for conf in details["conf"]
-                if isinstance(conf, (int, str)) and str(conf).isdigit()
-            ]
+            details = pytesseract.image_to_data(cropped_image, output_type=pytesseract.Output.DICT)
+            text_confidences = [int(conf) for conf in details["conf"] if isinstance(conf, (int, str)) and str(conf).isdigit()]
 
             # Calculate the average confidence score
-            confidence_score = (
-                sum(text_confidences) / len(text_confidences)
-                if text_confidences
-                else 0.0
-            )
+            confidence_score = sum(text_confidences) / len(text_confidences) if text_confidences else 0.0
 
             # Append results to the lists
             extracted_text_with_boxes.append((ocr_result.strip(), box))
             confidences.append(confidence_score)
 
-            logger.debug(
-                f"Processed box {idx + 1}/{len(boxes)}: '{ocr_result.strip()}' with confidence {confidence_score:.2f}"
-            )
+            logger.debug(f"Processed box {idx + 1}/{len(boxes)}: '{ocr_result.strip()}' with confidence {confidence_score:.2f}")
 
         except Exception as e:
             logger.info(f"Error processing box {idx + 1}/{len(boxes)}: {e}")

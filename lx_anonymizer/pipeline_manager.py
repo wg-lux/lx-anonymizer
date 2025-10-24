@@ -12,7 +12,19 @@ from PIL import Image
 
 from .blur import blur_function
 from .box_operations import close_to_box, combine_boxes, filter_empty_boxes, find_or_create_close_box, get_dominant_color
-from .craft_text_detection import craft_text_detection
+
+# Import CRAFT text detection if available (requires hezar)
+try:
+    from .craft_text_detection import craft_text_detection
+
+    CRAFT_AVAILABLE = True
+except ImportError:
+    CRAFT_AVAILABLE = False
+
+    def craft_text_detection(*args, **kwargs):
+        raise ImportError("CRAFT text detection requires 'hezar' package. Install with: pip install lx-anonymizer[llm]")
+
+
 from .custom_logger import get_logger
 from .device_reader import read_background_color, read_name_boxes
 from .directory_setup import create_blur_directory, create_temp_directory

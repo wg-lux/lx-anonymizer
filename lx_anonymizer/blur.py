@@ -1,18 +1,20 @@
-import cv2
 import uuid
-from .directory_setup import create_temp_directory, create_blur_directory
-from .box_operations import get_dominant_color
-from .region_detector import expand_roi
 from pathlib import Path
+
+import cv2
+
+from .box_operations import get_dominant_color
 from .custom_logger import get_logger
+from .directory_setup import create_blur_directory, create_temp_directory
+from .region_detector import expand_roi
 
 logger = get_logger(__name__)
 
 
 temp_dir, base_dir, csv_dir = create_temp_directory()
 
+
 def blur_function(image_path, box, background_color=None, expansion=5, blur_strength=(51, 51), rectangle_scale=0.8):
-    
     """
     Apply a strong Gaussian blur to the specified ROI in the image and slightly extend the blur outside the ROI.
 
@@ -47,7 +49,7 @@ def blur_function(image_path, box, background_color=None, expansion=5, blur_stre
 
     # Extract the expanded ROI from the image
     roi = image[startY:endY, startX:endX]
-    
+
     # Use the provided background color or default to the dominant color in the ROI
     if background_color is not None:
         dominant_color = background_color
@@ -70,7 +72,7 @@ def blur_function(image_path, box, background_color=None, expansion=5, blur_stre
     image[startY:endY, startX:endX] = blurred_roi
 
     # Save the modified image to a file
-    output_image_path = Path(blur_dir)/ f"{uuid.uuid4().hex}.png"
+    output_image_path = Path(blur_dir) / f"{uuid.uuid4().hex}.png"
     logger.debug(f"Blurred Image will be saved to: {blur_dir}")
     cv2.imwrite(str(output_image_path), image)
     logger.info(f"Blurred Image saved to {blur_dir}")

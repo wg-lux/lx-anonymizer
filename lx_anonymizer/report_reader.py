@@ -14,7 +14,7 @@ import pdfplumber
 from faker import Faker
 from PIL import Image
 
-from lx_anonymizer.ollama_llm_meta_extraction_optimized import \
+from .ollama_llm_meta_extraction_optimized import \
     OllamaOptimizedExtractor
 
 from .custom_logger import logger
