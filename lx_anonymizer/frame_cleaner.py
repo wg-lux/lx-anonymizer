@@ -18,7 +18,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -999,7 +999,7 @@ class FrameCleaner:
             # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
             return False
 
-    def detect_sensitive_on_frame_extended(self, frame_path: Path, report_reader) -> bool:
+    def detect_sensitive_on_frame_extended(self, frame_path: Path, report_reader) -> "bool, Dict[str, Any]":
         """
         Detect if a frame contains sensitive information using OCR + LLM-powered metadata extraction.
 
@@ -1013,7 +1013,6 @@ class FrameCleaner:
         try:
             # Load image and convert to numpy array for FrameOCR
             image = Image.open(frame_path)
-
             # Convert to grayscale numpy array
             if image.mode != "L":
                 image = image.convert("L")
@@ -1043,7 +1042,7 @@ class FrameCleaner:
                     logger.warning(f"Detected sensitive data in frame {frame_path.name}: {frame_metadata}")
                     return True, frame_metadata
 
-                return False, None
+                return False
 
             except Exception as e:
                 logger.error(f"Error in LLM metadata extraction: {e}")
@@ -1052,9 +1051,9 @@ class FrameCleaner:
         except Exception as e:
             logger.error(f"Error processing frame {frame_path}: {e}")
             # Fail-safe: if OCR crashes, keep the frame (better none deleted than all lost)
-            return False
+            return False, None
 
-    def video_ocr_stream(self, frame_paths: List[Path]):
+    def video_ocr_stream(self, frame_paths: List[Path]) -> Generator[tuple[str, float], Any, None]:
         """
         Yield (ocr_text, avg_confidence) for every frame in frame_paths.
 
