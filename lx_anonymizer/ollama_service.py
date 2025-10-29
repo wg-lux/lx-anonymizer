@@ -749,7 +749,7 @@ class OllamaService:
             response = self._http.post(
                 f"{self.base_url}/api/generate", 
                 json=data,
-                timeout=(3.05, 120)
+                timeout=(3.05, 120)  # 2-minute timeout
             )
 
             if response.status_code == 200:
