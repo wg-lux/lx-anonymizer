@@ -11,6 +11,7 @@ Uses specialized frame processing components separated from PDF logic.
 """
 
 import json
+from locale import normalize
 import logging
 import math
 import os
@@ -19,20 +20,21 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
+from contextlib import contextmanager
 
 import cv2
 import numpy as np
 from PIL import Image
+from numpy.f2py.symbolic import Op
 from spacy.lang import en
-
-from .best_frame_text import BestFrameText
+from .utils.roi_normalization import normalize_roi_keys
 from .frame_metadata_extractor import FrameMetadataExtractor
 from .masking import MaskApplication
 from .ocr_frame import FrameOCR
-from .ocr_minicpm import (
-    _can_load_model,
-    create_minicpm_ocr,
-)
+# from .ocr_minicpm import (
+#     _can_load_model,
+#     create_minicpm_ocr,
+# )
 from .ollama_llm_meta_extraction_optimized import (
     EnrichedMetadataExtractor,
     FrameSamplingOptimizer,
@@ -43,7 +45,6 @@ from .sensitive_meta_interface import SensitiveMeta
 from .spacy_extractor import PatientDataExtractor
 from .utils.ollama import ensure_ollama
 from .video_encoder import VideoEncoder
-
 logger = logging.getLogger(__name__)
 
 
@@ -63,9 +64,9 @@ class FrameCleaner:
 
     def __init__(
         self,
-        use_minicpm: bool = True,
+        use_minicpm: Optional[bool] = False,
         minicpm_config: Optional[Dict[str, Any]] = None,
-        use_llm: bool = False,
+        use_llm: Optional[bool] = False,
     ):
         # Initialize specialized frame processing components
         self.frame_ocr = FrameOCR()
@@ -75,16 +76,15 @@ class FrameCleaner:
 
         # Enhanced OCR integration - use enhanced components if available
         logger.info("Initializing with Enhanced OCR components (OCR_FIX_V1 enabled)")
-        self.best_frame_text = BestFrameText()
         self.use_enhanced_ocr = True
 
         # LLM usage flag (guard)
         self.use_llm = bool(use_llm)
 
         # Initialize MiniCPM-o 2.6 if enabled
-        self.use_minicpm = use_minicpm
-        self.minicpm_ocr = create_minicpm_ocr() if use_minicpm else None
-        self._log_hf_cache_info()
+        # self.use_minicpm = use_minicpm
+        # self.minicpm_ocr = create_minicpm_ocr() if use_minicpm else None
+        # self._log_hf_cache_info()
 
         # Initialize the optimized ollama processing pipeline (guarded)
         self.ollama_proc = None
@@ -136,21 +136,24 @@ class FrameCleaner:
         logger.info(f"Hardware acceleration: NVENC {'available' if self.nvenc_available else 'not available'}")
         logger.info(f"Using encoder: {self.preferred_encoder}")
 
-        if self.use_minicpm:
-            try:
-                minicpm_config = minicpm_config or {}
-                if _can_load_model():
-                    self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
-                else:
-                    logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
-                    self.use_minicpm = False
-                    self.minicpm_ocr = None
+        # if self.use_minicpm:
+        #     logger.warning("MiniCPM currently not functional; falling back to TesserOCR.")
+        #     self.use_minicpm = False
 
-                logger.info("MiniCPM-o 2.6 initialized successfully")
-            except Exception as e:
-                logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
-                self.use_minicpm = False
-                self.minicpm_ocr = None
+            # try:
+            #     minicpm_config = minicpm_config or {}
+            #     if _can_load_model():
+            #         self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
+            #     else:
+            #         logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
+            #         self.use_minicpm = False
+            #         self.minicpm_ocr = None
+
+            #     logger.info("MiniCPM-o 2.6 initialized successfully")
+            # except Exception as e:
+            #     logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
+            #     self.use_minicpm = False
+            #     self.minicpm_ocr = None
 
     def clean_video(
         self,
@@ -159,14 +162,26 @@ class FrameCleaner:
         endoscope_data_roi_nested: dict[str, dict[str, int | None] | None],
         output_path: Optional[Path] = None,
         technique: str = "mask_overlay",
-        extended: bool = False,
     ) -> tuple[Path, Dict[str, Any]]:
         """
+        Handles the cleaning of a video by removing or masking frames with sensitive information.
+        Args:
+            video_path: Path to the input video file
+            endoscope_image_roi: ROI for image masking
+            endoscope_data_roi_nested: Nested ROI for data extraction
+            output_path: Optional path for the output cleaned video
+            technique: 'remove_frames' or 'mask_overlay'
+            extended: Whether to perform extended metadata extraction
+            
+        Returns:
+            A tuple containing the output video path and a dictionary of sensitive metadata.        
+        
         Refactored version: single code path, fewer duplicated branches. Batch Metadata logic preserves previous output based on confidence.
         """
 
         output_video = output_path or video_path.with_stem(f"{video_path.stem}_anony")
         accumulated: dict[str, Any] = {
+            "file_path": str(object=video_path),
             "patient_first_name": None,
             "patient_last_name": None,
             "patient_dob": None,
@@ -203,14 +218,13 @@ class FrameCleaner:
                 endoscope_image_roi=endoscope_image_roi,
                 endoscope_data_roi_nested=endoscope_data_roi_nested,
                 frame_id=idx,
-                extended=extended,
-                collect_for_batch=extended,
+                collect_for_batch=True,
             )
             accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, frame_meta)
             if is_sensitive:
                 sensitive_idx.append(idx)
         # Batch-Metadaten-Anreicherung nach Frame-Loop
-        if extended and self.frame_collection:
+        if self.frame_collection:
             batch_enriched = self._extract_enriched_metadata_batch()
             if batch_enriched:
                 accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, batch_enriched)
@@ -221,41 +235,32 @@ class FrameCleaner:
             total_frames,
             100 * sensitive_ratio,
         )
-        try:
-            if technique == "remove_frames":
-                logger.info("Using frame‑removal strategy.")
-                ok = self.remove_frames_from_video_streaming(
-                    video_path,
-                    sensitive_idx,
-                    output_video,
-                    total_frames=total_frames,
-                )
-            elif technique == "mask_overlay":
-                logger.info("Using masking strategy.")
-                if endoscope_image_roi and self._validate_roi(endoscope_image_roi):
-                    mask_cfg = self._create_mask_config_from_roi(endoscope_image_roi)
-                else:
-                    mask_cfg = {"image_width": 1920, "image_height": 1080}
-                ok = self._mask_video_streaming(video_path, mask_cfg, output_video, use_named_pipe=True)
+        if technique == "remove_frames":
+            logger.info("Using frame‑removal strategy.")
+            ok = self.remove_frames_from_video_streaming(
+                video_path,
+                sensitive_idx,
+                output_video,
+                total_frames=total_frames,
+            )
             if not ok:
-                logger.error("Processing failed – copying original video.")
-
-            assert isinstance(ok, bool)
-            if not ok:
-                logger.error("Processing failed – copying original video.")
-                shutil.copy2(video_path, output_video)
-        except Exception:
-            logger.exception("Processing failed – copying original video.")
-            shutil.copy2(video_path, output_video)
+                logger.error("Frame removal failed.")
+        elif technique == "mask_overlay":
+            logger.info("Using masking strategy.")
+            if endoscope_image_roi and self._validate_roi(endoscope_image_roi):
+                mask_cfg = self._create_mask_config_from_roi(endoscope_image_roi)
+            else:
+                mask_cfg = {"image_width": 1920, "image_height": 1080}
+            self._mask_video_streaming(video_path, mask_cfg, output_video, use_named_pipe=True)
 
         # ----------------------- persist metadata, apply type checking---------------------------
         self._update_sensitive_meta_dict(accumulated)
         sensitive_meta = SensitiveMeta.from_dict(accumulated)
-        return output_video, sensitive_meta
+        return output_video, sensitive_meta.to_dict()
 
-    def _get_primary_ocr_engine(self) -> str:
-        """Return the name of the primary OCR engine being used."""
-        return "MiniCPM-o 2.6" if (self.use_minicpm and self.minicpm_ocr) else "FrameOCR + LLM"
+    # def _get_primary_ocr_engine(self) -> str:
+    #     """Return the name of the primary OCR engine being used."""
+    #     return "MiniCPM-o 2.6" if (self.use_minicpm and self.minicpm_ocr) else "FrameOCR + LLM"
 
     def _detect_video_format(self, video_path: Path) -> Dict[str, Any]:
         """
@@ -356,30 +361,19 @@ class FrameCleaner:
 
         return True
 
-    def _create_named_pipe(self, suffix: str = ".mp4") -> Path:
-        """
-        Create a named pipe (FIFO) for streaming video data.
-
-        Args:
-            suffix: File extension for the pipe name
-
-        Returns:
-            Path to created named pipe
-        """
-        # Create temporary directory for pipes
+    @contextmanager
+    def _named_pipe(self, suffix=".mp4"):
         temp_dir = Path(tempfile.mkdtemp(prefix="video_pipes_"))
         pipe_path = temp_dir / f"stream{suffix}"
-
+        os.mkfifo(pipe_path)
         try:
-            # Create named pipe
-            os.mkfifo(str(pipe_path))
-            logger.debug(f"Created named pipe: {pipe_path}")
-            return pipe_path
-
-        except OSError as e:
-            logger.error(f"Failed to create named pipe: {e}")
-            # Fallback to regular temp file
-            return temp_dir / f"fallback{suffix}"
+            yield pipe_path
+        finally:
+            try:
+                pipe_path.unlink()
+                temp_dir.rmdir()
+            except OSError:
+                pass
 
     def _stream_copy_with_pixel_conversion(
         self,
@@ -437,8 +431,6 @@ class FrameCleaner:
             else:
                 logger.error(f"Pixel format conversion failed: {e.stderr}")
                 return False
-            logger.error(f"Pixel format conversion failed: {e.stderr}")
-            return False
         except Exception as e:
             logger.error(f"Pixel format conversion error: {e}")
             return False
@@ -551,59 +543,13 @@ class FrameCleaner:
             logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             logger.debug(f"Stream copy output: {result.stderr}")
-
             return output_video.exists() and output_video.stat().st_size > 0
 
-        except subprocess.CalledProcessError as e:
-            # Try fallback if hardware acceleration fails
-            if self.preferred_encoder["type"] == "nvenc" and not format_info.get("can_stream_copy", False):
-                logger.warning(f"NVENC stream copy failed, trying CPU fallback: {e.stderr}")
-                return self._stream_copy_fallback(input_video, output_video, format_info)
-            else:
-                logger.error(f"Stream copy failed: {e.stderr}")
-                return False
+
         except Exception as e:
             logger.error(f"Stream copy error: {e}")
             return False
 
-    def _stream_copy_fallback(self, input_video: Path, output_video: Path, format_info: Dict[str, Any]) -> bool:
-        """
-        Fallback stream copy using CPU encoding.
-
-        Args:
-            input_video: Source video path
-            output_video: Destination video path
-            format_info: Video format information
-
-        Returns:
-            True if conversion succeeded
-        """
-        try:
-            cmd = [
-                "ffmpeg",
-                "-nostdin",
-                "-y",
-                "-i",
-                str(input_video),
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "23",
-                "-c:a",
-                "copy",
-                str(output_video),
-            ]
-
-            logger.info(f"CPU fallback stream copy: {input_video} -> {output_video}")
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-            return output_video.exists() and output_video.stat().st_size > 0
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"CPU fallback stream copy failed: {e.stderr}")
-            return False
 
     def remove_frames_from_video_streaming(
         self,
@@ -642,63 +588,63 @@ class FrameCleaner:
 
             if use_named_pipe and len(frames_to_remove) < (total_frames or 1000) * 0.1:
                 # Use named pipe for small frame removal operations
-                pipe_path = self._create_named_pipe(".mp4")
+                with self._named_pipe() as pipe_path:
 
-                try:
-                    # Pipeline: filter frames -> pipe -> stream copy to final output
-                    filter_cmd = [
-                        "ffmpeg",
-                        "-nostdin",
-                        "-y",
-                        "-i",
-                        str(original_video),
-                        "-vf",
-                        vf,
-                        "-af",
-                        af,
-                        "-f",
-                        "matroska",  # Use MKV for better streaming compatibility
-                        str(pipe_path),
-                    ]
+                    try:
+                        # Pipeline: filter frames -> pipe -> stream copy to final output
+                        filter_cmd = [
+                            "ffmpeg",
+                            "-nostdin",
+                            "-y",
+                            "-i",
+                            str(original_video),
+                            "-vf",
+                            vf,
+                            "-af",
+                            af,
+                            "-f",
+                            "matroska",  # Use MKV for better streaming compatibility
+                            str(pipe_path),
+                        ]
 
-                    copy_cmd = [
-                        "ffmpeg",
-                        "-nostdin",
-                        "-y",
-                        "-fflags",
-                        "nobuffer",
-                        "-i",
-                        str(pipe_path),
-                        "-c",
-                        "copy",  # Stream copy from pipe
-                        "-movflags",
-                        "+faststart",
-                        str(output_video),
-                    ]
+                        copy_cmd = [
+                            "ffmpeg",
+                            "-nostdin",
+                            "-y",
+                            "-fflags",
+                            "nobuffer",
+                            "-i",
+                            str(pipe_path),
+                            "-c",
+                            "copy",  # Stream copy from pipe
+                            "-movflags",
+                            "+faststart",
+                            str(output_video),
+                        ]
 
-                    logger.info("Using named pipe for frame removal streaming (MKV container)")
-                    logger.debug(f"Filter command with -nostdin: {' '.join(filter_cmd)}")
-                    logger.debug(f"Copy command with -nostdin: {' '.join(copy_cmd)}")
+                        logger.info("Using named pipe for frame removal streaming (MKV container)")
+                        logger.debug(f"Filter command with -nostdin: {' '.join(filter_cmd)}")
+                        logger.debug(f"Copy command with -nostdin: {' '.join(copy_cmd)}")
 
-                    # Start filter process in background
-                    filter_proc = subprocess.Popen(filter_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        # Start filter process in background
+                        filter_proc = subprocess.Popen(filter_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-                    # Start copy process (blocks until complete)
-                    subprocess.run(copy_cmd, capture_output=True, text=True, check=True)
+                        # Start copy process (blocks until complete)
+                        subprocess.run(copy_cmd, capture_output=True, text=True, check=True)
 
-                    # Wait for filter to complete
-                    filter_proc.communicate()
+                        # Wait for filter to complete
+                        filter_proc.communicate()
 
-                    logger.debug("Streaming frame removal completed via named pipe")
+                        logger.debug("Streaming frame removal completed via named pipe")
 
-                finally:
-                    # Clean up pipe
-                    if pipe_path.exists():
-                        try:
-                            pipe_path.unlink()
-                            pipe_path.parent.rmdir()
-                        except OSError:
-                            pass
+                    finally:
+                        # Clean up pipe
+                        if pipe_path.exists():
+                            try:
+                                pipe_path.unlink()
+                                pipe_path.parent.rmdir()
+                            except OSError:
+                                pass
 
             else:
                 # Direct processing for larger removals or when pipes unavailable
@@ -795,7 +741,11 @@ class FrameCleaner:
         meta = {}
         if self.use_llm and self.ollama_extractor:
             try:
-                meta = self.ollama_extractor.extract_metadata(text).model_dump()
+                meta_obj = self.ollama_extractor.extract_metadata(text)
+                if meta_obj is not None:
+                    meta = meta_obj.model_dump()
+                else:
+                    meta = {}
             except Exception:
                 meta = {}
         if not meta and self.patient_data_extractor:
@@ -813,7 +763,6 @@ class FrameCleaner:
         endoscope_image_roi: Optional[dict | None],
         endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None] | None]],
         frame_id: int | None = None,
-        extended: bool = False,
         collect_for_batch: bool = False,
     ) -> tuple[bool, dict, str, float]:
         """
@@ -834,7 +783,7 @@ class FrameCleaner:
             meta_unified = self._unified_metadata_extract(ocr_text)
             frame_metadata = self.frame_metadata_extractor.merge_metadata(frame_metadata, meta_unified)
 
-        # Optional: Für Batch-Enrichment sammeln
+        # Für Batch-Enrichment sammeln
         if collect_for_batch and ocr_text:
             self.frame_collection.append(
                 {
@@ -845,9 +794,6 @@ class FrameCleaner:
                 }
             )
 
-        # Optional: BestFrameText für Preview
-        if hasattr(self.best_frame_text, "push"):
-            self.best_frame_text.push(ocr_text, ocr_conf)
 
         return is_sensitive, frame_metadata, ocr_text, ocr_conf
 
@@ -856,7 +802,6 @@ class FrameCleaner:
         frames: list[np.ndarray],
         endoscope_image_roi: dict | None = None,
         endoscope_data_roi_nested: dict | None = None,
-        extended: bool = False,
     ) -> list[tuple[bool, dict, str, float]]:
         """
         Batch-Verarbeitung aller Frames mit optionalem Batch-Enrichment.
@@ -870,12 +815,11 @@ class FrameCleaner:
                 endoscope_image_roi=endoscope_image_roi,
                 endoscope_data_roi_nested=endoscope_data_roi_nested,
                 frame_id=i,
-                extended=extended,
-                collect_for_batch=extended,
+                collect_for_batch=True,
             )
             results.append((is_sensitive, meta, text, conf))
         # Nach Batch: Metadaten-Anreicherung
-        if extended and self.frame_collection:
+        if self.frame_collection:
             batch_meta = self._extract_enriched_metadata_batch()
             if batch_meta:
                 logger.info(f"Merging batch-enriched metadata with accumulated results")
@@ -1100,7 +1044,7 @@ class FrameCleaner:
             pass
 
         # Calculate adaptive skip for sampling
-        skip = math.ceil(total_frames / 50)
+        skip = max(1, math.ceil(total_frames / 50))
         idx = 0
 
         while True:
@@ -1181,6 +1125,9 @@ class FrameCleaner:
         meta: Dict[str, Any] = {}
         # Nur versuchen, wenn LLM aktiviert und verfügbar ist
         if getattr(self, "use_llm", False) and getattr(self, "ollama_extractor", None) is not None:
+            if self.ollama_extractor is None:
+                logger.warning("Ollama extractor not initialized despite use_llm=True")
+                meta={}
             try:
                 meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
                 if meta_obj:
@@ -1190,7 +1137,7 @@ class FrameCleaner:
                 meta = {}
 
         # LLM fehlgeschlagen/leer oder nicht aktiv → spaCy-Extractor fallback
-        if not meta:
+        if meta == {}:
             try:
                 if callable(self.patient_data_extractor):
                     spacy_meta = self.patient_data_extractor(text)
@@ -1207,195 +1154,6 @@ class FrameCleaner:
                 meta = {}
 
         return meta or {}
-
-    def extract_metadata_deepseek(self, text: str) -> Dict[str, Any]:
-        """Extract metadata using the unified extractor (compatibility wrapper)."""
-        return self.extract_metadata(text)
-
-    def _iter_video_adaptive(
-        self,
-        video_path: Path,
-        total_frames: int,
-        max_samples: int = 500,
-        stop_tolerance: float = 0.10,
-        conf_z: float = 1.96,
-        min_samples: int = 30,
-    ) -> Iterator[Tuple[int, np.ndarray, int, bool]]:
-        """
-        Adaptive video sampling with statistical early stopping.
-
-        Yields (abs_idx, gray_frame, stride, should_continue) until we are confident
-        that the sensitive-ratio is either > stop_tolerance or <= stop_tolerance.
-
-        Args:
-            video_path: Path to video file
-            total_frames: Total number of frames in video
-            max_samples: Maximum frames to sample (default 500)
-            stop_tolerance: Decision boundary for sensitive ratio (default 0.10)
-            conf_z: Confidence interval Z-score (default 1.96 for 95%)
-            min_samples: Minimum samples before testing confidence (default 30)
-
-        Yields:
-            Tuple of (frame_index, gray_frame, stride, should_continue)
-        """
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open {video_path}")
-
-        # Uniform stride ensuring ≤ max_samples if we run full pass
-        stride = max(1, math.ceil(total_frames / max_samples))
-
-        tested, hits = 0, 0
-        frame_idx = -1
-
-        try:
-            while True:
-                ok, bgr = cap.read()
-                frame_idx += 1
-                if not ok:
-                    break  # End of stream
-
-                if frame_idx % stride != 0:
-                    continue  # Skip non-sampled frame
-
-                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-                tested += 1
-
-                # Yield frame and receive sensitivity result back
-                is_sensitive = yield frame_idx, gray, stride, True
-
-                if is_sensitive:
-                    hits += 1
-
-                # Early-stop test (Wilson/Wald interval) after minimum samples
-                if tested >= min_samples:
-                    phat = hits / tested
-                    half_w = conf_z * math.sqrt(phat * (1 - phat) / tested)
-                    lo, hi = phat - half_w, phat + half_w
-
-                    if hi < stop_tolerance:
-                        logger.info(f"Early stop: confident that ratio ≤ {stop_tolerance:.1%} (tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
-                        # Yield final frame with should_continue=False
-                        yield frame_idx, gray, stride, False
-                        break
-
-                    if lo > stop_tolerance:
-                        logger.info(f"Early stop: confident that ratio > {stop_tolerance:.1%} (tested={tested}, hits={hits}, CI=[{lo:.3f}, {hi:.3f}])")
-                        # Yield final frame with should_continue=False
-                        yield frame_idx, gray, stride, False
-                        break
-
-                if tested >= max_samples:
-                    logger.info(f"Reached sample budget: {max_samples} frames tested")
-                    break
-
-        finally:
-            cap.release()
-
-    def _sample_frames_coroutine(
-        self,
-        video_path: Path,
-        total_frames: int,
-        max_samples: int = 500,
-        stop_tolerance: float = 0.10,
-    ) -> Tuple[List[int], float, bool]:
-        """
-        Sample frames using statistical adaptive method and return sensitivity analysis.
-
-        Args:
-            video_path: Path to video file
-            total_frames: Total number of frames
-            max_samples: Maximum frames to sample
-            stop_tolerance: Decision boundary (default 0.10)
-
-        Returns:
-            Tuple of (sensitive_frame_indices, estimated_ratio, early_stopped)
-        """
-        sensitive_frame_indices = []  # Fix: renamed for consistency
-        tested_count = 0
-        hits_count = 0
-        early_stopped = False
-
-        # Initialize the adaptive iterator
-        frame_iter = self._iter_video_adaptive(video_path, total_frames, max_samples, stop_tolerance)
-
-        try:
-            # Get first frame
-            frame_idx, gray_frame, stride, should_continue = next(frame_iter)
-
-            while should_continue:
-                tested_count += 1
-
-                # Use MiniCPM-o unified detection if available, otherwise fallback
-                try:
-                    if self.use_minicpm and self.minicpm_ocr is not None:
-                        # Convert numpy array to PIL Image for MiniCPM-o
-                        if len(gray_frame.shape) == 2:  # Grayscale
-                            image = Image.fromarray(gray_frame, mode="L").convert("RGB")
-                        else:  # Color
-                            image = Image.fromarray(gray_frame, mode="RGB")
-
-                        is_sensitive, frame_metadata, ocr_text = self.minicpm_ocr.detect_sensitivity_unified(image, context="endoscopy video frame")
-
-                        logger.debug(f"MiniCPM-o analysis for frame {frame_idx}: sensitive={is_sensitive}")
-
-                    else:
-                        # Fallback to traditional OCR + LLM approach
-                        ocr_text, avg_conf, _ = self.frame_ocr.extract_text_from_frame(
-                            gray_frame,
-                            roi=None,  # Will be passed from caller if available
-                            high_quality=True,
-                        )
-
-                        is_sensitive = False
-                        frame_metadata = {}
-
-                        if ocr_text:
-                            # Feed the 'best text' sampler
-                            self.best_frame_text.push(ocr_text, avg_conf)
-
-                            # Try LLM extraction first (faster for long videos)
-                            frame_metadata = self.extract_metadata_deepseek(ocr_text)
-                            if not frame_metadata:
-                                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
-
-                            # Check if frame contains sensitive content
-                            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
-
-                        logger.debug(f"Traditional OCR analysis for frame {frame_idx}: sensitive={is_sensitive}")
-
-                except Exception as e:
-                    logger.exception(f"Error during sensitivity detection for frame {frame_idx}: {e}")
-                    is_sensitive = False  # Fail-safe: treat as non-sensitive on error
-
-                if is_sensitive:
-                    sensitive_frame_indices.append(frame_idx)
-                    hits_count += 1
-                    logger.info(f"Found sensitive data in frame {frame_idx}")
-                    if len(ocr_text) < len(best_text):
-                        best_text = ocr_text
-                        logger.debug(f"OCR text: {ocr_text}")
-
-                # Send result back to iterator and get next frame
-                try:
-                    frame_idx, gray_frame, stride, should_continue = frame_iter.send(is_sensitive)
-                    if not should_continue:
-                        early_stopped = True
-                        break
-                except StopIteration:
-                    break
-
-        except StopIteration:
-            # Iterator finished normally
-            pass
-
-        # Calculate final ratio
-        estimated_ratio = hits_count / tested_count if tested_count > 0 else 0.0
-        early_stopped = tested_count < max_samples
-
-        logger.info(f"Statistical sampling complete: {hits_count}/{tested_count} = {estimated_ratio:.1%} (early_stopped={early_stopped})")
-
-        return sensitive_frame_indices, estimated_ratio, early_stopped
 
     def _log_hf_cache_info(self) -> None:
         base = Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
@@ -1428,53 +1186,25 @@ class FrameCleaner:
             return {}
 
         logger.info(f"Extracting enriched metadata from {len(self.frame_collection)} collected frames")
+        # Verwende EnrichedMetadataExtractor für Multi-Frame-Analyse
+        if not self.frame_sampling_optimizer:
+            self.frame_sampling_optimizer = FrameSamplingOptimizer()
+        if not self.ollama_extractor:
+            self.ollama_extractor = OllamaOptimizedExtractor()
+        if not self.enriched_extractor:
+            self.enriched_extractor = EnrichedMetadataExtractor(ollama_extractor=self.ollama_extractor, frame_optimizer=self.frame_sampling_optimizer)
+        enriched_metadata = self.enriched_extractor.extract_from_frame_sequence(frames_data=self.frame_collection, ocr_texts=self.ocr_text_collection)
 
-        try:
-            # Verwende EnrichedMetadataExtractor für Multi-Frame-Analyse
-            enriched_metadata = self.enriched_extractor.extract_from_frame_sequence(frames_data=self.frame_collection, ocr_texts=self.ocr_text_collection)
+        logger.info(f"✅ Enriched metadata extraction successful: {len(enriched_metadata)} fields")
 
-            logger.info(f"✅ Enriched metadata extraction successful: {len(enriched_metadata)} fields")
+        return enriched_metadata
 
-            # Zeige gefundene Daten
-            if enriched_metadata.get("patient_name"):
-                logger.info(f"Found patient: {enriched_metadata['patient_name']}")
-            if enriched_metadata.get("patient_age"):
-                logger.info(f"Found age: {enriched_metadata['patient_age']}")
-            if enriched_metadata.get("examination_date"):
-                logger.info(f"Found date: {enriched_metadata['examination_date']}")
-
-            return enriched_metadata
-
-        except Exception as e:
-            logger.error(f"Enriched metadata extraction failed: {e}")
-            logger.debug(f"Frame collection size: {len(self.frame_collection)}")
-            logger.debug(f"OCR text collection size: {len(self.ocr_text_collection)}")
-            return {}
 
     def _reset_frame_collection(self):
         """Setzt die Frame-Sammlung für ein neues Video zurück."""
         self.frame_collection.clear()
         self.ocr_text_collection.clear()
         logger.debug("Frame collection reset for new video")
-
-    def _ocr_with_minicpm(self, gray_frame: np.ndarray) -> tuple[str, float, dict, bool]:
-        """
-        OCR mit MiniCPM LLM-basiertem Modell. Fallback auf TesserOCR bei Fehler.
-        """
-        try:
-            pil_img = Image.fromarray(gray_frame, mode="L").convert("RGB")
-            is_sensitive, frame_metadata, ocr_text = self.minicpm_ocr.detect_sensitivity_unified(pil_img, context="endoscopy video frame")
-            logger.debug(f"MiniCPM extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
-            return ocr_text, 1.0, frame_metadata, is_sensitive
-        except ValueError as ve:
-            logger.error(f"MiniCPM processing failed: {ve}")
-            logger.warning("MiniCPM failed – falling back to TesserOCR")
-            self.use_minicpm = False
-            self.minicpm_ocr = None
-            return self._ocr_with_tesserocr(gray_frame)
-        except Exception as e:
-            logger.exception(f"Unexpected MiniCPM error: {e}")
-            return "", 0.0, {}, False
 
     def _ocr_with_tesserocr(
         self,
@@ -1487,6 +1217,7 @@ class FrameCleaner:
         try:
             logger.debug("Using TesserOCR OCR engine")
             frame_metadata: Dict[str, Any] = {}
+            ocr_text = ""
             if endoscope_data_roi_nested is None:
                 endoscope_data_roi_nested = {}
                 ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=endoscope_data_roi_nested, high_quality=True)
@@ -1498,7 +1229,7 @@ class FrameCleaner:
                     output, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=roi, high_quality=True)
                     # No RegEx filtering here; keep all text for metadata extraction
                     frame_metadata[key] = output
-                    ocr_text = output if not ocr_text else ocr_text + "\n" + output
+                    ocr_text = (ocr_text + "\n" + output) if ocr_text else output
                 has_roi = True
 
             logger.debug(f"TesserOCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
@@ -1506,8 +1237,7 @@ class FrameCleaner:
                 logger.debug("No ROI provided, using regex based metadata extraction")
                 frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text) if ocr_text else {}
             is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
-            if hasattr(self.best_frame_text, "push"):
-                self.best_frame_text.push(ocr_text, ocr_conf)
+
             return ocr_text, ocr_conf, frame_metadata, is_sensitive
         except Exception as e:
             logger.exception(f"TesserOCR OCR failed: {e}")
@@ -1617,11 +1347,10 @@ class FrameCleaner:
         stub = {
             "image_width": 1920,
             "image_height": 1080,
-            "endoscope_image_x": 550,
-            "endoscope_image_y": 0,
-            "endoscope_image_width": 1350,
-            "endoscope_image_height": 1080,
-            "description": f"Mask configuration for {device_name}",
+            "x": 550,
+            "y": 0,
+            "width": 1350,
+            "height": 1080,
         }
 
         try:
@@ -1655,10 +1384,16 @@ class FrameCleaner:
             True if masking succeeded, False otherwise
         """
         try:
-            endoscope_x = mask_config.get("endoscope_image_x")
-            endoscope_y = mask_config.get("endoscope_image_y")
-            endoscope_w = mask_config.get("endoscope_image_width")
-            endoscope_h = mask_config.get("endoscope_image_height")
+            if mask_config == {}:
+                load_mask_config = self._load_mask(device_name="default")
+                mask_config = normalize_roi_keys(load_mask_config)
+                logger.info("Using default mask configuration") 
+            mask_config = normalize_roi_keys(mask_config)
+
+            endoscope_x = mask_config.get("x")
+            endoscope_y = mask_config.get("y")
+            endoscope_w = mask_config.get("width")
+            endoscope_h = mask_config.get("height")
 
             # Check if we can use simple crop (left strip masking)
             if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
@@ -1765,9 +1500,8 @@ class FrameCleaner:
         if not isinstance(roi, dict):
             return False
 
-        required_keys = ["x", "y", "width", "height"]
-        if not all(key in roi for key in required_keys):
-            logger.warning(f"ROI missing required keys. Expected: {required_keys}, got: {list(roi.keys())}")
+        roi = normalize_roi_keys(roi)
+        if not roi:
             return False
 
         # Check for reasonable values (non-negative, not too large)
@@ -1791,3 +1525,23 @@ class FrameCleaner:
         except (TypeError, ValueError) as e:
             logger.warning(f"ROI contains invalid values: {roi}, error: {e}")
             return False
+
+
+    # def _ocr_with_minicpm(self, gray_frame: np.ndarray) -> tuple[str, float, dict, bool]:
+    #     """
+    #     OCR mit MiniCPM LLM-basiertem Modell. Fallback auf TesserOCR bei Fehler.
+    #     """
+    #     try:
+    #         pil_img = Image.fromarray(gray_frame, mode="L").convert("RGB")
+    #         is_sensitive, frame_metadata, ocr_text = self.minicpm_ocr.detect_sensitivity_unified(pil_img, context="endoscopy video frame")
+    #         logger.debug(f"MiniCPM extracted keys: {sorted(frame_metadata.keys()) if isinstance(frame_metadata, dict) else type(frame_metadata).__name__}")
+    #         return ocr_text, 1.0, frame_metadata, is_sensitive
+    #     except ValueError as ve:
+    #         logger.error(f"MiniCPM processing failed: {ve}")
+    #         logger.warning("MiniCPM failed – falling back to TesserOCR")
+    #         self.use_minicpm = False
+    #         self.minicpm_ocr = None
+    #         return self._ocr_with_tesserocr(gray_frame)
+    #     except Exception as e:
+    #         logger.exception(f"Unexpected MiniCPM error: {e}")
+    #         return "", 0.0, {}, False

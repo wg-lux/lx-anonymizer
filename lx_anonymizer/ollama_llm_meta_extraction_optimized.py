@@ -866,10 +866,14 @@ class EnrichedMetadataExtractor:
     def __init__(self, ollama_extractor: OllamaOptimizedExtractor, frame_optimizer: FrameSamplingOptimizer):
         self.ollama_extractor = ollama_extractor
         self.frame_optimizer = frame_optimizer
+        if not self.ollama_extractor:
+            self.ollama_extractor = create_ollama_extractor()
+        if not self.frame_optimizer:
+            self.frame_optimizer = FrameSamplingOptimizer()
         self.frame_context = {}
         self.temporal_metadata = []
 
-    def extract_from_frame_sequence(self, frames_data: List[Dict[str, Any]], ocr_texts: List[str] = None) -> Dict[str, Any]:
+    def extract_from_frame_sequence(self, frames_data: List[Dict[str, Any]], ocr_texts: List[str] = [""]) -> Dict[str, Any]:
         """
         Extrahiert angereicherte Metadaten aus einer Frame-Sequenz.
 

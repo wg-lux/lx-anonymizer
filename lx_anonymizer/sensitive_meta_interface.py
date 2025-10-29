@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 @dataclass
 class SensitiveMeta:
+    file_path: Optional[str] = None
     patient_first_name: Optional[str] = None
     patient_last_name: Optional[str] = None
     patient_dob: Optional[str] = None
