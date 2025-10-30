@@ -11,26 +11,27 @@ Uses specialized frame processing components separated from PDF logic.
 """
 
 import json
-from locale import normalize
 import logging
 import math
 import os
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
+from locale import normalize
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
-from contextlib import contextmanager
 
 import cv2
 import numpy as np
-from PIL import Image
 from numpy.f2py.symbolic import Op
+from PIL import Image
 from spacy.lang import en
-from .utils.roi_normalization import normalize_roi_keys
+
 from .frame_metadata_extractor import FrameMetadataExtractor
 from .masking import MaskApplication
 from .ocr_frame import FrameOCR
+
 # from .ocr_minicpm import (
 #     _can_load_model,
 #     create_minicpm_ocr,
@@ -44,7 +45,9 @@ from .roi_processor import ROIProcessor
 from .sensitive_meta_interface import SensitiveMeta
 from .spacy_extractor import PatientDataExtractor
 from .utils.ollama import ensure_ollama
+from .utils.roi_normalization import normalize_roi_keys
 from .video_encoder import VideoEncoder
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,26 +143,26 @@ class FrameCleaner:
         #     logger.warning("MiniCPM currently not functional; falling back to TesserOCR.")
         #     self.use_minicpm = False
 
-            # try:
-            #     minicpm_config = minicpm_config or {}
-            #     if _can_load_model():
-            #         self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
-            #     else:
-            #         logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
-            #         self.use_minicpm = False
-            #         self.minicpm_ocr = None
+        # try:
+        #     minicpm_config = minicpm_config or {}
+        #     if _can_load_model():
+        #         self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
+        #     else:
+        #         logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
+        #         self.use_minicpm = False
+        #         self.minicpm_ocr = None
 
-            #     logger.info("MiniCPM-o 2.6 initialized successfully")
-            # except Exception as e:
-            #     logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
-            #     self.use_minicpm = False
-            #     self.minicpm_ocr = None
+        #     logger.info("MiniCPM-o 2.6 initialized successfully")
+        # except Exception as e:
+        #     logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
+        #     self.use_minicpm = False
+        #     self.minicpm_ocr = None
 
     def clean_video(
         self,
         video_path: Path,
         endoscope_image_roi: Optional[dict[str, int]],
-        endoscope_data_roi_nested: dict[str, dict[str, int | None] | None],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
         output_path: Optional[Path] = None,
         technique: str = "mask_overlay",
     ) -> tuple[Path, Dict[str, Any]]:
@@ -172,10 +175,10 @@ class FrameCleaner:
             output_path: Optional path for the output cleaned video
             technique: 'remove_frames' or 'mask_overlay'
             extended: Whether to perform extended metadata extraction
-            
+
         Returns:
-            A tuple containing the output video path and a dictionary of sensitive metadata.        
-        
+            A tuple containing the output video path and a dictionary of sensitive metadata.
+
         Refactored version: single code path, fewer duplicated branches. Batch Metadata logic preserves previous output based on confidence.
         """
 
@@ -545,11 +548,9 @@ class FrameCleaner:
             logger.debug(f"Stream copy output: {result.stderr}")
             return output_video.exists() and output_video.stat().st_size > 0
 
-
         except Exception as e:
             logger.error(f"Stream copy error: {e}")
             return False
-
 
     def remove_frames_from_video_streaming(
         self,
@@ -589,7 +590,6 @@ class FrameCleaner:
             if use_named_pipe and len(frames_to_remove) < (total_frames or 1000) * 0.1:
                 # Use named pipe for small frame removal operations
                 with self._named_pipe() as pipe_path:
-
                     try:
                         # Pipeline: filter frames -> pipe -> stream copy to final output
                         filter_cmd = [
@@ -793,7 +793,6 @@ class FrameCleaner:
                     "is_sensitive": is_sensitive,
                 }
             )
-
 
         return is_sensitive, frame_metadata, ocr_text, ocr_conf
 
@@ -1095,6 +1094,12 @@ class FrameCleaner:
                 "center": merged.get("center"),
             }
 
+            # Default center fallback
+            if not data.get("center") or data["center"] in (None, "", "Unknown"):
+                default_center = os.environ.get("DEFAULT_CENTER", "Endoscopy Center")
+                data["center"] = default_center
+                logger.debug(f"No center detected — using default: {default_center}")
+
             new_meta = SensitiveMeta.from_dict(data)
             if new_meta != self.sensitive_meta:
                 self.sensitive_meta = new_meta
@@ -1127,7 +1132,7 @@ class FrameCleaner:
         if getattr(self, "use_llm", False) and getattr(self, "ollama_extractor", None) is not None:
             if self.ollama_extractor is None:
                 logger.warning("Ollama extractor not initialized despite use_llm=True")
-                meta={}
+                meta = {}
             try:
                 meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
                 if meta_obj:
@@ -1199,7 +1204,6 @@ class FrameCleaner:
 
         return enriched_metadata
 
-
     def _reset_frame_collection(self):
         """Setzt die Frame-Sammlung für ein neues Video zurück."""
         self.frame_collection.clear()
@@ -1209,36 +1213,61 @@ class FrameCleaner:
     def _ocr_with_tesserocr(
         self,
         gray_frame: np.ndarray,
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None] | None]],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
     ) -> tuple[str, float, dict, bool]:
         """
         OCR mit TesserOCR und Metadatenextraktion.
+        Handles both dict-based and list-based ROI structures gracefully.
         """
         try:
             logger.debug("Using TesserOCR OCR engine")
             frame_metadata: Dict[str, Any] = {}
             ocr_text = ""
-            if endoscope_data_roi_nested is None:
-                endoscope_data_roi_nested = {}
-                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=endoscope_data_roi_nested, high_quality=True)
+
+            # --- Normalize input ROI structure ---
+            rois: list[dict[str, int]] = []
+
+            if not endoscope_data_roi_nested:
                 has_roi = False
-            else:
-                logger.debug(f"Using endoscope_data_roi_nested: {endoscope_data_roi_nested}")
-                for key, roi in endoscope_data_roi_nested.items():
-                    logger.debug(f"ROI for {key}: {roi}")
-                    output, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=roi, high_quality=True)
-                    # No RegEx filtering here; keep all text for metadata extraction
-                    frame_metadata[key] = output
-                    ocr_text = (ocr_text + "\n" + output) if ocr_text else output
+            elif isinstance(endoscope_data_roi_nested, dict):
+                # Original expected format
+                rois = list(endoscope_data_roi_nested.values())
                 has_roi = True
+            elif isinstance(endoscope_data_roi_nested, list):
+                # Flatten nested lists of dicts
+                for item in endoscope_data_roi_nested:
+                    if isinstance(item, dict):
+                        rois.append(item)
+                    elif isinstance(item, list):
+                        for sub in item:
+                            if isinstance(sub, dict):
+                                rois.append(sub)
+                has_roi = len(rois) > 0
+            else:
+                logger.warning(f"Unexpected ROI type: {type(endoscope_data_roi_nested)}")
+                has_roi = False
+
+            # --- Run OCR ---
+            if not has_roi:
+                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi={}, high_quality=True)
+            else:
+                ocr_conf = 0.0
+                for i, roi in enumerate(rois):
+                    output, conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=roi, high_quality=True)
+                    ocr_text = (ocr_text + "\n" + output) if ocr_text else output
+                    frame_metadata[f"roi_{i}"] = output
+                    ocr_conf = max(ocr_conf, conf)
 
             logger.debug(f"TesserOCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
-            if not has_roi:
-                logger.debug("No ROI provided, using regex based metadata extraction")
-                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text) if ocr_text else {}
-            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
 
+            # --- Metadata Extraction ---
+            if not has_roi:
+                logger.debug("No ROI provided, using regex-based metadata extraction")
+                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text) if ocr_text else {}
+
+            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
             return ocr_text, ocr_conf, frame_metadata, is_sensitive
+
         except Exception as e:
             logger.exception(f"TesserOCR OCR failed: {e}")
             return "", 0.0, {}, False
@@ -1387,7 +1416,7 @@ class FrameCleaner:
             if mask_config == {}:
                 load_mask_config = self._load_mask(device_name="default")
                 mask_config = normalize_roi_keys(load_mask_config)
-                logger.info("Using default mask configuration") 
+                logger.info("Using default mask configuration")
             mask_config = normalize_roi_keys(mask_config)
 
             endoscope_x = mask_config.get("x")
@@ -1525,7 +1554,6 @@ class FrameCleaner:
         except (TypeError, ValueError) as e:
             logger.warning(f"ROI contains invalid values: {roi}, error: {e}")
             return False
-
 
     # def _ocr_with_minicpm(self, gray_frame: np.ndarray) -> tuple[str, float, dict, bool]:
     #     """
