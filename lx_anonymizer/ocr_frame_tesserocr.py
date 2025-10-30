@@ -8,18 +8,19 @@ New: Region-first OCR
 - German-biased decoding; optional anti-gibberish filter
 """
 
+import glob
 import logging
-import cv2
-import numpy as np
 import os
-import tesserocr
-from PIL import Image
-from typing import Dict, Any, Tuple, Optional, List
 import re
 import threading
 import time
-import glob
 import unicodedata
+from typing import Any, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+import tesserocr
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +44,8 @@ class TesseOCRFrameProcessor:
         self.frame_config = {
             "dpi": 400,
             "high_quality_dpi": 600,
-            "min_confidence": 20,
-            "high_quality_min_confidence": 30,
+            "min_confidence": 40,  # Increased from 20 to filter more garbage
+            "high_quality_min_confidence": 50,  # Increased from 30
         }
 
         # Heuristics for text-region detection
@@ -137,18 +138,83 @@ class TesseOCRFrameProcessor:
 
     @staticmethod
     def _is_gibberish(text: str) -> bool:
-        if not text or len(text) < 8:
+        """Enhanced gibberish detection for video OCR with support for structured data"""
+        if not text or len(text) < 3:
             return True
+
+        # Special case: Allow date/time patterns and numeric IDs (common in medical videos)
+        # Examples: "09:53:32", "2024-01-15", "15702/2024", "E 15702/2024809:53:32"
+        import re
+
+        # Time patterns: HH:MM:SS or HH:MM
+        time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
+        # Date patterns: YYYY-MM-DD, DD.MM.YYYY, YYYY/MM/DD
+        date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
+        # Case number patterns: E 12345/2024 or similar
+        case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
+        # Device ID patterns: long numbers with optional separators
+        device_pattern = r"\d{8,}"
+
+        if re.search(time_pattern, text) or re.search(date_pattern, text) or re.search(case_pattern, text) or re.search(device_pattern, text):
+            # Contains structured data patterns - likely valid
+            return False
+
+        # Count alphabetic characters
         alpha = sum(c.isalpha() for c in text)
-        ratio = alpha / max(len(text), 1)
-        nonlatin = len(re.findall(r"[^A-Za-zÄÖÜäöüß0-9\s.,:;/-]", text))
-        return ratio < 0.3 or nonlatin > 0.2 * len(text)
+        alpha_ratio = alpha / max(len(text), 1)
+
+        # Reject if too few alphabetic characters (only for non-structured text)
+        # Relaxed from 0.35 to 0.20 to allow more numeric/mixed content
+        if alpha_ratio < 0.20:
+            return True
+
+        # Count non-standard characters (not in expected charset)
+        expected_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]")
+        nonstandard = sum(1 for c in text if c not in expected_chars)
+
+        # Reject if too many non-standard characters
+        # Relaxed from 0.3 to 0.4 to allow more special characters
+        if nonstandard > 0.4 * len(text):
+            return True
+
+        # Check for reasonable word structure
+        words = text.split()
+        if not words:
+            return True
+
+        # Most words should have vowels (German/English)
+        vowels = set("aeiouäöüAEIOUÄÖÜ")
+        words_with_vowels = sum(1 for word in words if any(c in vowels for c in word) and len(word) > 1)
+
+        # At least 15% of multi-char words should have vowels (relaxed from 30%)
+        multi_char_words = sum(1 for word in words if len(word) > 1)
+        if multi_char_words > 0 and words_with_vowels < 0.15 * multi_char_words:
+            return True
+
+        # Check for excessive repetition (sign of bad OCR)
+        unique_chars = len(set(text.replace(" ", "")))
+        if unique_chars < len(text) * 0.1:  # Less than 10% unique chars
+            return True
+
+        return False
 
     def _choose_psm_for_box(self, w, h):
-        if h < 80:
+        """Choose optimal PSM based on ROI dimensions and expected content"""
+        aspect_ratio = w / max(h, 1)
+
+        # Very wide, short boxes are likely single lines (timestamps, IDs)
+        if h < 50 or aspect_ratio > 8:
             return tesserocr.PSM.SINGLE_LINE
+
+        # Tall narrow boxes might be vertical text or single words
+        elif aspect_ratio < 2 and h < 100:
+            return tesserocr.PSM.SINGLE_WORD
+
+        # Medium boxes are likely single blocks of text
         elif h < 200:
             return tesserocr.PSM.SINGLE_BLOCK
+
+        # Large boxes might have sparse text (device overlays)
         return tesserocr.PSM.SPARSE_TEXT
 
     # ---------------- Preprocessing ----------------
@@ -167,10 +233,44 @@ class TesseOCRFrameProcessor:
             pil_image = pil_image.resize((int(pil_image.width * 2), int(pil_image.height * 2)), Image.Resampling.LANCZOS)
 
         gray = np.array(pil_image.convert("L"))
-        gray = cv2.bilateralFilter(gray, 3, 50, 50)
-        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 5)
-        kernel = np.ones((2, 2), np.uint8)
+
+        # Enhanced preprocessing for video frames
+        # 1. Denoise to remove video compression artifacts
+        denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
+
+        # 2. CLAHE for adaptive contrast enhancement
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        enhanced = clahe.apply(denoised)
+
+        # 3. Sharpen text edges (helps with blurry video text)
+        sharpen_kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        sharpened = cv2.filter2D(enhanced, -1, sharpen_kernel)
+
+        # 4. Detect if we have white-on-black text (common in medical overlays)
+        # Calculate mean brightness to determine if inversion is needed
+        mean_brightness = np.mean(sharpened)
+        is_dark_background = mean_brightness < 127  # More dark pixels than light
+
+        if is_dark_background:
+            # Invert for white-on-black text (makes it black-on-white for Tesseract)
+            logger.debug("Detected dark background, inverting image for OCR")
+            sharpened = cv2.bitwise_not(sharpened)
+
+        # 5. Adaptive thresholding for varying lighting
+        # Use THRESH_BINARY (not INV) since we already inverted if needed
+        binary = cv2.adaptiveThreshold(
+            sharpened,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,  # Changed from THRESH_BINARY_INV
+            blockSize=21,
+            C=8,
+        )
+
+        # 6. Morphological cleaning to connect broken characters
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+
         return binary
 
     # ---------------- Text region detection ----------------
@@ -263,6 +363,12 @@ class TesseOCRFrameProcessor:
                 text = " ".join(text_parts)
                 text = unicodedata.normalize("NFC", text)
                 text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
+
+                # Filter gibberish early
+                if self._is_gibberish(text):
+                    logger.debug(f"Detected gibberish, filtering out: {text[:100]}")
+                    text = ""
+                    conf = 0.0
 
                 # Confidence (from last call). If multiple regions, MeanTextConf reflects last SetImage call.
                 # We approximate by re-measuring on the full image if we produced text from >1 region.

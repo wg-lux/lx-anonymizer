@@ -761,7 +761,7 @@ class FrameCleaner:
         self,
         gray_frame: np.ndarray,
         endoscope_image_roi: Optional[dict | None],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None] | None]],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
         frame_id: int | None = None,
         collect_for_batch: bool = False,
     ) -> tuple[bool, dict, str, float]:
@@ -1216,16 +1216,18 @@ class FrameCleaner:
         endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
     ) -> tuple[str, float, dict, bool]:
         """
-        OCR mit TesserOCR und Metadatenextraktion.
+        OCR with TesserOCR and metadata extraction.
         Handles both dict-based and list-based ROI structures gracefully.
+        Includes enhanced validation to filter gibberish output.
         """
         try:
-            logger.debug("Using TesserOCR OCR engine")
+            logger.debug("Using TesserOCR OCR engine with enhanced validation")
             frame_metadata: Dict[str, Any] = {}
             ocr_text = ""
+            valid_texts = []  # Store only validated text
 
             # --- Normalize input ROI structure ---
-            rois: list[dict[str, int]] = []
+            rois: list[dict[str, int | None]] = []
 
             if not endoscope_data_roi_nested:
                 has_roi = False
@@ -1250,20 +1252,36 @@ class FrameCleaner:
             # --- Run OCR ---
             if not has_roi:
                 ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi={}, high_quality=True)
+
+                # Validate full-frame OCR
+                if self._is_valid_ocr_text(ocr_text):
+                    valid_texts.append(ocr_text)
+                else:
+                    logger.debug(f"Full-frame OCR produced invalid text, filtering: {ocr_text[:100]}")
+                    ocr_text = ""
             else:
                 ocr_conf = 0.0
                 for i, roi in enumerate(rois):
                     output, conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=roi, high_quality=True)
-                    ocr_text = (ocr_text + "\n" + output) if ocr_text else output
-                    frame_metadata[f"roi_{i}"] = output
-                    ocr_conf = max(ocr_conf, conf)
 
-            logger.debug(f"TesserOCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
+                    # Validate each ROI's OCR output
+                    if self._is_valid_ocr_text(output):
+                        valid_texts.append(output)
+                        frame_metadata[f"roi_{i}"] = output
+                        ocr_conf = max(ocr_conf, conf)
+                    else:
+                        logger.debug(f"ROI {i} produced invalid text (filtered): {output[:50]}")
+                        frame_metadata[f"roi_{i}"] = ""
+
+                # Combine only valid texts
+                ocr_text = "\n".join(valid_texts)
+
+            logger.debug(f"TesserOCR extracted {len(valid_texts)} valid text regions, total length: {len(ocr_text)}, conf: {ocr_conf:.3f}")
 
             # --- Metadata Extraction ---
-            if not has_roi:
+            if not has_roi and ocr_text:
                 logger.debug("No ROI provided, using regex-based metadata extraction")
-                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text) if ocr_text else {}
+                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
 
             is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
             return ocr_text, ocr_conf, frame_metadata, is_sensitive
@@ -1271,6 +1289,69 @@ class FrameCleaner:
         except Exception as e:
             logger.exception(f"TesserOCR OCR failed: {e}")
             return "", 0.0, {}, False
+
+    def _is_valid_ocr_text(self, text: str, min_alpha_ratio: float = 0.20, min_length: int = 3) -> bool:
+        """
+        Validate OCR text to filter out gibberish.
+
+        Args:
+            text: OCR extracted text
+            min_alpha_ratio: Minimum ratio of alphabetic characters (default 0.20, relaxed from 0.35)
+            min_length: Minimum text length (default 3)
+
+        Returns:
+            True if text appears valid, False if likely gibberish
+        """
+        if not text or len(text.strip()) < min_length:
+            return False
+
+        # Special case: Allow date/time patterns (have few letters but are valid)
+        # Examples: "09:53:32", "2024-01-15", "15702/2024", "E 15702/2024809:53:32"
+        import re
+
+        # Time patterns: HH:MM:SS or HH:MM
+        time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
+        # Date patterns: YYYY-MM-DD, DD.MM.YYYY, YYYY/MM/DD
+        date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
+        # Case number patterns: E 12345/2024 or similar
+        case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
+        # Device ID patterns: long numbers with optional separators
+        device_pattern = r"\d{8,}"
+
+        if re.search(time_pattern, text) or re.search(date_pattern, text) or re.search(case_pattern, text) or re.search(device_pattern, text):
+            # Contains structured data patterns - likely valid
+            return True
+
+        # Calculate alphabetic character ratio
+        alpha_count = sum(c.isalpha() for c in text)
+        alpha_ratio = alpha_count / len(text)
+
+        # Relaxed from 0.35 to 0.20 to allow more numeric/mixed content
+        if alpha_ratio < min_alpha_ratio:
+            return False
+
+        # Check for excessive special characters
+        expected_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]")
+        nonstandard = sum(1 for c in text if c not in expected_chars)
+
+        # Relaxed from 0.3 to 0.4 to allow more special characters
+        if nonstandard > 0.4 * len(text):
+            return False
+
+        # Check for reasonable word structure
+        words = [w for w in text.split() if len(w) > 1]
+        if not words:
+            return False
+
+        # Most words should have vowels (German/English)
+        vowels = set("aeiouäöüAEIOUÄÖÜ")
+        words_with_vowels = sum(1 for word in words if any(c in vowels for c in word))
+
+        # Relaxed from 0.25 to 0.15 to allow more abbreviations/codes
+        if len(words) > 2 and words_with_vowels < 0.15 * len(words):
+            return False
+
+        return True
 
     def remove_frames_from_video(
         self,
@@ -1415,9 +1496,13 @@ class FrameCleaner:
         try:
             if mask_config == {}:
                 load_mask_config = self._load_mask(device_name="default")
-                mask_config = normalize_roi_keys(load_mask_config)
+                normalized = normalize_roi_keys(load_mask_config)
+                mask_config = normalized if normalized is not None else {}
                 logger.info("Using default mask configuration")
-            mask_config = normalize_roi_keys(mask_config)
+
+            normalized = normalize_roi_keys(mask_config)
+            if normalized is not None:
+                mask_config = normalized
 
             endoscope_x = mask_config.get("x")
             endoscope_y = mask_config.get("y")
@@ -1529,9 +1614,11 @@ class FrameCleaner:
         if not isinstance(roi, dict):
             return False
 
-        roi = normalize_roi_keys(roi)
-        if not roi:
+        normalized = normalize_roi_keys(roi)
+        if not normalized:
             return False
+
+        roi = normalized
 
         # Check for reasonable values (non-negative, not too large)
         try:
