@@ -379,89 +379,85 @@ class ReportReader:
 
         return anonymized_text
 
-    def create_anonymized_pdf(
-        self,
-        pdf_path: str,
-        output_path: Optional[str] = None,
-        report_meta: Optional[Dict[str, Any]] = None
-    ) -> Optional[str]:
+    def create_anonymized_pdf(self, pdf_path: str, output_path: Optional[str] = None, report_meta: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Create an anonymized PDF with sensitive regions blackened out.
-        
+
         Args:
             pdf_path: Path to the original PDF
             output_path: Path for the anonymized PDF (optional, auto-generated if not provided)
             report_meta: Metadata from extraction (optional, will be extracted if not provided)
-            
+
         Returns:
             Path to the anonymized PDF, or None if creation failed
         """
         try:
             if not output_path:
                 output_path = str(Path(pdf_path).with_stem(Path(pdf_path).stem + "_anonymized"))
-            
+
             # Ensure output directory exists
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            
+
             logger.info(f"Creating anonymized PDF: {output_path}")
-            
+
             # Use SensitiveRegionCropper to detect and blacken sensitive regions
             import fitz  # PyMuPDF
-            from .pdf_operations import convert_pdf_to_images
+
             from .ocr import tesseract_full_image_ocr
-            
+            from .pdf_operations import convert_pdf_to_images
+
             # Open the original PDF
             doc = fitz.open(pdf_path)
-            
+
             # Convert PDF to images for analysis
             images = convert_pdf_to_images(pdf_path)
-            
+
             # Process each page
             for page_num, image in enumerate(images):
                 page = doc[page_num]
-                
+
                 # Perform OCR to find sensitive areas
                 full_text, word_boxes = tesseract_full_image_ocr(image)
-                
+
                 # Detect sensitive regions
                 sensitive_regions = self.sensitive_cropper.detect_sensitive_regions(image, word_boxes)
-                
+
                 if sensitive_regions:
                     logger.info(f"Blackening {len(sensitive_regions)} regions on page {page_num + 1}")
-                    
+
                     # Convert pixel coordinates to PDF coordinates
                     page_rect = page.rect
                     page_height = page_rect.height
                     page_width = page_rect.width
-                    
+
                     img_width, img_height = image.size
-                    
+
                     # Scaling factors
                     scale_x = page_width / img_width
                     scale_y = page_height / img_height
-                    
+
                     for x1, y1, x2, y2 in sensitive_regions:
                         # Convert image coordinates to PDF coordinates
                         pdf_x1 = x1 * scale_x
                         pdf_y1 = page_height - (y2 * scale_y)  # Invert Y-axis
                         pdf_x2 = x2 * scale_x
                         pdf_y2 = page_height - (y1 * scale_y)  # Invert Y-axis
-                        
+
                         # Create black rectangle
                         rect = fitz.Rect(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
-                        
+
                         # Add black rectangle to cover sensitive area
                         page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
-                        
+
                         logger.debug(f"Blackened: ({pdf_x1:.1f}, {pdf_y1:.1f}, {pdf_x2:.1f}, {pdf_y2:.1f})")
-            
+
             # Save the anonymized PDF
             doc.save(output_path)
             doc.close()
-            
+
             logger.info(f"Anonymized PDF saved: {output_path}")
             return output_path
-            
+
         except ImportError as e:
             logger.error(f"PyMuPDF not installed. Cannot create anonymized PDF: {e}")
             return None
@@ -478,14 +474,14 @@ class ReportReader:
         use_llm_extractor="deepseek",
         text=None,
         create_anonymized_pdf=False,
-        anonymized_pdf_output_path=None
+        anonymized_pdf_output_path=None,
     ):
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         If the normal pdfplumber extraction fails (or returns very little text), fallback to OCR.
         Optionally, use an ensemble OCR method to improve output quality.
         Optionally, specify an LLM extractor ('deepseek', 'medllama', 'llama3') to use INSTEAD of SpaCy/regex.
-        
+
         Args:
             pdf_path: Path to the PDF file
             image_path: Path to an image file (alternative to PDF)
@@ -495,7 +491,7 @@ class ReportReader:
             text: Pre-extracted text (optional, will extract from PDF/image if not provided)
             create_anonymized_pdf: If True, creates a PDF with sensitive regions blackened out
             anonymized_pdf_output_path: Custom path for the anonymized PDF (auto-generated if not provided)
-            
+
         Returns:
             Tuple: (original_text, anonymized_text, report_meta, anonymized_pdf_path)
                 - original_text: Extracted text from the document
@@ -672,25 +668,21 @@ class ReportReader:
 
         # --- Anonymization ---
         anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
-        
+
         # --- Create Anonymized PDF (if requested) ---
         anonymized_pdf_path = None
         if create_anonymized_pdf and pdf_path:
             try:
                 logger.info("Creating anonymized PDF with blackened sensitive regions...")
-                anonymized_pdf_path = self.create_anonymized_pdf(
-                    pdf_path=pdf_path,
-                    output_path=anonymized_pdf_output_path,
-                    report_meta=report_meta
-                )
+                anonymized_pdf_path = self.create_anonymized_pdf(pdf_path=pdf_path, output_path=anonymized_pdf_output_path, report_meta=report_meta)
                 if anonymized_pdf_path:
-                    report_meta['anonymized_pdf_path'] = anonymized_pdf_path
+                    report_meta["anonymized_pdf_path"] = anonymized_pdf_path
                     logger.info(f"Anonymized PDF created: {anonymized_pdf_path}")
                 else:
                     logger.warning("Failed to create anonymized PDF")
             except Exception as e:
                 logger.error(f"Error creating anonymized PDF: {e}")
-                report_meta['anonymized_pdf_error'] = str(e)
+                report_meta["anonymized_pdf_error"] = str(e)
 
         # Log final outcome
         if ocr_applied:
