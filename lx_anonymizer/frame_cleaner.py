@@ -98,13 +98,24 @@ class FrameCleaner:
             try:
                 # Initialize Ollama for LLM processing
                 self.ollama_proc = ensure_ollama()
+
+                # Try to initialize OllamaOptimizedExtractor
+                # If it fails (no models available), it will raise an exception caught below
                 self.ollama_extractor = OllamaOptimizedExtractor()
-                # Initialize enriched metadata extraction components
-                self.frame_sampling_optimizer = FrameSamplingOptimizer(max_frames=100, skip_similar_threshold=0.85)
-                self.enriched_extractor = EnrichedMetadataExtractor(
-                    ollama_extractor=self.ollama_extractor,
-                    frame_optimizer=self.frame_sampling_optimizer,
-                )
+
+                # Only initialize other components if ollama_extractor succeeded
+                if self.ollama_extractor and self.ollama_extractor.current_model:
+                    # Initialize enriched metadata extraction components
+                    self.frame_sampling_optimizer = FrameSamplingOptimizer(max_frames=100, skip_similar_threshold=0.85)
+                    self.enriched_extractor = EnrichedMetadataExtractor(
+                        ollama_extractor=self.ollama_extractor,
+                        frame_optimizer=self.frame_sampling_optimizer,
+                    )
+                else:
+                    logger.warning("Ollama models not available, disabling LLM features")
+                    self.use_llm = False
+                    self.ollama_extractor = None
+
             except Exception as e:
                 logger.warning(f"Ollama/LLM unavailable, disabling LLM features: {e}")
                 self.use_llm = False
@@ -1130,11 +1141,8 @@ class FrameCleaner:
         meta: Dict[str, Any] = {}
         # Nur versuchen, wenn LLM aktiviert und verfügbar ist
         if getattr(self, "use_llm", False) and getattr(self, "ollama_extractor", None) is not None:
-            if self.ollama_extractor is None:
-                logger.warning("Ollama extractor not initialized despite use_llm=True")
-                meta = {}
             try:
-                meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
+                meta_obj = self.ollama_extractor.extract_metadata(text)  # type: ignore  # Pydantic-Objekt oder None
                 if meta_obj:
                     meta = meta_obj.model_dump()
             except Exception as e:
@@ -1279,9 +1287,12 @@ class FrameCleaner:
             logger.debug(f"TesserOCR extracted {len(valid_texts)} valid text regions, total length: {len(ocr_text)}, conf: {ocr_conf:.3f}")
 
             # --- Metadata Extraction ---
-            if not has_roi and ocr_text:
-                logger.debug("No ROI provided, using regex-based metadata extraction")
-                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+            # Always try to extract metadata from the combined OCR text
+            if ocr_text:
+                logger.debug("Extracting metadata from combined OCR text")
+                extracted_meta = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                # Merge extracted metadata with ROI metadata
+                frame_metadata.update(extracted_meta)
 
             is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
             return ocr_text, ocr_conf, frame_metadata, is_sensitive

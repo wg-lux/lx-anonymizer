@@ -1,7 +1,7 @@
+import shutil
+import socket
 import subprocess
 import time
-import socket
-import shutil
 from subprocess import CalledProcessError, TimeoutExpired
 
 
@@ -35,7 +35,11 @@ def ensure_ollama(timeout: int = 15):
 
     Returns:
         subprocess.Popen Handle, wenn `ollama serve` gestartet wurde, sonst None.
+
+    Raises:
+        RuntimeError: Nur wenn Ollama gestartet werden sollte aber innerhalb des Timeouts nicht erreichbar wurde.
     """
+
     def listening(port: int = 11434) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.2)
@@ -46,7 +50,11 @@ def ensure_ollama(timeout: int = 15):
                 return False
 
     if shutil.which("ollama") is None:
-        raise RuntimeError("ollama CLI not found in PATH")
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning("ollama CLI not found in PATH - LLM features will be disabled")
+        return None
 
     # 1) Schneller Check via `ollama ps`
     if _ollama_ps_ok():
@@ -70,7 +78,11 @@ def ensure_ollama(timeout: int = 15):
             break
         if time.time() - start > timeout:
             proc.terminate()
-            raise RuntimeError("Ollama failed to start within timeout")
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Ollama failed to start within {timeout}s timeout - LLM features will be disabled")
+            return None
         time.sleep(0.3)
 
     return proc  # Handle zurückgeben, damit der Subprozess nicht vorzeitig GC-ed wird
