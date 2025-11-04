@@ -8,14 +8,15 @@ Diese Implementierung basiert auf den Best Practices:
 4. Strukturierte Ausgabe mit JSON Schema Validation
 """
 
+import hashlib
 import json
 import logging
+import time
+from typing import Any, Dict, List, Optional
+
 import requests
-from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_fixed
-import time
-import hashlib
 
 # Konfiguriere Logging
 logger = logging.getLogger(__name__)
@@ -175,7 +176,8 @@ class OllamaOptimizedExtractor:
             self.current_model = fallback_model
             logger.warning(f"Verwende Fallback-Modell: {fallback_model['name']}")
         else:
-            raise RuntimeError("Keine Ollama-Modelle verfügbar!")
+            logger.warning("Keine Ollama-Modelle verfügbar! LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt.")
+            self.current_model = None
 
     def _create_extraction_prompt(self, text: str) -> str:
         """
@@ -334,6 +336,11 @@ JSON:"""
         Returns:
             PatientMetadata Objekt oder None bei Fehler
         """
+        # Early return if no models are available
+        if not self.current_model and not self.available_models:
+            logger.warning("Keine Ollama-Modelle verfügbar. Überspringe LLM-Extraktion.")
+            return None
+
         # Überprüfe zuerst den Cache
         cached_metadata = self.cache.get(text) if self.cache is not None else None
         if cached_metadata:

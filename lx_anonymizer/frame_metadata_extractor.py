@@ -38,6 +38,7 @@ class FrameMetadataExtractor:
             r"Pat[\.:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
             r"Name[:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
             r"([A-Za-zäöüÄÖÜß]{2,})\s*,\s*([A-Za-zäöüÄÖÜß]{2,})",  # Last, First format
+            r"\b([A-Z][a-zäöüß]{2,})\b",  # Capitalized word (standalone name)
         ]
 
         self.dob_patterns = [
@@ -45,7 +46,9 @@ class FrameMetadataExtractor:
             r"geboren[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
             r"Geb\.Dat[\.:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
             r"DOB[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"(\d{1,2}\.\d{1,2}\.\d{2,4})",  # Standalone date
+            r"(\d{10})",  # Compact date format: 10 digits (DDMMYYYYHH or similar) - check first
+            r"(\d{8})",  # Compact date format: DDMMYYYY - check second
+            r"(\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{2,4})",  # Date with separators - check last
         ]
 
         self.case_patterns = [
@@ -53,19 +56,20 @@ class FrameMetadataExtractor:
             r"Case[:\s]*(\d+)",
             r"Fallnummer[:\s]*(\d+)",
             r"ID[:\s]*(\d+)",
+            r"\b([A-Z]\s*\d{2,})\b",  # Pattern like "E 15" or "E15"
         ]
 
         self.date_patterns = [
-            r"Datum[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"Date[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"Untersuchung[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"(\d{1,2}\.\d{1,2}\.\d{2,4})",  # Any date format
+            r"Datum[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
+            r"Date[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
+            r"Untersuchung[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
+            r"(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",  # Any date with flexible separators
         ]
 
         self.time_patterns = [
-            r"Zeit[:\s]*(\d{1,2}:\d{2})",
-            r"Time[:\s]*(\d{1,2}:\d{2})",
-            r"(\d{1,2}:\d{2})",  # Any time format
+            r"Zeit[:\s]*(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
+            r"Time[:\s]*(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
+            r"(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",  # Time with : or . separator
         ]
 
         self.examiner_patterns = [
@@ -181,20 +185,86 @@ class FrameMetadataExtractor:
             return None, None
 
     def _extract_date_of_birth(self, text: str) -> Optional[date]:
-        """Extract date of birth from text."""
+        """
+        Extract date of birth from text with priority ordering:
+        1. Labeled patterns (geb:, geboren:, DOB:) - highest confidence
+        2. Compact formats (8-10 digits) - likely DOB, not exam date
+        3. Dates with separators - lowest priority (could be exam date)
+        """
         try:
-            for pattern in self.dob_patterns:
+            # Priority 1: Try labeled patterns first (geb:, geboren:, etc.)
+            labeled_patterns = self.dob_patterns[:4]
+            for pattern in labeled_patterns:
                 matches = re.findall(pattern, text, re.IGNORECASE)
                 if matches:
                     date_str = matches[0].strip()
                     parsed_date = self._parse_german_date(date_str)
                     if parsed_date:
+                        logger.debug(f"Found labeled DOB: {parsed_date} from '{date_str}'")
                         return parsed_date
+
+            # Priority 2: Try compact formats (10 digits, then 8 digits)
+            compact_patterns = self.dob_patterns[4:6]
+            for pattern in compact_patterns:
+                matches = re.findall(pattern, text)
+                if matches:
+                    date_str = matches[0].strip()
+                    if date_str.isdigit() and 8 <= len(date_str) <= 10:
+                        parsed_date = self._parse_compact_date(date_str)
+                        if parsed_date:
+                            logger.debug(f"Found compact DOB: {parsed_date} from '{date_str}'")
+                            return parsed_date
+
+            # Priority 3: Try dates with separators (last resort)
+            separator_pattern = self.dob_patterns[6]
+            matches = re.findall(separator_pattern, text)
+            if matches:
+                date_str = matches[0].strip()
+                parsed_date = self._parse_german_date(date_str)
+                if parsed_date:
+                    logger.debug(f"Found separator DOB: {parsed_date} from '{date_str}'")
+                    return parsed_date
 
             return None
 
         except Exception as e:
             logger.error(f"DOB extraction failed: {e}")
+            return None
+
+    def _parse_compact_date(self, date_str: str) -> Optional[date]:
+        """
+        Parse compact date formats like DDMMYYYY or DDMM YYYY.
+        Examples: '21031994' -> 21/03/1994, '2170371994' -> 21/03/1994
+        """
+        try:
+            # Remove any spaces or non-digit characters
+            digits = re.sub(r"\D", "", date_str)
+
+            if len(digits) == 8:
+                # DDMMYYYY format
+                day = int(digits[0:2])
+                month = int(digits[2:4])
+                year = int(digits[4:8])
+
+                # Validate
+                if 1 <= day <= 31 and 1 <= month <= 12:
+                    return date(year, month, day)
+
+            elif len(digits) == 10:
+                # Could be DD/MM/YYYY or DDMMYYYYHH (with extra digits)
+                # Try DDMMYYYY first (first 8 digits)
+                day = int(digits[0:2])
+                month = int(digits[2:4])
+                year = int(digits[4:8])
+
+                # Validate
+                if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
+                    return date(year, month, day)
+
+            return None
+
+        except (ValueError, IndexError) as e:
+            logger.debug(f"Compact date parsing failed for '{date_str}': {e}")
             return None
 
     def _extract_case_number(self, text: str) -> Optional[str]:
@@ -203,7 +273,10 @@ class FrameMetadataExtractor:
             for pattern in self.case_patterns:
                 matches = re.findall(pattern, text, re.IGNORECASE)
                 if matches:
-                    return matches[0].strip()
+                    case = matches[0].strip()
+                    # Normalize spacing (e.g., "E 15" or "E15")
+                    case = re.sub(r"\s+", " ", case)
+                    return case
 
             return None
 
@@ -336,22 +409,28 @@ class FrameMetadataExtractor:
     def _parse_german_date(self, date_str: str) -> Optional[date]:
         """Parse German date format (DD.MM.YYYY) to date object."""
         try:
+            # Normalize: remove extra spaces and replace various separators with .
+            normalized = re.sub(r"\s+", "", date_str)  # Remove spaces
+            normalized = normalized.replace("/", ".").replace("-", ".")  # Normalize separators
+
             # Use dateparser with German settings
-            parsed = dateparser.parse(date_str, languages=["de"], settings={"DATE_ORDER": "DMY"})
+            parsed = dateparser.parse(normalized, languages=["de"], settings={"DATE_ORDER": "DMY"})
 
             if parsed:
                 return parsed.date()
 
             # Fallback: try manual parsing for DD.MM.YYYY
-            if re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", date_str):
-                parts = date_str.split(".")
+            if re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", normalized):
+                parts = normalized.split(".")
                 if len(parts) == 3:
                     day, month, year = map(int, parts)
                     # Handle 2-digit years
                     if year < 100:
                         year += 2000 if year < 50 else 1900
 
-                    return date(year, month, day)
+                    # Validate ranges
+                    if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
+                        return date(year, month, day)
 
             return None
 

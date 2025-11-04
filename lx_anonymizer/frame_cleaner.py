@@ -11,26 +11,27 @@ Uses specialized frame processing components separated from PDF logic.
 """
 
 import json
-from locale import normalize
 import logging
 import math
 import os
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
+from locale import normalize
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
-from contextlib import contextmanager
 
 import cv2
 import numpy as np
-from PIL import Image
 from numpy.f2py.symbolic import Op
+from PIL import Image
 from spacy.lang import en
-from .utils.roi_normalization import normalize_roi_keys
+
 from .frame_metadata_extractor import FrameMetadataExtractor
 from .masking import MaskApplication
 from .ocr_frame import FrameOCR
+
 # from .ocr_minicpm import (
 #     _can_load_model,
 #     create_minicpm_ocr,
@@ -44,7 +45,9 @@ from .roi_processor import ROIProcessor
 from .sensitive_meta_interface import SensitiveMeta
 from .spacy_extractor import PatientDataExtractor
 from .utils.ollama import ensure_ollama
+from .utils.roi_normalization import normalize_roi_keys
 from .video_encoder import VideoEncoder
+
 logger = logging.getLogger(__name__)
 
 
@@ -95,13 +98,24 @@ class FrameCleaner:
             try:
                 # Initialize Ollama for LLM processing
                 self.ollama_proc = ensure_ollama()
+
+                # Try to initialize OllamaOptimizedExtractor
+                # If it fails (no models available), it will raise an exception caught below
                 self.ollama_extractor = OllamaOptimizedExtractor()
-                # Initialize enriched metadata extraction components
-                self.frame_sampling_optimizer = FrameSamplingOptimizer(max_frames=100, skip_similar_threshold=0.85)
-                self.enriched_extractor = EnrichedMetadataExtractor(
-                    ollama_extractor=self.ollama_extractor,
-                    frame_optimizer=self.frame_sampling_optimizer,
-                )
+
+                # Only initialize other components if ollama_extractor succeeded
+                if self.ollama_extractor and self.ollama_extractor.current_model:
+                    # Initialize enriched metadata extraction components
+                    self.frame_sampling_optimizer = FrameSamplingOptimizer(max_frames=100, skip_similar_threshold=0.85)
+                    self.enriched_extractor = EnrichedMetadataExtractor(
+                        ollama_extractor=self.ollama_extractor,
+                        frame_optimizer=self.frame_sampling_optimizer,
+                    )
+                else:
+                    logger.warning("Ollama models not available, disabling LLM features")
+                    self.use_llm = False
+                    self.ollama_extractor = None
+
             except Exception as e:
                 logger.warning(f"Ollama/LLM unavailable, disabling LLM features: {e}")
                 self.use_llm = False
@@ -140,26 +154,26 @@ class FrameCleaner:
         #     logger.warning("MiniCPM currently not functional; falling back to TesserOCR.")
         #     self.use_minicpm = False
 
-            # try:
-            #     minicpm_config = minicpm_config or {}
-            #     if _can_load_model():
-            #         self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
-            #     else:
-            #         logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
-            #         self.use_minicpm = False
-            #         self.minicpm_ocr = None
+        # try:
+        #     minicpm_config = minicpm_config or {}
+        #     if _can_load_model():
+        #         self.minicpm_ocr = create_minicpm_ocr(**minicpm_config)
+        #     else:
+        #         logger.warning("Insufficient storage to load MiniCPM-o 2.6 model. Falling back to traditional OCR.")
+        #         self.use_minicpm = False
+        #         self.minicpm_ocr = None
 
-            #     logger.info("MiniCPM-o 2.6 initialized successfully")
-            # except Exception as e:
-            #     logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
-            #     self.use_minicpm = False
-            #     self.minicpm_ocr = None
+        #     logger.info("MiniCPM-o 2.6 initialized successfully")
+        # except Exception as e:
+        #     logger.warning(f"Failed to initialize MiniCPM-o 2.6: {e}. Falling back to traditional OCR.")
+        #     self.use_minicpm = False
+        #     self.minicpm_ocr = None
 
     def clean_video(
         self,
         video_path: Path,
         endoscope_image_roi: Optional[dict[str, int]],
-        endoscope_data_roi_nested: dict[str, dict[str, int | None] | None],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
         output_path: Optional[Path] = None,
         technique: str = "mask_overlay",
     ) -> tuple[Path, Dict[str, Any]]:
@@ -172,10 +186,10 @@ class FrameCleaner:
             output_path: Optional path for the output cleaned video
             technique: 'remove_frames' or 'mask_overlay'
             extended: Whether to perform extended metadata extraction
-            
+
         Returns:
-            A tuple containing the output video path and a dictionary of sensitive metadata.        
-        
+            A tuple containing the output video path and a dictionary of sensitive metadata.
+
         Refactored version: single code path, fewer duplicated branches. Batch Metadata logic preserves previous output based on confidence.
         """
 
@@ -545,11 +559,9 @@ class FrameCleaner:
             logger.debug(f"Stream copy output: {result.stderr}")
             return output_video.exists() and output_video.stat().st_size > 0
 
-
         except Exception as e:
             logger.error(f"Stream copy error: {e}")
             return False
-
 
     def remove_frames_from_video_streaming(
         self,
@@ -589,7 +601,6 @@ class FrameCleaner:
             if use_named_pipe and len(frames_to_remove) < (total_frames or 1000) * 0.1:
                 # Use named pipe for small frame removal operations
                 with self._named_pipe() as pipe_path:
-
                     try:
                         # Pipeline: filter frames -> pipe -> stream copy to final output
                         filter_cmd = [
@@ -761,7 +772,7 @@ class FrameCleaner:
         self,
         gray_frame: np.ndarray,
         endoscope_image_roi: Optional[dict | None],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None] | None]],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
         frame_id: int | None = None,
         collect_for_batch: bool = False,
     ) -> tuple[bool, dict, str, float]:
@@ -793,7 +804,6 @@ class FrameCleaner:
                     "is_sensitive": is_sensitive,
                 }
             )
-
 
         return is_sensitive, frame_metadata, ocr_text, ocr_conf
 
@@ -1095,6 +1105,12 @@ class FrameCleaner:
                 "center": merged.get("center"),
             }
 
+            # Default center fallback
+            if not data.get("center") or data["center"] in (None, "", "Unknown"):
+                default_center = os.environ.get("DEFAULT_CENTER", "Endoscopy Center")
+                data["center"] = default_center
+                logger.debug(f"No center detected — using default: {default_center}")
+
             new_meta = SensitiveMeta.from_dict(data)
             if new_meta != self.sensitive_meta:
                 self.sensitive_meta = new_meta
@@ -1125,11 +1141,8 @@ class FrameCleaner:
         meta: Dict[str, Any] = {}
         # Nur versuchen, wenn LLM aktiviert und verfügbar ist
         if getattr(self, "use_llm", False) and getattr(self, "ollama_extractor", None) is not None:
-            if self.ollama_extractor is None:
-                logger.warning("Ollama extractor not initialized despite use_llm=True")
-                meta={}
             try:
-                meta_obj = self.ollama_extractor.extract_metadata(text)  # Pydantic-Objekt oder None
+                meta_obj = self.ollama_extractor.extract_metadata(text)  # type: ignore  # Pydantic-Objekt oder None
                 if meta_obj:
                     meta = meta_obj.model_dump()
             except Exception as e:
@@ -1199,7 +1212,6 @@ class FrameCleaner:
 
         return enriched_metadata
 
-
     def _reset_frame_collection(self):
         """Setzt die Frame-Sammlung für ein neues Video zurück."""
         self.frame_collection.clear()
@@ -1209,39 +1221,148 @@ class FrameCleaner:
     def _ocr_with_tesserocr(
         self,
         gray_frame: np.ndarray,
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None] | None]],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | list | None],
     ) -> tuple[str, float, dict, bool]:
         """
-        OCR mit TesserOCR und Metadatenextraktion.
+        OCR with TesserOCR and metadata extraction.
+        Handles both dict-based and list-based ROI structures gracefully.
+        Includes enhanced validation to filter gibberish output.
         """
         try:
-            logger.debug("Using TesserOCR OCR engine")
+            logger.debug("Using TesserOCR OCR engine with enhanced validation")
             frame_metadata: Dict[str, Any] = {}
             ocr_text = ""
-            if endoscope_data_roi_nested is None:
-                endoscope_data_roi_nested = {}
-                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=endoscope_data_roi_nested, high_quality=True)
+            valid_texts = []  # Store only validated text
+
+            # --- Normalize input ROI structure ---
+            rois: list[dict[str, int | None]] = []
+
+            if not endoscope_data_roi_nested:
                 has_roi = False
-            else:
-                logger.debug(f"Using endoscope_data_roi_nested: {endoscope_data_roi_nested}")
-                for key, roi in endoscope_data_roi_nested.items():
-                    logger.debug(f"ROI for {key}: {roi}")
-                    output, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=roi, high_quality=True)
-                    # No RegEx filtering here; keep all text for metadata extraction
-                    frame_metadata[key] = output
-                    ocr_text = (ocr_text + "\n" + output) if ocr_text else output
+            elif isinstance(endoscope_data_roi_nested, dict):
+                # Original expected format
+                rois = list(endoscope_data_roi_nested.values())
                 has_roi = True
+            elif isinstance(endoscope_data_roi_nested, list):
+                # Flatten nested lists of dicts
+                for item in endoscope_data_roi_nested:
+                    if isinstance(item, dict):
+                        rois.append(item)
+                    elif isinstance(item, list):
+                        for sub in item:
+                            if isinstance(sub, dict):
+                                rois.append(sub)
+                has_roi = len(rois) > 0
+            else:
+                logger.warning(f"Unexpected ROI type: {type(endoscope_data_roi_nested)}")
+                has_roi = False
 
-            logger.debug(f"TesserOCR extracted text length: {len(ocr_text or '')}, conf: {ocr_conf:.3f}")
+            # --- Run OCR ---
             if not has_roi:
-                logger.debug("No ROI provided, using regex based metadata extraction")
-                frame_metadata = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text) if ocr_text else {}
-            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
+                ocr_text, ocr_conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi={}, high_quality=True)
 
+                # Validate full-frame OCR
+                if self._is_valid_ocr_text(ocr_text):
+                    valid_texts.append(ocr_text)
+                else:
+                    logger.debug(f"Full-frame OCR produced invalid text, filtering: {ocr_text[:100]}")
+                    ocr_text = ""
+            else:
+                ocr_conf = 0.0
+                for i, roi in enumerate(rois):
+                    output, conf, _ = self.frame_ocr.extract_text_from_frame(gray_frame, roi=roi, high_quality=True)
+
+                    # Validate each ROI's OCR output
+                    if self._is_valid_ocr_text(output):
+                        valid_texts.append(output)
+                        frame_metadata[f"roi_{i}"] = output
+                        ocr_conf = max(ocr_conf, conf)
+                    else:
+                        logger.debug(f"ROI {i} produced invalid text (filtered): {output[:50]}")
+                        frame_metadata[f"roi_{i}"] = ""
+
+                # Combine only valid texts
+                ocr_text = "\n".join(valid_texts)
+
+            logger.debug(f"TesserOCR extracted {len(valid_texts)} valid text regions, total length: {len(ocr_text)}, conf: {ocr_conf:.3f}")
+
+            # --- Metadata Extraction ---
+            # Always try to extract metadata from the combined OCR text
+            if ocr_text:
+                logger.debug("Extracting metadata from combined OCR text")
+                extracted_meta = self.frame_metadata_extractor.extract_metadata_from_frame_text(ocr_text)
+                # Merge extracted metadata with ROI metadata
+                frame_metadata.update(extracted_meta)
+
+            is_sensitive = self.frame_metadata_extractor.is_sensitive_content(frame_metadata)
             return ocr_text, ocr_conf, frame_metadata, is_sensitive
+
         except Exception as e:
             logger.exception(f"TesserOCR OCR failed: {e}")
             return "", 0.0, {}, False
+
+    def _is_valid_ocr_text(self, text: str, min_alpha_ratio: float = 0.20, min_length: int = 3) -> bool:
+        """
+        Validate OCR text to filter out gibberish.
+
+        Args:
+            text: OCR extracted text
+            min_alpha_ratio: Minimum ratio of alphabetic characters (default 0.20, relaxed from 0.35)
+            min_length: Minimum text length (default 3)
+
+        Returns:
+            True if text appears valid, False if likely gibberish
+        """
+        if not text or len(text.strip()) < min_length:
+            return False
+
+        # Special case: Allow date/time patterns (have few letters but are valid)
+        # Examples: "09:53:32", "2024-01-15", "15702/2024", "E 15702/2024809:53:32"
+        import re
+
+        # Time patterns: HH:MM:SS or HH:MM
+        time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
+        # Date patterns: YYYY-MM-DD, DD.MM.YYYY, YYYY/MM/DD
+        date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
+        # Case number patterns: E 12345/2024 or similar
+        case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
+        # Device ID patterns: long numbers with optional separators
+        device_pattern = r"\d{8,}"
+
+        if re.search(time_pattern, text) or re.search(date_pattern, text) or re.search(case_pattern, text) or re.search(device_pattern, text):
+            # Contains structured data patterns - likely valid
+            return True
+
+        # Calculate alphabetic character ratio
+        alpha_count = sum(c.isalpha() for c in text)
+        alpha_ratio = alpha_count / len(text)
+
+        # Relaxed from 0.35 to 0.20 to allow more numeric/mixed content
+        if alpha_ratio < min_alpha_ratio:
+            return False
+
+        # Check for excessive special characters
+        expected_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]")
+        nonstandard = sum(1 for c in text if c not in expected_chars)
+
+        # Relaxed from 0.3 to 0.4 to allow more special characters
+        if nonstandard > 0.4 * len(text):
+            return False
+
+        # Check for reasonable word structure
+        words = [w for w in text.split() if len(w) > 1]
+        if not words:
+            return False
+
+        # Most words should have vowels (German/English)
+        vowels = set("aeiouäöüAEIOUÄÖÜ")
+        words_with_vowels = sum(1 for word in words if any(c in vowels for c in word))
+
+        # Relaxed from 0.25 to 0.15 to allow more abbreviations/codes
+        if len(words) > 2 and words_with_vowels < 0.15 * len(words):
+            return False
+
+        return True
 
     def remove_frames_from_video(
         self,
@@ -1386,9 +1507,13 @@ class FrameCleaner:
         try:
             if mask_config == {}:
                 load_mask_config = self._load_mask(device_name="default")
-                mask_config = normalize_roi_keys(load_mask_config)
-                logger.info("Using default mask configuration") 
-            mask_config = normalize_roi_keys(mask_config)
+                normalized = normalize_roi_keys(load_mask_config)
+                mask_config = normalized if normalized is not None else {}
+                logger.info("Using default mask configuration")
+
+            normalized = normalize_roi_keys(mask_config)
+            if normalized is not None:
+                mask_config = normalized
 
             endoscope_x = mask_config.get("x")
             endoscope_y = mask_config.get("y")
@@ -1500,9 +1625,11 @@ class FrameCleaner:
         if not isinstance(roi, dict):
             return False
 
-        roi = normalize_roi_keys(roi)
-        if not roi:
+        normalized = normalize_roi_keys(roi)
+        if not normalized:
             return False
+
+        roi = normalized
 
         # Check for reasonable values (non-negative, not too large)
         try:
@@ -1525,7 +1652,6 @@ class FrameCleaner:
         except (TypeError, ValueError) as e:
             logger.warning(f"ROI contains invalid values: {roi}, error: {e}")
             return False
-
 
     # def _ocr_with_minicpm(self, gray_frame: np.ndarray) -> tuple[str, float, dict, bool]:
     #     """
