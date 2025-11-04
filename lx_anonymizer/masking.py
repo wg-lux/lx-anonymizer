@@ -11,104 +11,138 @@ logger = logging.getLogger(__name__)
 class MaskApplication:
     def __init__(self, preferred_encoder: Dict[str, Any]):
         self.preferred_encoder = preferred_encoder
-        self.video_encoder = VideoEncoder(mask_video_streaming=False, create_mask_config_from_roi=False)
+        self.video_encoder = VideoEncoder(
+            mask_video_streaming=False, create_mask_config_from_roi=False
+        )
         self._build_encoder_cmd = self.video_encoder._build_encoder_cmd
 
-    def mask_video_streaming(self, input_video: Path, mask_config: Dict[str, Any], output_video: Path, use_named_pipe: bool = True) -> bool:
+        # Default mask configuration based on olympus_cv_1500_mask.json
+        self.default_mask_config = {
+            "image_width": 1920,
+            "image_height": 1080,
+            "endoscope_image_x": 550,
+            "endoscope_image_y": 0,
+            "endoscope_image_width": 1350,
+            "endoscope_image_height": 1080,
+        }
+
+    def mask_video_streaming(
+        self,
+        input_video: Path,
+        mask_config: Dict[str, Any],
+        output_video: Path,
+        use_named_pipe: bool = False,
+    ) -> bool:
         """
-        Apply video masking using streaming approach with optional named pipes.
+        Apply video masking using streaming approach to mask sensitive areas while preserving endoscope image.
+
+        Based on olympus_cv_1500_mask.json:
+        - Endoscope image: x=550-1900, y=0-1080 (preserve this area)
+        - Sensitive areas: x=0-550 (mask this area with black)
 
         Args:
             input_video: Path to input video file
             mask_config: Dictionary containing mask coordinates
             output_video: Path for output masked video
-            use_named_pipe: Whether to use named pipes for streaming
+            use_named_pipe: Whether to use named pipes for streaming (currently not implemented)
 
         Returns:
             True if masking succeeded, False otherwise
         """
+        # Named pipe functionality would be implemented here in the future
+        if use_named_pipe:
+            logger.debug("Named pipe functionality requested but not yet implemented")
+
         try:
-            endoscope_x = mask_config.get("endoscope_image_x", 0)
-            endoscope_y = mask_config.get("endoscope_image_y", 0)
-            endoscope_w = mask_config.get("endoscope_image_width", 640)
-            endoscope_h = mask_config.get("endoscope_image_height", 480)
+            # Use default config if not provided or merge with defaults
+            effective_config = self.default_mask_config.copy()
+            effective_config.update(mask_config)
 
-            # Check if we can use simple crop (most efficient)
-            if endoscope_y == 0 and endoscope_h == mask_config.get("image_height", 1080):
-                # Simple crop - use single-pass processing for maximum efficiency
-                crop_filter = f"crop=in_w-{endoscope_x}:in_h:{endoscope_x}:0"
-                encoder_args = self._build_encoder_cmd("balanced")
+            endoscope_x = effective_config.get("endoscope_image_x", 550)
+            endoscope_y = effective_config.get("endoscope_image_y", 0)
+            endoscope_w = effective_config.get("endoscope_image_width", 1350)
+            endoscope_h = effective_config.get("endoscope_image_height", 1080)
+            image_width = effective_config.get("image_width", 1920)
+            image_height = effective_config.get("image_height", 1080)
 
-                cmd = [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-y",
-                    "-i",
-                    str(input_video),
-                    "-vf",
-                    crop_filter,
-                    *encoder_args,
-                    "-c:a",
-                    "copy",
-                    "-movflags",
-                    "+faststart",
-                    str(output_video),
-                ]
+            # Always use drawbox filters to mask sensitive areas (not crop)
+            mask_filters = []
 
-                logger.info(f"Direct crop masking (single pass) using {self.preferred_encoder['type']}: {crop_filter}")
-                logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
+            # Mask left side (sensitive area) if endoscope doesn't start at x=0
+            if endoscope_x > 0:
+                mask_filters.append(
+                    f"drawbox=0:0:{endoscope_x}:{image_height}:color=black@1:t=fill"
+                )
+                logger.debug(
+                    "Masking left side sensitive area: x=0 to x=%d", endoscope_x
+                )
 
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                logger.debug(f"Direct masking output: {result.stderr}")
+            # Mask right side if endoscope doesn't extend to full width
+            right_start = endoscope_x + endoscope_w
+            if right_start < image_width:
+                right_width = image_width - right_start
+                mask_filters.append(
+                    f"drawbox={right_start}:0:{right_width}:{image_height}:color=black@1:t=fill"
+                )
+                logger.debug(
+                    "Masking right side area: x=%d to x=%d", right_start, image_width
+                )
 
-            else:
-                # Complex masking - use drawbox filters
-                mask_filters = []
+            # Mask top area if endoscope doesn't start at y=0
+            if endoscope_y > 0:
+                mask_filters.append(
+                    f"drawbox={endoscope_x}:0:{endoscope_w}:{endoscope_y}:color=black@1:t=fill"
+                )
+                logger.debug("Masking top area: y=0 to y=%d", endoscope_y)
 
-                # Build mask rectangles (same logic as before)
-                if endoscope_x > 0:
-                    mask_filters.append(f"drawbox=0:0:{endoscope_x}:{mask_config.get('image_height', 1080)}:color=black@1:t=fill")
+            # Mask bottom area if endoscope doesn't extend to full height
+            bottom_start = endoscope_y + endoscope_h
+            if bottom_start < image_height:
+                bottom_height = image_height - bottom_start
+                mask_filters.append(
+                    f"drawbox={endoscope_x}:{bottom_start}:{endoscope_w}:{bottom_height}:color=black@1:t=fill"
+                )
+                logger.debug(
+                    "Masking bottom area: y=%d to y=%d", bottom_start, image_height
+                )
 
-                right_start = endoscope_x + endoscope_w
-                image_width = mask_config.get("image_width", 1920)
-                if right_start < image_width:
-                    right_width = image_width - right_start
-                    mask_filters.append(f"drawbox={right_start}:0:{right_width}:{mask_config.get('image_height', 1080)}:color=black@1:t=fill")
+            if not mask_filters:
+                logger.warning("No masking needed - endoscope covers entire frame")
+                # Just copy the video without changes
+                import shutil
 
-                if endoscope_y > 0:
-                    mask_filters.append(f"drawbox={endoscope_x}:0:{endoscope_w}:{endoscope_y}:color=black@1:t=fill")
+                shutil.copy2(input_video, output_video)
+                return True
 
-                bottom_start = endoscope_y + endoscope_h
-                image_height = mask_config.get("image_height", 1080)
-                if bottom_start < image_height:
-                    bottom_height = image_height - bottom_start
-                    mask_filters.append(f"drawbox={endoscope_x}:{bottom_start}:{endoscope_w}:{bottom_height}:color=black@1:t=fill")
+            vf = ",".join(mask_filters)
+            encoder_args = self._build_encoder_cmd("balanced")
 
-                vf = ",".join(mask_filters)
+            cmd = [
+                "ffmpeg",
+                "-nostdin",
+                "-y",
+                "-i",
+                str(input_video),
+                "-vf",
+                vf,
+                *encoder_args,
+                "-c:a",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(output_video),
+            ]
 
-                # Use hardware-optimized encoding for complex masks
-                encoder_args = self._build_encoder_cmd("fast")
-                cmd = [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-y",
-                    "-i",
-                    str(input_video),
-                    "-vf",
-                    vf,
-                    *encoder_args,  # Use hardware-optimized encoder
-                    "-c:a",
-                    "copy",  # Always copy audio
-                    "-movflags",
-                    "+faststart",
-                    str(output_video),
-                ]
+            logger.info(
+                "Masking sensitive areas with %d regions, preserving endoscope image at x=%d-y=%d",
+                len(mask_filters),
+                endoscope_x,
+                endoscope_y,
+            )
+            logger.debug("FFmpeg command: %s", " ".join(cmd))
 
-                logger.info(f"Complex mask processing with {len(mask_filters)} regions using {self.preferred_encoder['type']}")
-                logger.debug(f"FFmpeg command: {' '.join(cmd)}")
-
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-                logger.debug(f"Complex masking output: {result.stderr}")
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            logger.debug("Masking output: %s", result.stderr)
 
             # Verify output
             if output_video.exists() and output_video.stat().st_size > 0:
@@ -118,22 +152,31 @@ class MaskApplication:
                 size_ratio = output_size / input_size if input_size > 0 else 0
 
                 if size_ratio < 0.1:  # Output suspiciously small
-                    logger.warning(f"Output video much smaller than input ({size_ratio:.1%})")
+                    logger.warning(
+                        "Output video much smaller than input (%.1f%%)",
+                        size_ratio * 100,
+                    )
 
-                logger.info(f"Successfully created masked video: {output_video} (size ratio: {size_ratio:.1%})")
+                logger.info(
+                    "Successfully created masked video: %s (size ratio: %.1f%%)",
+                    output_video,
+                    size_ratio * 100,
+                )
                 return True
             else:
                 logger.error("Masked video is empty or missing")
                 return False
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Streaming mask failed: {e.stderr}")
+            logger.error("Streaming mask failed: %s", e.stderr)
             return False
-        except Exception as e:
-            logger.error(f"Streaming mask error: {e}")
+        except (OSError, IOError) as e:
+            logger.error("File operation failed during masking: %s", e)
             return False
 
-    def create_mask_config_from_roi(self, endoscope_image_roi: dict[str, int]) -> Dict[str, Any]:
+    def create_mask_config_from_roi(
+        self, endoscope_image_roi: dict[str, int]
+    ) -> Dict[str, Any]:
         """
         Create mask config dictionary from ROI.
         Args:
