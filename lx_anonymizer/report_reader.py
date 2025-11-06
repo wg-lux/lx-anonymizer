@@ -16,14 +16,18 @@ from PIL import Image
 
 from .custom_logger import logger
 from .name_fallback import extract_patient_info_from_text
-from .ocr import tesseract_full_image_ocr  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
+from .ocr import \
+    tesseract_full_image_ocr  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from .ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
-from .ocr_preprocessing import optimize_image_for_medical_text, preprocess_image
+from .ocr_preprocessing import (optimize_image_for_medical_text,
+                                preprocess_image)
 from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
 from .pdf_operations import convert_pdf_to_images
-from .sensitive_region_cropper import SensitiveRegionCropper  # Import the new cropper
+from .sensitive_region_cropper import \
+    SensitiveRegionCropper  # Import the new cropper
 from .settings import DEFAULT_SETTINGS
-from .spacy_extractor import EndoscopeDataExtractor, ExaminationDataExtractor, ExaminerDataExtractor, PatientDataExtractor
+from .spacy_extractor import (EndoscopeDataExtractor, ExaminationDataExtractor,
+                              ExaminerDataExtractor, PatientDataExtractor)
 from .text_anonymizer import anonymize_text
 from .utils.ollama import ensure_ollama
 
@@ -382,6 +386,9 @@ class ReportReader:
     def create_anonymized_pdf(self, pdf_path: str, output_path: Optional[str] = None, report_meta: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Create an anonymized PDF with sensitive regions blackened out.
+        
+        Uses EAST text detection for fast region identification and TesseOCR for 
+        accurate text recognition and sensitivity classification.
 
         Args:
             pdf_path: Path to the original PDF
@@ -398,12 +405,13 @@ class ReportReader:
             # Ensure output directory exists
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-            logger.info(f"Creating anonymized PDF: {output_path}")
+            logger.info(f"Creating anonymized PDF with EAST + TesseOCR: {output_path}")
 
-            # Use SensitiveRegionCropper to detect and blacken sensitive regions
+            # Import required modules
             import fitz  # PyMuPDF
 
-            from .ocr import tesseract_full_image_ocr
+            from .east_text_detection import east_text_detection
+            from .ocr_tesserocr import tesseract_on_boxes_fast
             from .pdf_operations import convert_pdf_to_images
 
             # Open the original PDF
@@ -416,40 +424,86 @@ class ReportReader:
             for page_num, image in enumerate(images):
                 page = doc[page_num]
 
-                # Perform OCR to find sensitive areas
-                full_text, word_boxes = tesseract_full_image_ocr(image)
+                # Save temporary image for EAST detection
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+                    temp_image_path = tmp_file.name
+                    image.save(temp_image_path)
 
-                # Detect sensitive regions
-                sensitive_regions = self.sensitive_cropper.detect_sensitive_regions(image, word_boxes)
+                try:
+                    # Step 1: Use EAST for fast text region detection
+                    logger.debug(f"Running EAST text detection on page {page_num + 1}")
+                    text_boxes, confidences_json = east_text_detection(
+                        temp_image_path,
+                        min_confidence=0.5,
+                        width=640,  # Higher resolution for better detection
+                        height=640
+                    )
 
-                if sensitive_regions:
-                    logger.info(f"Blackening {len(sensitive_regions)} regions on page {page_num + 1}")
+                    if not text_boxes:
+                        logger.info(f"No text regions detected on page {page_num + 1}")
+                        continue
 
-                    # Convert pixel coordinates to PDF coordinates
-                    page_rect = page.rect
-                    page_height = page_rect.height
-                    page_width = page_rect.width
+                    logger.info(f"EAST detected {len(text_boxes)} text regions on page {page_num + 1}")
 
-                    img_width, img_height = image.size
+                    # Step 2: Use TesseOCR for fast and accurate text extraction
+                    logger.debug(f"Running TesseOCR on {len(text_boxes)} boxes")
+                    text_with_boxes, ocr_confidences = tesseract_on_boxes_fast(
+                        image,  # Use PIL image directly
+                        text_boxes,
+                        language="deu+eng"
+                    )
 
-                    # Scaling factors
-                    scale_x = page_width / img_width
-                    scale_y = page_height / img_height
+                    # Step 3: Detect sensitive regions based on OCR results
+                    sensitive_regions = self.sensitive_cropper.detect_sensitive_regions(
+                        image, 
+                        text_with_boxes
+                    )
 
-                    for x1, y1, x2, y2 in sensitive_regions:
-                        # Convert image coordinates to PDF coordinates
-                        pdf_x1 = x1 * scale_x
-                        pdf_y1 = page_height - (y2 * scale_y)  # Invert Y-axis
-                        pdf_x2 = x2 * scale_x
-                        pdf_y2 = page_height - (y1 * scale_y)  # Invert Y-axis
+                    if sensitive_regions:
+                        logger.info(f"Blackening {len(sensitive_regions)} sensitive regions on page {page_num + 1}")
 
-                        # Create black rectangle
-                        rect = fitz.Rect(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
+                        # Convert pixel coordinates to PDF coordinates
+                        page_rect = page.rect
+                        page_height = page_rect.height
+                        page_width = page_rect.width
 
-                        # Add black rectangle to cover sensitive area
-                        page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
+                        img_width, img_height = image.size
 
-                        logger.debug(f"Blackened: ({pdf_x1:.1f}, {pdf_y1:.1f}, {pdf_x2:.1f}, {pdf_y2:.1f})")
+                        # Scaling factors
+                        scale_x = page_width / img_width
+                        scale_y = page_height / img_height
+
+                        for x1, y1, x2, y2 in sensitive_regions:
+                            # Convert image coordinates to PDF coordinates
+                            pdf_x1 = x1 * scale_x
+                            pdf_y1 = page_height - (y2 * scale_y)  # Invert Y-axis
+                            pdf_x2 = x2 * scale_x
+                            pdf_y2 = page_height - (y1 * scale_y)  # Invert Y-axis
+
+                            # Create black rectangle with slight padding for better coverage
+                            padding = 2  # PDF points
+                            rect = fitz.Rect(
+                                pdf_x1 - padding, 
+                                pdf_y1 - padding, 
+                                pdf_x2 + padding, 
+                                pdf_y2 + padding
+                            )
+
+                            # Add black rectangle to cover sensitive area
+                            page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
+
+                            logger.debug(f"Blackened: ({pdf_x1:.1f}, {pdf_y1:.1f}, {pdf_x2:.1f}, {pdf_y2:.1f})")
+                    else:
+                        logger.info(f"No sensitive regions detected on page {page_num + 1}")
+
+                finally:
+                    # Clean up temporary file
+                    import os
+                    try:
+                        os.unlink(temp_image_path)
+                    except Exception:
+                        pass
 
             # Save the anonymized PDF
             doc.save(output_path)
@@ -459,10 +513,10 @@ class ReportReader:
             return output_path
 
         except ImportError as e:
-            logger.error(f"PyMuPDF not installed. Cannot create anonymized PDF: {e}")
+            logger.error(f"Required module not installed. Cannot create anonymized PDF: {e}")
             return None
         except Exception as e:
-            logger.error(f"Error creating anonymized PDF: {e}")
+            logger.error(f"Error creating anonymized PDF: {e}", exc_info=True)
             return None
 
     def process_report(
@@ -610,7 +664,8 @@ class ReportReader:
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:
                         # Use the existing ollama_service for correction
-                        from .ollama_service import ollama_service  # Import locally if needed
+                        from .ollama_service import \
+                            ollama_service  # Import locally if needed
 
                         # Ensure the desired correction model is set up if different from extraction
                         # ollama_service.setup_ollama("deepseek-r1:1.5b") # Or another model
@@ -833,6 +888,16 @@ class ReportReader:
 
             image = images[page_num]
             full_text, word_boxes = tesseract_full_image_ocr(image)
+
+            vis_filename = f"{pdf_name}_page_{page_num + 1}_analysis.png"
+            vis_path = output_dir / vis_filename
+
+            self.sensitive_cropper.visualize_sensitive_regions(image, word_boxes, str(vis_path))
+
+            visualization_files.append(str(vis_path))
+            logger.info(f"Visualisierung erstellt: {vis_filename}")
+
+        return visualization_files
 
             vis_filename = f"{pdf_name}_page_{page_num + 1}_analysis.png"
             vis_path = output_dir / vis_filename
