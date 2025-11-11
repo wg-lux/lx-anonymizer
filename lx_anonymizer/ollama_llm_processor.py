@@ -432,7 +432,7 @@ def analyze_full_image_with_ollama(image_path: Path, csv_path: Optional[Path] = 
         context_data = {}
         if csv_path and csv_path.exists():
             try:
-                with open(csv_path, 'r', encoding='utf-8') as f:
+                with open(str(csv_path), 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
                     context_data['ocr_results'] = list(reader)
             except Exception as e:
@@ -457,7 +457,7 @@ def analyze_full_image_with_ollama(image_path: Path, csv_path: Optional[Path] = 
             
             analysis_csv_path = csv_dir / f"ollama_analysis_{image_path.stem}_{uuid.uuid4().hex[:8]}.csv"
             
-            with open(analysis_csv_path, 'w', newline='', encoding='utf-8') as f:
+            with open(str(analysis_csv_path), 'w', newline='', encoding='utf-8') as f:
                 if name_entries:
                     fieldnames = name_entries[0].keys()
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -552,7 +552,7 @@ def analyze_text_with_ollama(text: str, csv_path: Optional[Path] = None,
         context = ""
         if csv_path and csv_path.exists():
             try:
-                with open(csv_path, 'r', encoding='utf-8') as f:
+                with open(str(csv_path), 'r', encoding='utf-8') as f:
                     context = f"OCR results context: {f.read()}"
             except Exception as e:
                 logger.warning(f"Could not load CSV context: {e}")

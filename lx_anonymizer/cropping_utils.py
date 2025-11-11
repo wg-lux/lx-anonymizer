@@ -183,7 +183,7 @@ class BatchCropper:
             meta_file = pdf_output_dir / f"{pdf_path.stem}_metadata.json"
             pdf_output_dir.mkdir(parents=True, exist_ok=True)
             
-            with open(meta_file, 'w', encoding='utf-8') as f:
+            with open(str(meta_file), 'w', encoding='utf-8') as f:
                 json.dump(result, f, indent=2, ensure_ascii=False, default=str)
             
             return result
@@ -209,7 +209,7 @@ class BatchCropper:
         """
         report_path = self.output_base_dir / "batch_cropping_report.json"
         
-        with open(report_path, 'w', encoding='utf-8') as f:
+        with open(str(report_path), 'w', encoding='utf-8') as f:
             json.dump(batch_result, f, indent=2, ensure_ascii=False, default=str)
         
         # Erstelle auch einen Human-Readable Report
@@ -225,7 +225,7 @@ class BatchCropper:
         """
         stats = batch_result['stats']
         
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(str(output_path), 'w', encoding='utf-8') as f:
             f.write("=== BATCH CROPPING REPORT ===\n\n")
             f.write(f"Verarbeitungsdatum: {batch_result['processing_date']}\n")
             f.write(f"Eingabeverzeichnis: {batch_result['input_directory']}\n")
@@ -298,7 +298,7 @@ def create_cropping_config(output_file: str = "cropping_config.json") -> str:
         }
     }
     
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open(str(output_file), 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
     
     logger.info(f"Konfigurationsdatei erstellt: {output_file}")
@@ -336,7 +336,7 @@ def validate_cropping_results(output_dir: str) -> Dict[str, Any]:
     # Validiere Metadaten-Dateien
     for meta_file in metadata_files:
         try:
-            with open(meta_file, 'r', encoding='utf-8') as f:
+            with open(str(meta_file), 'r', encoding='utf-8') as f:
                 meta_data = json.load(f)
                 
             # Prüfe ob die referenzierten Crop-Bilder existieren
@@ -355,7 +355,7 @@ def validate_cropping_results(output_dir: str) -> Dict[str, Any]:
     referenced_crops = set()
     for meta_file in metadata_files:
         try:
-            with open(meta_file, 'r', encoding='utf-8') as f:
+            with open(str(meta_file), 'r', encoding='utf-8') as f:
                 meta_data = json.load(f)
             if 'cropped_regions' in meta_data:
                 for crop_files in meta_data['cropped_regions'].values():

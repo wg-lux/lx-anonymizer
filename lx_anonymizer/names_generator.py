@@ -30,7 +30,7 @@ male_last_names_file = Path(names_dict_dir) / "last_names_male_ascii.txt"
 
 # Load names from files
 def load_names(file_path):
-    with open(file_path, "r") as file:
+    with open(str(file_path), "r") as file:
         return [line.strip() for line in file]
 
 
@@ -49,28 +49,28 @@ def get_random_full_name(name) -> str:
     gender_guess = d.get_gender(name)
     if gender_guess in ["male", "mostly_male"]:
         logger.info("Male gender")
-        with open(male_first_names_file, "r") as file:
+        with open(str(male_first_names_file), "r") as file:
             index = getindex(file)
             male_first_name = male_first_names[index]
-        with open(male_last_names_file, "r") as file:
+        with open(str(male_last_names_file), "r") as file:
             index = getindex(file)
             male_last_name = male_last_names[index]
         name = f"{male_first_name} {male_last_name}"
     elif gender_guess in ["female", "mostly_female"]:
         logger.info("Female gender")
-        with open(female_first_names_file, "r") as file:
+        with open(str(female_first_names_file), "r") as file:
             index = getindex(file)
             female_first_name = female_first_names[index]
-        with open(female_last_names_file, "r") as file:
+        with open(str(female_last_names_file), "r") as file:
             index = getindex(file)
             female_last_name = female_last_names[index]
         name = f"{female_first_name} {female_last_name}"
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
-        with open(neutral_first_names_file, "r") as file:
+        with open(str(neutral_first_names_file), "r") as file:
             index = getindex(file)
             neutral_first_name = neutral_first_names[index]
-        with open(neutral_last_names_file, "r") as file:
+        with open(str(neutral_last_names_file), "r") as file:
             index = getindex(file)
             neutral_last_name = neutral_last_names[index]
         name = f"{neutral_first_name} {neutral_last_name}"
@@ -82,28 +82,28 @@ def person_meta(name) -> Tuple[str, str, Tuple[int, int, int], str]:  # Correcte
     gender_guess = d.get_gender(name)
     if gender_guess in ["male", "mostly_male"]:
         logger.info("Male gender")
-        with open(male_first_names_file, "r") as file:
+        with open(str(male_first_names_file), "r") as file:
             index = getindex(file)
             first_name = male_first_names[index]
-        with open(male_last_names_file, "r") as file:
+        with open(str(male_last_names_file), "r") as file:
             index = getindex(file)
             last_name = male_last_names[index]
         gender_label = "Männlich"
     elif gender_guess in ["female", "mostly_female"]:
         logger.info("Female gender")
-        with open(female_first_names_file, "r") as file:
+        with open(str(female_first_names_file), "r") as file:
             index = getindex(file)
             first_name = female_first_names[index]
-        with open(female_last_names_file, "r") as file:
+        with open(str(female_last_names_file), "r") as file:
             index = getindex(file)
             last_name = female_last_names[index]
         gender_label = "Weiblich"
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
-        with open(neutral_first_names_file, "r") as file:
+        with open(str(neutral_first_names_file), "r") as file:
             index = getindex(file)
             first_name = neutral_first_names[index]
-        with open(neutral_last_names_file, "r") as file:
+        with open(str(neutral_last_names_file), "r") as file:
             index = getindex(file)
             last_name = neutral_last_names[index]
         gender_label = "Neutral"
@@ -153,30 +153,30 @@ def gender_and_handle_separate_names(words, first_name_box, last_name_box, image
 
     if gender_guess in ["male", "mostly_male"]:
         logger.info("Male gender")
-        with open(male_first_names_file, "r") as file:
+        with open(str(male_first_names_file), "r") as file:
             index = getindex(file)
             male_first_name = male_first_names[index]
-        with open(male_last_names_file, "r") as file:
+        with open(str(male_last_names_file), "r") as file:
             index = getindex(file)
             male_last_name = male_last_names[index]
         name = f"{male_first_name} {male_last_name}"
         output_image_path = add_name_to_image(male_first_name, male_last_name, "male", first_name_box, last_name_box, device)
     elif gender_guess in ["female", "mostly_female"]:
         logger.info("Female gender")
-        with open(female_first_names_file, "r") as file:
+        with open(str(female_first_names_file), "r") as file:
             index = getindex(file)
             female_first_name = female_first_names[index]
-        with open(female_last_names_file, "r") as file:
+        with open(str(female_last_names_file), "r") as file:
             index = getindex(file)
             female_last_name = female_last_names[index]
         name = f"{female_first_name} {female_last_name}"
         output_image_path = add_name_to_image(female_first_name, female_last_name, "female", first_name_box, last_name_box, device)
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
-        with open(neutral_first_names_file, "r") as file:
+        with open(str(neutral_first_names_file), "r") as file:
             index = getindex(file)
             neutral_first_name = neutral_first_names[index]
-        with open(neutral_last_names_file, "r") as file:
+        with open(str(neutral_last_names_file), "r") as file:
             index = getindex(file)
             neutral_last_name = neutral_last_names[index]
         name = f"{neutral_first_name} {neutral_last_name}"
@@ -202,30 +202,30 @@ def gender_and_handle_device_names(words, box, image_path, device="olympus_cv_15
 
     if gender_guess in ["male", "mostly_male"]:
         logger.info("Male gender")
-        with open(male_first_names_file, "r") as file:
+        with open(str(male_first_names_file), "r") as file:
             index = getindex(file)
             male_first_name = male_first_names[index]
-        with open(male_last_names_file, "r") as file:
+        with open(str(male_last_names_file), "r") as file:
             index = getindex(file)
             male_last_name = male_last_names[index]
         name = f"{male_first_name} {male_last_name}"
         output_image_path = add_device_name_to_image(name, "male", device)
     elif gender_guess in ["female", "mostly_female"]:
         logger.info("Female gender")
-        with open(female_first_names_file, "r") as file:
+        with open(str(female_first_names_file), "r") as file:
             index = getindex(file)
             female_first_name = female_first_names[index]
-        with open(female_last_names_file, "r") as file:
+        with open(str(female_last_names_file), "r") as file:
             index = getindex(file)
             female_last_name = female_last_names[index]
         name = f"{female_first_name} {female_last_name}"
         output_image_path = add_device_name_to_image(name, "female", device)
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
-        with open(neutral_first_names_file, "r") as file:
+        with open(str(neutral_first_names_file), "r") as file:
             index = getindex(file)
             neutral_first_name = neutral_first_names[index]
-        with open(neutral_last_names_file, "r") as file:
+        with open(str(neutral_last_names_file), "r") as file:
             index = getindex(file)
             neutral_last_name = neutral_last_names[index]
         name = f"{neutral_first_name} {neutral_last_name}"

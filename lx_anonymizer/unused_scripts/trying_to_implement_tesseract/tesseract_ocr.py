@@ -120,7 +120,7 @@ def convert_pdf_to_images(pdf_data):
 
     images = []
 
-    with open(pdf_data, 'rb') as file:
+    with open(str(pdf_data), 'rb') as file:
         reader = pypdf.PdfReader(file)
         num_pages = len(reader.pages)
 
@@ -173,7 +173,7 @@ def process_files(file_path):
     print("Processing file:", file_path)
 
 
-    with open(file_path, 'rb') as file:
+    with open(str(file_path), 'rb') as file:
         filename = file_path
         file_extension = filename.split('.')[-1].lower()
 

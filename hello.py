@@ -19,7 +19,7 @@ def write_message(message=None):
 
     # Create a file with the current date and time
     file_name = f"logs/{date_time}.txt"
-    with open(file_name, "w") as file:
+    with open(str(file_name), "w") as file:
         file.write(message)
 
     return file_name

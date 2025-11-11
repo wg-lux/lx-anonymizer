@@ -47,6 +47,7 @@ dependencies = [
   "django>=5.2.7",
   "pip>=25.2",
   "flair>=0.15.1",
+  "pandas>=2.3.3",
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
 keywords = [
@@ -63,7 +64,7 @@ maintainers = [
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.8.8.9"
+version = "0.8.9.1"
 
 [project.urls]
 Changelog = "https://github.com/wg-lux/lx-anonymizer/blob/main/CHANGELOG.md"

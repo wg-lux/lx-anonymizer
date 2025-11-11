@@ -24,21 +24,22 @@ Usage Examples:
 
 import argparse
 import json
+import logging
 import os
 import sys
-from pathlib import Path
-from typing import Dict, Any, Optional, List
-import logging
-from datetime import datetime
 import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # Add the current directory to Python path to import lx_anonymizer
 current_dir = Path(__file__).parent.parent  # Go up to lx-anonymizer directory
 sys.path.insert(0, str(current_dir))
 
 try:
+    from lx_anonymizer.custom_logger import configure_global_logger, logger
     from lx_anonymizer.report_reader import ReportReader
-    from lx_anonymizer.custom_logger import logger, configure_global_logger
+
     # Try to import settings, but make it optional
     try:
         from lx_anonymizer.settings import DEFAULT_SETTINGS
@@ -84,7 +85,7 @@ class ReportReaderCLI:
     
     def process_single_pdf(self, pdf_path: str, 
                           use_ensemble: bool = False,
-                          use_llm_extractor: Optional[str] = None,
+                          use_llm_extractor: Optional[str] = 'deepseek',
                           output_dir: Optional[str] = None,
                           save_meta: bool = True,
                           save_anonymized: bool = True,
@@ -137,30 +138,30 @@ class ReportReaderCLI:
                 output_path = Path(output_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
                 
-                base_name = pdf_path.stem
+                base_name = Path(pdf_path).stem
                 
                 if save_meta and metadata:
                     meta_file = output_path / f"{base_name}_metadata.json"
-                    with open(meta_file, 'w', encoding='utf-8') as f:
+                    with open(str(meta_file), 'w', encoding='utf-8') as f:
                         json.dump(metadata, f, indent=2, ensure_ascii=False, default=str)
                     logger.info(f"Metadata saved to: {meta_file}")
                 
                 if save_anonymized and anonymized_text:
                     anon_file = output_path / f"{base_name}_anonymized.txt"
-                    with open(anon_file, 'w', encoding='utf-8') as f:
+                    with open(str(anon_file), 'w', encoding='utf-8') as f:
                         f.write(anonymized_text)
                     logger.info(f"Anonymized text saved to: {anon_file}")
                 
                 # Save original text for comparison
                 if original_text:
                     orig_file = output_path / f"{base_name}_original.txt"
-                    with open(orig_file, 'w', encoding='utf-8') as f:
+                    with open(str(orig_file), 'w', encoding='utf-8') as f:
                         f.write(original_text)
                     logger.info(f"Original text saved to: {orig_file}")
                 
                 # Save full results
                 results_file = output_path / f"{base_name}_results.json"
-                with open(results_file, 'w', encoding='utf-8') as f:
+                with open(str(results_file), 'w', encoding='utf-8') as f:
                     json.dump(results, f, indent=2, ensure_ascii=False, default=str)
                 logger.info(f"Full results saved to: {results_file}")
             
@@ -242,7 +243,7 @@ class ReportReaderCLI:
         
         # Save batch summary
         summary_file = Path(output_dir) / "batch_processing_summary.json"
-        with open(summary_file, 'w', encoding='utf-8') as f:
+        with open(str(summary_file), 'w', encoding='utf-8') as f:
             json.dump({
                 "batch_timestamp": datetime.now().isoformat(),
                 "total_files": len(pdf_files),

@@ -42,7 +42,7 @@ def ocr(image):
         res = model.chat(tokenizer, image_bytes, ocr_type='ocr')
     else:
         # Assume it's a file path
-        with open(image, 'rb') as f:
+        with open(str(image), 'rb') as f:
             image_bytes = f.read()
         res = model.chat(tokenizer, image_bytes, ocr_type='ocr')
 

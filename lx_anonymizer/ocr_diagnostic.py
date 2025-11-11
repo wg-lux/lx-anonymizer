@@ -261,7 +261,7 @@ class OCRDiagnostic:
         best_configs = df.nlargest(5, 'mean_conf')
         worst_gibberish = df.nsmallest(5, 'readable_words')
         
-        with open(report_path, 'w', encoding='utf-8') as f:
+        with open(str(report_path), 'w', encoding='utf-8') as f:
             f.write(f"# OCR Diagnostic Report - Video {video_id}\n\n")
             f.write(f"Generated: {pd.Timestamp.now()}\n\n")
             

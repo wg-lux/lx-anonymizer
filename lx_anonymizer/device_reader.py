@@ -39,7 +39,7 @@ base_dir = Path(__file__).resolve().parent
 def read_device(device):
     logger.debug(f"reading device config for {device}")
     device_file_path = Path(base_dir) / f'devices{device}.json'
-    with open(device_file_path) as json_parameters:
+    with open(str(device_file_path)) as json_parameters:
         data = json.load(json_parameters)
                     
         background_color = "(255, 255, 255)"
@@ -104,7 +104,7 @@ def read_name_boxes(device, first_name_x = 0, first_name_y = 0, first_name_width
         
     device_file_path = Path(base_dir) / f'devices/{device}.json'
     
-    with open(device_file_path) as json_parameters:
+    with open(str(device_file_path)) as json_parameters:
         logger.debug(f"device file path opened:{device_file_path}")
         data = json.load(json_parameters)
         
@@ -140,7 +140,7 @@ def read_name_boxes(device, first_name_x = 0, first_name_y = 0, first_name_width
 def read_background_color(device):
     device_file_path = Path(base_dir) / f'devices/{device}.json'
     logger.debug(f"reading device background color config for {device}")
-    with open(device_file_path) as json_parameters:
+    with open(str(device_file_path)) as json_parameters:
         data = json.load(json_parameters)
         
         background_color = "(225, 225, 225)"
@@ -154,7 +154,7 @@ def read_background_color(device):
     
 def read_text_formatting(device):
     device_file_path =Path(base_dir) / f'devices/{device}.json'
-    with open(device_file_path) as json_parameters:
+    with open(str(device_file_path)) as json_parameters:
         data = json.load(json_parameters)
         
         text_formatting = "first_name last_name"

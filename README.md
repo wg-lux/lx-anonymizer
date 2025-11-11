@@ -20,6 +20,10 @@ Designed for real-time video frame anonymization featuring:
 - **Multiple anonymization strategies**: Frame removal or mask overlay techniques
 - **ROI-based masking**: Device-specific region masking for endoscopic equipment
 
+## Default Return Format
+
+LX Anonymizer will return a sensitive meta compliant dict when running either of the main client functions above.
+
 ## Highlights
 - **End-to-end anonymization** of PDFs and video sequences using OCR, NER, and pseudonymization helpers.
 - **Modular pipeline** that lets you choose between Tesseract, TrOCR, ensemble OCR, and multiple metadata extractors.

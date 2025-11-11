@@ -237,6 +237,8 @@ class FrameCleaner:
             accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, frame_meta)
             if is_sensitive:
                 sensitive_idx.append(idx)
+                SensitiveMeta.text = ocr_text
+        
         # Batch-Metadaten-Anreicherung nach Frame-Loop
         if self.frame_collection:
             batch_enriched = self._extract_enriched_metadata_batch()

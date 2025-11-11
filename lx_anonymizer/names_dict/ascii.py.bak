@@ -4,10 +4,10 @@ def is_ascii(s):
     return all(c in string.printable for c in s)
 
 def filter_non_ascii_lines(input_file, output_file):
-    with open(str(input_file), 'r', encoding='utf-8') as infile:
+    with open(input_file, 'r', encoding='utf-8') as infile:
         lines = infile.readlines()
     
-    with open(str(output_file), 'w', encoding='utf-8') as outfile:
+    with open(output_file, 'w', encoding='utf-8') as outfile:
         for line in lines:
             if is_ascii(line):
                 outfile.write(line)
