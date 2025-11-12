@@ -36,7 +36,7 @@ from .ocr_frame import FrameOCR
 #     _can_load_model,
 #     create_minicpm_ocr,
 # )
-from .ollama_llm_meta_extraction_optimized import (
+from .ollama_llm_meta_extraction import (
     EnrichedMetadataExtractor,
     FrameSamplingOptimizer,
     OllamaOptimizedExtractor,
@@ -200,7 +200,7 @@ class FrameCleaner:
             "patient_last_name": None,
             "patient_dob": None,
             "casenumber": None,
-            "patient_gender": None,
+            "patient_gender_name": None,
             "examination_date": None,
             "examination_time": None,
             "examiner_first_name": None,
@@ -237,7 +237,8 @@ class FrameCleaner:
             accumulated = self.frame_metadata_extractor.merge_metadata(accumulated, frame_meta)
             if is_sensitive:
                 sensitive_idx.append(idx)
-                SensitiveMeta.text = ocr_text
+                self.sensitive_meta.safe_update(accumulated)
+
         
         # Batch-Metadaten-Anreicherung nach Frame-Loop
         if self.frame_collection:
@@ -270,9 +271,9 @@ class FrameCleaner:
             self._mask_video_streaming(video_path, mask_cfg, output_video, use_named_pipe=True)
 
         # ----------------------- persist metadata, apply type checking---------------------------
-        self._update_sensitive_meta_dict(accumulated)
-        sensitive_meta = SensitiveMeta.from_dict(accumulated)
-        return output_video, sensitive_meta.to_dict()
+        self.sensitive_meta.safe_update(accumulated)
+        
+        return output_video, self.sensitive_meta_dict
 
     # def _get_primary_ocr_engine(self) -> str:
     #     """Return the name of the primary OCR engine being used."""
@@ -386,10 +387,11 @@ class FrameCleaner:
             yield pipe_path
         finally:
             try:
-                pipe_path.unlink()
-                temp_dir.rmdir()
-            except OSError:
-                pass
+                pipe_path.unlink()  # Make sure FIFO is removed
+                temp_dir.rmdir()  # Ensure temporary directory is cleaned up
+            except OSError as e:
+                logger.warning(f"Failed to clean up temporary FIFO: {e}")
+
 
     def _stream_copy_with_pixel_conversion(
         self,
@@ -756,18 +758,23 @@ class FrameCleaner:
             try:
                 meta_obj = self.ollama_extractor.extract_metadata(text)
                 if meta_obj is not None:
-                    meta = meta_obj.model_dump()
+                    self.sensitive_meta.safe_update(meta_obj)
+                    meta = self.sensitive_meta_dict
                 else:
-                    meta = {}
+                    meta = None
             except Exception:
-                meta = {}
+                meta = None
         if not meta and self.patient_data_extractor:
             try:
                 meta = self.patient_data_extractor(text)
+                self.sensitive_meta.safe_update(meta)
+                meta = self.sensitive_meta_dict
             except Exception:
-                meta = {}
+                meta = None
         if not meta:
-            meta = self.frame_metadata_extractor.extract_metadata_from_frame_text(text)
+            out = self.frame_metadata_extractor.extract_metadata_from_frame_text(text)
+            self.sensitive_meta.safe_update(out)
+            meta = self.sensitive_meta_dict
         return meta
 
     def _process_frame_single(
@@ -782,7 +789,7 @@ class FrameCleaner:
         Konsolidierte Einzel-Frame-Verarbeitung mit OCR, Metadaten und optionaler Batch-Sammlung.
         """
         logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
-        ocr_text, ocr_conf, frame_metadata, is_sensitive = None, 0.0, {}, False
+        ocr_text, ocr_conf, frame_metadata, is_sensitive = None, 0.0, self.sensitive_meta_dict, False
 
         # possible OCR with MiniCPM-o 2.6
         # if self.use_minicpm and self.minicpm_ocr:
@@ -795,7 +802,10 @@ class FrameCleaner:
         if ocr_text:
             meta_unified = self._unified_metadata_extract(ocr_text)
             frame_metadata = self.frame_metadata_extractor.merge_metadata(frame_metadata, meta_unified)
+        self.sensitive_meta.safe_update(frame_metadata)
+        frame_metadata = self.sensitive_meta_dict
 
+            
         # Für Batch-Enrichment sammeln
         if collect_for_batch and ocr_text:
             self.frame_collection.append(
@@ -806,43 +816,10 @@ class FrameCleaner:
                     "is_sensitive": is_sensitive,
                 }
             )
-
+        assert isinstance(frame_metadata, Dict)
         return is_sensitive, frame_metadata, ocr_text, ocr_conf
 
-    def process_frames(
-        self,
-        frames: list[np.ndarray],
-        endoscope_image_roi: dict | None = None,
-        endoscope_data_roi_nested: dict | None = None,
-    ) -> list[tuple[bool, dict, str, float]]:
-        """
-        Batch-Verarbeitung aller Frames mit optionalem Batch-Enrichment.
-        """
-        results = []
-        self.frame_collection = []  # Reset für neuen Batch
-        for i, gray_frame in enumerate(frames):
-            logger.debug(f"Processing batch frame {i + 1}/{len(frames)}")
-            is_sensitive, meta, text, conf = self._process_frame_single(
-                gray_frame,
-                endoscope_image_roi=endoscope_image_roi,
-                endoscope_data_roi_nested=endoscope_data_roi_nested,
-                frame_id=i,
-                collect_for_batch=True,
-            )
-            results.append((is_sensitive, meta, text, conf))
-        # Nach Batch: Metadaten-Anreicherung
-        if self.frame_collection:
-            batch_meta = self._extract_enriched_metadata_batch()
-            if batch_meta:
-                logger.info(f"Merging batch-enriched metadata with accumulated results")
-                for idx, (is_sensitive, meta, text, conf) in enumerate(results):
-                    results[idx] = (
-                        is_sensitive,
-                        self.frame_metadata_extractor.merge_metadata(meta, batch_meta),
-                        text,
-                        conf,
-                    )
-        return results
+
 
     def extract_frames(self, video_path: Path, output_dir: Path, max_frames: Optional[int] = None) -> List[Path]:
         """
@@ -1099,7 +1076,7 @@ class FrameCleaner:
                 "patient_last_name": merged.get("patient_last_name"),
                 "patient_dob": merged.get("patient_dob"),
                 "casenumber": merged.get("casenumber"),
-                "patient_gender": merged.get("patient_gender"),
+                "patient_gender_name": merged.get("patient_gender_name"),
                 "examination_date": merged.get("examination_date"),
                 "examination_time": merged.get("examination_time"),
                 "examiner_first_name": merged.get("examiner_first_name"),

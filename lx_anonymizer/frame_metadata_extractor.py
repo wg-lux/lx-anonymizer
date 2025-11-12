@@ -1,3 +1,4 @@
+# lx_anonymizer/frame_cleaner/frame_metadata_extractor.py
 """
 Frame-specific metadata extraction module for video processing.
 
@@ -12,10 +13,12 @@ Separated from PDF processing logic to maintain clean architecture.
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple
 
 import dateparser
+
+from .sensitive_meta_interface import SensitiveMeta  # <<< integrate SensitiveMeta
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +34,19 @@ class FrameMetadataExtractor:
     - German medical terminology
     """
 
+    _SENTINELS = {"unknown", "none", "n/a", "na", "unbekannt", "undefined", "-"}
+
     def __init__(self):
+        # runtime SensitiveMeta accumulator
+        self.meta = SensitiveMeta()
+
         # Frame-specific patterns optimized for overlay text
         self.patient_patterns = [
             r"Patient[:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
             r"Pat[\.:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
             r"Name[:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
-            r"([A-Za-zäöüÄÖÜß]{2,})\s*,\s*([A-Za-zäöüÄÖÜß]{2,})",  # Last, First format
-            r"\b([A-Z][a-zäöüß]{2,})\b",  # Capitalized word (standalone name)
+            r"([A-Za-zäöüÄÖÜß]{2,})\s*,\s*([A-Za-zäöüÄÖÜß]{2,})",  # Last, First
+            r"\b([A-Z][a-zäöüß]{2,})\b",  # capitalized standalone
         ]
 
         self.dob_patterns = [
@@ -46,9 +54,9 @@ class FrameMetadataExtractor:
             r"geboren[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
             r"Geb\.Dat[\.:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
             r"DOB[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"(\d{10})",  # Compact date format: 10 digits (DDMMYYYYHH or similar) - check first
-            r"(\d{8})",  # Compact date format: DDMMYYYY - check second
-            r"(\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{2,4})",  # Date with separators - check last
+            r"(\d{10})",  # compact
+            r"(\d{8})",
+            r"(\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{2,4})",
         ]
 
         self.case_patterns = [
@@ -56,24 +64,24 @@ class FrameMetadataExtractor:
             r"Case[:\s]*(\d+)",
             r"Fallnummer[:\s]*(\d+)",
             r"ID[:\s]*(\d+)",
-            r"\b([A-Z]\s*\d{2,})\b",  # Pattern like "E 15" or "E15"
+            r"\b([A-Z]\s*\d{2,})\b",
         ]
 
         self.date_patterns = [
             r"Datum[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
             r"Date[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
             r"Untersuchung[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
-            r"(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",  # Any date with flexible separators
+            r"(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
         ]
 
         self.time_patterns = [
             r"Zeit[:\s]*(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
             r"Time[:\s]*(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
-            r"(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",  # Time with : or . separator
+            r"(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
         ]
 
         self.examiner_patterns = [
-            r"Arzt[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",  # Limited length, word boundary
+            r"Arzt[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
             r"Dr[\.:\s]+([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
             r"Untersucher[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
             r"Examiner[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
@@ -82,432 +90,316 @@ class FrameMetadataExtractor:
         self.gender_patterns = [
             r"(männlich|weiblich|male|female|m|f|w)",
         ]
-        self.logger = logging.getLogger(__name__)
+
+    # ---------- public API ----------
 
     def extract_metadata_from_frame_text(self, text: str) -> Dict[str, Any]:
         """
         Extract metadata from frame OCR text using specialized patterns.
-
-        Args:
-            text: OCR-extracted text from frame
-
-        Returns:
-            Dictionary containing extracted metadata
+        Writes through SensitiveMeta.safe_update, returns dict for compatibility.
         """
-        metadata = {
-            "patient_first_name": None,
-            "patient_last_name": None,
-            "patient_dob": None,
-            "casenumber": None,
-            "patient_gender": None,
-            "examination_date": None,
-            "examination_time": None,
-            "examiner_first_name": None,
-            "examiner_last_name": None,
-            "source": "frame_extraction",
-        }
-
         if not text or not text.strip():
-            return metadata
+            return self.meta.to_dict()
 
         try:
-            # Extract patient names
+            # names
             first_name, last_name = self._extract_patient_names(text)
-            if first_name:
-                metadata["patient_first_name"] = first_name
-            if last_name:
-                metadata["patient_last_name"] = last_name
+            self.meta.safe_update(
+                {
+                    "patient_first_name": first_name,
+                    "patient_last_name": last_name,
+                }
+            )
 
-            # Extract date of birth
+            # dob
             dob = self._extract_date_of_birth(text)
-            if dob:
-                metadata["patient_dob"] = dob
+            self.meta.safe_update({"patient_dob": dob.isoformat() if isinstance(dob, date) else dob})
 
-            # Extract case number
+            # case number
             case_num = self._extract_case_number(text)
-            if case_num:
-                metadata["casenumber"] = case_num
+            self.meta.safe_update({"casenumber": case_num})
 
-            # Extract examination date
+            # exam date/time
             exam_date = self._extract_examination_date(text)
-            if exam_date:
-                metadata["examination_date"] = exam_date
-
-            # Extract examination time
             exam_time = self._extract_examination_time(text)
-            if exam_time:
-                metadata["examination_time"] = exam_time
+            self.meta.safe_update(
+                {
+                    "examination_date": exam_date.isoformat() if isinstance(exam_date, date) else exam_date,
+                    "examination_time": exam_time,
+                }
+            )
 
-            # Extract examiner
+            # examiner
             examiner_first, examiner_last = self._extract_examiner(text)
-            if examiner_first:
-                metadata["examiner_first_name"] = examiner_first
-            if examiner_last:
-                metadata["examiner_last_name"] = examiner_last
+            self.meta.safe_update(
+                {
+                    "examiner_first_name": examiner_first,
+                    "examiner_last_name": examiner_last,
+                }
+            )
 
-            # Extract gender
+            # gender
             gender = self._extract_gender(text)
-            if gender:
-                metadata["patient_gender"] = gender
+            self.meta.safe_update({"patient_gender_name": gender})
 
-            return metadata
+            # mark source (won’t overwrite an existing non-blank)
+            self.meta.safe_update({"center": None})  # no-op but illustrates safety
+            return self.meta.to_dict()
 
         except Exception as e:
             logger.error(f"Frame metadata extraction failed: {e}")
-            return metadata
+            return self.meta.to_dict()
+
+    def is_sensitive_content(self, metadata: Dict[str, Any]) -> bool:
+        """Basic sensitive presence check (uses dict for call-site compatibility)."""
+        sensitive_fields = ("patient_first_name", "patient_last_name", "casenumber", "patient_dob")
+        for f in sensitive_fields:
+            v = metadata.get(f)
+            if self._is_nonblank(v):
+                return True
+        if self._is_nonblank(metadata.get("patient_gender_name")):
+            return True
+        return False
+
+    def merge_metadata(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Safe merge via SensitiveMeta:
+        - Only non-blank values from `new` can fill blanks in `existing`
+        - dicts/lists are kept as-is (SensitiveMeta is flat)
+        - If both a DOB and an exam date are present but ambiguous:
+          * newer date → examination_date
+          * older date → patient_dob
+        """
+        # Start from existing, then apply new safely
+        result_meta = SensitiveMeta.from_dict(existing or {})
+        result_meta.safe_update(new or {})
+
+        merged = result_meta.to_dict()
+
+        # Enforce DOB vs exam-date rule if both (or ambiguous) are present anywhere
+        dob_raw = (new or {}).get("patient_dob") or (existing or {}).get("patient_dob")
+        exam_raw = (new or {}).get("examination_date") or (existing or {}).get("examination_date")
+
+        # If one of them is missing but we have multiple date-like values somewhere else,
+        # try to infer: choose max as exam, min as dob.
+        if dob_raw or exam_raw:
+            dob_dt = self._to_date(dob_raw)
+            exam_dt = self._to_date(exam_raw)
+
+            if dob_dt and exam_dt:
+                # both parse → order
+                if exam_dt < dob_dt:
+                    exam_dt, dob_dt = dob_dt, exam_dt
+            else:
+                # if one is missing, do nothing special
+                pass
+
+            # write back safely (isoformat)
+            inferred = {}
+            if exam_dt:
+                inferred["examination_date"] = exam_dt.isoformat()
+            if dob_dt:
+                inferred["patient_dob"] = dob_dt.isoformat()
+            result_meta.safe_update(inferred)
+            merged = result_meta.to_dict()
+
+        logger.info(f"Merged metadata: {merged}")
+        return merged
+
+    # ---------- helpers ----------
+
+    @staticmethod
+    def _is_nonblank(v: Any) -> bool:
+        if v is None:
+            return False
+        if isinstance(v, str):
+            s = v.strip()
+            return bool(s) and s.lower() not in FrameMetadataExtractor._SENTINELS
+        return True  # keep 0/False/[]/{} as “present” for our purpose
+
+    def _to_date(self, v: Any) -> Optional[date]:
+        if isinstance(v, date) and not isinstance(v, datetime):
+            return v
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, str) and v.strip():
+            # try ISO first, then German
+            try:
+                # YYYY-MM-DD
+                return datetime.strptime(v.strip(), "%Y-%m-%d").date()
+            except Exception:
+                parsed = dateparser.parse(v.strip(), languages=["de"], settings={"DATE_ORDER": "DMY"})
+                if parsed:
+                    return parsed.date()
+        return None
 
     def _extract_patient_names(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        """Extract patient first and last names from text."""
         try:
             for pattern in self.patient_patterns:
                 matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    if isinstance(matches[0], tuple) and len(matches[0]) >= 2:
-                        # Handle tuple matches (first, last) or (last, first)
-                        name1, name2 = matches[0][:2]
-                        name1, name2 = name1.strip(), name2.strip()
-
-                        # Determine which is first/last based on pattern
-                        if "," in text and text.index(",") < text.index(name2):
-                            # "Last, First" format
-                            return name2, name1
-                        else:
-                            # "First Last" format
-                            return name1, name2
-                    elif isinstance(matches[0], str):
-                        # Single name found
-                        return matches[0].strip(), None
-
+                if not matches:
+                    continue
+                m0 = matches[0]
+                if isinstance(m0, tuple) and len(m0) >= 2:
+                    name1, name2 = m0[:2]
+                    name1, name2 = name1.strip(), name2.strip()
+                    # Heuristic: "Last, First" if comma appears before name2
+                    if "," in text and text.index(",") < text.index(name2):
+                        return name2, name1
+                    return name1, name2
+                if isinstance(m0, str):
+                    return m0.strip(), None
             return None, None
-
         except Exception as e:
             logger.error(f"Patient name extraction failed: {e}")
             return None, None
 
     def _extract_date_of_birth(self, text: str) -> Optional[date]:
-        """
-        Extract date of birth from text with priority ordering:
-        1. Labeled patterns (geb:, geboren:, DOB:) - highest confidence
-        2. Compact formats (8-10 digits) - likely DOB, not exam date
-        3. Dates with separators - lowest priority (could be exam date)
-        """
         try:
-            # Priority 1: Try labeled patterns first (geb:, geboren:, etc.)
-            labeled_patterns = self.dob_patterns[:4]
-            for pattern in labeled_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    date_str = matches[0].strip()
-                    parsed_date = self._parse_german_date(date_str)
-                    if parsed_date:
-                        logger.debug(f"Found labeled DOB: {parsed_date} from '{date_str}'")
-                        return parsed_date
-
-            # Priority 2: Try compact formats (10 digits, then 8 digits)
-            compact_patterns = self.dob_patterns[4:6]
-            for pattern in compact_patterns:
-                matches = re.findall(pattern, text)
-                if matches:
-                    date_str = matches[0].strip()
-                    if date_str.isdigit() and 8 <= len(date_str) <= 10:
-                        parsed_date = self._parse_compact_date(date_str)
-                        if parsed_date:
-                            logger.debug(f"Found compact DOB: {parsed_date} from '{date_str}'")
-                            return parsed_date
-
-            # Priority 3: Try dates with separators (last resort)
-            separator_pattern = self.dob_patterns[6]
-            matches = re.findall(separator_pattern, text)
-            if matches:
-                date_str = matches[0].strip()
-                parsed_date = self._parse_german_date(date_str)
-                if parsed_date:
-                    logger.debug(f"Found separator DOB: {parsed_date} from '{date_str}'")
-                    return parsed_date
-
+            # 1) labeled
+            for pattern in self.dob_patterns[:4]:
+                m = re.findall(pattern, text, re.IGNORECASE)
+                if m:
+                    d = self._parse_german_date(m[0].strip())
+                    if d:
+                        return d
+            # 2) compact
+            for pattern in self.dob_patterns[4:6]:
+                m = re.findall(pattern, text)
+                if m:
+                    d = self._parse_compact_date(m[0].strip())
+                    if d:
+                        return d
+            # 3) separators
+            m = re.findall(self.dob_patterns[6], text)
+            if m:
+                d = self._parse_german_date(m[0].strip())
+                if d:
+                    return d
             return None
-
         except Exception as e:
             logger.error(f"DOB extraction failed: {e}")
             return None
 
     def _parse_compact_date(self, date_str: str) -> Optional[date]:
-        """
-        Parse compact date formats like DDMMYYYY or DDMM YYYY.
-        Examples: '21031994' -> 21/03/1994, '2170371994' -> 21/03/1994
-        """
         try:
-            # Remove any spaces or non-digit characters
             digits = re.sub(r"\D", "", date_str)
-
             if len(digits) == 8:
-                # DDMMYYYY format
-                day = int(digits[0:2])
-                month = int(digits[2:4])
-                year = int(digits[4:8])
-
-                # Validate
+                day = int(digits[0:2]); month = int(digits[2:4]); year = int(digits[4:8])
                 if 1 <= day <= 31 and 1 <= month <= 12:
                     return date(year, month, day)
-
             elif len(digits) == 10:
-                # Could be DD/MM/YYYY or DDMMYYYYHH (with extra digits)
-                # Try DDMMYYYY first (first 8 digits)
-                day = int(digits[0:2])
-                month = int(digits[2:4])
-                year = int(digits[4:8])
-
-                # Validate
+                day = int(digits[0:2]); month = int(digits[2:4]); year = int(digits[4:8])
                 if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
                     return date(year, month, day)
-
             return None
-
         except (ValueError, IndexError) as e:
             logger.debug(f"Compact date parsing failed for '{date_str}': {e}")
             return None
 
     def _extract_case_number(self, text: str) -> Optional[str]:
-        """Extract case number from text."""
         try:
             for pattern in self.case_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    case = matches[0].strip()
-                    # Normalize spacing (e.g., "E 15" or "E15")
-                    case = re.sub(r"\s+", " ", case)
+                m = re.findall(pattern, text, re.IGNORECASE)
+                if m:
+                    case = re.sub(r"\s+", " ", m[0].strip())
                     return case
-
             return None
-
         except Exception as e:
             logger.error(f"Case number extraction failed: {e}")
             return None
 
     def _extract_examination_date(self, text: str) -> Optional[date]:
-        """Extract examination date from text."""
         try:
             for pattern in self.date_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    date_str = matches[0].strip()
-                    parsed_date = self._parse_german_date(date_str)
-                    if parsed_date:
-                        return parsed_date
-
+                m = re.findall(pattern, text, re.IGNORECASE)
+                if m:
+                    d = self._parse_german_date(m[0].strip())
+                    if d:
+                        return d
             return None
-
         except Exception as e:
             logger.error(f"Examination date extraction failed: {e}")
             return None
 
     def _extract_examination_time(self, text: str) -> Optional[str]:
-        """Extract examination time from text."""
         try:
             for pattern in self.time_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    time_str = matches[0].strip()
-                    # Validate time format
-                    if re.match(r"^\d{1,2}:\d{2}$", time_str):
-                        return time_str
-
+                m = re.findall(pattern, text, re.IGNORECASE)
+                if m:
+                    t = m[0].strip()
+                    if re.match(r"^\d{1,2}:\d{2}$", t):
+                        return t
             return None
-
         except Exception as e:
             logger.error(f"Examination time extraction failed: {e}")
             return None
 
     def _extract_examiner(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        """Extract examiner first and last name from text."""
         try:
             for pattern in self.examiner_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    examiner = matches[0].strip()
-                    examiner = re.sub(r"\s+", " ", examiner)
-                    # Split examiner into first and last name
-                    parts = examiner.split()
-                    if len(parts) >= 2:
-                        first_name, last_name = parts[0], " ".join(parts[1:])
-                    else:
-                        first_name, last_name = examiner, None
-                    # Validate examiner candidate
-                    if self._is_valid_examiner(examiner):
-                        return first_name, last_name
-                    else:
-                        logger.debug(f"Rejected invalid examiner candidate: {examiner}")
+                m = re.findall(pattern, text, re.IGNORECASE)
+                if not m:
+                    continue
+                examiner = re.sub(r"\s+", " ", m[0].strip())
+                parts = examiner.split()
+                if len(parts) >= 2:
+                    first_name, last_name = parts[0], " ".join(parts[1:])
+                else:
+                    first_name, last_name = examiner, None
+                if self._is_valid_examiner(examiner):
+                    return first_name, last_name
+                logger.debug(f"Rejected invalid examiner candidate: {examiner}")
             return None, None
         except Exception as e:
             logger.error(f"Examiner extraction failed: {e}")
             return None, None
 
     def _is_valid_examiner(self, examiner: str) -> bool:
-        """
-        Validate if a string is a plausible examiner name.
-
-        Args:
-            examiner: Candidate examiner name
-
-        Returns:
-            True if examiner appears valid, False if it looks like OCR garbage
-        """
-        if not examiner or not isinstance(examiner, str):
+        if not isinstance(examiner, str) or not examiner:
             return False
-
-        # Strict validation for examiner names
-        # Must be reasonable length and have proper word structure
         if len(examiner) < 3 or len(examiner) > 50:
             return False
-
-        # Check for excessive special characters (sign of OCR garbage)
-        special_char_count = sum(1 for c in examiner if c in ".-")
-        total_chars = len(examiner)
-        if total_chars > 0 and (special_char_count / total_chars) > 0.3:
-            # More than 30% special characters = probably garbage
-            logger.debug(f"Rejected examiner: too many special chars ({special_char_count}/{total_chars})")
+        special = sum(1 for c in examiner if c in ".-")
+        if len(examiner) and special / len(examiner) > 0.3:
             return False
-
-        # Check for reasonable word structure
-        # Must have at least one proper word with >= 3 characters
         words = examiner.split()
         valid_words = [w for w in words if len(w) >= 3 and w.replace("-", "").replace(".", "").isalpha()]
-
-        # Require at least one substantial word (not just "Dr." or "M.")
-        # and the majority of words should be valid
         if not valid_words or len(valid_words) < len(words) / 2:
-            logger.debug(f"Rejected examiner: insufficient valid words (got {len(valid_words)}/{len(words)})")
             return False
-
-        # Additional check: ratio of single-character "words" indicates garbage
         single_char_words = sum(1 for w in words if len(w) == 1)
         if len(words) > 2 and single_char_words > len(words) / 2:
-            logger.debug(f"Rejected examiner: too many single-char words ({single_char_words}/{len(words)})")
             return False
-
         return True
 
     def _extract_gender(self, text: str) -> Optional[str]:
-        """Extract gender from text."""
         try:
             for pattern in self.gender_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    gender = matches[0].lower().strip()
-                    # Normalize to standard values
-                    if gender in ["männlich", "male", "m"]:
+                m = re.findall(pattern, text, re.IGNORECASE)
+                if m:
+                    g = m[0].lower().strip()
+                    if g in ("männlich", "male", "m"):
                         return "M"
-                    elif gender in ["weiblich", "female", "f", "w"]:
+                    if g in ("weiblich", "female", "f", "w"):
                         return "F"
-
             return None
-
         except Exception as e:
             logger.error(f"Gender extraction failed: {e}")
             return None
 
     def _parse_german_date(self, date_str: str) -> Optional[date]:
-        """Parse German date format (DD.MM.YYYY) to date object."""
         try:
-            # Normalize: remove extra spaces and replace various separators with .
-            normalized = re.sub(r"\s+", "", date_str)  # Remove spaces
-            normalized = normalized.replace("/", ".").replace("-", ".")  # Normalize separators
-
-            # Use dateparser with German settings
+            normalized = re.sub(r"\s+", "", date_str).replace("/", ".").replace("-", ".")
             parsed = dateparser.parse(normalized, languages=["de"], settings={"DATE_ORDER": "DMY"})
-
             if parsed:
                 return parsed.date()
-
-            # Fallback: try manual parsing for DD.MM.YYYY
             if re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", normalized):
-                parts = normalized.split(".")
-                if len(parts) == 3:
-                    day, month, year = map(int, parts)
-                    # Handle 2-digit years
-                    if year < 100:
-                        year += 2000 if year < 50 else 1900
-
-                    # Validate ranges
-                    if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
-                        return date(year, month, day)
-
+                d, m, y = map(int, normalized.split("."))
+                if y < 100:
+                    y += 2000 if y < 50 else 1900
+                if 1 <= d <= 31 and 1 <= m <= 12 and 1900 <= y <= 2100:
+                    return date(y, m, d)
             return None
-
         except Exception as e:
             logger.debug(f"Date parsing failed for '{date_str}': {e}")
             return None
-
-    def is_sensitive_content(self, metadata: Dict[str, Any]) -> bool:
-        """
-        Check if extracted metadata contains sensitive information.
-
-        Args:
-            metadata: Extracted metadata dictionary
-
-        Returns:
-            True if metadata contains sensitive information
-        """
-        sensitive_fields = ["patient_first_name", "patient_last_name", "casenumber"]
-
-        # Check for non-empty sensitive fields
-        for field in sensitive_fields:
-            value = metadata.get(field)
-            if value and value not in [
-                None,
-                "",
-                "Null",
-                "null",
-                "none",
-                "None",
-                "unknown",
-                "Unknown",
-            ]:
-                return True
-
-        # Check for non-empty date of birth
-        if metadata.get("patient_dob"):
-            return True
-
-        # Check for gender (if it's explicitly set)
-        if metadata.get("patient_gender"):
-            return True
-
-        return False
-
-    _SENTINELS = {"unknown", "none", "n/a", "na", "unbekannt"}
-
-    def _is_blank(self, v: Any) -> bool:
-        if v is None:
-            return True
-        if isinstance(v, str):
-            s = v.strip()
-            return not s or s.lower() in self._SENTINELS
-        return False  # keep 0, False, [], {} as valid
-
-    def merge_metadata(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
-        merged = dict(existing or {})
-        for k, nv in (new or {}).items():
-            if self._is_blank(nv):
-                continue
-            cv = merged.get(k)
-
-            # fill if missing/blank
-            if self._is_blank(cv):
-                merged[k] = nv
-                continue
-
-            if isinstance(cv, dict) and isinstance(nv, dict):
-                merged[k] = self.merge_metadata(cv, nv)  # recursive
-            elif isinstance(cv, list) and isinstance(nv, list):
-                # simple union preserving order
-                seen = set()
-                out = []
-                for x in cv + nv:
-                    key = (type(x), str(x))
-                    if key not in seen:
-                        seen.add(key)
-                        out.append(x)
-                merged[k] = out
-        self.logger.info(f"Merged metadata: {merged}")
-        return merged

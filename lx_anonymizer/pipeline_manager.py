@@ -33,13 +33,16 @@ from .flair_NER import flair_NER_German
 from .fuzzy_matching import correct_box_for_new_text, fuzzy_match_snippet
 from .names_generator import gender_and_handle_device_names, gender_and_handle_full_names, gender_and_handle_separate_names
 from .ocr import tesseract_full_image_ocr, tesseract_on_boxes, trocr_on_boxes
-from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from .ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from .spacy_NER import spacy_NER_German
 from .tesseract_text_detection import tesseract_text_detection
+from .sensitive_meta_interface import SensitiveMeta
 
 # Configure logging
 logger = get_logger(__name__)
 
+sensitive_meta = SensitiveMeta()
+sensitive_meta_dict = sensitive_meta.to_dict()
 
 def process_images_with_OCR_and_NER(
     file_path, east_path="frozen_east_text_detection.pb", device="default", min_confidence=0.5, width=320, height=320, skip_blur=False, skip_reassembly=False
@@ -141,15 +144,8 @@ def process_images_with_OCR_and_NER(
                 if ocr_text:
                     llm_metadata = extractor.extract_metadata(ocr_text)
                     if llm_metadata:
-                        llm_results = {
-                            "patient_name": llm_metadata.patient_name,
-                            "patient_age": llm_metadata.patient_age,
-                            "examination_date": llm_metadata.examination_date,
-                            "gender": llm_metadata.gender,
-                            "casenumber": llm_metadata.casenumber,
-                            "examiner_first_name": llm_metadata.examiner_first_name,
-                            "examiner_last_name": llm_metadata.examiner_last_name,
-                        }
+                        sensitive_meta.safe_update(llm_metadata)
+                        llm_results = sensitive_meta_dict
                     else:
                         llm_results = {}
                 else:

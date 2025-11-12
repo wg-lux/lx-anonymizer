@@ -4,12 +4,15 @@ from datetime import datetime
 import re
 from .determine_gender import determine_gender
 from .custom_logger import get_logger
+from .sensitive_meta_interface import SensitiveMeta
+from typing import Optional, Dict, Any  
 # Import spacy's download function
 import spacy.cli
 
 logger = get_logger(__name__)
 # import spacy language model
 from spacy.language import Language
+
 
 # Define a set of title words to ignore (lowercase)
 TITLE_WORDS = {
@@ -104,9 +107,9 @@ class PatientDataExtractor:
     _matcher: Matcher | None = None
     _rules_built = False
 
-    def __init__(self) -> None:
+    def __init__(self, meta: Optional[SensitiveMeta] = None) -> None:
         if PatientDataExtractor._nlp is None:
-             PatientDataExtractor._nlp = load_spacy_model("de_core_news_lg")
+            PatientDataExtractor._nlp = load_spacy_model("de_core_news_lg")
 
         if not PatientDataExtractor._rules_built:
             PatientDataExtractor._matcher = Matcher(PatientDataExtractor._nlp.vocab)
@@ -115,6 +118,7 @@ class PatientDataExtractor:
 
         self._nlp = PatientDataExtractor._nlp
         self._matcher = PatientDataExtractor._matcher
+        self.meta: SensitiveMeta = meta or SensitiveMeta()
 
     def _build_rules(self) -> None:
         """Builds the token-based patterns including OCR variants."""
@@ -164,14 +168,15 @@ class PatientDataExtractor:
 
     def __call__(self, text: str) -> dict[str, str | None]:
         if not self._nlp or not self._matcher:
-             logger.error("SpaCy NLP model or Matcher not initialized.")
-             return self._blank()
+            logger.error("SpaCy NLP model or Matcher not initialized.")
+            # still return a dict, and do not mutate meta here
+            return self._blank()
 
         doc = self._nlp(text)
         matches = self._matcher(doc)
 
         if not matches:
-            return self._blank()
+            return self.meta.to_dict()  # keep existing values if any
 
         match_id, start, end = max(matches, key=lambda m: m[2] - m[1])
         span = doc[start:end]
@@ -261,36 +266,37 @@ class PatientDataExtractor:
 
         gender = determine_gender(first_name) if first_name else None
 
-        result = {
+        self.meta.safe_update({
             "patient_first_name": first_name,
             "patient_last_name":  last_name,
-            "patient_dob":        birthdate,
+            "patient_dob":        birthdate,   # ISO string or None is fine
             "casenumber":         case_num,
-            "patient_gender":     gender
-        }
-        logger.debug(f"Extracted patient data: {result}")
-        return result
+            "patient_gender_name": gender
+        })
+
+        # Return the living snapshot as dict (backward compatible)
+        return self.meta.to_dict()
 
     @staticmethod
     def _blank() -> dict[str, str | None]:
-        """Returns a dictionary with default None values."""
         return {
             "patient_first_name": None,
             "patient_last_name":  None,
             "patient_dob":        None,
             "casenumber":         None,
-            "patient_gender":     None
+            "patient_gender_name": None
         }
 
 class ExaminerDataExtractor:
-    _nlp: Language | None = None # Use class variable for shared model
+    _nlp: Language | None = None  # shared model
 
-    def __init__(self):
+    def __init__(self, meta: Optional[SensitiveMeta] = None):
         if ExaminerDataExtractor._nlp is None:
-            ExaminerDataExtractor._nlp = load_spacy_model("de_core_news_lg") # Load once
+            ExaminerDataExtractor._nlp = load_spacy_model("de_core_news_lg")
         self.nlp = ExaminerDataExtractor._nlp
         self.matcher = Matcher(self.nlp.vocab)
         self._setup_patterns()
+        self.meta: SensitiveMeta = meta or SensitiveMeta()
 
     def _setup_patterns(self):
         pattern1 = [
@@ -333,23 +339,30 @@ class ExaminerDataExtractor:
                 first_name = tokens[3].text
                 last_name = tokens[4].text
 
+            self.meta.safe_update({
+                "examiner_first_name": first_name,
+                "examiner_last_name":  last_name
+            })
+
+            # keep returning a small dict (existing behavior)
             return {
-                "title": title,
-                "first_name": first_name,
-                "last_name": last_name
+                "examiner_title": title,
+                "examiner_first_name": first_name,
+                "examiner_last_name": last_name
             }
 
         return None
 
 class EndoscopeDataExtractor:
-    _nlp: Language | None = None # Use class variable for shared model
+    _nlp: Language | None = None
 
-    def __init__(self):
+    def __init__(self, meta: Optional[SensitiveMeta] = None):
         if EndoscopeDataExtractor._nlp is None:
-            EndoscopeDataExtractor._nlp = load_spacy_model("de_core_news_lg") # Load once
+            EndoscopeDataExtractor._nlp = load_spacy_model("de_core_news_lg")
         self.nlp = EndoscopeDataExtractor._nlp
         self.matcher = Matcher(self.nlp.vocab)
         self._setup_patterns()
+        self.meta: SensitiveMeta = meta or SensitiveMeta()
 
     def _setup_patterns(self):
         pattern1 = [
@@ -363,7 +376,7 @@ class EndoscopeDataExtractor:
 
         self.matcher.add("ENDOSCOPE_INFO_1", [pattern1])
 
-    def extract_endoscope_info(self, text):
+    def extract_endoscope_info(self, text) -> Optional[Dict[str, Optional[str]]]:
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
@@ -375,8 +388,20 @@ class EndoscopeDataExtractor:
             tokens = list(span)
 
             if pattern_name == "ENDOSCOPE_INFO_1":
-                model_name = " ".join([t.text for t in tokens[2:tokens.index(tokens[3])]])
-                serial_number = tokens[-1].text
+                # model name is tokens[2:tokens.index(tokens[3])] in your code,
+                # but tokens[3] *is* {"LOWER": "seriennummer"}, so safer:
+                try:
+                    ser_idx = next(i for i, t in enumerate(tokens) if t.lower_ == "seriennummer")
+                except StopIteration:
+                    ser_idx = 3  # fallback
+                model_name = " ".join([t.text for t in tokens[2:ser_idx]]).strip() or None
+                serial_number = tokens[-1].text if tokens else None
+
+            # write via SensitiveMeta (mapped fields)
+            self.meta.safe_update({
+                "endoscope_type": model_name,
+                "endoscope_sn":   serial_number
+            })
 
             return {
                 "model_name": model_name,
@@ -384,72 +409,67 @@ class EndoscopeDataExtractor:
             }
 
         return None
-
 class ExaminationDataExtractor:
-    _nlp: Language | None = None # Use class variable for shared model
+    _nlp: Language | None = None
 
-    def __init__(self):
+    def __init__(self, meta: Optional[SensitiveMeta] = None):
         if ExaminationDataExtractor._nlp is None:
-            ExaminationDataExtractor._nlp = load_spacy_model("de_core_news_lg") # Load once
+            ExaminationDataExtractor._nlp = load_spacy_model("de_core_news_lg")
         self.nlp = ExaminationDataExtractor._nlp
-        # No matcher needed here based on current implementation
+        self.meta: SensitiveMeta = meta or SensitiveMeta()
 
     def extract_examination_info(self, text, remove_examiner_titles=True):
         if "1. Unters.:" in text or "Unters.:" in text:
             return self._extract_meta_format_1(text, remove_examiner_titles)
-        
         if "Eingang am:" in text:
             return self._extract_meta_format_2(text, remove_examiner_titles)
-            
         return None
-        
+
     def _extract_meta_format_1(self, line, remove_examiner_titles=True):
         if remove_examiner_titles:
             pass
-            
         pattern = r"Unters\.: ([\w\s\.]+), ([\w\s]+)\s*U-datum:\s*(\d{2}\.\d{2}\.\d{4}) (\d{2}:\d{2})"
-        
         match = re.search(pattern, line)
-        
         if match:
             examiner_last_name = match.group(1).strip()
             examiner_first_name = match.group(2).strip()
-            
             examination_date = datetime.strptime(match.group(3), '%d.%m.%Y').strftime('%Y-%m-%d')
-            
             examination_time = match.group(4)
-            
+
+            # write via SensitiveMeta
+            self.meta.safe_update({
+                "examiner_last_name":  examiner_last_name,
+                "examiner_first_name": examiner_first_name,
+                "examination_date":    examination_date,
+                "examination_time":    examination_time
+            })
+
             return {
-                'examiner_last_name': examiner_last_name,
+                'examiner_last_name':  examiner_last_name,
                 'examiner_first_name': examiner_first_name,
-                'examination_date': examination_date,
-                'examination_time': examination_time
+                'examination_date':    examination_date,
+                'examination_time':    examination_time
             }
         else:
-            data = ExaminerDataExtractor().extract_examiner_info(line)
-            if data:
-                return data
-            else:
-                return None
-        
-        return None
-        
+            data = ExaminerDataExtractor(meta=self.meta).extract_examiner_info(line)
+            return data
+
     def _extract_meta_format_2(self, line, remove_examiner_titles=True):
         if remove_examiner_titles:
             pass
-            
         pattern = r"Eingang am:\s*(\d{2}\.\d{2}\.\d{4})"
-        
         match = re.search(pattern, line)
-        
         if match:
             examination_date = datetime.strptime(match.group(1), '%d.%m.%Y').strftime('%Y-%m-%d')
-            
+            # write via SensitiveMeta
+            self.meta.safe_update({
+                'examination_date': examination_date,
+                'examination_time': ""
+            })
             return {
                 'examiner_last_name': "",
                 'examiner_first_name': "",
                 'examination_date': examination_date,
                 'examination_time': ""
             }
-        
         return None

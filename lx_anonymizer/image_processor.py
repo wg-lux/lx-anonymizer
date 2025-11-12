@@ -9,11 +9,14 @@ from PIL import Image
 from .custom_logger import get_logger
 from .gpu_management import clear_gpu_memory
 from .image_reassembly import reassemble_image
-from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from .ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from .pipeline_manager import process_images_with_OCR_and_NER
+from .sensitive_meta_interface import SensitiveMeta
 
 logger = get_logger(__name__)
 
+sensitive_meta = SensitiveMeta()
+sensitive_meta_dict = sensitive_meta.to_dict()
 
 def process_image(
     img_path,
@@ -71,15 +74,8 @@ def process_image(
         if ocr_text:
             llm_metadata = extractor.extract_metadata(ocr_text)
             if llm_metadata:
-                llm_results = {
-                    "patient_name": llm_metadata.patient_name,
-                    "patient_age": llm_metadata.patient_age,
-                    "examination_date": llm_metadata.examination_date,
-                    "gender": llm_metadata.gender,
-                    "casenumber": llm_metadata.casenumber,
-                    "examiner_first_name": llm_metadata.examiner_first_name,
-                    "examiner_last_name": llm_metadata.examiner_last_name,
-                }
+                sensitive_meta.safe_update(llm_metadata)
+                llm_results = sensitive_meta_dict
             else:
                 llm_results = {}
         else:
@@ -90,18 +86,10 @@ def process_image(
             # Create analysis for text_extracted as well
             text_metadata = extractor.extract_metadata(text_extracted)
             if text_metadata:
-                text_results = {
-                    "patient_name": text_metadata.patient_name,
-                    "patient_age": text_metadata.patient_age,
-                    "examination_date": text_metadata.examination_date,
-                    "gender": text_metadata.gender,
-                    "casenumber": text_metadata.casenumber,
-                    "examiner_first_name": text_metadata.examiner_first_name,
-                    "examiner_last_name": text_metadata.examiner_last_name,
-                }
+                sensitive_meta.safe_update(text_metadata)
             else:
                 text_results = {}
-            combined_results = {"image_analysis": llm_results, "text_analysis": text_results}
+            combined_results = {"image_analysis": llm_results, "text_analysis": sensitive_meta_dict}
         else:
             combined_results = {"image_analysis": llm_results}
 

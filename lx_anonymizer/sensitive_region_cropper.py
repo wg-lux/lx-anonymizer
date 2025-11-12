@@ -50,13 +50,15 @@ class SensitiveRegionCropper:
 
         # Definiere sensitive Datentypen und ihre Regex-Patterns
         self.sensitive_patterns = {
-            "patient_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
+            "patient_first_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
+            "patient_last_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
             "birth_date": r"\b\d{1,2}\.\d{1,2}\.\d{4}\b",
-            "case_number": r"(?:Fallnummer|Fallnr|Fall\.Nr)[:\s]*(\d+)",
+            "casenumber": r"(?:Fallnummer|Fallnr|Fall\.Nr)[:\s]*(\d+)",
             "social_security": r"\b\d{2}\s?\d{2}\s?\d{2}\s?\d{4}\b",
             "phone_number": r"\b(?:\+49\s?)?(?:\d{3,5}[\s\-]?)?\d{6,8}\b",
             "address": r"[A-ZÄÖÜ][a-zäöüß\s]+(str\.|straße|platz|weg|gasse)\s*\d+",
-            "doctor_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?",
+            "examiner_first_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?",
+            "examiner_last_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?"
         }
 
     # Füge in der Klasse SensitiveRegionCropper hinzu:
@@ -245,7 +247,8 @@ class SensitiveRegionCropper:
                 f"Filtered out {len(sensitive_regions) - len(valid_regions)} invalid regions"
             )
 
-        merged_regions = self._merge_nearby_regions(valid_regions)
+        # merged_regions = self._merge_nearby_regions(valid_regions)
+        merged_regions = valid_regions  # Deaktiviere Merging für präzisere Crops
 
         # 5. Erweitere Regionen um Margin und validiere Größe
         final_regions = []
@@ -269,8 +272,8 @@ class SensitiveRegionCropper:
         self,
         target_text: str,
         word_boxes: List[Tuple[str, Tuple[int, int, int, int]]],
-        start_pos: int = None,
-        end_pos: int = None,
+        start_pos: int = 0,
+        end_pos: int = 0,
     ) -> List[Tuple[int, int, int, int]]:
         """
         Findet Word-Boxes, die einem bestimmten Text entsprechen.
@@ -427,8 +430,8 @@ class SensitiveRegionCropper:
             Dictionary mit Seite -> Liste von Crop-Bild-Pfaden
         """
         try:
-            output_dir = Path(output_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
+            output_dir_path = Path(output_dir)
+            output_dir_path.mkdir(parents=True, exist_ok=True)
 
             # Konvertiere PDF zu Bildern
             logger.info(f"Konvertiere PDF zu Bildern: {pdf_path}")
@@ -473,7 +476,7 @@ class SensitiveRegionCropper:
 
                     # Erstelle Dateinamen
                     crop_filename = f"{pdf_name}_page_{page_num + 1}_region_{i + 1}.png"
-                    crop_path = output_dir / crop_filename
+                    crop_path = str(output_dir_path / Path(crop_filename))
 
                     # Speichere das gecropte Bild
                     cropped_image.save(crop_path)

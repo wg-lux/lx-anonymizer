@@ -1,3 +1,4 @@
+from email.mime import image
 import hashlib
 import json
 import logging
@@ -19,9 +20,7 @@ from .name_fallback import extract_patient_info_from_text
 from .ocr import \
     tesseract_full_image_ocr  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from .ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
-from .ocr_preprocessing import (optimize_image_for_medical_text,
-                                preprocess_image)
-from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from .ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from .pdf_operations import convert_pdf_to_images
 from .sensitive_region_cropper import \
     SensitiveRegionCropper  # Import the new cropper
@@ -70,6 +69,11 @@ class ReportReader:
         self.ollama_proc = None
         self.ollama_extractor = None
         self.ollama_available = False
+        
+        # initialize global sensitive meta
+
+        self.sensitive_meta = SensitiveMeta()
+        self.sensitive_meta_dict = self.sensitive_meta.to_dict()
 
         try:
             self.ollama_proc = ensure_ollama()
@@ -208,7 +212,7 @@ class ReportReader:
                 # Map fallback's "Unknown" to None for consistency before merging
                 fallback_info["patient_first_name"] = None if fallback_info.get("patient_first_name") == "Unknown" else fallback_info.get("patient_first_name")
                 fallback_info["patient_last_name"] = None if fallback_info.get("patient_last_name") == "Unknown" else fallback_info.get("patient_last_name")
-                fallback_info["patient_gender"] = None if fallback_info.get("patient_gender") == "Unknown" else fallback_info.get("patient_gender")
+                fallback_info["patient_gender_name"] = None if fallback_info.get("patient_gender_name") == "Unknown" else fallback_info.get("patient_gender_name")
                 # Assume fallback might return date as string or None
                 patient_info = fallback_info
                 is_valid_info = True
@@ -252,9 +256,10 @@ class ReportReader:
             "patient_last_name": patient_info.get("patient_last_name"),
             "patient_dob": parsed_dob,  # Use the parsed date object or None
             "casenumber": patient_info.get("casenumber"),
-            "patient_gender": patient_info.get("patient_gender"),
+            "patient_gender_name": patient_info.get("patient_gender_name"),
         }
-        report_meta.update(final_patient_info)
+        self.sensitive_meta.safe_update(final_patient_info)
+        report_meta = self.sensitive_meta_dict
 
         # --- Extract other information (Examiner, Examination, Endoscope) ---
         # This part remains the same, using SpaCy extractors on lines
@@ -267,7 +272,6 @@ class ReportReader:
                     if examiner_info:
                         report_meta.update(examiner_info)
                         examiner_found = True
-                        break  # Assuming only one examiner line needed
 
         examination_found = False
         if lines:  # Only run if lines exist
@@ -292,6 +296,9 @@ class ReportReader:
                         report_meta.update(endoscope_info)
                         endoscope_found = True
                         break
+        
+        self.sensitive_meta.safe_update(report_meta)
+        report_meta = self.sensitive_meta_dict
 
         # Add PDF hash (remains the same)
         try:
@@ -319,7 +326,7 @@ class ReportReader:
         try:
             # Use the unified extractor that handles retries and fallbacks automatically
             meta_obj = self.ollama_extractor.extract_metadata(text)  # type: ignore
-            meta = meta_obj.model_dump() if meta_obj else {}
+            meta = self.sensitive_meta.safe_update(meta_obj) if meta_obj else None
             if not meta:
                 logger.warning("DeepSeek Ollama extraction failed, returning empty dict.")
             else:
@@ -327,19 +334,19 @@ class ReportReader:
             return meta
         except Exception as e:
             logger.warning(f"DeepSeek Ollama extraction error: {e}")
-            return {}
+            return None
 
     def extract_report_meta_medllama(self, text):
         """Extract metadata using MedLLaMA via Ollama structured output."""
         if not self.ollama_available or not self.ollama_extractor:
             logger.warning("Ollama not available for MedLLaMA extraction, returning empty dict.")
-            return {}
+            return text
 
         logger.info("Attempting metadata extraction with MedLLaMA (Ollama Structured Output)")
         try:
             # Use the unified extractor that handles retries and fallbacks automatically
             meta_obj = self.ollama_extractor.extract_metadata(text)  # type: ignore
-            meta = meta_obj.model_dump() if meta_obj else {}
+            meta = self.sensitive_meta.safe_update(meta_obj) if meta_obj else None
             if not meta:
                 logger.warning("MedLLaMA Ollama extraction failed, returning empty dict.")
             else:
@@ -347,19 +354,19 @@ class ReportReader:
             return meta
         except Exception as e:
             logger.warning(f"MedLLaMA Ollama extraction error: {e}")
-            return {}
+            return text
 
     def extract_report_meta_llama3(self, text):
         """Extract metadata using Llama3 via Ollama structured output."""
         if not self.ollama_available or not self.ollama_extractor:
             logger.warning("Ollama not available for Llama3 extraction, returning empty dict.")
-            return {}
+            return text
 
         logger.info("Attempting metadata extraction with Llama3 (Ollama Structured Output)")
         try:
             # Use the unified extractor that handles retries and fallbacks automatically
             meta_obj = self.ollama_extractor.extract_metadata(text)  # type: ignore
-            meta = meta_obj.model_dump() if meta_obj else {}
+            meta = self.sensitive_meta.safe_update(meta_obj) if meta_obj else None
             if not meta:
                 logger.warning("Llama3 Ollama extraction failed, returning empty dict.")
             else:
@@ -367,7 +374,7 @@ class ReportReader:
             return meta
         except Exception as e:
             logger.warning(f"Llama3 Ollama extraction error: {e}")
-            return {}
+            return None
 
     def anonymize_report(self, text, report_meta):
         """
@@ -442,7 +449,7 @@ class ReportReader:
                     return "", "", {}
                 if not os.path.exists(image_path):
                     logger.error(f"Image file not found: {image_path}")
-                    return "", "", {}
+                    return "", "", {}, image_path
                 # If image_path is provided, we assume it's a single image file
                 logger.info(f"Reading text from image file: {image_path}")
                 try:
@@ -450,7 +457,7 @@ class ReportReader:
                     text, _ = tesseract_full_image_ocr(pil_image)  # Use Tesseract OCR on the image
                 except Exception as e:
                     logger.error(f"Error reading image {image_path}: {e}")
-                    return "", "", {}
+                    return "", "", {}, image_path
 
         ocr_applied = False  # Flag to track if OCR was used
 
@@ -464,26 +471,26 @@ class ReportReader:
                 if pdf_path:
                     if not isinstance(pdf_path, (str, os.PathLike, Path)):
                         logger.error(f"Cannot apply OCR: PDF path is not valid: {pdf_path}")
-                        return "", "", {}
+                        return "", "", {}, pdf_path
 
                     logger.info(f"Converting PDF to images for OCR: {pdf_path}")
                     try:
                         images_from_pdf = convert_pdf_to_images(Path(pdf_path))
                     except Exception as e:
                         logger.error(f"Failed to convert PDF to images: {e}")
-                        return "", "", {}
+                        return "", "", {}, pdf_path
                 elif image_path:
                     if not isinstance(image_path, (str, os.PathLike, Path)):
                         logger.error(f"Cannot apply OCR: Image path is not valid: {image_path}")
-                        return "", "", {}
+                        return "", "", {}, image_path
                     try:
                         images_from_pdf = [Image.open(str(image_path))]
                     except Exception as e:
                         logger.error(f"Failed to open image file: {e}")
-                        return "", "", {}
+                        return "", "", {}, image_path
                 else:
                     logger.error("No valid path provided for OCR processing")
-                    return "", "", {}
+                    return "", "", {}, pdf_path
 
                 ocr_text = ""
 
@@ -549,13 +556,13 @@ class ReportReader:
                     logger.error("OCR fallback produced very short/no text, cannot proceed with metadata extraction.")
                     # Return empty/original text and empty meta if OCR fails badly
                     original_text_from_pdf = self.read_pdf(pdf_path)  # Re-read original for context
-                    return original_text_from_pdf, original_text_from_pdf, {}
+                    return original_text_from_pdf, original_text_from_pdf, {}, pdf_path
 
             except Exception as e:
                 logger.error(f"OCR fallback process failed entirely: {e}")
                 # Return empty/original text and empty meta if OCR fails badly
                 original_text_from_pdf = self.read_pdf(pdf_path)  # Re-read original for context
-                return original_text_from_pdf, original_text_from_pdf, {}
+                return original_text_from_pdf, original_text_from_pdf, {}, pdf_path
 
         # --- Metadata Extraction ---
         report_meta = {}
@@ -571,7 +578,8 @@ class ReportReader:
                 else:
                     logger.warning(f"Unknown LLM extractor specified: {use_llm_extractor}. Falling back to default.")
                     report_meta = self.extract_report_meta(text, pdf_path=None)  # Default SpaCy/Regex
-
+                self.sensitive_meta.safe_update(report_meta)
+                report_meta = self.sensitive_meta_dict
                 # If LLM extraction failed (returned {}), fall back to default SpaCy/Regex
                 if not report_meta:
                     logger.warning(f"LLM extractor '{use_llm_extractor}' failed. Falling back to default SpaCy/Regex extraction.")
@@ -581,10 +589,12 @@ class ReportReader:
                 # Default extraction: SpaCy + Regex fallback
                 logger.info("Using default SpaCy/Regex metadata extraction.")
                 report_meta = self.extract_report_meta(text, pdf_path)
+                self.sensitive_meta.safe_update(report_meta)
+                report_meta = self.sensitive_meta_dict
         else:
             logger.warning("Skipping metadata extraction due to insufficient text content.")
             report_meta = {"pdf_hash": self.pdf_hash(open(str(pdf_path), "rb").read()) if os.path.exists(str(pdf_path)) else None}  # Still add hash if possible
-
+        self.sensitive_meta.safe_update(report_meta)
         # --- Anonymization ---
         anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
 
@@ -617,40 +627,26 @@ class ReportReader:
             
 
         
-        try:
-            sensitive_meta = SensitiveMeta.from_dict({
-                **report_meta,
-                "text": report_meta.get("text", text),
-                "anonymized_text": report_meta.get("anonymized_text", anonymized_text),
-                "file_path": str(pdf_path) if pdf_path else None,
-            })
-        except Exception as e:
-            logger.warning(f"Failed to create SensitiveMeta: {e}")
-            sensitive_meta = SensitiveMeta(
-                file_path=str(pdf_path) if pdf_path else None,
-                patient_first_name=report_meta.get("patient_first_name") or report_meta.get("first_name"),
-                patient_last_name=report_meta.get("patient_last_name") or report_meta.get("last_name"),
-                patient_dob=report_meta.get("patient_dob") or report_meta.get("birth_date"),
-                casenumber=report_meta.get("casenumber") or report_meta.get("case_number"),
-                patient_gender=report_meta.get("patient_gender") or report_meta.get("gender"),
-                examination_date=report_meta.get("examination_date"),
-                examination_time=report_meta.get("examination_time"),
-                examiner_first_name=report_meta.get("examiner_first_name") or report_meta.get("doctor_first_name"),
-                examiner_last_name=report_meta.get("examiner_last_name") or report_meta.get("doctor_last_name"),
-                center=report_meta.get("center") or report_meta.get("hospital"),
-                text=text,
-                anonymized_text=anonymized_text
-            )
 
-        # Log final outcome
-        if ocr_applied:
-            logger.info(f"Processed (OCR applied): {pdf_path}. Fields: {list(sensitive_meta.to_dict().keys())}")
-        else:
-            logger.info(f"Processed (No OCR): {pdf_path}. Fields: {list(sensitive_meta.to_dict().keys())}")
+        sensitive_meta = dict(
+            file_path=str(pdf_path) if pdf_path else None,
+            patient_first_name=report_meta.get("patient_first_name") or report_meta.get("first_name"),
+            patient_last_name=report_meta.get("patient_last_name") or report_meta.get("last_name"),
+            patient_dob=report_meta.get("patient_dob") or report_meta.get("birth_date"),
+            casenumber=report_meta.get("casenumber") or report_meta.get("casenumber"),
+            patient_gender_name=report_meta.get("patient_gender_name") or report_meta.get("gender"),
+            examination_date=report_meta.get("examination_date"),
+            examination_time=report_meta.get("examination_time"),
+            examiner_first_name=report_meta.get("examiner_first_name") or report_meta.get("doctor_first_name"),
+            examiner_last_name=report_meta.get("examiner_last_name") or report_meta.get("doctor_last_name"),
+            center=report_meta.get("center") or report_meta.get("hospital"),
+            text=text,
+            anonymized_text=anonymized_text
+        )
+        self.sensitive_meta.safe_update(sensitive_meta)
 
-        logger.debug(f"Final SensitiveMeta: {sensitive_meta.to_dict()}")
 
-        return text, anonymized_text, sensitive_meta.to_dict, anonymized_pdf_path
+        return text, anonymized_text, self.sensitive_meta_dict, anonymized_pdf_path
 
     def pdf_hash(self, pdf_binary):
         """
@@ -695,7 +691,7 @@ class ReportReader:
             Tuple: (original_text, anonymized_text, report_meta, cropped_regions_info)
         """
         # Führe die normale Verarbeitung durch
-        original_text, anonymized_text, report_meta = self.process_report(
+        original_text, anonymized_text, report_meta, _ = self.process_report(
             pdf_path=pdf_path, image_path=image_path, use_ensemble=use_ensemble, verbose=verbose, use_llm_extractor=use_llm_extractor, text=text
         )
 

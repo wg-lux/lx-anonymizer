@@ -1,27 +1,19 @@
-"""
-Utility-Funktionen für das Sensitive Region Cropping.
-
-Diese Datei enthält Hilfsfunktionen für erweiterte Cropping-Operationen
-und Batch-Verarbeitung von PDFs.
-"""
-
 import json
 from pathlib import Path
 from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import logging
 
-from .report_reader import ReportReader
-from .custom_logger import get_logger
-
-logger = get_logger(__name__)
-
+# Setup logger (if `get_logger` is not defined, use Python's default logging)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 class BatchCropper:
     """
     Klasse für die Batch-Verarbeitung mehrerer PDFs mit Cropping-Funktionalität.
     """
-    
+
     def __init__(self, 
                  output_base_dir: str,
                  max_workers: int = 4,
@@ -170,8 +162,9 @@ class BatchCropper:
                 'total_regions': total_regions,
                 'cropped_regions': cropped_regions,
                 'metadata': {
-                    'patient_name': f"{report_meta.get('patient_first_name', '')} {report_meta.get('patient_last_name', '')}".strip(),
-                    'case_number': report_meta.get('casenumber'),
+                    'patient_first_name': report_meta.get('patient_first_name'),
+                    'patient_last_name': report_meta.get('patient_last_name', ''),
+                    'casenumber': report_meta.get('casenumber'),
                     'patient_dob': str(report_meta.get('patient_dob', '')),
                     'pdf_hash': report_meta.get('pdf_hash'),
                     'text_length': len(original_text) if original_text else 0
@@ -249,130 +242,10 @@ class BatchCropper:
                     f.write(f"  Gefundene Regionen: {result['total_regions']}\n")
                     if result.get('metadata'):
                         meta = result['metadata']
-                        if meta.get('patient_name'):
-                            f.write(f"  Patient: {meta['patient_name']}\n")
-                        if meta.get('case_number'):
-                            f.write(f"  Fallnummer: {meta['case_number']}\n")
+                        if meta.get('patient_first_name') and meta.get('patient_last_name'):
+                            f.write(f"  Patient: {meta['patient_first_name']} {meta['patient_last_name']}\n")
+                        if meta.get('casenumber'):
+                            f.write(f"  Fallnummer: {meta['casenumber']}\n")
                         f.write(f"  Textlänge: {meta.get('text_length', 0)} Zeichen\n")
                 else:
                     f.write(f"  Fehler: {result.get('error', 'Unbekannter Fehler')}\n")
-
-
-def create_cropping_config(output_file: str = "cropping_config.json") -> str:
-    """
-    Erstellt eine Beispiel-Konfigurationsdatei für das Cropping.
-    
-    Args:
-        output_file: Pfad zur Ausgabe-Konfigurationsdatei
-        
-    Returns:
-        Pfad zur erstellten Konfigurationsdatei
-    """
-    config = {
-        "cropping_settings": {
-            "margin": 20,
-            "min_region_size": [100, 30],
-            "merge_distance": 50
-        },
-        "sensitive_patterns": {
-            "patient_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
-            "birth_date": r"\b\d{1,2}\.\d{1,2}\.\d{4}\b",
-            "case_number": r"(?:Fallnummer|Fallnr|Fall\.Nr)[:\s]*(\d+)",
-            "social_security": r"\b\d{2}\s?\d{2}\s?\d{2}\s?\d{4}\b",
-            "phone_number": r"\b(?:\+49\s?)?(?:\d{3,5}[\s\-]?)?\d{6,8}\b",
-            "address": r"[A-ZÄÖÜ][a-zäöüß\s]+(str\.|straße|platz|weg|gasse)\s*\d+",
-            "doctor_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?"
-        },
-        "processing_options": {
-            "use_llm_extractor": "deepseek",
-            "use_ensemble_ocr": False,
-            "create_visualizations": True,
-            "parallel_processing": True,
-            "max_workers": 4
-        },
-        "output_settings": {
-            "create_metadata_files": True,
-            "create_batch_reports": True,
-            "image_format": "PNG",
-            "image_quality": 95
-        }
-    }
-    
-    with open(str(output_file), 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"Konfigurationsdatei erstellt: {output_file}")
-    return output_file
-
-
-def validate_cropping_results(output_dir: str) -> Dict[str, Any]:
-    """
-    Validiert die Ergebnisse einer Cropping-Operation.
-    
-    Args:
-        output_dir: Verzeichnis mit Cropping-Ergebnissen
-        
-    Returns:
-        Validierungs-Report
-    """
-    output_dir = Path(output_dir)
-    
-    if not output_dir.exists():
-        return {'valid': False, 'error': f'Ausgabeverzeichnis existiert nicht: {output_dir}'}
-    
-    # Sammle alle Crop-Bilder
-    crop_images = list(output_dir.glob("**/*.png")) + list(output_dir.glob("**/*.jpg"))
-    metadata_files = list(output_dir.glob("**/*_metadata.json"))
-    
-    validation_result = {
-        'valid': True,
-        'output_directory': str(output_dir),
-        'total_crop_images': len(crop_images),
-        'total_metadata_files': len(metadata_files),
-        'validation_date': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'issues': []
-    }
-    
-    # Validiere Metadaten-Dateien
-    for meta_file in metadata_files:
-        try:
-            with open(str(meta_file), 'r', encoding='utf-8') as f:
-                meta_data = json.load(f)
-                
-            # Prüfe ob die referenzierten Crop-Bilder existieren
-            if 'cropped_regions' in meta_data:
-                for page, crop_files in meta_data['cropped_regions'].items():
-                    for crop_file in crop_files:
-                        if not Path(crop_file).exists():
-                            validation_result['issues'].append(
-                                f"Crop-Bild nicht gefunden: {crop_file} (referenziert in {meta_file.name})"
-                            )
-                            
-        except Exception as e:
-            validation_result['issues'].append(f"Fehler beim Lesen von {meta_file.name}: {e}")
-    
-    # Prüfe auf verwaiste Crop-Bilder
-    referenced_crops = set()
-    for meta_file in metadata_files:
-        try:
-            with open(str(meta_file), 'r', encoding='utf-8') as f:
-                meta_data = json.load(f)
-            if 'cropped_regions' in meta_data:
-                for crop_files in meta_data['cropped_regions'].values():
-                    referenced_crops.update(crop_files)
-        except Exception:
-            continue
-    
-    orphaned_images = []
-    for crop_image in crop_images:
-        if str(crop_image) not in referenced_crops:
-            orphaned_images.append(str(crop_image))
-    
-    if orphaned_images:
-        validation_result['orphaned_images'] = orphaned_images
-        validation_result['issues'].append(f"Gefunden {len(orphaned_images)} verwaiste Crop-Bilder")
-    
-    # Setze Validitätsstatus
-    validation_result['valid'] = len(validation_result['issues']) == 0
-    
-    return validation_result

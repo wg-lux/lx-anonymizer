@@ -7,7 +7,7 @@ def extract_patient_info_from_text(text):
         'patient_first_name': "Unknown",
         'patient_last_name': "Unknown",
         'patient_dob': None,
-        'patient_gender': "Unknown",
+        'patient_gender_name': "Unknown",
         'casenumber': None
     }
     
@@ -49,9 +49,9 @@ def extract_patient_info_from_text(text):
                               min(len(text), text.find(info['patient_first_name']) + len(info['patient_first_name']) + 30)]
         
         if "Patientin" in context_window:
-            info['patient_gender'] = "female"
+            info['patient_gender_name'] = "female"
         elif "Patient" in context_window and "Patientin" not in context_window:
-            info['patient_gender'] = "male"
+            info['patient_gender_name'] = "male"
             
         return info
     

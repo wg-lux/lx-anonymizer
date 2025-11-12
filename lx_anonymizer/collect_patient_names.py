@@ -206,10 +206,10 @@ def _process_json_file(rr: ReportReader, fp: Path, llm_extractor: str | None, ex
         result_obj = {
             "file": filename,
             "report_id": str(report_id),
-            "first_name": extracted_meta.get("patient_first_name"),
-            "last_name": extracted_meta.get("patient_last_name"),
-            "dob": str(extracted_meta.get("patient_dob")) if extracted_meta.get("patient_dob") else None,
-            "gender": extracted_meta.get("patient_gender"),
+            "patient_first_name": extracted_meta.get("patient_first_name"),
+            "patient_last_name": extracted_meta.get("patient_last_name"),
+            "patient_dob": str(extracted_meta.get("patient_dob")) if extracted_meta.get("patient_dob") else None,
+            "patient_gender_name": extracted_meta.get("patient_gender_name"),
             "casenumber": extracted_meta.get("casenumber"),
         }
 
@@ -246,7 +246,7 @@ def _process_pdf_file(rr: ReportReader, fp: Path, llm_extractor: str | None, exi
         "first_name": extracted_meta.get("patient_first_name"),
         "last_name": extracted_meta.get("patient_last_name"),
         "dob": str(extracted_meta.get("patient_dob")) if extracted_meta.get("patient_dob") else None,
-        "gender": extracted_meta.get("patient_gender"),
+        "gender": extracted_meta.get("patient_gender_name"),
         "casenumber": extracted_meta.get("casenumber"),
     }
 

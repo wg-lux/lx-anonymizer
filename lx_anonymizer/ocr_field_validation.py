@@ -39,14 +39,14 @@ class OCRFieldValidator:
 
     @staticmethod
     def validate(
-        field_type: Literal["examiner_first_name", "examiner_last_name", "first_name", "last_name", "dob", "casenumber", "center"],
+        field_type: Literal["examiner_first_name", "examiner_last_name", "patient_first_name", "patient_last_name", "dob", "casenumber", "center"],
         value: Optional[str]
     ) -> bool:
         """
         Validate OCR-extracted field based on expected type.
 
         Args:
-            field_type: One of 'examiner', 'first_name', 'last_name', 'dob', 'casenumber', 'center'
+            field_type: One of 'examiner', 'patient_first_name', 'patient_last_name', 'dob', 'casenumber', 'center'
             value: OCR-extracted string
 
         Returns:
@@ -64,12 +64,12 @@ class OCRFieldValidator:
             return False
 
         # --- Type-specific validation ---
-        if field_type in {"examiner_first_name", "examiner_last_name", "first_name", "last_name"}:
+        if field_type in {"examiner_first_name", "examiner_last_name", "patient_first_name", "patient_last_name"}:
             if not OCRFieldValidator._is_reasonable_word_structure(value):
                 return False
 
             # First/last name specific: usually one or two words, capitalized
-            if field_type in {"first_name", "last_name", "examiner_first_name", "examiner_last_name"}:
+            if field_type in {"patient_first_name", "patient_last_name", "examiner_first_name", "examiner_last_name"}:
                 if len(value.split()) > 3:
                     logger.debug(f"Rejected {field_type}: too many parts ({value})")
                     return False
@@ -77,7 +77,7 @@ class OCRFieldValidator:
                     logger.debug(f"Rejected {field_type}: bad capitalization ({value})")
                     return False
 
-        elif field_type == "dob":
+        elif field_type == "patient_dob" or field_type == "examination_date":
             # Date of birth: must look like a date
             # Accepts DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD, etc.
             date_patterns = [

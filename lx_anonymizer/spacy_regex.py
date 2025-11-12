@@ -40,7 +40,7 @@ class PatientDataExtractorLg:
     "patient_last_name":  r"patient_last_name",
     "patient_dob":        r"(?:patient_)?(?:dob|geb(?:urtsdatum)?)",
     "casenumber":         r"(?:case)?number",
-    "patient_gender":     r"(?:patient_)?gender",
+    "patient_gender_name":     r"(?:patient_)?gender",
     }
     # Improved VALUE pattern to handle UTF-8 names with accents
     _VALUE = r'["\']?(?P<val>[\w\.\-\/ äöüßÄÖÜéèêç]+?)["\']?$'
@@ -237,7 +237,7 @@ class PatientDataExtractorLg:
                 "patient_last_name": last_name,
                 "patient_dob": birthdate,
                 "casenumber": casenumber,
-                "patient_gender": gender
+                "patient_gender_name": gender
             }
 
         # Fallback if no match found by the matcher - FIX: Return None values
@@ -246,7 +246,7 @@ class PatientDataExtractorLg:
             "patient_last_name": None,
             "patient_dob": None,
             "casenumber": None,
-            "patient_gender": None
+            "patient_gender_name": None
         }
 
     def _extract_using_entity_ruler(self, text):
@@ -273,11 +273,11 @@ class PatientDataExtractorLg:
 
         return {
             'status': "No relevant entities found by ruler",
-            'patient_first_name': "Unknown",
-            'patient_last_name': "Unknown",
+            'patient_first_name': None,
+            'patient_last_name': None,
             'birthdate': None,
             'casenumber': None,
-            'patient_gender': "Unknown"
+            'patient_gender_name': None
         }
 
     def examiner_data_extractor(self, text):

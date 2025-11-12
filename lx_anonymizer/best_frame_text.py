@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .ollama_llm_meta_extraction_optimized import OllamaOptimizedExtractor
+from .ollama_llm_meta_extraction import OllamaOptimizedExtractor
 
 logger = logging.getLogger(__name__)
 

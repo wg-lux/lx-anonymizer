@@ -100,7 +100,6 @@ def tesseract_full_image_ocr(image_path):
       - A single string with all recognized text.
       - A list of (word, (left, top, width, height)) for each recognized word.
     """
-
     if hasattr(image_path, "convert"):
         image = image_path.convert("RGB")
     else:
@@ -122,6 +121,7 @@ def tesseract_full_image_ocr(image_path):
             word_boxes.append((word, (x, y, w, h)))
 
     return full_text.strip(), word_boxes
+
 
 
 def trocr_full_image_ocr(image_input):

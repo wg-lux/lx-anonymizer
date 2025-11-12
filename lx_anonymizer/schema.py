@@ -6,7 +6,7 @@ from datetime import date
 class PatientMeta(BaseModel):
     patient_first_name: Optional[str] = Field(None, description="Given name")
     patient_last_name:  Optional[str] = Field(None, description="Family name")
-    patient_gender:     Optional[str] = Field(None, description="m/f/div/unknown")
+    patient_gender_name:     Optional[str] = Field(None, description="m/f/div/unknown")
     patient_dob:        Optional[date] = None
     casenumber:         Optional[str] = None
 
