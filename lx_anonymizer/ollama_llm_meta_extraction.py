@@ -210,9 +210,7 @@ JSON:"""
                 "examiner_last_name": {"type": ["string", "null"]},
                 # Administrative Daten
                 "casenumber": {"type": ["string", "null"]},
-                "case_id": {"type": ["string", "null"]},
                 # Zusätzliche Informationen
-                "additional_info": {"type": ["string", "null"]},
             },
             "required": [],  # Keine Felder sind zwingend erforderlich
         }
@@ -355,8 +353,9 @@ JSON:"""
                     # Bereinige Antwort falls nötig (entferne Markdown-Blöcke etc.)
                     cleaned_content = self._clean_json_response(content)
                     metadata_dict = json.loads(cleaned_content)
-                    metadata = SensitiveMeta(**metadata_dict)
-
+                    self.sensitive_meta.safe_update(**metadata_dict)
+                    metadata = self.sensitive_meta
+                    
                     # Speichere im Cache
                     self.cache.put(text, metadata)
 
@@ -511,7 +510,8 @@ JSON:"""
                 confidence = self._calculate_confidence(metadata_dict)
 
                 if confidence >= confidence_threshold:
-                    metadata = SensitiveMeta(**metadata_dict)
+                    self.sensitive_meta.safe_update(**metadata_dict)
+                    metadata = self.sensitive_meta
                     logger.info(f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.patient_first_name, patient_last_name}, Alter: {metadata.patient_age}")
                     return metadata
                 else:
@@ -657,7 +657,7 @@ JSON:"""
             score += 0.15
 
         # Fallnummer/Case Number (sehr wichtig für medizinische Identifikation)
-        case_num = metadata_dict.get("casenumber", "") or metadata_dict.get("case_id", "") or ""
+        case_num = metadata_dict.get("casenumber", "") or ""
         if case_num and case_num.lower() not in ["unknown", "", "null"]:
             score += 0.15
 
