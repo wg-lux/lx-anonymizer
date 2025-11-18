@@ -61,3 +61,32 @@ class VideoProcessingService:
         except Exception as e:
             logger.error(f"Masking failed: {e}")
             return False
+        
+    def frame_removal(self, input_video: Path, frames_to_remove: List[int], output_video: Path) -> bool:
+        """
+        Remove specified frames from the video.
+        """
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmpdir_path = Path(tmpdir)
+                # Extract frames
+                extract_cmd = ["ffmpeg", "-nostdin", "-y", "-i", str(input_video), str(tmpdir_path / "frame_%05d.png")]
+                subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
+
+                # Remove specified frames
+                for frame_num in frames_to_remove:
+                    frame_file = tmpdir_path / f"frame_{frame_num:05d}.png"
+                    if frame_file.exists():
+                        frame_file.unlink()
+
+                # Reassemble video
+                reassemble_cmd = [
+                    "ffmpeg", "-nostdin", "-y", "-framerate", "30", "-i",
+                    str(tmpdir_path / "frame_%05d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", str(output_video)
+                ]
+                subprocess.run(reassemble_cmd, capture_output=True, text=True, check=True)
+
+            return output_video.exists() and output_video.stat().st_size > 0
+        except Exception as e:
+            logger.error(f"Frame removal failed: {e}")
+            return False

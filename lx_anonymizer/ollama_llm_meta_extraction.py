@@ -197,10 +197,8 @@ JSON:"""
             "type": "object",
             "properties": {
                 # Patientendaten
-                "patient_first_name, patient_last_name": {"type": ["string", "null"]},
                 "patient_first_name": {"type": ["string", "null"]},
                 "patient_last_name": {"type": ["string", "null"]},
-                "patient_age": {"type": ["integer", "null"]},
                 "patient_dob": {"type": ["string", "null"]},
                 "patient_gender_name": {"type": ["string", "null"], "enum": ["male", "female", "unknown", None]},
                 # Untersuchungsdaten
@@ -353,7 +351,7 @@ JSON:"""
                     # Bereinige Antwort falls nötig (entferne Markdown-Blöcke etc.)
                     cleaned_content = self._clean_json_response(content)
                     metadata_dict = json.loads(cleaned_content)
-                    self.sensitive_meta.safe_update(**metadata_dict)
+                    self.sensitive_meta.safe_update(metadata_dict)
                     metadata = self.sensitive_meta
                     
                     # Speichere im Cache
@@ -510,9 +508,11 @@ JSON:"""
                 confidence = self._calculate_confidence(metadata_dict)
 
                 if confidence >= confidence_threshold:
-                    self.sensitive_meta.safe_update(**metadata_dict)
+                    self.sensitive_meta.safe_update(metadata_dict)
                     metadata = self.sensitive_meta
-                    logger.info(f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.patient_first_name, patient_last_name}, Alter: {metadata.patient_age}")
+                    logger.info(
+                        f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.patient_first_name} {metadata.patient_last_name}, DOB: {metadata.patient_dob}"
+                    )
                     return metadata
                 else:
                     logger.info(f"Smart-Sampling Konfidenz zu niedrig ({confidence:.2f}), verwende Vollextraktion")
@@ -623,7 +623,7 @@ Suche nach:
 - Geburtsdatum
 
 JSON Format:
-{{"patient_first_name, patient_last_name": "...", "patient_age": 0, "examination_date": "...", "casenumber": "...", "patient_dob": "...", "gender": "unknown"}}
+{{"patient_first_name": "...", "patient_last_name": "...", "examination_date": "...", "casenumber": "...", "patient_dob": "...", "patient_gender_name": "unknown"}}
 
 JSON:"""
 
@@ -637,37 +637,31 @@ JSON:"""
         score = 0.0
 
         # Patient Name (höchste Priorität)
-        name = metadata_dict.get("patient_first_name, patient_last_name", "") or ""
         first_name = metadata_dict.get("patient_first_name", "") or ""
         last_name = metadata_dict.get("patient_last_name", "") or ""
 
-        if name and name.lower() not in ["unknown", "", "patient", "null", "nix"]:
-            score += 0.25
+        if first_name and last_name and f"{first_name} {last_name}".strip().lower() not in ["unknown", "patient", "null", "nix"]:
+            score += 0.30
         elif (first_name and first_name.lower() not in ["unknown", "", "null"]) or (last_name and last_name.lower() not in ["unknown", "", "null"]):
-            score += 0.20
-
-        # Patient Age (wichtig für Validierung)
-        age = metadata_dict.get("patient_age", 0)
-        if isinstance(age, int) and 0 < age < 120:
-            score += 0.20
+            score += 0.25
 
         # Examination Date (wichtig für medizinische Aufzeichnungen)
         exam_date = metadata_dict.get("examination_date", "") or ""
         if exam_date and exam_date.lower() not in ["unknown", "", "null"]:
-            score += 0.15
+            score += 0.20
 
         # Fallnummer/Case Number (sehr wichtig für medizinische Identifikation)
         case_num = metadata_dict.get("casenumber", "") or ""
         if case_num and case_num.lower() not in ["unknown", "", "null"]:
-            score += 0.15
+            score += 0.20
 
         # Geburtsdatum (wichtig für Patientenidentifikation)
         dob = metadata_dict.get("patient_dob", "") or ""
         if dob and dob.lower() not in ["unknown", "", "null"]:
-            score += 0.10
+            score += 0.15
 
         # Gender (weniger wichtig, aber hilfreich)
-        gender = metadata_dict.get("gender", "") or ""
+        gender = metadata_dict.get("patient_gender_name", "") or ""
         if gender and gender.lower() in ["male", "female"]:
             score += 0.05
 
@@ -678,11 +672,6 @@ JSON:"""
 
         examiner_last_name = metadata_dict.get("examiner_last_name", "") or ""
         if examiner_last_name and examiner_last_name.lower() not in ["unknown", "", "null"]:
-            score += 0.05
-
-        # Patient ID (administrative Identifikation)
-        patient_dob = metadata_dict.get("patient_dob", "") or ""
-        if patient_dob and patient_dob.lower() not in ["unknown", "", "null"]:
             score += 0.05
 
         return min(score, 1.0)
@@ -1160,8 +1149,9 @@ async def extract_enriched_metadata_from_video(video_path: str, sample_frames_co
     logger.info(f"✅ Angereicherte Metadaten-Extraktion abgeschlossen:")
     if enriched_metadata.get("llm_extracted"):
         llm_data = enriched_metadata["llm_extracted"]
-        logger.info(f"   Patient: {llm_data.get('patient_first_name, patient_last_name', 'Unknown')}")
-        logger.info(f"   Alter: {llm_data.get('patient_age', 'Unknown')}")
+        patient_name = " ".join(filter(None, [llm_data.get("patient_first_name"), llm_data.get("patient_last_name")])).strip() or "Unknown"
+        logger.info(f"   Patient: {patient_name}")
+        logger.info(f"   Geburtsdatum: {llm_data.get('patient_dob', 'Unknown')}")
         logger.info(f"   Datum: {llm_data.get('examination_date', 'Unknown')}")
 
     confidence = enriched_metadata.get("confidence_scores", {}).get("overall_confidence", 0)
@@ -1276,7 +1266,7 @@ class VideoMetadataEnricher:
         # LLM-Daten haben Priorität über legacy OCR-Extraktion
         llm_data = enriched_metadata.get("enriched_data", {}).get("llm_extracted", {})
 
-        for key in ["patient_first_name, patient_last_name", "patient_age", "examination_date", "gender"]:
+        for key in ["patient_first_name", "patient_last_name", "examination_date", "patient_gender_name", "patient_dob"]:
             if key in existing_metadata and (not llm_data.get(key) or llm_data.get(key) in ["unknown", "", None]):
                 # Verwende Legacy-Daten als Fallback
                 if "fallback_data" not in merged:
@@ -1299,7 +1289,7 @@ class VideoMetadataEnricher:
             stats["data_sources_used"].append("fallback_data")
 
         # Daten-Vollständigkeit berechnen
-        required_fields = ["patient_first_name, patient_last_name", "patient_dob", "examination_date", "patient_gender_name"]
+        required_fields = ["patient_first_name", "patient_last_name", "patient_dob", "examination_date", "patient_gender_name"]
         filled_fields = 0
 
         for source in ["enriched_data", "legacy_data", "fallback_data"]:

@@ -98,19 +98,26 @@ class SensitiveMeta:
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def safe_update(self, data: Optional[Mapping[str, Any]]) -> None:
+    def safe_update(self, data: Optional[Mapping[str, Any]] = None, **kwargs) -> None:
         """
-        Safely update fields from a mapping:
+        Safely update fields from a mapping or keyword arguments:
         - Ignore unknown keys
         - Ignore blank values (None, '', {}, [], 'Unknown', 'undefined', NaN, etc.)
         - Never overwrite a non-blank existing value with a blank or conflicting value
         - Merge dicts/lists without duplicates, preserving existing content
         """
-        if not data:
+        payload: Dict[str, Any] = {}
+
+        if data:
+            payload.update(dict(data))
+        if kwargs:
+            payload.update(kwargs)
+
+        if not payload:
             return
 
         allowed = self.__annotations__.keys()
-        for k, v in data.items():
+        for k, v in payload.items():
             if k not in allowed:
                 continue
 
