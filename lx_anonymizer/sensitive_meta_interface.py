@@ -138,18 +138,7 @@ class SensitiveMeta:
         and (first_name, last_name, text) are present (legacy compatibility).
         """
         data = dict(data or {})
-        if (
-            not data.get("anonymized_text")
-            and data.get("patient_first_name")
-            and data.get("patient_last_name")
-            and data.get("text")
-        ):
-            data["anonymized_text"] = anonymize_text(
-                report_meta=data,
-                text=data["text"],
-                first_names=[data["patient_first_name"]],
-                last_names=[data["patient_last_name"]],
-            )
+
         # Keep only declared fields; then use safe_update to avoid downgrades
         initial = cls()
         initial.safe_update({k: v for k, v in data.items() if k in cls.__annotations__})

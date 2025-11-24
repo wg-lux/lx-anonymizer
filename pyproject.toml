@@ -64,7 +64,7 @@ maintainers = [
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.8.9.5"
+version = "0.8.9.6"
 
 [project.urls]
 Changelog = "https://github.com/wg-lux/lx-anonymizer/blob/main/CHANGELOG.md"

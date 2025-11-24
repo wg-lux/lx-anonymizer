@@ -178,7 +178,7 @@ MEDIZINISCHER TEXT:
 
 Extrahiere und validiere ob folgende Informationen im Text sind. Formatiere als JSON:
 
-{self.sensitive_meta.to_dict}
+{self.sensitive_meta.to_dict()}
 
 SUCHHINWEISE:
 - Achte auf Begriffe wie: "Fall", "Case", "ID", "Nr.", "Nummer", "Pat-ID", "Geburtsdatum", "geb.", "geboren"
