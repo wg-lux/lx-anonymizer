@@ -142,7 +142,6 @@ class FrameCleaner:
 
         # Sensitive metadata dictionary
         self.sensitive_meta: SensitiveMeta = SensitiveMeta()
-        self.sensitive_meta_dict: Dict[str, Any] = self.sensitive_meta.to_dict()
 
         # ROI Processor - dict traversal for convenience
         self.roi_processor = ROIProcessor()
@@ -273,7 +272,7 @@ class FrameCleaner:
         # ----------------------- persist metadata, apply type checking---------------------------
         self.sensitive_meta.safe_update(accumulated)
         
-        return output_video, self.sensitive_meta_dict
+        return output_video, self.sensitive_meta.to_dict()
 
     # def _get_primary_ocr_engine(self) -> str:
     #     """Return the name of the primary OCR engine being used."""
@@ -759,7 +758,7 @@ class FrameCleaner:
                 meta_obj = self.ollama_extractor.extract_metadata(text)
                 if meta_obj is not None:
                     self.sensitive_meta.safe_update(meta_obj)
-                    meta = self.sensitive_meta_dict
+                    meta = self.sensitive_meta.to_dict()
                 else:
                     meta = None
             except Exception:
@@ -768,13 +767,13 @@ class FrameCleaner:
             try:
                 meta = self.patient_data_extractor(text)
                 self.sensitive_meta.safe_update(meta)
-                meta = self.sensitive_meta_dict
+                meta = self.sensitive_meta.to_dict()
             except Exception:
                 meta = None
         if not meta:
             out = self.frame_metadata_extractor.extract_metadata_from_frame_text(text)
             self.sensitive_meta.safe_update(out)
-            meta = self.sensitive_meta_dict
+            meta = self.sensitive_meta.to_dict()
         return meta
 
     def _process_frame_single(
@@ -789,7 +788,7 @@ class FrameCleaner:
         Konsolidierte Einzel-Frame-Verarbeitung mit OCR, Metadaten und optionaler Batch-Sammlung.
         """
         logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
-        ocr_text, ocr_conf, frame_metadata, is_sensitive = None, 0.0, self.sensitive_meta_dict, False
+        ocr_text, ocr_conf, frame_metadata, is_sensitive = None, 0.0, self.sensitive_meta.to_dict(), False
 
         # possible OCR with MiniCPM-o 2.6
         # if self.use_minicpm and self.minicpm_ocr:
@@ -803,7 +802,7 @@ class FrameCleaner:
             meta_unified = self._unified_metadata_extract(ocr_text)
             frame_metadata = self.frame_metadata_extractor.merge_metadata(frame_metadata, meta_unified)
         self.sensitive_meta.safe_update(frame_metadata)
-        frame_metadata = self.sensitive_meta_dict
+        frame_metadata = self.sensitive_meta.to_dict()
 
             
         # Für Batch-Enrichment sammeln

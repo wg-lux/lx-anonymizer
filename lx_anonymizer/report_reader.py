@@ -73,7 +73,6 @@ class ReportReader:
         # initialize global sensitive meta
 
         self.sensitive_meta = SensitiveMeta()
-        self.sensitive_meta_dict = self.sensitive_meta.to_dict()
 
         try:
             self.ollama_proc = ensure_ollama()
@@ -259,7 +258,7 @@ class ReportReader:
             "patient_gender_name": patient_info.get("patient_gender_name"),
         }
         self.sensitive_meta.safe_update(final_patient_info)
-        report_meta = self.sensitive_meta_dict
+        report_meta = self.sensitive_meta.to_dict()
 
         # --- Extract other information (Examiner, Examination, Endoscope) ---
         # This part remains the same, using SpaCy extractors on lines
@@ -298,7 +297,7 @@ class ReportReader:
                         break
         
         self.sensitive_meta.safe_update(report_meta)
-        report_meta = self.sensitive_meta_dict
+        report_meta = self.sensitive_meta.to_dict()
 
         # Add PDF hash (remains the same)
         try:
@@ -579,7 +578,7 @@ class ReportReader:
                     logger.warning(f"Unknown LLM extractor specified: {use_llm_extractor}. Falling back to default.")
                     report_meta = self.extract_report_meta(text, pdf_path=None)  # Default SpaCy/Regex
                 self.sensitive_meta.safe_update(report_meta)
-                report_meta = self.sensitive_meta_dict
+                report_meta = self.sensitive_meta.to_dict()
                 # If LLM extraction failed (returned {}), fall back to default SpaCy/Regex
                 if not report_meta:
                     logger.warning(f"LLM extractor '{use_llm_extractor}' failed. Falling back to default SpaCy/Regex extraction.")
@@ -590,7 +589,7 @@ class ReportReader:
                 logger.info("Using default SpaCy/Regex metadata extraction.")
                 report_meta = self.extract_report_meta(text, pdf_path)
                 self.sensitive_meta.safe_update(report_meta)
-                report_meta = self.sensitive_meta_dict
+                report_meta = self.sensitive_meta.to_dict()
         else:
             logger.warning("Skipping metadata extraction due to insufficient text content.")
             report_meta = {"pdf_hash": self.pdf_hash(open(str(pdf_path), "rb").read()) if os.path.exists(str(pdf_path)) else None}  # Still add hash if possible
@@ -646,7 +645,7 @@ class ReportReader:
         self.sensitive_meta.safe_update(sensitive_meta)
 
 
-        return text, anonymized_text, self.sensitive_meta_dict, anonymized_pdf_path
+        return text, anonymized_text, self.sensitive_meta.to_dict(), anonymized_pdf_path
 
     def pdf_hash(self, pdf_binary):
         """

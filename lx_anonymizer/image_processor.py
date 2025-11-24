@@ -16,7 +16,6 @@ from .sensitive_meta_interface import SensitiveMeta
 logger = get_logger(__name__)
 
 sensitive_meta = SensitiveMeta()
-sensitive_meta_dict = sensitive_meta.to_dict()
 
 def process_image(
     img_path,
@@ -75,7 +74,7 @@ def process_image(
             llm_metadata = extractor.extract_metadata(ocr_text)
             if llm_metadata:
                 sensitive_meta.safe_update(llm_metadata)
-                llm_results = sensitive_meta_dict
+                llm_results = sensitive_meta.to_dict()
             else:
                 llm_results = {}
         else:
@@ -89,7 +88,7 @@ def process_image(
                 sensitive_meta.safe_update(text_metadata)
             else:
                 text_results = {}
-            combined_results = {"image_analysis": llm_results, "text_analysis": sensitive_meta_dict}
+            combined_results = {"image_analysis": llm_results, "text_analysis": sensitive_meta.to_dict()}
         else:
             combined_results = {"image_analysis": llm_results}
 

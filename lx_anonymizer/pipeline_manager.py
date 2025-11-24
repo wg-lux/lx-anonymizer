@@ -42,7 +42,6 @@ from .sensitive_meta_interface import SensitiveMeta
 logger = get_logger(__name__)
 
 sensitive_meta = SensitiveMeta()
-sensitive_meta_dict = sensitive_meta.to_dict()
 
 def process_images_with_OCR_and_NER(
     file_path, east_path="frozen_east_text_detection.pb", device="default", min_confidence=0.5, width=320, height=320, skip_blur=False, skip_reassembly=False
@@ -145,7 +144,7 @@ def process_images_with_OCR_and_NER(
                     llm_metadata = extractor.extract_metadata(ocr_text)
                     if llm_metadata:
                         sensitive_meta.safe_update(llm_metadata)
-                        llm_results = sensitive_meta_dict
+                        llm_results = sensitive_meta.to_dict()
                     else:
                         llm_results = {}
                 else:

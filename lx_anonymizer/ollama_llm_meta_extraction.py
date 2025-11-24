@@ -63,7 +63,7 @@ class MetadataCache:
         self.hit_count = 0
         self.miss_count = 0
         self.sensitive_meta = SensitiveMeta()
-        self.sensitive_meta_dict = self.sensitive_meta.to_dict()
+
 
     def _generate_key(self, text: str) -> str:
         """Generiert einen Cache-Key basierend auf Text-Inhalt."""
@@ -113,7 +113,6 @@ class OllamaOptimizedExtractor:
         self.current_model = None
         self.cache = MetadataCache()
         self.sensitive_meta = SensitiveMeta()
-        self.sensitive_meta_dict = self.sensitive_meta.to_dict()
 
         self._initialize_best_model()
 
@@ -177,9 +176,9 @@ Analysiere den folgenden Text und extrahiere alle verfügbaren Patienteninformat
 MEDIZINISCHER TEXT:
 {text[:800]}
 
-Extrahiere folgende Informationen als JSON:
+Extrahiere und validiere ob folgende Informationen im Text sind. Formatiere als JSON:
 
-{self.sensitive_meta_dict}
+{self.sensitive_meta.to_dict}
 
 SUCHHINWEISE:
 - Achte auf Begriffe wie: "Fall", "Case", "ID", "Nr.", "Nummer", "Pat-ID", "Geburtsdatum", "geb.", "geboren"
@@ -832,7 +831,6 @@ class EnrichedMetadataExtractor:
         self.frame_context = {}
         self.temporal_metadata = []
         self.sensitive_meta = SensitiveMeta()
-        self.sensitive_meta_dict = self.sensitive_meta.to_dict()
 
     def extract_from_frame_sequence(self, frames_data: List[Dict[str, Any]], ocr_texts: List[str] = [""]) -> Dict[str, Any]:
         """
