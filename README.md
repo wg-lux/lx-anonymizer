@@ -147,10 +147,10 @@ To use the script, the user would provide these arguments along with their corre
 
 ## Parameters of the `main` function
 
-The `main` function is responsible for processing either images or PDF files through the AGL Anonymizer pipeline. Below are the parameters it accepts:
+The `main` function is responsible for processing either images or report files through the AGL Anonymizer pipeline. Below are the parameters it accepts:
 
 - **image_or_pdf_path** (`str`):  
-   The path to the input image or PDF that you want to process. This can be a single image file or a multi-page PDF. The function will detect the file type and process accordingly.
+   The path to the input image or report that you want to process. This can be a single image file or a multi-page report. The function will detect the file type and process accordingly.
 
 - **east_path** (`str`, optional):  
    Path to the pre-trained EAST text detection model (`frozen_east_text_detection.pb`). If not provided, the function will expect it to be in the designated location in the AGL Anonymizer setup.
@@ -221,7 +221,7 @@ The **OCR Pipeline Manager** module coordinates the Optical Character Recognitio
    - **`blur_function(image_path, box, background_color)`**:  
      Blurs specific regions (text boxes) in an image, typically for anonymization.
    - **`convert_pdf_to_images(pdf_path)`**:  
-     Converts a PDF document into individual images for processing.
+     Converts a report document into individual images for processing.
 
 5. **Combining Text Boxes**:
    - **`combine_boxes(text_with_boxes)`**:  
@@ -237,7 +237,7 @@ The **OCR Pipeline Manager** module coordinates the Optical Character Recognitio
 
 #### `process_images_with_OCR_and_NER(file_path, east_path, device, min_confidence, width, height)`
 
-This is the core function of the module, which handles the entire OCR and NER pipeline for a given file (image or PDF). It performs the following steps:
+This is the core function of the module, which handles the entire OCR and NER pipeline for a given file (image or report). It performs the following steps:
 - Detects and reads text from the file using EAST and Tesseract models.
 - Applies OCR (TrOCR and Tesseract) to the detected text regions.
 - Uses NER to identify sensitive information (e.g., names) in the text.
@@ -246,7 +246,7 @@ This is the core function of the module, which handles the entire OCR and NER pi
 - Outputs a modified version of the image with anonymized text and a CSV file containing the NER results.
 
 ##### Parameters:
-- **`file_path`** (`str`): The path to the input image or PDF file.
+- **`file_path`** (`str`): The path to the input image or report file.
 - **`east_path`** (`str`, optional): The path to the EAST model used for text detection.
 - **`device`** (`str`, optional): Specifies the device configuration for text handling and name pseudonymization. Defaults to `"default"`.
 - **`min_confidence`** (`float`, optional): The minimum confidence level required for text detection. Defaults to `0.5`.
@@ -257,7 +257,7 @@ This is the core function of the module, which handles the entire OCR and NER pi
 - **`modified_images_map`** (`dict`): A map of the modified images with replaced text.
 - **`result`** (`dict`): Contains detailed results of the OCR and NER processes, including:
   - `filename`: The original file name.
-  - `file_type`: The type of the file (image or PDF).
+  - `file_type`: The type of the file (image or report).
   - `extracted_text`: The raw extracted text from the file.
   - `names_detected`: A list of detected names.
   - `combined_results`: The OCR and NER results.
