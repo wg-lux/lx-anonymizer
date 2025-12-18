@@ -113,7 +113,9 @@ class FrameMetadataExtractor:
 
             # dob
             dob = self._extract_date_of_birth(text)
-            self.meta.safe_update({"patient_dob": dob.isoformat() if isinstance(dob, date) else dob})
+            self.meta.safe_update(
+                {"patient_dob": dob.isoformat() if isinstance(dob, date) else dob}
+            )
 
             # case number
             case_num = self._extract_case_number(text)
@@ -124,7 +126,9 @@ class FrameMetadataExtractor:
             exam_time = self._extract_examination_time(text)
             self.meta.safe_update(
                 {
-                    "examination_date": exam_date.isoformat() if isinstance(exam_date, date) else exam_date,
+                    "examination_date": exam_date.isoformat()
+                    if isinstance(exam_date, date)
+                    else exam_date,
                     "examination_time": exam_time,
                 }
             )
@@ -152,7 +156,12 @@ class FrameMetadataExtractor:
 
     def is_sensitive_content(self, metadata: Dict[str, Any]) -> bool:
         """Basic sensitive presence check (uses dict for call-site compatibility)."""
-        sensitive_fields = ("patient_first_name", "patient_last_name", "casenumber", "patient_dob")
+        sensitive_fields = (
+            "patient_first_name",
+            "patient_last_name",
+            "casenumber",
+            "patient_dob",
+        )
         for f in sensitive_fields:
             v = metadata.get(f)
             if self._is_nonblank(v):
@@ -161,7 +170,9 @@ class FrameMetadataExtractor:
             return True
         return False
 
-    def merge_metadata(self, existing: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]:
+    def merge_metadata(
+        self, existing: Dict[str, Any], new: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Safe merge via SensitiveMeta:
         - Only non-blank values from `new` can fill blanks in `existing`
@@ -178,7 +189,9 @@ class FrameMetadataExtractor:
 
         # Enforce DOB vs exam-date rule if both (or ambiguous) are present anywhere
         dob_raw = (new or {}).get("patient_dob") or (existing or {}).get("patient_dob")
-        exam_raw = (new or {}).get("examination_date") or (existing or {}).get("examination_date")
+        exam_raw = (new or {}).get("examination_date") or (existing or {}).get(
+            "examination_date"
+        )
 
         # If one of them is missing but we have multiple date-like values somewhere else,
         # try to infer: choose max as exam, min as dob.
@@ -228,7 +241,9 @@ class FrameMetadataExtractor:
                 # YYYY-MM-DD
                 return datetime.strptime(v.strip(), "%Y-%m-%d").date()
             except Exception:
-                parsed = dateparser.parse(v.strip(), languages=["de"], settings={"DATE_ORDER": "DMY"})
+                parsed = dateparser.parse(
+                    v.strip(), languages=["de"], settings={"DATE_ORDER": "DMY"}
+                )
                 if parsed:
                     return parsed.date()
         return None
@@ -285,11 +300,15 @@ class FrameMetadataExtractor:
         try:
             digits = re.sub(r"\D", "", date_str)
             if len(digits) == 8:
-                day = int(digits[0:2]); month = int(digits[2:4]); year = int(digits[4:8])
+                day = int(digits[0:2])
+                month = int(digits[2:4])
+                year = int(digits[4:8])
                 if 1 <= day <= 31 and 1 <= month <= 12:
                     return date(year, month, day)
             elif len(digits) == 10:
-                day = int(digits[0:2]); month = int(digits[2:4]); year = int(digits[4:8])
+                day = int(digits[0:2])
+                month = int(digits[2:4])
+                year = int(digits[4:8])
                 if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
                     return date(year, month, day)
             return None
@@ -356,7 +375,7 @@ class FrameMetadataExtractor:
             return None, None
 
     def _is_valid_examiner(self, examiner: str) -> bool:
-        if not isinstance(examiner, str) or not examiner:
+        if not examiner:
             return False
         if len(examiner) < 3 or len(examiner) > 50:
             return False
@@ -364,7 +383,11 @@ class FrameMetadataExtractor:
         if len(examiner) and special / len(examiner) > 0.3:
             return False
         words = examiner.split()
-        valid_words = [w for w in words if len(w) >= 3 and w.replace("-", "").replace(".", "").isalpha()]
+        valid_words = [
+            w
+            for w in words
+            if len(w) >= 3 and w.replace("-", "").replace(".", "").isalpha()
+        ]
         if not valid_words or len(valid_words) < len(words) / 2:
             return False
         single_char_words = sum(1 for w in words if len(w) == 1)
@@ -389,8 +412,12 @@ class FrameMetadataExtractor:
 
     def _parse_german_date(self, date_str: str) -> Optional[date]:
         try:
-            normalized = re.sub(r"\s+", "", date_str).replace("/", ".").replace("-", ".")
-            parsed = dateparser.parse(normalized, languages=["de"], settings={"DATE_ORDER": "DMY"})
+            normalized = (
+                re.sub(r"\s+", "", date_str).replace("/", ".").replace("-", ".")
+            )
+            parsed = dateparser.parse(
+                normalized, languages=["de"], settings={"DATE_ORDER": "DMY"}
+            )
             if parsed:
                 return parsed.date()
             if re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", normalized):

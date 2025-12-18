@@ -6,11 +6,6 @@ VERBOSE_LOG_LEVEL = 15
 logging.addLevelName(VERBOSE_LOG_LEVEL, "VERBOSE")
 
 
-def verbose(self, message, *args, **kwargs):
-    if self.isEnabledFor(VERBOSE_LOG_LEVEL):
-        self.log(VERBOSE_LOG_LEVEL, message, *args, **kwargs)
-
-
 def configure_global_logger(verbose=False):
     """
     Configure the global logger with optional verbose logging.
@@ -25,7 +20,9 @@ def configure_global_logger(verbose=False):
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     # Log to stdout
     stream_handler = logging.StreamHandler(sys.stdout)
@@ -35,7 +32,7 @@ def configure_global_logger(verbose=False):
     return logger
 
 
-def get_logger(name, verbose=False):
+def get_logger(name: str, verbose: bool = False) -> logging.Logger:
     """
     Create a logger with the given name.
 
@@ -51,7 +48,9 @@ def get_logger(name, verbose=False):
     # Configure the logger if it hasn't been configured yet
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
-        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
@@ -65,4 +64,4 @@ def get_logger(name, verbose=False):
 
 
 # Create a default logger for imports
-logger = get_logger("lx_anonymizer")
+logger = get_logger(__name__)

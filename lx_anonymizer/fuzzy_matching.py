@@ -4,6 +4,7 @@ from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 
+
 def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
     """
     Find the best fuzzy match for 'snippet_text' among a list of 'candidates'.
@@ -12,7 +13,7 @@ def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
     """
     best_match = None
     best_ratio = 0.0
-    
+
     logger.debug(f"Fuzzy matching: snippet text: {snippet_text}")
 
     for candidate in candidates:
@@ -35,7 +36,7 @@ def correct_box_for_new_text(
     extension_margin=15,
     font_face=cv2.FONT_HERSHEY_SIMPLEX,
     font_scale=1.0,
-    font_thickness=2
+    font_thickness=2,
 ):
     """
     If the new (corrected) text is significantly longer than the old text,
@@ -64,5 +65,3 @@ def correct_box_for_new_text(
 
     # Return the new bounding box
     return (startX, startY, endX, endY)
-
-

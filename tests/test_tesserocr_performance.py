@@ -6,22 +6,21 @@ This script demonstrates the significant performance improvement when using
 TesseOCR instead of pytesseract for video frame text extraction.
 """
 
-import os
 import sys
 import time
 
 import cv2
 import numpy as np
-from PIL import Image
 
 # Add project root to sys.path (repo-relative)
 from pathlib import Path
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 try:
-    from lx_anonymizer.ocr_frame import FrameOCR
-    from lx_anonymizer.ocr_frame_tesserocr import TesseOCRFrameProcessor
+    from lx_anonymizer.ocr.ocr_frame import FrameOCR
+    from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
 
     print("✅ Successfully imported OCR modules")
 except ImportError as e:
@@ -152,7 +151,7 @@ def benchmark_ocr_performance():
         print(f"📺 pytesseract: {frames_per_second_pytesseract:.1f} frames/second")
         print(f"⚡ TesseOCR:    {frames_per_second_tesserocr:.1f} frames/second")
         print()
-        print(f"For a 60-second video at 30 FPS (1800 frames):")
+        print("For a 60-second video at 30 FPS (1800 frames):")
         print(
             f"🐌 pytesseract would take: {1800 * (pytesseract_time / num_frames):.1f} seconds"
         )

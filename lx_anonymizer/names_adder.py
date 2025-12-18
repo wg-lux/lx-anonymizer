@@ -4,6 +4,9 @@ import uuid
 from pathlib import Path
 import time
 import ast
+from typing import Any, Tuple
+from numpy import ndarray
+
 from .device_reader import read_device, read_text_formatting
 from .directory_setup import create_temp_directory
 from .custom_logger import get_logger
@@ -41,7 +44,9 @@ def load_font(font_or_path, font_size=40):
         try:
             return ImageFont.truetype(font_or_path, font_size)
         except Exception:
-            logger.warning(f"Could not load TTF font at '{font_or_path}'. Falling back to Pillow default.")
+            logger.warning(
+                f"Could not load TTF font at '{font_or_path}'. Falling back to Pillow default."
+            )
             return ImageFont.load_default()
     else:
         # If user passed in e.g. cv2.FONT_HERSHEY_SIMPLEX, just use default
@@ -106,20 +111,36 @@ def format_name(name, format_string):
         return name
     first_name = names[0]
     last_name = " ".join(names[1:])
-    formatted_name = format_string.replace("first_name", first_name).replace("last_name", last_name).replace("\n", "\n")
+    formatted_name = (
+        format_string.replace("first_name", first_name)
+        .replace("last_name", last_name)
+        .replace("\n", "\n")
+    )
     return formatted_name
 
 
 def validate_coordinates(coords):
     if not isinstance(coords, tuple) or len(coords) != 4:
-        logger.error(f"Invalid coordinates format. Expected a tuple of four elements.")
-        raise ValueError("Invalid coordinates format. Expected a tuple of four elements.")
+        logger.error("Invalid coordinates format. Expected a tuple of four elements.")
+        raise ValueError(
+            "Invalid coordinates format. Expected a tuple of four elements."
+        )
     if not all(isinstance(coord, int) and coord >= 0 for coord in coords):
-        logger.error(f"Coordinates must be non-negative integers.")
+        logger.error("Coordinates must be non-negative integers.")
         raise ValueError("Coordinates must be non-negative integers.")
 
 
-def draw_text_with_line_break(text, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing=20):
+def draw_text_with_line_break(
+    text,
+    font,
+    font_scale,
+    font_color,
+    font_thickness,
+    background_color,
+    first_name_coords,
+    last_name_coords,
+    line_spacing=20,
+):
     """
     Reimplementation using Pillow. Returns a NumPy array (RGB).
     """
@@ -153,7 +174,17 @@ def draw_text_with_line_break(text, font, font_scale, font_color, font_thickness
     return np.array(pil_img)  # RGB
 
 
-def draw_text_without_line_break(text, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing):
+def draw_text_without_line_break(
+    text,
+    font,
+    font_scale,
+    font_color,
+    font_thickness,
+    background_color,
+    first_name_coords,
+    last_name_coords,
+    line_spacing,
+):
     """
     Pillow version that draws single-line text in separate regions. Returns a NumPy array (RGB).
     """
@@ -186,7 +217,17 @@ def draw_text_without_line_break(text, font, font_scale, font_color, font_thickn
     return np.array(pil_img)  # RGB
 
 
-def draw_free_text(text, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing):
+def draw_free_text(
+    text,
+    font,
+    font_scale,
+    font_color,
+    font_thickness,
+    background_color,
+    first_name_coords,
+    last_name_coords,
+    line_spacing,
+) -> ndarray[Any]:
     """
     Another variant that returns a NumPy array. Uses Pillow for text.
     """
@@ -219,12 +260,12 @@ def draw_free_text(text, font, font_scale, font_color, font_thickness, backgroun
 
 
 def add_device_name_to_image(
-    name,
-    gender_par,
-    device=None,
-    font=None,
-    font_size=100,
-    background_color=(0, 0, 0),
+    name: str,
+    gender_par: str,
+    device: str = None,
+    font: str = None,
+    font_size: int = 100,
+    background_color: Tuple[int, int, int] = (0, 0, 0),
     font_color=(255, 255, 255),
     text_formatting=None,
     line_spacing=40,
@@ -254,18 +295,33 @@ def add_device_name_to_image(
             last_name_height,
         ) = device_config
 
-        background_color = ast.literal_eval(background_color_str) if isinstance(background_color_str, str) else background_color_str
-        font_color = ast.literal_eval(font_color_str) if isinstance(font_color_str, str) else font_color_str
+        background_color = (
+            ast.literal_eval(background_color_str)
+            if isinstance(background_color_str, str)
+            else background_color_str
+        )
+        font_color = (
+            ast.literal_eval(font_color_str)
+            if isinstance(font_color_str, str)
+            else font_color_str
+        )
         font_scale = font_scale_cfg
         font_thickness = 1  # forced for readability
         text_formatting = text_formatting_cfg
         if font_path_str:
             font = font_path_str  # override
 
-        first_name_coords = (first_name_x, first_name_y, first_name_width, first_name_height)
+        first_name_coords = (
+            first_name_x,
+            first_name_y,
+            first_name_width,
+            first_name_height,
+        )
         last_name_coords = (last_name_x, last_name_y, last_name_width, last_name_height)
     except (FileNotFoundError, KeyError, ValueError) as e:
-        logger.error(f"Error reading device configuration: {e}. Using default parameters.")
+        logger.error(
+            f"Error reading device configuration: {e}. Using default parameters."
+        )
         background_color = (0, 0, 0)
         font_color = (255, 255, 255)
         font = None
@@ -281,11 +337,27 @@ def add_device_name_to_image(
     formatted_name = format_name(name, text_formatting)
     if "\n" in formatted_name:
         text_img = draw_text_with_line_break(
-            formatted_name, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing
+            formatted_name,
+            font,
+            font_scale,
+            font_color,
+            font_thickness,
+            background_color,
+            first_name_coords,
+            last_name_coords,
+            line_spacing,
         )
     else:
         text_img = draw_text_without_line_break(
-            formatted_name, font, font_scale, font_color, font_thickness, background_color, first_name_coords, last_name_coords, line_spacing
+            formatted_name,
+            font,
+            font_scale,
+            font_color,
+            font_thickness,
+            background_color,
+            first_name_coords,
+            last_name_coords,
+            line_spacing,
         )
 
     unique_id = str(uuid.uuid4())[:8]
@@ -295,7 +367,9 @@ def add_device_name_to_image(
     # text_img is NumPy RGB array; we can save with OpenCV or Pillow
     cv2.imwrite(str(output_image_path), text_img[:, :, ::-1])  # flip RGB->BGR for cv2
 
-    logger.debug(f"Temporary name image from device config saved to {output_image_path}")
+    logger.debug(
+        f"Temporary name image from device config saved to {output_image_path}"
+    )
     return output_image_path
 
 
@@ -401,13 +475,12 @@ LETTER_SIZE_TABLE = {
 }
 
 
-def calculate_text_size(text, font_scale, font_thickness):
+def calculate_text_size(text: str, font_scale: int, font_thickness):
     """
     This is the old function name. We'll just measure using Pillow's approach with a 'default' font size.
     The letter table is no longer crucial if using Pillow directly.
     """
     # We'll pick an approximate base size
-    base_font_size = int(font_scale if font_scale > 2 else font_scale * 30)
     test_font = ImageFont.load_default()  # or load_font("arial.ttf", base_font_size)
     w, h = measure_text_size_pil(text, test_font)
     logger.debug(f"Text size calculated by PIL approach: ({w}, {h})")
@@ -427,11 +500,22 @@ def enlarge_box(box, required_width, required_height, padding=10):
     new_endX = new_startX + new_width
     new_endY = new_startY + new_height
 
-    logger.debug(f"Changed box coordinates from ({startX}, {startY}, {endX}, {endY}) to ({new_startX}, {new_startY}, {new_endX}, {new_endY})")
+    logger.debug(
+        f"Changed box coordinates from ({startX}, {startY}, {endX}, {endY}) to ({new_startX}, {new_startY}, {new_endX}, {new_endY})"
+    )
     return new_startX, new_startY, new_endX, new_endY
 
 
-def draw_text_centered(text, font, font_scale, font_color, font_thickness, background_color, box, padding=10):
+def draw_text_centered(
+    text,
+    font,
+    font_scale,
+    font_color,
+    font_thickness,
+    background_color,
+    box,
+    padding=10,
+):
     """
     Pillow version of the center-draw.
     We'll create a new image with size at least 'box' plus any needed expansions.
@@ -453,7 +537,9 @@ def draw_text_centered(text, font, font_scale, font_color, font_thickness, backg
     y = (box_height - text_height) // 2
 
     draw.text((x, y), text, fill=font_color, font=pil_font)
-    logger.debug(f"Text drawn centrally: ({text_width}x{text_height}), position=({x},{y}), scale={font_scale}")
+    logger.debug(
+        f"Text drawn centrally: ({text_width}x{text_height}), position=({x},{y}), scale={font_scale}"
+    )
 
     return np.array(pil_img)  # RGB
 
@@ -471,7 +557,10 @@ def hconcat_resize_min_with_spacing(im_list, spacing=10, interpolation=cv2.INTER
         resized = cv2.resize(im, (w, h_min), interpolation=interpolation)
         im_list_resize.append(resized)
 
-    total_width = sum(img.shape[1] for img in im_list_resize) + (len(im_list_resize) - 1) * spacing
+    total_width = (
+        sum(img.shape[1] for img in im_list_resize)
+        + (len(im_list_resize) - 1) * spacing
+    )
     result_image = np.full((h_min, total_width, 3), 255, dtype=np.uint8)
 
     current_x = 0
@@ -503,48 +592,90 @@ def add_name_to_image(
     try:
         config = read_text_formatting(device)
         if config is None:
-            raise ValueError(f"No text formatting configuration found for device: {device}")
+            raise ValueError(
+                f"No text formatting configuration found for device: {device}"
+            )
 
-        background_color, font_color, font_path, font_scale_cfg, font_thickness_cfg, text_formatting_cfg = config
-        background_color = ast.literal_eval(background_color) if isinstance(background_color, str) else background_color
-        font_color = ast.literal_eval(font_color) if isinstance(font_color, str) else font_color
+        (
+            background_color,
+            font_color,
+            font_path,
+            font_scale_cfg,
+            font_thickness_cfg,
+            text_formatting_cfg,
+        ) = config
+        background_color = (
+            ast.literal_eval(background_color)
+            if isinstance(background_color, str)
+            else background_color
+        )
+        font_color = (
+            ast.literal_eval(font_color) if isinstance(font_color, str) else font_color
+        )
         font = font_path or font  # override
         font_thickness = 1
-        text_formatting = text_formatting_cfg
-        font_scale = font_scale_cfg
     except (FileNotFoundError, KeyError, ValueError) as e:
-        logger.debug(f"Error reading device configuration: {e}. Using default parameters.")
+        logger.debug(
+            f"Error reading device configuration: {e}. Using default parameters."
+        )
         background_color = (255, 255, 255)
         font_color = (0, 0, 0)
         font = "arial.ttf"
-        font_scale = 1
         font_thickness = 1
-        text_formatting = "first_name last_name"
 
-    # unify scale
-    uniform_scale = compute_uniform_font_scale(first_name, last_name, font, first_name_box, last_name_box, font_thickness)
-
-    standard_height = max(first_name_box[3] - first_name_box[1], last_name_box[3] - last_name_box[1])
+    standard_height = max(
+        first_name_box[3] - first_name_box[1], last_name_box[3] - last_name_box[1]
+    )
     fixed_spacing = 5
 
-    first_name_standardized = (first_name_box[0], first_name_box[1], first_name_box[2], first_name_box[1] + standard_height)
-    last_name_standardized = (last_name_box[0], last_name_box[1], last_name_box[2], last_name_box[1] + standard_height)
+    first_name_standardized = (
+        first_name_box[0],
+        first_name_box[1],
+        first_name_box[2],
+        first_name_box[1] + standard_height,
+    )
+    last_name_standardized = (
+        last_name_box[0],
+        last_name_box[1],
+        last_name_box[2],
+        last_name_box[1] + standard_height,
+    )
 
-    text_img_fn, _ = draw_text_to_fit(first_name, font, first_name_standardized, font_color, font_thickness, background_color)
-    text_img_ln, _ = draw_text_to_fit(last_name, font, last_name_standardized, font_color, font_thickness, background_color)
+    text_img_fn, _ = draw_text_to_fit(
+        first_name,
+        font,
+        first_name_standardized,
+        font_color,
+        font_thickness,
+        background_color,
+    )
+    text_img_ln, _ = draw_text_to_fit(
+        last_name,
+        font,
+        last_name_standardized,
+        font_color,
+        font_thickness,
+        background_color,
+    )
 
     # Optionally override with draw_text_centered if you prefer
     # text_img_fn = draw_text_centered(...)
     # text_img_ln = draw_text_centered(...)
 
     total_width = text_img_fn.shape[1] + fixed_spacing + text_img_ln.shape[1]
-    final_img = np.full((standard_height, total_width, 3), background_color, dtype=np.uint8)
+    final_img = np.full(
+        (standard_height, total_width, 3), background_color, dtype=np.uint8
+    )
 
     # Place first name
-    final_img[:, : text_img_fn.shape[1]] = cv2.resize(text_img_fn, (text_img_fn.shape[1], standard_height))
+    final_img[:, : text_img_fn.shape[1]] = cv2.resize(
+        text_img_fn, (text_img_fn.shape[1], standard_height)
+    )
     # Place last name after spacing
     start_x = text_img_fn.shape[1] + fixed_spacing
-    final_img[:, start_x : start_x + text_img_ln.shape[1]] = cv2.resize(text_img_ln, (text_img_ln.shape[1], standard_height))
+    final_img[:, start_x : start_x + text_img_ln.shape[1]] = cv2.resize(
+        text_img_ln, (text_img_ln.shape[1], standard_height)
+    )
 
     unique_id = str(uuid.uuid4())
     output_filename = f"{gender_par}_{int(time.time())}_{unique_id}.png"
@@ -556,7 +687,15 @@ def add_name_to_image(
 
 
 def add_full_name_to_image(
-    name, gender_par, box, font=None, font_size=100, background_color=(0, 0, 0), font_color=(255, 255, 255), font_scale=1, font_thickness=1
+    name,
+    gender_par,
+    box,
+    font=None,
+    font_size=100,
+    background_color=(0, 0, 0),
+    font_color=(255, 255, 255),
+    font_scale=1,
+    font_thickness=1,
 ):
     """
     Pillow-based reimplementation of add_full_name_to_image.
@@ -567,14 +706,18 @@ def add_full_name_to_image(
     if font is None:
         font = "arial.ttf"
 
-    text_img, actual_scale = draw_text_to_fit(name, font, box, font_color, font_thickness, background_color)
+    text_img, actual_scale = draw_text_to_fit(
+        name, font, box, font_color, font_thickness, background_color
+    )
 
     # If the text overflows, enlarge
     pil_font = load_font(font, 30)  # approximate
     w, h = measure_text_size_pil(name, pil_font)
     if w > box_width:
         new_width = w + 20
-        bigger = np.full((text_img.shape[0], new_width, 3), background_color, dtype=np.uint8)
+        bigger = np.full(
+            (text_img.shape[0], new_width, 3), background_color, dtype=np.uint8
+        )
         bigger[:, : text_img.shape[1]] = text_img
         text_img = bigger
 

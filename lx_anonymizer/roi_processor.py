@@ -1,6 +1,7 @@
 from typing import TypedDict, NotRequired, Any, Optional
 from functools import reduce
 
+
 class ROI(TypedDict):
     x: int
     y: int
@@ -11,23 +12,27 @@ class ROI(TypedDict):
 
 class ROIProcessor:
     """Retrieve ROI regions from nested processor dictionaries."""
-    
+
     def __init__(self, processor_name: Optional[str] = None):
         self.processor_name = processor_name
 
-    def deep_get_roi_param(self, data: dict[str, Any], keys: list[str], default: int = 0) -> int:
+    def deep_get_roi_param(
+        self, data: dict[str, Any], keys: list[str], default: int = 0
+    ) -> int:
         """Retrieve a numeric value from a nested dictionary using a list of keys."""
         result = reduce(
             lambda acc, key: acc.get(key, {}) if isinstance(acc, dict) else {},
             keys,
-            data
+            data,
         )
         return result if isinstance(result, int) else default
 
-    def get_roi(self, data: dict[str, Any], roi_key: str, processor_name: Optional[str] = None) -> ROI:
+    def get_roi(
+        self, data: dict[str, Any], roi_key: str, processor_name: Optional[str] = None
+    ) -> ROI:
         """
         Retrieve the full ROI {x,y,width,height} for a given ROI key (e.g. 'name_roi').
-        
+
         Example:
             get_roi(data, 'name_roi', 'olympus_cv_1500')
         """

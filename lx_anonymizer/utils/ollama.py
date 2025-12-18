@@ -81,7 +81,9 @@ def ensure_ollama(timeout: int = 15):
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.warning(f"Ollama failed to start within {timeout}s timeout - LLM features will be disabled")
+            logger.warning(
+                f"Ollama failed to start within {timeout}s timeout - LLM features will be disabled"
+            )
             return None
         time.sleep(0.3)
 

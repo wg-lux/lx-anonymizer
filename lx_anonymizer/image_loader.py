@@ -9,7 +9,9 @@ def get_image_paths(image_or_pdf_path: Path, temp_dir: Path):
     image_paths = []
 
     if not temp_dir.exists() or not temp_dir.is_dir():
-        raise ValueError(f"Temporary directory {temp_dir} does not exist or is not a directory.")
+        raise ValueError(
+            f"Temporary directory {temp_dir} does not exist or is not a directory."
+        )
 
     if image_or_pdf_path.suffix.lower() == ".pdf":
         try:

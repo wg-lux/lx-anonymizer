@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from contextlib import contextmanager
 
 from .custom_logger import get_logger, configure_global_logger
 from .pdf_operations import merge_pdfs, convert_image_to_pdf
@@ -9,8 +10,7 @@ from .image_processor import process_image
 from .gpu_management import clear_gpu_memory
 
 
-
-'''
+"""
 Main Function
 
 Run by calling main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation=False, min_confidence=0.5, width=320, height=320)
@@ -45,9 +45,7 @@ Directory Setup:
 
 You can change the default path for the base directory as well as the temporary directory 
 by changing the values specified in the directory_setup.py file.
-'''
-from contextlib import contextmanager
-
+"""
 
 
 @contextmanager
@@ -65,57 +63,89 @@ def temp_directory_manager():
                 except Exception as e:
                     logger.warning(f"Failed to delete temp file {file}: {e}")
 
+
 class ImageProcessingError(Exception):
     """Custom exception for image processing errors"""
+
     pass
 
 
-def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation=False, min_confidence=0.5, width=320, height=320):
+def main(
+    image_or_pdf_path,
+    east_path=None,
+    device="olympus_cv_1500",
+    validation=False,
+    min_confidence=0.5,
+    width=320,
+    height=320,
+):
     logger = get_logger(__name__)  # Use global logger
     try:
         clear_gpu_memory()
         with temp_directory_manager() as (temp_dir, base_dir, csv_dir):
             results_dir = create_results_directory()
             image_paths = get_image_paths(Path(image_or_pdf_path), Path(temp_dir))
-            
+
             processed_pdf_paths = []
             anonymization_data = None
-            
+
             for img_path in image_paths:
                 success = False
                 try:
                     # Try with original path
                     if not Path(img_path).exists():
-                        raise ImageProcessingError(f"Image path does not exist: {img_path}")
-                    
+                        raise ImageProcessingError(
+                            f"Image path does not exist: {img_path}"
+                        )
+
                     processed_image_path, result = process_image(
-                        img_path, east_path, device, min_confidence, width, height, 
-                        Path(results_dir), Path(temp_dir)
+                        img_path,
+                        east_path,
+                        device,
+                        min_confidence,
+                        width,
+                        height,
+                        Path(results_dir),
+                        Path(temp_dir),
                     )
                     success = True
                 except (ImageProcessingError, RuntimeError, ValueError) as e:
                     # Try with local path
-                    logger.info(f"Error processing with original path: {e}, trying local path")
+                    logger.info(
+                        f"Error processing with original path: {e}, trying local path"
+                    )
                     try:
                         root_dir = Path(__file__).resolve().parent
                         local_img_path = root_dir / img_path
                         logger.info(f"Trying local path: {local_img_path}")
-                        
+
                         if not local_img_path.exists():
-                            raise ImageProcessingError(f"Local image path does not exist: {local_img_path}")
-                        
+                            raise ImageProcessingError(
+                                f"Local image path does not exist: {local_img_path}"
+                            )
+
                         processed_image_path, anonymization_data = process_image(
-                            local_img_path, east_path, device, min_confidence, width, height,
-                            Path(results_dir), Path(temp_dir)
+                            local_img_path,
+                            east_path,
+                            device,
+                            min_confidence,
+                            width,
+                            height,
+                            Path(results_dir),
+                            Path(temp_dir),
                         )
                         success = True
                     except Exception as local_err:
                         logger.error(f"Error processing with local path: {local_err}")
-                        raise ImageProcessingError(f"Failed to process image with both paths: {e}, local error: {local_err}")
-                
+                        raise ImageProcessingError(
+                            f"Failed to process image with both paths: {e}, local error: {local_err}"
+                        )
+
                 if success:
-                    if str(image_or_pdf_path).lower().endswith('.pdf'):
-                        temp_pdf_path = Path(temp_dir) / f"temporary_pdf_{uuid.uuid4()}.pdf"
+                    if str(image_or_pdf_path).lower().endswith(".pdf"):
+                        temp_pdf_path = (
+                            Path(temp_dir) / f"temporary_pdf_{uuid.uuid4()}.pdf"
+                        )
                         convert_image_to_pdf(processed_image_path, temp_pdf_path)
                         processed_pdf_paths.append(temp_pdf_path)
                     else:
@@ -124,8 +154,10 @@ def main(image_or_pdf_path, east_path=None, device="olympus_cv_1500", validation
             if not processed_pdf_paths:
                 raise ImageProcessingError("No processed images were generated.")
 
-            if str(image_or_pdf_path).lower().endswith('.pdf'):
-                final_pdf_path = Path(results_dir) / f"final_document_{uuid.uuid4()}.pdf"
+            if str(image_or_pdf_path).lower().endswith(".pdf"):
+                final_pdf_path = (
+                    Path(results_dir) / f"final_document_{uuid.uuid4()}.pdf"
+                )
                 merge_pdfs(processed_pdf_paths, final_pdf_path)
                 output_path = final_pdf_path
             else:
@@ -145,24 +177,64 @@ if __name__ == "__main__":
     import argparse
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("-i", "--image", type=str, required=True, help="Path to input image")
-    ap.add_argument("-east", "--east", type=str, required=False, help="Path to input EAST text detector")
-    ap.add_argument("-d", "--device", type=str, default="olympus_cv_1500", help="Device name to set the correct text settings")
-    ap.add_argument("-V", "--validation", type=bool, default=False, help="Boolean value representing if validation through the AGL-Validator is required.")
-    ap.add_argument("-c", "--min-confidence", type=float, default=0.5, help="Minimum probability required to inspect a region")
-    ap.add_argument("-w", "--width", type=int, default=320, help="Resized image width (should be multiple of 32)")
-    ap.add_argument("-e", "--height", type=int, default=320, help="Resized image height (should be multiple of 32)")
-    ap.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    ap.add_argument(
+        "-i", "--image", type=str, required=True, help="Path to input image"
+    )
+    ap.add_argument(
+        "-east",
+        "--east",
+        type=str,
+        required=False,
+        help="Path to input EAST text detector",
+    )
+    ap.add_argument(
+        "-d",
+        "--device",
+        type=str,
+        default="olympus_cv_1500",
+        help="Device name to set the correct text settings",
+    )
+    ap.add_argument(
+        "-V",
+        "--validation",
+        type=bool,
+        default=False,
+        help="Boolean value representing if validation through the AGL-Validator is required.",
+    )
+    ap.add_argument(
+        "-c",
+        "--min-confidence",
+        type=float,
+        default=0.5,
+        help="Minimum probability required to inspect a region",
+    )
+    ap.add_argument(
+        "-w",
+        "--width",
+        type=int,
+        default=320,
+        help="Resized image width (should be multiple of 32)",
+    )
+    ap.add_argument(
+        "-e",
+        "--height",
+        type=int,
+        default=320,
+        help="Resized image height (should be multiple of 32)",
+    )
+    ap.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
 
     args = vars(ap.parse_args())
     configure_global_logger(verbose=args["verbose"])
 
     main(
-        args["image"], 
-        args["east"], 
-        args["device"], 
-        args["validation"], 
-        args["min_confidence"], 
-        args["width"], 
-        args["height"], 
+        args["image"],
+        args["east"],
+        args["device"],
+        args["validation"],
+        args["min_confidence"],
+        args["width"],
+        args["height"],
     )

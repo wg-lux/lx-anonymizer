@@ -1,6 +1,7 @@
 from .custom_logger import get_logger
-from pathlib import Path
-logger=get_logger(__name__)
+
+logger = get_logger(__name__)
+
 
 def expand_roi(startX, startY, endX, endY, expansion, image_shape):
     """

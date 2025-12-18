@@ -28,6 +28,7 @@ let
       inherit config pkgs lib;
     })
   );
+  SYNC_CMD = "uv sync --extra dev --extra docs --extra ocr --extra llm";
 
 in
 {
@@ -91,8 +92,8 @@ in
     }/share"
   '';
 
-  scripts.uvs.exec = ''
-    uv sync --extra dev --extra ocr --extra llm
+  scripts.uvsnc.exec = ''
+    ${SYNC_CMD}
   '';
 
   processes = {

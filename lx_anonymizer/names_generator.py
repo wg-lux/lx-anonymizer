@@ -1,6 +1,10 @@
 import random
 import gender_guesser.detector as gender
-from .names_adder import add_name_to_image, add_full_name_to_image, add_device_name_to_image
+from .names_adder import (
+    add_name_to_image,
+    add_full_name_to_image,
+    add_device_name_to_image,
+)
 from .directory_setup import create_temp_directory
 from .custom_logger import get_logger
 from pathlib import Path
@@ -77,7 +81,9 @@ def get_random_full_name(name) -> str:
     return name
 
 
-def person_meta(name) -> Tuple[str, str, Tuple[int, int, int], str]:  # Corrected return type hint
+def person_meta(
+    name,
+) -> Tuple[str, str, Tuple[int, int, int], str]:  # Corrected return type hint
     d = gender.Detector()
     gender_guess = d.get_gender(name)
     if gender_guess in ["male", "mostly_male"]:
@@ -143,7 +149,9 @@ def gender_and_handle_full_names(words, box, image_path, device="olympus_cv_1500
     return box_to_image_map, gender_guess
 
 
-def gender_and_handle_separate_names(words, first_name_box, last_name_box, image_path, device):
+def gender_and_handle_separate_names(
+    words, first_name_box, last_name_box, image_path, device
+):
     logger.info("Finding out gender and name of separate names")
     first_name = words[0]
 
@@ -159,8 +167,14 @@ def gender_and_handle_separate_names(words, first_name_box, last_name_box, image
         with open(str(male_last_names_file), "r") as file:
             index = getindex(file)
             male_last_name = male_last_names[index]
-        name = f"{male_first_name} {male_last_name}"
-        output_image_path = add_name_to_image(male_first_name, male_last_name, "male", first_name_box, last_name_box, device)
+        output_image_path = add_name_to_image(
+            male_first_name,
+            male_last_name,
+            "male",
+            first_name_box,
+            last_name_box,
+            device,
+        )
     elif gender_guess in ["female", "mostly_female"]:
         logger.info("Female gender")
         with open(str(female_first_names_file), "r") as file:
@@ -169,8 +183,14 @@ def gender_and_handle_separate_names(words, first_name_box, last_name_box, image
         with open(str(female_last_names_file), "r") as file:
             index = getindex(file)
             female_last_name = female_last_names[index]
-        name = f"{female_first_name} {female_last_name}"
-        output_image_path = add_name_to_image(female_first_name, female_last_name, "female", first_name_box, last_name_box, device)
+        output_image_path = add_name_to_image(
+            female_first_name,
+            female_last_name,
+            "female",
+            first_name_box,
+            last_name_box,
+            device,
+        )
     else:  # 'unknown' or 'andy'
         logger.info("Neutral or unknown gender")
         with open(str(neutral_first_names_file), "r") as file:
@@ -179,12 +199,23 @@ def gender_and_handle_separate_names(words, first_name_box, last_name_box, image
         with open(str(neutral_last_names_file), "r") as file:
             index = getindex(file)
             neutral_last_name = neutral_last_names[index]
-        name = f"{neutral_first_name} {neutral_last_name}"
-        output_image_path = add_name_to_image(neutral_first_name, neutral_last_name, "neutral", first_name_box, last_name_box, device)
+        output_image_path = add_name_to_image(
+            neutral_first_name,
+            neutral_last_name,
+            "neutral",
+            first_name_box,
+            last_name_box,
+            device,
+        )
 
     startX_f, startY_f, endX_f, endY_f = first_name_box
     startX_l, startY_l, endX_l, endY_l = last_name_box
-    box = (startX_f, startY_f, endX_l, endY_l)  # Combine the two boxes to get the final box
+    box = (
+        startX_f,
+        startY_f,
+        endX_l,
+        endY_l,
+    )  # Combine the two boxes to get the final box
 
     # Create a string key for the box to ensure it's hashable
     box_key = f"{box[0]},{box[1]},{box[2]},{box[3]}"

@@ -2,19 +2,19 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
-
-from .video_encoder import VideoEncoder
+import json
+from .video_processing.video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
 
 
 class MaskApplication:
-    def __init__(self, preferred_encoder: Dict[str, Any]):
+    def __init__(
+        self, preferred_encoder: Dict[str, Any], device_name: str = "olympus_cv_1500"
+    ):
         self.preferred_encoder = preferred_encoder
-        self.video_encoder = VideoEncoder(
-            mask_video_streaming=False, create_mask_config_from_roi=False
-        )
-        self._build_encoder_cmd = self.video_encoder._build_encoder_cmd
+        self.video_encoder = VideoEncoder()
+        self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
 
         # Default mask configuration based on olympus_cv_1500_mask.json
         self.default_mask_config = {
@@ -25,6 +25,7 @@ class MaskApplication:
             "endoscope_image_width": 1350,
             "endoscope_image_height": 1080,
         }
+        self.device_name = device_name
 
     def mask_video_streaming(
         self,
@@ -115,7 +116,7 @@ class MaskApplication:
                 return True
 
             vf = ",".join(mask_filters)
-            encoder_args = self._build_encoder_cmd("balanced")
+            encoder_args = self.build_encoder_cmd("balanced")
 
             cmd = [
                 "ffmpeg",
@@ -193,3 +194,37 @@ class MaskApplication:
             "image_width": endoscope_image_roi.get("image_width"),
             "image_height": endoscope_image_roi.get("image_height"),
         }
+
+    def _load_mask(self) -> Dict[str, Any]:
+        masks_dir = Path(__file__).parent / "masks"
+        mask_file = masks_dir / f"{self.device_name}_mask.json"
+        stub = {
+            "image_width": 1920,
+            "image_height": 1080,
+            "x": 550,
+            "y": 0,
+            "width": 1350,
+            "height": 1080,
+        }
+
+        try:
+            with mask_file.open() as f:
+                return json.load(f)  # works if file is valid
+        except (FileNotFoundError, json.JSONDecodeError):
+            # create or overwrite with a fresh stub
+            masks_dir.mkdir(parents=True, exist_ok=True)
+            with mask_file.open("w") as f:
+                json.dump(stub, f, indent=2)
+            logger.warning(
+                "Created or repaired mask file %s – please verify coordinates.",
+                mask_file,
+            )
+            return stub
+
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(
+                f"Failed to load/create mask configuration for {self.device_name}: {e}"
+            )
+            raise FileNotFoundError(
+                f"Could not load or create mask configuration for {self.device_name}: {e}"
+            )

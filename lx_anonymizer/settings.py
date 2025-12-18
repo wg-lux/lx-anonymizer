@@ -14,7 +14,7 @@ FIRST_NAMES = [
     "Kathrin",
     "Florian",
     "Philip",
-    "Laura"
+    "Laura",
 ]
 
 LAST_NAMES = [
@@ -34,7 +34,7 @@ LAST_NAMES = [
     "Dela Cruz",
     "Wiese",
     "Weise",
-    "Sodmann"
+    "Sodmann",
 ]
 
 PATIENT_INFO_LINE_FLAG = "Patient: "
@@ -48,9 +48,7 @@ CUT_OFF_ABOVE_LINE_FLAGS = [
     EXAMINER_INFO_LINE_FLAG,
 ]
 
-CUT_OFF_BELOW_LINE_FLAGS = [
-        CUT_OFF_BELOW_LINE_FLAG
-    ]
+CUT_OFF_BELOW_LINE_FLAGS = [CUT_OFF_BELOW_LINE_FLAG]
 
 # "ukw-histology-generic-patient-info-line": "Patient: "
 # "ukw-endoscopy-histology-cut-off-below-line-flag-01": "$$-3"
@@ -64,12 +62,12 @@ DEFAULT_SETTINGS = {
     "locale": "de_DE",
     "first_names": FIRST_NAMES,
     "last_names": LAST_NAMES,
-    "text_date_format":'%d.%m.%Y',
+    "text_date_format": "%d.%m.%Y",
     "flags": {
         "patient_info_line": PATIENT_INFO_LINE_FLAG,
         "endoscope_info_line": ENDOSCOPE_INFO_LINE_FLAG,
         "examiner_info_line": EXAMINER_INFO_LINE_FLAG,
         "cut_off_below": CUT_OFF_BELOW_LINE_FLAGS,
         "cut_off_above": CUT_OFF_ABOVE_LINE_FLAGS,
-    }
+    },
 }

@@ -14,7 +14,14 @@ logger = get_logger(__name__)
 temp_dir, base_dir, csv_dir = create_temp_directory()
 
 
-def blur_function(image_path, box, background_color=None, expansion=5, blur_strength=(51, 51), rectangle_scale=0.8):
+def blur_function(
+    image_path,
+    box,
+    background_color=None,
+    expansion=5,
+    blur_strength=(51, 51),
+    rectangle_scale=0.8,
+):
     """
     Apply a strong Gaussian blur to the specified ROI in the image and slightly extend the blur outside the ROI.
 
@@ -45,7 +52,9 @@ def blur_function(image_path, box, background_color=None, expansion=5, blur_stre
     (startX, startY, endX, endY) = box
 
     # Expand the ROI to include a border around the detected region
-    (startX, startY, endX, endY) = expand_roi(startX, startY, endX, endY, expansion, image.shape)
+    (startX, startY, endX, endY) = expand_roi(
+        startX, startY, endX, endY, expansion, image.shape
+    )
 
     # Extract the expanded ROI from the image
     roi = image[startY:endY, startX:endX]
@@ -63,7 +72,13 @@ def blur_function(image_path, box, background_color=None, expansion=5, blur_stre
     rect_startY = startY + (endY - startY - rect_height) // 2
 
     # Draw the rectangle on the blurred image
-    cv2.rectangle(image, (rect_startX, rect_startY), (rect_startX + rect_width, rect_startY + rect_height), dominant_color, -1)
+    cv2.rectangle(
+        image,
+        (rect_startX, rect_startY),
+        (rect_startX + rect_width, rect_startY + rect_height),
+        dominant_color,
+        -1,
+    )
 
     # Apply a strong Gaussian blur to the ROI
     blurred_roi = cv2.GaussianBlur(roi, blur_strength, 0)

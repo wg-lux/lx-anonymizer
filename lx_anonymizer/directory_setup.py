@@ -1,6 +1,8 @@
 from pathlib import Path
-from .custom_logger import get_logger
+from typing import List, Optional
 import os
+
+from .custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -35,50 +37,44 @@ To change the default installation paths, update these variables:
 #
 # CHANGE THIS IF YOU WANT TO USE A DIFFERENT DIRECTORY
 
+
+logger = get_logger(__name__)
+
 default_main_directory = Path("./data/")
 default_temp_directory = Path("./temp/")
 
-# Check if environment variables are set and override if available
+# --- FIX START ---
+# Capture the environment variable once
+data_dir_env = os.getenv("DATA_DIR")
 
-if os.getenv("DATA_DIR"):
-    MAIN_DIR = Path(os.getenv("DATA_DIR"))
+if data_dir_env:
+    # Type checker knows data_dir_env is 'str' here, not 'None'
+    MAIN_DIR = Path(data_dir_env)
 else:
     MAIN_DIR = default_main_directory
 
-if os.getenv("DATA_DIR"):
-    TEMP_DIR_ROOT = Path(os.getenv("DATA_DIR")) / "temp"
+if data_dir_env:
+    TEMP_DIR_ROOT = Path(data_dir_env) / "temp"
 else:
     TEMP_DIR_ROOT = default_temp_directory
+# --- FIX END ---
 
-from typing import List
 
-
-def _str_to_path(path: str):
+def _str_to_path(path: str | Path) -> Path:
     if isinstance(path, str):
         path = Path(path)
-
     return path
 
 
-def create_directories(directories: List[Path] = None) -> List[Path]:
-    """
-    Helper function.
-    Creates a list of directories if they do not exist.
-
-    Args:
-        directories (list): A list of directory paths to create.
-    """
-
+def create_directories(directories: Optional[List[Path]] = None) -> List[Path]:
     if not directories:
         directories = [MAIN_DIR, TEMP_DIR_ROOT]
-
     else:
         directories = [_str_to_path(directory) for directory in directories]
 
     for dir_path in directories:
         if dir_path.exists():
             logger.info(f"Directory already exists: {dir_path}")
-
         else:
             dir_path.mkdir(parents=True, exist_ok=True)
             logger.info(f"Created directory: {dir_path}")
@@ -86,7 +82,7 @@ def create_directories(directories: List[Path] = None) -> List[Path]:
     return directories
 
 
-def create_main_directory(default_main_directory: Path = None):
+def create_main_directory(default_main_directory: Optional[Path] = None):
     """
     Creates the main directory in a writable location (outside the Nix store).
 
@@ -105,17 +101,21 @@ def create_main_directory(default_main_directory: Path = None):
         default_main_directory = _str_to_path(default_main_directory)
 
     if default_main_directory.exists():
-        logger.debug(f"Using default main directory: {default_main_directory.as_posix()}")
+        logger.debug(
+            f"Using default main directory: {default_main_directory.as_posix()}"
+        )
 
     else:
-        logger.debug(f"Creating main directory, directory at {default_main_directory} not found")
+        logger.debug(
+            f"Creating main directory, directory at {default_main_directory} not found"
+        )
         create_directories([default_main_directory])
         logger.info(f"Main directory created at {default_main_directory}")
 
     return default_main_directory
 
 
-def create_results_directory(default_main_directory: Path = None) -> Path:
+def create_results_directory(default_main_directory: Optional[Path] = None) -> Path:
     if not default_main_directory:
         default_main_directory = MAIN_DIR
     else:
@@ -133,7 +133,7 @@ def create_results_directory(default_main_directory: Path = None) -> Path:
         return results_dir
 
 
-def create_model_directory(default_main_directory: Path = None) -> Path:
+def create_model_directory(default_main_directory: Optional[Path] = None) -> Path:
     """_summary_
 
     Args:
@@ -160,7 +160,10 @@ def create_model_directory(default_main_directory: Path = None) -> Path:
         return models_dir
 
 
-def create_temp_directory(default_temp_directory: Path = None, default_main_directory: Path = None):
+def create_temp_directory(
+    default_temp_directory: Optional[Path] = default_temp_directory,
+    default_main_directory: Optional[Path] = default_main_directory,
+) -> tuple[Path, Path, Path]:
     """
     Creates 'temp' and 'csv' directories in the given temp and main directories.
 
@@ -192,13 +195,15 @@ def create_temp_directory(default_temp_directory: Path = None, default_main_dire
         return temp_dir, default_main_directory, csv_dir
 
     else:
-        logger.debug(f"Creating temp and csv directories, directories at {temp_dir} and {csv_dir} not found")
+        logger.debug(
+            f"Creating temp and csv directories, directories at {temp_dir} and {csv_dir} not found"
+        )
         create_directories([temp_dir, csv_dir])
         logger.info(f"Temp and csv directories created at {temp_dir} and {csv_dir}")
         return temp_dir, default_main_directory, csv_dir
 
 
-def create_blur_directory(default_main_directory: Path = None) -> Path:
+def create_blur_directory(default_main_directory: Path) -> Path:
     if not default_main_directory:
         default_main_directory = MAIN_DIR
     else:

@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from .ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,9 @@ class BestFrameText:
         self.K = max(1, topk)
         self.min_conf = min_conf
         self.min_len = min_len
-        self.enable_quality_mode = enable_quality_mode or bool(os.getenv("OCR_FIX_V1") == "1")
+        self.enable_quality_mode = enable_quality_mode or bool(
+            os.getenv("OCR_FIX_V1") == "1"
+        )
 
         self._i = 0
         self._reservoir: List[Candidate] = []
@@ -128,7 +130,14 @@ class BestFrameText:
         if len(self._topk) > self.K:
             self._topk = self._topk[: self.K]
 
-    def push(self, text: str, ocr_conf: float, *, is_sensitive: Optional[bool] = None, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def push(
+        self,
+        text: str,
+        ocr_conf: float,
+        *,
+        is_sensitive: Optional[bool] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         if not text:
             return
 
@@ -140,7 +149,9 @@ class BestFrameText:
         else:
             s = self._quality_score(text, ocr_conf)
             # score gate for non-sensitive
-            if not is_sensitive and (ocr_conf < self.min_conf or len(text) < self.min_len or s < 0.25):
+            if not is_sensitive and (
+                ocr_conf < self.min_conf or len(text) < self.min_len or s < 0.25
+            ):
                 return
 
         cand = Candidate(text=text, conf=ocr_conf, score=s, meta=metadata or {})
@@ -175,7 +186,12 @@ class BestFrameText:
                     best = meta.get("representative_text") or meta.get("best") or ""
                 else:
                     best = str(meta)
-                average = "\n\n".join(c.text for c in random.sample(self._reservoir, min(preview_size, len(self._reservoir))))[:1500]
+                average = "\n\n".join(
+                    c.text
+                    for c in random.sample(
+                        self._reservoir, min(preview_size, len(self._reservoir))
+                    )
+                )[:1500]
                 return {"best": best, "average": average}
         except Exception as e:
             logger.info(f"Ollama extraction failed: {e}, fallback to original reduce.")
@@ -183,7 +199,11 @@ class BestFrameText:
         if not self._reservoir and not self._topk:
             return {"best": "", "average": ""}
 
-        best = self._topk[0].text if self._topk else max(self._reservoir, key=lambda c: len(c.text)).text
+        best = (
+            self._topk[0].text
+            if self._topk
+            else max(self._reservoir, key=lambda c: len(c.text)).text
+        )
 
         bag = self._reservoir if self._reservoir else self._topk
         samples = random.sample(bag, min(preview_size, len(bag)))

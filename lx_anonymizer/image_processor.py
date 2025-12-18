@@ -1,15 +1,13 @@
 import os
 import uuid
 from pathlib import Path
-
+from typing import Dict, Any
 import cv2
 import pytesseract
 from PIL import Image
 
 from .custom_logger import get_logger
-from .gpu_management import clear_gpu_memory
-from .image_reassembly import reassemble_image
-from .ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from .ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from .pipeline_manager import process_images_with_OCR_and_NER
 from .sensitive_meta_interface import SensitiveMeta
 
@@ -17,20 +15,21 @@ logger = get_logger(__name__)
 
 sensitive_meta = SensitiveMeta()
 
+
 def process_image(
-    img_path,
-    east_path,
-    device,
-    min_confidence,
-    width,
-    height,
-    results_dir,
-    temp_dir,
-    text_extracted=None,
-    skip_blur=False,
-    skip_reassembly=False,
-    disable_llm=False,
-):
+    img_path: Path,
+    east_path: Path,
+    device: str,
+    min_confidence: float,
+    width: int,
+    height: int,
+    results_dir: Path,
+    temp_dir: Path,
+    text_extracted: bool = False,
+    skip_blur: bool = False,
+    skip_reassembly: bool = False,
+    disable_llm: bool = False,
+) -> tuple[Path, dict[str, Dict[str, Any]]] | tuple[Path | Any, Any]:
     """
     Process a single image or PDF page
 
@@ -86,9 +85,11 @@ def process_image(
             text_metadata = extractor.extract_metadata(text_extracted)
             if text_metadata:
                 sensitive_meta.safe_update(text_metadata)
-            else:
-                text_results = {}
-            combined_results = {"image_analysis": llm_results, "text_analysis": sensitive_meta.to_dict()}
+
+            combined_results = {
+                "image_analysis": llm_results,
+                "text_analysis": sensitive_meta.to_dict(),
+            }
         else:
             combined_results = {"image_analysis": llm_results}
 

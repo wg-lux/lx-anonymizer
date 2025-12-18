@@ -12,7 +12,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from PIL import Image, ImageDraw
 
 from .custom_logger import get_logger
-from .ocr import tesseract_full_image_ocr
+from .ocr.ocr import tesseract_full_image_ocr
 from .pdf_operations import convert_pdf_to_images
 from .spacy_extractor import ExaminerDataExtractor, PatientDataExtractor
 
@@ -58,7 +58,7 @@ class SensitiveRegionCropper:
             "phone_number": r"\b(?:\+49\s?)?(?:\d{3,5}[\s\-]?)?\d{6,8}\b",
             "address": r"[A-ZÄÖÜ][a-zäöüß\s]+(str\.|straße|platz|weg|gasse)\s*\d+",
             "examiner_first_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?",
-            "examiner_last_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?"
+            "examiner_last_name": r"(?:Dr\.\s?(?:med\.\s?)?)?[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?",
         }
 
     # Füge in der Klasse SensitiveRegionCropper hinzu:
@@ -194,7 +194,7 @@ class SensitiveRegionCropper:
         sensitive_regions = []
         full_text = " ".join([word for word, _ in word_boxes])
 
-        logger.info(f"Analysiere Text auf sensitive Daten: {full_text[:100]}...")
+        logger.info(f"Analyzing text for sensitive data: {full_text[:100]}...")
 
         # 1. Verwende SpaCy-Extraktoren für strukturierte Erkennung
         patient_info = self.patient_extractor(full_text)
@@ -209,7 +209,7 @@ class SensitiveRegionCropper:
                 matched_text = match.group()
 
                 logger.debug(
-                    f"Gefunden {data_type}: '{matched_text}' an Position {start_pos}-{end_pos}"
+                    f"Found {data_type}: '{matched_text}' at Position {start_pos}-{end_pos}"
                 )
 
                 # Finde entsprechende Word-Boxes für diesen Text

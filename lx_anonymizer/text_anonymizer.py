@@ -6,24 +6,28 @@ from hashlib import sha256
 from typing import Dict, Tuple, Optional, Iterable
 from .custom_logger import get_logger
 
+logger = get_logger(__name__)
+
 
 def replace_umlauts(text):
     """Replace German umlauts with their corresponding letter (ä -> ae)."""
-    text = text.replace('ä', 'ae')
-    text = text.replace('ö', 'oe')
-    text = text.replace('ü', 'ue')
-    text = text.replace('Ä', 'AE')
-    text = text.replace('Ö', 'OE')
-    text = text.replace('Ü', 'UE')
+    text = text.replace("ä", "ae")
+    text = text.replace("ö", "oe")
+    text = text.replace("ü", "ue")
+    text = text.replace("Ä", "AE")
+    text = text.replace("Ö", "OE")
+    text = text.replace("Ü", "UE")
     return text
+
 
 def replace_large_numbers(text):
     """Replaces all numbers with at least 5 digits with random numbers of the same length."""
+
     def random_number(n):
-        return ''.join([str(random.randint(0, 9)) for _ in range(n)])
-    
-    numbers_to_replace = re.findall(r'\b\d{5,}\b', text)
-    
+        return "".join([str(random.randint(0, 9)) for _ in range(n)])
+
+    numbers_to_replace = re.findall(r"\b\d{5,}\b", text)
+
     for number in numbers_to_replace:
         length = len(number)
         random_num = random_number(length)
@@ -31,9 +35,11 @@ def replace_large_numbers(text):
 
     return text
 
+
 def remove_titles(name):
     """Remove titles like 'Dr.' and 'Dr. med.' from names."""
-    return re.sub(r'(Dr\. med\. |Dr\. |Prof\.)', '', name)
+    return re.sub(r"(Dr\. med\. |Dr\. |Prof\.)", "", name)
+
 
 def cutoff_leading_text(text, cutoff_flags):
     """
@@ -42,13 +48,14 @@ def cutoff_leading_text(text, cutoff_flags):
     """
     if not cutoff_flags:  # If no flags provided, return text as is
         return text
-        
-    lines = text.split('\n')
+
+    lines = text.split("\n")
     for i, line in enumerate(lines):
         for flag in cutoff_flags:
             if flag in line:
-                return '\n'.join(lines[i:])
+                return "\n".join(lines[i:])
     return text
+
 
 def cutoff_trailing_text(text, cutoff_flags):
     """
@@ -57,13 +64,14 @@ def cutoff_trailing_text(text, cutoff_flags):
     """
     if not cutoff_flags:  # If no flags provided, return text as is
         return text
-        
-    lines = text.split('\n')
+
+    lines = text.split("\n")
     for i, line in enumerate(lines):
         for flag in cutoff_flags:
             if flag in line:
-                return '\n'.join(lines[:i+1])
+                return "\n".join(lines[: i + 1])
     return text
+
 
 def replace_employee_names(text, first_names, last_names, locale=None):
     """Replace known employee names with fake names."""
@@ -72,14 +80,13 @@ def replace_employee_names(text, first_names, last_names, locale=None):
         for first_name in first_names:
             if first_name and first_name in text:
                 text = text.replace(first_name, fake.first_name())
-    
+
     if last_names:
         for last_name in last_names:
             if last_name and last_name in text:
                 text = text.replace(last_name, fake.last_name())
-                
-    return text
 
+    return text
 
 
 def _seeded_faker(seed: str, locale: str) -> Faker:
@@ -88,6 +95,7 @@ def _seeded_faker(seed: str, locale: str) -> Faker:
     Faker.seed(rnd)
     random.seed(rnd)
     return fake
+
 
 def _preserve_case_like(sample: str, replacement: str) -> str:
     if sample.isupper():
@@ -98,6 +106,7 @@ def _preserve_case_like(sample: str, replacement: str) -> str:
         return replacement.lower()
     # mixed or unknown -> return as given
     return replacement
+
 
 def _compile_name_patterns(name: str) -> Iterable[re.Pattern]:
     """
@@ -117,13 +126,17 @@ def _compile_name_patterns(name: str) -> Iterable[re.Pattern]:
         re.compile(rf"\b({flexible})\b", flags=re.IGNORECASE),
     ]
 
+
 def _safe_sub_all(text: str, patterns: Iterable[re.Pattern], repl_factory) -> str:
     """Apply multiple compiled patterns with a case-preserving callable replacement."""
     for pat in patterns:
+
         def _repl(m: re.Match) -> str:
             return repl_factory(m.group(0))
+
         text = pat.sub(_repl, text)
     return text
+
 
 def _shift_date_iso(iso: str, days_window: Tuple[int, int], seed: str) -> Optional[str]:
     """Deterministic shift of an ISO date (YYYY-MM-DD) within a window."""
@@ -137,6 +150,7 @@ def _shift_date_iso(iso: str, days_window: Tuple[int, int], seed: str) -> Option
     delta = a + (rnd % (b - a + 1))
     return (dt + timedelta(days=delta)).strftime("%Y-%m-%d")
 
+
 def _date_string_variants(iso: str, fmt: str) -> Tuple[str, str]:
     """
     Return two common written forms: localized format and ISO.
@@ -147,6 +161,7 @@ def _date_string_variants(iso: str, fmt: str) -> Tuple[str, str]:
     except Exception:
         return iso, iso
     return dt.strftime(fmt), dt.strftime("%Y-%m-%d")
+
 
 def anonymize_text(
     text: str,
@@ -170,9 +185,11 @@ def anonymize_text(
     - Employee name replacements
     - Cutoff (upper/lower) applied early
     """
-    logger = get_logger(__name__, verbose=verbose)
     if not isinstance(text, str) or not text:
+        logger.error("Instance passed to anonymize_text didnt contain text")
         return text
+
+    logger.info("Instance passed to anonymize_text, starting anonymization")
 
     # 1) Apply cutoffs first (less work, fewer false positives later)
     if apply_cutoffs:
@@ -182,12 +199,21 @@ def anonymize_text(
             text = cutoff_trailing_text(text, lower_cut_off_flags)
 
     # Build a deterministic seed from available meta fields
-    seed_material = "|".join(
-        str(report_meta.get(k, "")) for k in (
-            "pdf_hash", "file_path", "patient_first_name", "patient_last_name",
-            "casenumber", "examination_date", "patient_dob"
+    seed_material = (
+        "|".join(
+            str(report_meta.get(k, ""))
+            for k in (
+                "pdf_hash",
+                "file_path",
+                "patient_first_name",
+                "patient_last_name",
+                "casenumber",
+                "examination_date",
+                "patient_dob",
+            )
         )
-    ) or text[:256]  # fallback to text prefix if meta is sparse
+        or text[:256]
+    )  # fallback to text prefix if meta is sparse
     fake = _seeded_faker(seed_material, locale)
 
     # 2) Patient names (robust, handles presence of only one of them)
@@ -203,24 +229,23 @@ def anonymize_text(
         full = f"{pf} {pl}"
         patns = _compile_name_patterns(full)
         text = _safe_sub_all(
-            text, patns,
-            lambda s: _preserve_case_like(s, f"{pseudo_pf} {pseudo_pl}")
+            text, patns, lambda s: _preserve_case_like(s, f"{pseudo_pf} {pseudo_pl}")
         )
 
     # Replace last name alone
     if pl:
         patns = _compile_name_patterns(pl)
         text = _safe_sub_all(
-            text, patns,
-            lambda s: _preserve_case_like(s, pseudo_pl or fake.last_name())
+            text, patns, lambda s: _preserve_case_like(s, pseudo_pl or fake.last_name())
         )
 
     # Replace first name alone
     if pf:
         patns = _compile_name_patterns(pf)
         text = _safe_sub_all(
-            text, patns,
-            lambda s: _preserve_case_like(s, pseudo_pf or fake.first_name())
+            text,
+            patns,
+            lambda s: _preserve_case_like(s, pseudo_pf or fake.first_name()),
         )
 
     # 3) Examiner names (if present)
@@ -233,22 +258,21 @@ def anonymize_text(
         full = f"{ef} {el}"
         patns = _compile_name_patterns(full)
         text = _safe_sub_all(
-            text, patns,
-            lambda s: _preserve_case_like(s, f"{pseudo_ef} {pseudo_el}")
+            text, patns, lambda s: _preserve_case_like(s, f"{pseudo_ef} {pseudo_el}")
         )
 
     if el:
         patns = _compile_name_patterns(el)
         text = _safe_sub_all(
-            text, patns,
-            lambda s: _preserve_case_like(s, pseudo_el or fake.last_name())
+            text, patns, lambda s: _preserve_case_like(s, pseudo_el or fake.last_name())
         )
 
     if ef:
         patns = _compile_name_patterns(ef)
         text = _safe_sub_all(
-            text, patns,
-            lambda s: _preserve_case_like(s, pseudo_ef or fake.first_name())
+            text,
+            patns,
+            lambda s: _preserve_case_like(s, pseudo_ef or fake.first_name()),
         )
 
     # 4) Replace configured employee names (uses simple .replace – acceptable for non-critical staff names)
@@ -267,17 +291,26 @@ def anonymize_text(
             # Assume ISO or already formatted; try normalize to ISO
             m = re.match(r"^\d{4}-\d{2}-\d{2}$", dob_val)
             dob_iso = dob_val if m else None
-        elif isinstance(dob_val, (datetime, )):
+        elif isinstance(dob_val, (datetime,)):
             dob_iso = dob_val.strftime("%Y-%m-%d")
 
         # Accept already-cleaned string dates in  YYYY-MM-DD from upstream
         if dob_iso:
-            fake_dob_iso = _shift_date_iso(dob_iso, (-1200, -365), seed_material)  # keep age-ish but not exact
+            fake_dob_iso = _shift_date_iso(
+                dob_iso, (-1200, -365), seed_material
+            )  # keep age-ish but not exact
             if fake_dob_iso:
-                dob_local, dob_iso_str = _date_string_variants(dob_iso, text_date_format)
-                fake_local, fake_iso_str = _date_string_variants(fake_dob_iso, text_date_format)
+                dob_local, dob_iso_str = _date_string_variants(
+                    dob_iso, text_date_format
+                )
+                fake_local, fake_iso_str = _date_string_variants(
+                    fake_dob_iso, text_date_format
+                )
                 # Replace both local and ISO spelling if present
-                for original, fake_str in [(dob_local, fake_local), (dob_iso_str, fake_iso_str)]:
+                for original, fake_str in [
+                    (dob_local, fake_local),
+                    (dob_iso_str, fake_iso_str),
+                ]:
                     if original and fake_str and original in text:
                         text = re.sub(re.escape(original), fake_str, text)
 
@@ -287,15 +320,22 @@ def anonymize_text(
         if isinstance(ex_val, str):
             m = re.match(r"^\d{4}-\d{2}-\d{2}$", ex_val)
             ex_iso = ex_val if m else None
-        elif isinstance(ex_val, (datetime, )):
+        elif isinstance(ex_val, (datetime,)):
             ex_iso = ex_val.strftime("%Y-%m-%d")
 
         if ex_iso:
-            fake_ex_iso = _shift_date_iso(ex_iso, (-30, 30), seed_material)  # small temporal jitter
+            fake_ex_iso = _shift_date_iso(
+                ex_iso, (-30, 30), seed_material
+            )  # small temporal jitter
             if fake_ex_iso:
                 ex_local, ex_iso_str = _date_string_variants(ex_iso, text_date_format)
-                fake_local, fake_iso_str = _date_string_variants(fake_ex_iso, text_date_format)
-                for original, fake_str in [(ex_local, fake_local), (ex_iso_str, fake_iso_str)]:
+                fake_local, fake_iso_str = _date_string_variants(
+                    fake_ex_iso, text_date_format
+                )
+                for original, fake_str in [
+                    (ex_local, fake_local),
+                    (ex_iso_str, fake_iso_str),
+                ]:
                     if original and fake_str and original in text:
                         text = re.sub(re.escape(original), fake_str, text)
 

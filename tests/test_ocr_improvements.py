@@ -9,19 +9,19 @@ This script tests:
 4. Better PSM selection
 """
 
-from pathlib import Path
-
 import cv2
 import numpy as np
 
 from lx_anonymizer.custom_logger import get_logger
-from lx_anonymizer.ocr_frame_tesserocr import TesseOCRFrameProcessor
+from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
 
 # Setup logging
 logger = get_logger(__name__)
 
 
-def create_test_image_with_text(text: str, size=(400, 100), noise_level=0) -> np.ndarray:
+def create_test_image_with_text(
+    text: str, size=(400, 100), noise_level=0
+) -> np.ndarray:
     """Create a test image with text and optional noise."""
     img = np.ones(size, dtype=np.uint8) * 255  # White background
 
@@ -49,7 +49,7 @@ def test_clean_text():
     roi = {"x": 0, "y": 0, "width": img.shape[1], "height": img.shape[0]}
     text, conf, _ = processor.extract_text_from_frame(img, roi=roi, high_quality=True)
 
-    print(f"Input text: '2024-01-15 14:30:25'")
+    print("Input text: '2024-01-15 14:30:25'")
     print(f"OCR result: '{text}'")
     print(f"Confidence: {conf:.2f}%")
     print(f"Status: {'✓ PASS' if '2024' in text else '✗ FAIL'}")
@@ -69,10 +69,12 @@ def test_noisy_text():
     roi = {"x": 0, "y": 0, "width": img.shape[1], "height": img.shape[0]}
     text, conf, _ = processor.extract_text_from_frame(img, roi=roi, high_quality=True)
 
-    print(f"Input text: 'Patient: John Doe' (with noise)")
+    print("Input text: 'Patient: John Doe' (with noise)")
     print(f"OCR result: '{text}'")
     print(f"Confidence: {conf:.2f}%")
-    print(f"Status: {'✓ PASS' if text and len(text) > 5 else '✗ FAIL (filtered as gibberish)'}")
+    print(
+        f"Status: {'✓ PASS' if text and len(text) > 5 else '✗ FAIL (filtered as gibberish)'}"
+    )
 
     return text and len(text) > 5
 
@@ -91,10 +93,12 @@ def test_gibberish_filtering():
     roi = {"x": 0, "y": 0, "width": img.shape[1], "height": img.shape[0]}
     text, conf, _ = processor.extract_text_from_frame(img, roi=roi, high_quality=True)
 
-    print(f"Input: Random noise image")
+    print("Input: Random noise image")
     print(f"OCR result: '{text}'")
     print(f"Confidence: {conf:.2f}%")
-    print(f"Status: {'✓ PASS (gibberish filtered)' if not text or len(text) < 5 else '✗ FAIL (should filter gibberish)'}")
+    print(
+        f"Status: {'✓ PASS (gibberish filtered)' if not text or len(text) < 5 else '✗ FAIL (should filter gibberish)'}"
+    )
 
     return not text or len(text) < 5
 
@@ -115,12 +119,16 @@ def test_roi_processing():
     roi1 = {"x": 0, "y": 0, "width": 300, "height": 100}
     roi2 = {"x": 0, "y": 100, "width": 300, "height": 100}
 
-    text1, conf1, _ = processor.extract_text_from_frame(img, roi=roi1, high_quality=True)
-    text2, conf2, _ = processor.extract_text_from_frame(img, roi=roi2, high_quality=True)
+    text1, conf1, _ = processor.extract_text_from_frame(
+        img, roi=roi1, high_quality=True
+    )
+    text2, conf2, _ = processor.extract_text_from_frame(
+        img, roi=roi2, high_quality=True
+    )
 
-    print(f"ROI 1 - Expected: '2024-01-15'")
+    print("ROI 1 - Expected: '2024-01-15'")
     print(f"ROI 1 - Result: '{text1}' (conf: {conf1:.2f}%)")
-    print(f"ROI 2 - Expected: 'ID: 12345'")
+    print("ROI 2 - Expected: 'ID: 12345'")
     print(f"ROI 2 - Result: '{text2}' (conf: {conf2:.2f}%)")
 
     success = "2024" in text1 and ("12345" in text2 or "ID" in text2)
@@ -139,16 +147,20 @@ def test_low_confidence_filtering():
 
     # Create very low contrast image
     img = np.ones((100, 400), dtype=np.uint8) * 200
-    cv2.putText(img, "Barely Visible", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (210, 210, 210), 1)
+    cv2.putText(
+        img, "Barely Visible", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (210, 210, 210), 1
+    )
 
     roi = {"x": 0, "y": 0, "width": img.shape[1], "height": img.shape[0]}
     text, conf, _ = processor.extract_text_from_frame(img, roi=roi, high_quality=True)
 
-    print(f"Input: Very low contrast text")
+    print("Input: Very low contrast text")
     print(f"OCR result: '{text}'")
     print(f"Confidence: {conf:.2f}%")
-    print(f"Confidence threshold: 40% (min) / 50% (high quality)")
-    print(f"Status: {'✓ PASS (low confidence filtered)' if conf < 40 or not text else '✗ FAIL'}")
+    print("Confidence threshold: 40% (min) / 50% (high quality)")
+    print(
+        f"Status: {'✓ PASS (low confidence filtered)' if conf < 40 or not text else '✗ FAIL'}"
+    )
 
     return conf < 40 or not text
 
