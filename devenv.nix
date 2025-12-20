@@ -28,7 +28,6 @@ let
       inherit config pkgs lib;
     })
   );
-  SYNC_CMD = "uv sync --extra dev --extra docs --extra ocr --extra llm";
 
 in
 {
@@ -68,13 +67,12 @@ in
     ffmpeg_6-headless
   ];
 
-  env = lib.mkForce {
+  env = {
     LD_LIBRARY_PATH = "${
       with pkgs; lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
-    PYTORCH_ALLOC_CONF= "expandable_segments:True";
-    CUDA_VISIBLE_DEVICES="";
+    PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
@@ -93,8 +91,8 @@ in
     }/share"
   '';
 
-  scripts.uvsnc.exec = ''
-    ${SYNC_CMD}
+  scripts.uvs.exec = ''
+    uv sync --extra dev --extra ocr --extra llm
   '';
 
   processes = {
@@ -137,7 +135,7 @@ in
       echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
     fi
 
-    echo "Exporting environment variables from lx_anonymizer.env file..."
+    echo "Exporting environment variables from .env file..."
     if [ -f ".env" ]; then
       set -a
       source .env
