@@ -7,9 +7,9 @@ import ast
 from typing import Any, Tuple
 from numpy import ndarray
 
-from .device_reader import read_device, read_text_formatting
-from .directory_setup import create_temp_directory
-from .custom_logger import get_logger
+from lx_anonymizer.setup.device_reader import read_device, read_text_formatting
+from lx_anonymizer.setup.directory_setup import create_temp_directory
+from lx_anonymizer.setup.custom_logger import get_logger
 
 # --- NEW IMPORTS FOR PIL ---
 from PIL import Image, ImageDraw, ImageFont

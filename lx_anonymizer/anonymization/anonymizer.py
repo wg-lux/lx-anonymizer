@@ -3,11 +3,11 @@ from pathlib import Path
 
 import fitz
 
-from .text_detection.east_text_detection import east_text_detection
-from .ocr.ocr_tesserocr import tesseract_on_boxes_fast
-from .pdf_operations import convert_pdf_to_images
-from .custom_logger import get_logger
-from .sensitive_region_cropper import SensitiveRegionCropper
+from lx_anonymizer.text_detection.east_text_detection import east_text_detection
+from lx_anonymizer.ocr.ocr_tesserocr import tesseract_on_boxes_fast
+from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 
 
 logger = get_logger(__name__)

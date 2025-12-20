@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import sys
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -90,7 +90,7 @@ class Paths:
     env_path: Path
     hf_home: Path
     hf_hub_cache: Path
-    transformers_cache: Path
+    HF_HOME: Path
     ollama_models: Path
     pip_cache: Path
     torch_cache: Path
@@ -108,7 +108,7 @@ def resolve_paths() -> Paths:
     home = Path.home()
     hf_home = Path(env_get("HF_HOME", home / ".cache" / "huggingface"))
     hf_hub_cache = Path(env_get("HF_HUB_CACHE", hf_home / "hub"))
-    transformers_cache = Path(env_get("TRANSFORMERS_CACHE", hf_hub_cache))
+    HF_HOME = Path(env_get("HF_HOME", hf_hub_cache))
     ollama_models = Path(env_get("OLLAMA_MODELS", home / ".ollama" / "models"))
 
     pip_cache = Path(os.environ.get("PIP_CACHE_DIR", home / ".cache" / "pip"))
@@ -121,7 +121,7 @@ def resolve_paths() -> Paths:
         env_path=env_path,
         hf_home=hf_home,
         hf_hub_cache=hf_hub_cache,
-        transformers_cache=transformers_cache,
+        HF_HOME=HF_HOME,
         ollama_models=ollama_models,
         pip_cache=pip_cache,
         torch_cache=torch_cache,
@@ -261,7 +261,7 @@ def pipe_texts(nlp, texts, batch_size:int=200, n_process:int=2):
 def main():
     ap = argparse.ArgumentParser(description="LRU-Cleanup für HF/Transformers/Ollama/PIP/Torch/Trash + spaCy-Hints")
     ap.add_argument("--apply", action="store_true", help="Tatsächlich löschen (ohne: Dry-Run/Report)")
-    ap.add_argument("--hf-limit-gb", type=float, default=40.0, help="Limit für HF_HUB_CACHE/TRANSFORMERS_CACHE (GB)")
+    ap.add_argument("--hf-limit-gb", type=float, default=40.0, help="Limit für HF_HUB_CACHE/HF_HOME (GB)")
     ap.add_argument("--pip-limit-gb", type=float, default=5.0, help="Limit für PIP-Cache (GB)")
     ap.add_argument("--torch-limit-gb", type=float, default=10.0, help="Limit für Torch-Cache (GB)")
     ap.add_argument("--spacy-limit-gb", type=float, default=2.0, help="Limit für spaCy-Cache (GB)")
@@ -284,8 +284,8 @@ def main():
     hf_dirs = []
     if paths.hf_hub_cache.exists():
         hf_dirs.append(("HF_HUB_CACHE", paths.hf_hub_cache))
-    if paths.transformers_cache.exists() and paths.transformers_cache.resolve() != paths.hf_hub_cache.resolve():
-        hf_dirs.append(("TRANSFORMERS_CACHE", paths.transformers_cache))
+    if paths.HF_HOME.exists() and paths.HF_HOME.resolve() != paths.hf_hub_cache.resolve():
+        hf_dirs.append(("HF_HOME", paths.HF_HOME))
 
     seen: set[Path] = set()
     for label, d in hf_dirs:

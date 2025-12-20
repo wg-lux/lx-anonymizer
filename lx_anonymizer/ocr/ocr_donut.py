@@ -1,10 +1,12 @@
 import os
+import re
+from typing import List, Tuple
+
 import torch
 from PIL import Image
 from transformers import DonutProcessor, VisionEncoderDecoderModel
-from ..custom_logger import get_logger
-import re
-from typing import List, Tuple
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 # Set the environment variable to avoid memory fragmentation
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
@@ -419,5 +421,7 @@ if __name__ == "__main__":
         image_path = sys.argv[1]
         text = donut_full_image_ocr(image_path)
         print(f"Extracted text:\n{text}")
+    else:
+        print("Usage: python donut_ocr.py <image_path>")
     else:
         print("Usage: python donut_ocr.py <image_path>")

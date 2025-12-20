@@ -1,9 +1,10 @@
+import json
 import logging
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
-import json
-from .video_processing.video_encoder import VideoEncoder
+
+from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
 

@@ -68,12 +68,13 @@ in
     ffmpeg_6-headless
   ];
 
-  env = {
+  env = lib.mkForce {
     LD_LIBRARY_PATH = "${
       with pkgs; lib.makeLibraryPath buildInputs
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
-    PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
+    PYTORCH_ALLOC_CONF= "expandable_segments:True";
+    CUDA_VISIBLE_DEVICES="";
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
@@ -136,7 +137,7 @@ in
       echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
     fi
 
-    echo "Exporting environment variables from .env file..."
+    echo "Exporting environment variables from lx_anonymizer.env file..."
     if [ -f ".env" ]; then
       set -a
       source .env

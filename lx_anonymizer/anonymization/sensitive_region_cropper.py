@@ -11,10 +11,10 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image, ImageDraw
 
-from .custom_logger import get_logger
-from .ocr.ocr import tesseract_full_image_ocr
-from .pdf_operations import convert_pdf_to_images
-from .spacy_extractor import ExaminerDataExtractor, PatientDataExtractor
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
+from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+from lx_anonymizer.ner.spacy_extractor import ExaminerDataExtractor, PatientDataExtractor
 
 logger = get_logger(__name__)
 

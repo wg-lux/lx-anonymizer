@@ -12,7 +12,7 @@ This script tests:
 import cv2
 import numpy as np
 
-from lx_anonymizer.custom_logger import get_logger
+from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
 
 # Setup logging

@@ -2,7 +2,7 @@ from typing import Any
 import cv2
 from pathlib import Path
 import uuid
-from lx_anonymizer.custom_logger import get_logger
+from lx_anonymizer.setup.custom_logger import get_logger
 
 
 # Configure logger

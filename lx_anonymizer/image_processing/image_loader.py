@@ -1,6 +1,8 @@
 from pathlib import Path
+
 import fitz
-from .custom_logger import get_logger
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -28,5 +30,7 @@ def get_image_paths(image_or_pdf_path: Path, temp_dir: Path):
         if not image_or_pdf_path.exists():
             raise FileNotFoundError(f"The file {image_or_pdf_path} does not exist.")
         image_paths.append(image_or_pdf_path)
+
+    return image_paths
 
     return image_paths

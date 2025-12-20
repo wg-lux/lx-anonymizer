@@ -1,4 +1,3 @@
-# lx_anonymizer/frame_cleaner/video_processing_service.py
 import subprocess
 import logging
 import tempfile

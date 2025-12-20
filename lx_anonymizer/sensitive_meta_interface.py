@@ -1,10 +1,10 @@
 # lx_anonymizer/frame_cleaner/sensitive_meta_interface.py
-from dataclasses import dataclass, asdict
-from typing import Any, Optional, Dict, Mapping
 import math
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Mapping, Optional
 
 # from django.template.defaultfilters import first  # <- not used; remove to avoid import cost
-from .custom_logger import logger
+from lx_anonymizer.setup.custom_logger import logger
 
 
 def _is_blank(v: Any) -> bool:

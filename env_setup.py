@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from pathlib import Path
 from typing import Dict
 
@@ -48,8 +48,8 @@ def main() -> None:
     # Hugging Face: einheitlicher Cache-Ort, um Doppel-Cache zu vermeiden
     hf_home = Path(os.environ.get("HF_HOME", existing.get("HF_HOME", str(home / ".cache" / "huggingface"))))
     hf_hub_cache = Path(os.environ.get("HF_HUB_CACHE", existing.get("HF_HUB_CACHE", str(hf_home / "hub"))))
-    # Wichtig: TRANSFORMERS_CACHE auf den gleichen Ort legen wie der hub-cache
-    transformers_cache = Path(os.environ.get("TRANSFORMERS_CACHE", existing.get("TRANSFORMERS_CACHE", str(hf_hub_cache))))
+    # Wichtig: HF_HOME auf den gleichen Ort legen wie der hub-cache
+    HF_HOME = Path(os.environ.get("HF_HOME", existing.get("HF_HOME", str(hf_hub_cache))))
     # Optionaler Download-Beschleuniger
     hf_transfer = os.environ.get("HF_HUB_ENABLE_HF_TRANSFER", existing.get("HF_HUB_ENABLE_HF_TRANSFER", "1"))
 
@@ -58,7 +58,7 @@ def main() -> None:
     ollama_keep_alive = os.environ.get("OLLAMA_KEEP_ALIVE", existing.get("OLLAMA_KEEP_ALIVE", "4h"))
 
     # Verzeichnisse sicherstellen
-    for p in [hf_home, hf_hub_cache, transformers_cache, ollama_models]:
+    for p in [hf_home, hf_hub_cache, HF_HOME, ollama_models]:
         try:
             Path(p).mkdir(parents=True, exist_ok=True)
         except Exception as e:
@@ -69,7 +69,7 @@ def main() -> None:
     merged.update({
         "HF_HOME": str(hf_home),
         "HF_HUB_CACHE": str(hf_hub_cache),
-        "TRANSFORMERS_CACHE": str(transformers_cache),
+        "HF_HOME": str(HF_HOME),
         "HF_HUB_ENABLE_HF_TRANSFER": str(hf_transfer),
         "OLLAMA_MODELS": str(ollama_models),
         "OLLAMA_KEEP_ALIVE": str(ollama_keep_alive),
@@ -81,7 +81,7 @@ def main() -> None:
     logger.info("Environment variables set:")
     logger.info(f"  HF_HOME={merged['HF_HOME']}")
     logger.info(f"  HF_HUB_CACHE={merged['HF_HUB_CACHE']}")
-    logger.info(f"  TRANSFORMERS_CACHE={merged['TRANSFORMERS_CACHE']}")
+    logger.info(f"  HF_HOME={merged['HF_HOME']}")
     logger.info(f"  HF_HUB_ENABLE_HF_TRANSFER={merged['HF_HUB_ENABLE_HF_TRANSFER']}")
     logger.info(f"  OLLAMA_MODELS={merged['OLLAMA_MODELS']}")
     logger.info(f"  OLLAMA_KEEP_ALIVE={merged['OLLAMA_KEEP_ALIVE']}")

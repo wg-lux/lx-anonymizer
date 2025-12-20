@@ -1,10 +1,12 @@
-from faker import Faker
-from datetime import datetime, timedelta
 import random
 import re
+from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Dict, Tuple, Optional, Iterable
-from .custom_logger import get_logger
+from typing import Dict, Iterable, Optional, Tuple
+
+from faker import Faker
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -338,5 +340,7 @@ def anonymize_text(
                 ]:
                     if original and fake_str and original in text:
                         text = re.sub(re.escape(original), fake_str, text)
+
+    return text
 
     return text

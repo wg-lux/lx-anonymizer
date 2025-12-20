@@ -18,7 +18,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import dateparser
 
-from .sensitive_meta_interface import SensitiveMeta  # <<< integrate SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import \
+    SensitiveMeta  # <<< integrate SensitiveMeta
 
 logger = logging.getLogger(__name__)
 
@@ -428,5 +429,7 @@ class FrameMetadataExtractor:
                     return date(y, m, d)
             return None
         except Exception as e:
+            logger.debug(f"Date parsing failed for '{date_str}': {e}")
+            return None
             logger.debug(f"Date parsing failed for '{date_str}': {e}")
             return None

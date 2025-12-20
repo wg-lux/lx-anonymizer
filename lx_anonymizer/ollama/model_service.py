@@ -1,19 +1,14 @@
-import torch
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    pipeline,
-    TrOCRProcessor,
-    VisionEncoderDecoderModel,
-)
-from typing import (
-    Optional,
-    Any,
-)  # Added Any for pipeline, consider specific type if known
 import gc
 import os
-from .custom_logger import get_logger
-from .ollama.ollama_service import ollama_service
+from typing import (  # Added Any for pipeline, consider specific type if known
+    Any, Optional)
+
+import torch
+from transformers import (AutoModelForCausalLM, AutoTokenizer, TrOCRProcessor,
+                          VisionEncoderDecoderModel, pipeline)
+
+from lx_anonymizer.ollama.ollama_service import ollama_service
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -285,6 +280,15 @@ class ModelService:
 
         logger.info("All models have been cleaned up")
 
+
+# Erzeuge eine globale Instanz des ModelService
+model_service = ModelService()
+
+# Erzeuge eine globale Instanz des ModelService
+model_service = ModelService()
+
+# Erzeuge eine globale Instanz des ModelService
+model_service = ModelService()
 
 # Erzeuge eine globale Instanz des ModelService
 model_service = ModelService()

@@ -3,9 +3,10 @@ import spacy
 from spacy.matcher import Matcher
 from datetime import datetime
 import warnings
-from .determine_gender import determine_gender
 from spacy.tokens import Doc
-from .spacy_extractor import _clean_date
+
+from lx_anonymizer.ner.determine_gender import determine_gender
+from lx_anonymizer.ner.spacy_extractor import _clean_date
 
 # Compile heavy regexes once at module level
 DATE_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")

@@ -1,17 +1,19 @@
-import os
-import signal
 import atexit
-import threading
-import requests
-import time
 import logging
+import os
 import shutil
+import signal
 import subprocess
-import urllib3
 import sys
-from pathlib import Path
+import threading
+import time
 from functools import lru_cache
-from ..custom_logger import get_logger
+from pathlib import Path
+
+import requests
+import urllib3
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 _lock = threading.Lock()
@@ -883,5 +885,7 @@ def init_ollama_service(auto_start=True):
 
                 return _unavailable
 
+        ollama_service = DummyOllamaService()
+        return ollama_service
         ollama_service = DummyOllamaService()
         return ollama_service

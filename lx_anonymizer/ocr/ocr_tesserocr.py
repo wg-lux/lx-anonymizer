@@ -258,7 +258,7 @@ def compare_ocr_performance(
     pytesseract_confidences = None
 
     try:
-        from .ocr import tesseract_on_boxes
+        from lx_anonymizer.ocr import tesseract_on_boxes
 
         start_time = time.time()
         pytesseract_results, pytesseract_confidences = tesseract_on_boxes(

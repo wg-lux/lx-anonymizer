@@ -3,9 +3,9 @@ from imutils.object_detection import non_max_suppression
 import numpy as np
 import cv2
 import json
-from ..box_operations import extend_boxes_if_needed
-from ..directory_setup import create_temp_directory, create_model_directory
-from ..custom_logger import get_logger
+from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
+from lx_anonymizer.setup.directory_setup import create_temp_directory, create_model_directory
+from lx_anonymizer.setup.custom_logger import get_logger
 from pathlib import Path
 import certifi
 import urllib.request

@@ -1177,7 +1177,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.8.9.7"
+version = "0.8.9.8"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },

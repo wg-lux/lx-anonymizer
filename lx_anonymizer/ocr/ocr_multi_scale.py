@@ -4,8 +4,8 @@ import numpy as np
 import pytesseract
 from PIL import Image
 
-from ..custom_logger import logger
-from .ocr_preprocessing import preprocess_image
+from lx_anonymizer.ocr_preprocessing import preprocess_image
+from lx_anonymizer.setup.custom_logger import logger
 
 
 def pyramid_ocr(
@@ -276,13 +276,13 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
 
     if is_low_contrast:
         logger.info("Low contrast image detected, applying contrast enhancement")
-        from .ocr_preprocessing import preprocess_image
+        from lx_anonymizer.ocr_preprocessing import preprocess_image
 
         image = preprocess_image(image, methods=["grayscale", "contrast", "threshold"])
 
     if is_noisy:
         logger.info("Noisy image detected, applying denoising")
-        from .ocr_preprocessing import preprocess_image
+        from lx_anonymizer.ocr_preprocessing import preprocess_image
 
         image = preprocess_image(image, methods=["grayscale", "denoise"])
 
@@ -294,7 +294,7 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
         tesseract_text = ""
 
     try:
-        from .ocr import trocr_full_image_ocr
+        from lx_anonymizer.ocr import trocr_full_image_ocr
 
         trocr_text = trocr_full_image_ocr(image)
     except Exception as e:
@@ -309,4 +309,5 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
         logger.info("Tesseract produced better results (more content)")
         return tesseract_text
         logger.info("Tesseract produced better results (more content)")
+        return tesseract_text
         return tesseract_text

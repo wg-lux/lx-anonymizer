@@ -1,8 +1,8 @@
+import os
 from pathlib import Path
 from typing import List, Optional
-import os
 
-from .custom_logger import get_logger
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 

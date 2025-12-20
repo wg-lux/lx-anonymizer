@@ -1,15 +1,17 @@
 import os
 import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
+
 import cv2
 import pytesseract
 from PIL import Image
 
-from .custom_logger import get_logger
-from .ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
-from .pipeline_manager import process_images_with_OCR_and_NER
-from .sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import \
+    OllamaOptimizedExtractor
+from lx_anonymizer.pipeline_manager import process_images_with_OCR_and_NER
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -163,5 +165,6 @@ def resize_image(image_path: Path, max_width=1024, max_height=1024):
         except Exception as e:
             logger.error(f"Error saving image: {e}")
 
+        logger.debug(f"Image resized to {new_size}")
         logger.debug(f"Image resized to {new_size}")
         logger.debug(f"Image resized to {new_size}")

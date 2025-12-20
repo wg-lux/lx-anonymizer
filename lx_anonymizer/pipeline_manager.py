@@ -9,8 +9,8 @@ import pymupdf
 import pytesseract
 from PIL import Image
 
-from .blur import blur_function
-from .box_operations import (
+from lx_anonymizer.anonymization.blur import blur_function
+from lx_anonymizer.region_processing.box_operations import (
     close_to_box,
     filter_empty_boxes,
     find_or_create_close_box,
@@ -19,7 +19,7 @@ from .box_operations import (
 
 # Import CRAFT text detection if available (requires hezar)
 try:
-    from .text_detection.craft_text_detection import craft_text_detection
+    from lx_anonymizer.text_detection.craft_text_detection import craft_text_detection
 
     CRAFT_AVAILABLE = True
 except ImportError:
@@ -31,21 +31,21 @@ except ImportError:
         )
 
 
-from .custom_logger import get_logger
-from .device_reader import read_background_color, read_name_boxes
-from .directory_setup import create_blur_directory, create_temp_directory
-from .text_detection.east_text_detection import east_text_detection
-from .ner.flair_NER import flair_NER_German
-from .fuzzy_matching import correct_box_for_new_text, fuzzy_match_snippet
-from .names_generator import (
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.setup.device_reader import read_background_color, read_name_boxes
+from lx_anonymizer.setup.directory_setup import create_blur_directory, create_temp_directory
+from lx_anonymizer.text_detection.east_text_detection import east_text_detection
+from lx_anonymizer.ner.flair_NER import flair_NER_German
+from lx_anonymizer.nlp.fuzzy_matching import correct_box_for_new_text, fuzzy_match_snippet
+from lx_anonymizer.pseudonymization.names_generator import (
     gender_and_handle_device_names,
     gender_and_handle_separate_names,
 )
-from .ocr.ocr import tesseract_full_image_ocr, tesseract_on_boxes, trocr_on_boxes
-from .ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
-from .spacy_NER import spacy_NER_German
-from .text_detection.tesseract_text_detection import tesseract_text_detection
-from .sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr, tesseract_on_boxes, trocr_on_boxes
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from lx_anonymizer.ner.spacy_NER import spacy_NER_German
+from lx_anonymizer.text_detection.tesseract_text_detection import tesseract_text_detection
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 # Configure logging
 logger = get_logger(__name__)

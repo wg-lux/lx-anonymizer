@@ -3,18 +3,20 @@ Ollama-based LLM integration for image processing and text analysis.
 This module replaces the Phi-4 based LLM functions with Ollama-based implementations.
 """
 
-import json
+import base64
 import csv
+import importlib
+import io
+import json
 import uuid
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-import base64
-import io
-import importlib
-from PIL import Image
-import pytesseract
+from typing import Dict, List, Optional, Tuple
+
 import ollama
-from ..custom_logger import get_logger
+import pytesseract
+from PIL import Image
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -587,5 +589,7 @@ def analyze_text_with_ollama(
         return names
 
     except Exception as e:
+        logger.error(f"Error analyzing text with Ollama: {e}")
+        return []
         logger.error(f"Error analyzing text with Ollama: {e}")
         return []

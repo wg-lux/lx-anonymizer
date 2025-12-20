@@ -7,9 +7,9 @@ import spacy.cli
 from spacy.language import Language
 from spacy.matcher import Matcher
 
-from .custom_logger import get_logger
-from .determine_gender import determine_gender
-from .sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.ner.determine_gender import determine_gender
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 logger = get_logger(__name__)
 

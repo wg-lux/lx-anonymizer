@@ -5,8 +5,9 @@ import pytesseract
 from PIL import Image
 from spellchecker import SpellChecker
 
-from ..custom_logger import logger
-from .ocr_preprocessing import optimize_image_for_medical_text, preprocess_image
+from lx_anonymizer.ocr.ocr_preprocessing import (optimize_image_for_medical_text,
+                                             preprocess_image)
+from lx_anonymizer.setup.custom_logger import logger
 
 # Initialize spellchecker with medical dictionary if available
 try:
@@ -107,7 +108,7 @@ def ensemble_ocr(
 
     # TrOCR using imported function
     try:
-        from .ocr import trocr_full_image_ocr
+        from lx_anonymizer.ocr import trocr_full_image_ocr
 
         text_trocr = trocr_full_image_ocr(image_trocr)
         # TrOCR doesn't provide confidence scores directly, use length as proxy
@@ -123,7 +124,7 @@ def ensemble_ocr(
 
     # Donut OCR using imported function
     try:
-        from .ocr_donut import donut_full_image_ocr
+        from lx_anonymizer.ocr_donut import donut_full_image_ocr
 
         logger.info("Running Donut OCR with improved parameters")
         text_donut = donut_full_image_ocr(image_donut)
@@ -338,4 +339,6 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
         f"Selected scale {scales[best_index]} with confidence {confidences[best_index]}"
     )
 
+    return results[best_index], confidences[best_index]
+    return results[best_index], confidences[best_index]
     return results[best_index], confidences[best_index]

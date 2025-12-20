@@ -1,6 +1,8 @@
 import difflib
+
 import cv2
-from .custom_logger import get_logger
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -63,5 +65,7 @@ def correct_box_for_new_text(
     # Optionally, you could adjust height if needed
     # For instance, if new text has more lines, etc.
 
+    # Return the new bounding box
+    return (startX, startY, endX, endY)
     # Return the new bounding box
     return (startX, startY, endX, endY)

@@ -8,7 +8,8 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 # Import CRAFT text detection if available (requires hezar)
 try:
-    from ..text_detection.craft_text_detection import craft_text_detection
+    from lx_anonymizer.text_detection.craft_text_detection import \
+        craft_text_detection
 
     CRAFT_AVAILABLE = True
 except ImportError:
@@ -20,9 +21,10 @@ except ImportError:
         )
 
 
-from ..custom_logger import get_logger
-from ..model_service import model_service
-from ..region_detector import expand_roi  # Ensure this module is correctly referenced
+from lx_anonymizer.ollama.model_service import model_service
+from lx_anonymizer.region_processing.region_detector import \
+    expand_roi  # Ensure this module is correctly referenced
+from lx_anonymizer.setup.custom_logger import get_logger
 
 # Import optimized tesserocr if available
 try:
@@ -469,5 +471,7 @@ if __name__ == "__main__":
     # Perform OCR using Tesseract
     tesseract_results, tesseract_confidences = tesseract_on_boxes(image_path, boxes)
     logger.debug("Tesseract Results:", tesseract_results)
+    logger.debug("Tesseract Confidences:", tesseract_confidences)
+    logger.debug("Tesseract Confidences:", tesseract_confidences)
     logger.debug("Tesseract Confidences:", tesseract_confidences)
     logger.debug("Tesseract Confidences:", tesseract_confidences)

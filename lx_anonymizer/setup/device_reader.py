@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
+
 import cv2
-from .box_operations import make_box_from_device_list
-from .custom_logger import get_logger
+
+from lx_anonymizer.region_processing.box_operations import \
+    make_box_from_device_list
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 

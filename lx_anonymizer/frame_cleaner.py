@@ -10,9 +10,9 @@ This module provides functionality to:
 Uses specialized frame processing components separated from PDF logic.
 """
 
-import os
 import logging
 import math
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
@@ -21,26 +21,24 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from .frame_metadata_extractor import FrameMetadataExtractor
-from .huggingface_cache.can_load_model import HF_Cache
-from .masking import MaskApplication
-from .ocr.ocr_frame import FrameOCR
-
-# from .ocr_minicpm import (
+from lx_anonymizer.anonymization.masking import MaskApplication
+from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
+from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
+from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
+from lx_anonymizer.ocr.ocr_frame import FrameOCR
+# from lx_anonymizer.ocr_minicpm import (
 #     _can_load_model,
 #     create_minicpm_ocr,
 # )
-from .ollama.ollama_llm_meta_extraction import (
-    EnrichedMetadataExtractor,
-    FrameSamplingOptimizer,
-    OllamaOptimizedExtractor,
-)
-from .roi_processor import ROIProcessor
-from .sensitive_meta_interface import SensitiveMeta
-from .spacy_extractor import PatientDataExtractor
-from .utils.ollama import ensure_ollama
-from .utils.roi_normalization import normalize_roi_keys
-from .video_processing import video_encoder, video_processor, video_utils
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import (
+    EnrichedMetadataExtractor, FrameSamplingOptimizer,
+    OllamaOptimizedExtractor)
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.text_detection.roi_processor import ROIProcessor
+from lx_anonymizer.utils.ollama import ensure_ollama
+from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
+from lx_anonymizer.video_processing import (video_encoder, video_processor,
+                                            video_utils)
 
 logger = logging.getLogger(__name__)
 

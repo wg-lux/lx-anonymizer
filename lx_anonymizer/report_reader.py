@@ -12,26 +12,26 @@ import pdfplumber
 from faker import Faker
 from PIL import Image
 
-from .custom_logger import logger
-from .name_fallback import extract_patient_info_from_text
-from .ocr.ocr import (
-    tesseract_full_image_ocr,
-)  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
-from .ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
-from .ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
-from .pdf_operations import convert_pdf_to_images
-from .sensitive_region_cropper import SensitiveRegionCropper  # Import the new cropper
-from .settings import DEFAULT_SETTINGS
-from .spacy_extractor import (
-    EndoscopeDataExtractor,
-    ExaminationDataExtractor,
-    ExaminerDataExtractor,
-    PatientDataExtractor,
-)
-from .text_anonymizer import anonymize_text
-from .utils.ollama import ensure_ollama
-from .anonymizer import Anonymizer
-from .sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.anonymization.anonymizer import Anonymizer
+from lx_anonymizer.anonymization.sensitive_region_cropper import \
+    SensitiveRegionCropper  # Import the new cropper
+from lx_anonymizer.anonymization.text_anonymizer import anonymize_text
+from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+from lx_anonymizer.ner.spacy_extractor import (EndoscopeDataExtractor,
+                                               ExaminationDataExtractor,
+                                               ExaminerDataExtractor,
+                                               PatientDataExtractor)
+from lx_anonymizer.ner.spacy_ner_fallback import extract_patient_info_from_text
+from lx_anonymizer.ocr.ocr import \
+    tesseract_full_image_ocr  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
+from lx_anonymizer.ocr.ocr_ensemble import \
+    ensemble_ocr  # Import the new ensemble OCR
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import \
+    OllamaOptimizedExtractor
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.setup.custom_logger import logger
+from lx_anonymizer.setup.private_settings import DEFAULT_SETTINGS
+from lx_anonymizer.utils.ollama import ensure_ollama
 
 
 class ReportReader:
@@ -58,7 +58,7 @@ class ReportReader:
             if employee_last_names is not None
             else DEFAULT_SETTINGS["last_names"]
         )
-        self.flags = flags if flags is not None else DEFAULT_SETTINGS["flags"]
+        self.flags = flags if flags is not None else lx_anonymizer/setup/settings.py["flags"]
         self.fake = Faker(locale=locale)
         self.gender_detector = gender_detector.Detector(case_sensitive=True)
 
@@ -243,9 +243,8 @@ class ReportReader:
                 ):  # Only correct if OCR produced something meaningful
                     logger.info("Applying LLM correction to OCR text via Ollama")
                     try:
-                        from .ollama.ollama_service import (
-                            ollama_service,
-                        )  # Import locally if needed
+                        from lx_anonymizer.ollama.ollama_service import \
+                            ollama_service  # Import locally if needed
 
                         corrected_text = ollama_service.correct_ocr_text_in_chunks(text)
 
@@ -734,5 +733,7 @@ class ReportReader:
                 image, word_boxes, str(vis_path)
             )
             visualization_files.append(str(vis_path))
+
+        return visualization_files
 
         return visualization_files

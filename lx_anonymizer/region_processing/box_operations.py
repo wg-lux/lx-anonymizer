@@ -5,11 +5,13 @@ The functions in this script define operations on coordinate
 bounding boxes in images.
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 import cv2
 import numpy as np
 import numpy.typing as npt
-from .custom_logger import get_logger
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 # Define a type alias for a bounding box (startX, startY, endX, endY)
 Box = Tuple[int, int, int, int]

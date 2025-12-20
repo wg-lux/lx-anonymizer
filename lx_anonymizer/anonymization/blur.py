@@ -3,10 +3,10 @@ from pathlib import Path
 
 import cv2
 
-from .box_operations import get_dominant_color
-from .custom_logger import get_logger
-from .directory_setup import create_blur_directory, create_temp_directory
-from .region_detector import expand_roi
+from lx_anonymizer.region_processing.box_operations import get_dominant_color
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.setup.directory_setup import create_blur_directory, create_temp_directory
+from lx_anonymizer.region_processing.region_detector import expand_roi
 
 logger = get_logger(__name__)
 

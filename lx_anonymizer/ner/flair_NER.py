@@ -1,6 +1,7 @@
 from flair.data import Sentence
 from flair.models import SequenceTagger
-from ..custom_logger import get_logger
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 # Load the NER tagger once at module level
@@ -48,4 +49,5 @@ def flair_NER_German(text):
             return None
     except Exception as e:
         logger.error(f"Error in NER_German: {e}")
+        return None
         return None

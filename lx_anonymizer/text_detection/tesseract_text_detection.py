@@ -1,9 +1,12 @@
+import json
+
 import cv2
 import pytesseract
 from pytesseract import Output
-import json
-from ..box_operations import extend_boxes_if_needed
-from ..custom_logger import get_logger
+
+from lx_anonymizer.region_processing.box_operations import \
+    extend_boxes_if_needed
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -126,5 +129,7 @@ def merge_close_boxes(boxes, horizontal_threshold=8):
 
 def sort_boxes(boxes, vertical_threshold=5):
     """Sort boxes by vertical position then horizontal position."""
+    boxes.sort(key=lambda b: (round(b[1] / vertical_threshold), b[0]))
+    return boxes
     boxes.sort(key=lambda b: (round(b[1] / vertical_threshold), b[0]))
     return boxes

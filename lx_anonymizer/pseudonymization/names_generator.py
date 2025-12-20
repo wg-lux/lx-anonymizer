@@ -1,12 +1,12 @@
 import random
 import gender_guesser.detector as gender
-from .names_adder import (
+from lx_anonymizer.pseudonymization.names_adder import (
     add_name_to_image,
     add_full_name_to_image,
     add_device_name_to_image,
 )
-from .directory_setup import create_temp_directory
-from .custom_logger import get_logger
+from lx_anonymizer.setup.directory_setup import create_temp_directory
+from lx_anonymizer.setup.custom_logger import get_logger
 from pathlib import Path
 from typing import Tuple  # Added Tuple
 
@@ -18,7 +18,7 @@ temp_dir, data_base_dir, csv_dir = create_temp_directory()
 
 
 # Define the parent directory
-parent_dir = Path(__file__).resolve().parent
+parent_dir = Path(__file__).resolve().parent.parent
 
 # Define file paths
 names_dict_dir = Path(parent_dir) / "names_dict"

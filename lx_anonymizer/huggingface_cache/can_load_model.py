@@ -1,7 +1,8 @@
 import os
 import shutil
 from pathlib import Path
-from lx_anonymizer.custom_logger import get_logger
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -63,13 +64,13 @@ class HF_Cache:
             os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
         )
         hub = Path(os.environ.get("HF_HUB_CACHE", str(base / "hub")))
-        tfc = Path(os.environ.get("TRANSFORMERS_CACHE", str(base)))
+        tfc = Path(os.environ.get("HF_HOME", str(base)))
         candidates = [
             hub / "models--openbmb--MiniCPM-o-2_6",
             base / "models--openbmb--MiniCPM-o-2_6",
             tfc / "models--openbmb--MiniCPM-o-2_6",
         ]
-        logger.info(f"HF_HOME={base} HF_HUB_CACHE={hub} TRANSFORMERS_CACHE={tfc}")
+        logger.info(f"HF_HOME={base} HF_HUB_CACHE={hub} HF_HOME={tfc}")
         for p in candidates:
             size = self._dir_size_bytes(p)
             exists = p.exists()

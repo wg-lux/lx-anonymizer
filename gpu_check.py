@@ -1,7 +1,8 @@
 import torch
-
+import os
 # Define a function which creates a file (YYYY-MM-DD_HH-MM-SS.txt) in the directory "./data" and writes a message to it
 
+os.printenv
 def write_message(message=None):
     import os
     import datetime

@@ -2,12 +2,12 @@ import uuid
 from pathlib import Path
 from contextlib import contextmanager
 
-from .custom_logger import get_logger, configure_global_logger
-from .pdf_operations import merge_pdfs, convert_image_to_pdf
-from .directory_setup import create_temp_directory, create_results_directory
-from .image_loader import get_image_paths
-from .image_processor import process_image
-from .gpu_management import clear_gpu_memory
+from lx_anonymizer.setup.custom_logger import get_logger, configure_global_logger
+from lx_anonymizer.image_processing.pdf_operations import merge_pdfs, convert_image_to_pdf
+from lx_anonymizer.setup.directory_setup import create_temp_directory, create_results_directory
+from lx_anonymizer.image_processing.image_loader import get_image_paths
+from lx_anonymizer.image_processing.image_processor import process_image
+from lx_anonymizer.hardware.gpu_management import clear_gpu_memory
 
 
 """
