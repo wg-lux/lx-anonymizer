@@ -73,7 +73,7 @@ class FrameCleaner:
         logger.info("Huggingface cache status:")
         hf = HF_Cache()
         hf.log_hf_cache_info()
-
+    
         # Enhanced OCR integration - use enhanced components if available
         logger.info("Initializing with Enhanced OCR components (OCR_FIX_V1 enabled)")
         self.use_enhanced_ocr = True
@@ -139,6 +139,7 @@ class FrameCleaner:
 
         # Masking
         self.mask_application = MaskApplication(self.preferred_encoder)
+        self._load_mask = self.mask_application._load_mask()
         self._mask_video_streaming = self.mask_application.mask_video_streaming
         self._create_mask_config_from_roi = (
             self.mask_application.create_mask_config_from_roi

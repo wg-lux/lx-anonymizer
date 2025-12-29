@@ -28,6 +28,7 @@ let
       inherit config pkgs lib;
     })
   );
+  nixpkgs.config.allowUnfree = true;
 
 in
 {
