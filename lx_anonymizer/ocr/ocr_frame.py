@@ -8,7 +8,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 
 # Import TesseOCR if available (requires tesserocr)
 try:
-    from lx_anonymizer.ocr_frame_tesserocr import TesseOCRFrameProcessor
+    from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
 
     TESSEROCR_AVAILABLE = True
 except ImportError:

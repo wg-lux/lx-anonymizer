@@ -15,12 +15,13 @@ import subprocess
 import argparse
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+import re
+import unicodedata
 import cv2
 import numpy as np
 import pandas as pd
 import pytesseract
-import re
-import unicodedata
+
 
 # Setup logging
 logging.basicConfig(

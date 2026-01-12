@@ -70,7 +70,7 @@ in
 
   env = {
     LD_LIBRARY_PATH = "${
-      with pkgs; lib.makeLibraryPath buildInputs
+      with pkgs; lib.makeLibraryPath buildInputs ++ runtimePackages ++ [ pkgs.tesseract ])
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
     PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
