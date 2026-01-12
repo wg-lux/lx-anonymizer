@@ -171,6 +171,34 @@ class FrameMetadataExtractor:
             return True
         return False
 
+    def is_complete(self, metadata: Dict[str, Any]) -> bool:
+        """
+        Returns True when enough high-signal identifiers are present.
+        Used to stop early when smart sampling is enabled.
+        """
+        if not metadata:
+            return False
+
+        has_first = self._is_nonblank(metadata.get("patient_first_name"))
+        has_last = self._is_nonblank(metadata.get("patient_last_name"))
+        has_dob = self._is_nonblank(metadata.get("patient_dob"))
+        has_case = self._is_nonblank(metadata.get("casenumber"))
+        has_exam_date = self._is_nonblank(metadata.get("examination_date"))
+
+        # Strong completion: full name + DOB
+        if has_first and has_last and has_dob:
+            return True
+
+        # Alternative: full name + case + exam date
+        if has_first and has_last and has_case and has_exam_date:
+            return True
+
+        # Allow case+DOB with partial name as fallback
+        if (has_first or has_last) and has_dob and has_case:
+            return True
+
+        return False
+
     def merge_metadata(
         self, existing: Dict[str, Any], new: Dict[str, Any]
     ) -> Dict[str, Any]:

@@ -33,6 +33,7 @@ dependencies = [
   "pillow>=10.4.0",
   "protobuf>=6.30.2",
   "pydantic>=2.9.0",
+  "pydantic-settings>=2.0.0",
   "pymupdf>=1.25.1",
   "pytesseract>=0.3.13",
   "rapidfuzz>=3.13.0",
@@ -66,7 +67,7 @@ maintainers = [
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.8.9.12"
+version = "0.8.9.13"
 
 [project.urls]
 Changelog = "https://github.com/wg-lux/lx-anonymizer/blob/main/CHANGELOG.md"

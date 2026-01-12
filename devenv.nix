@@ -68,12 +68,12 @@ in
     ffmpeg_6-headless
   ];
 
-  env = {
+  env = lib.mkDefault {
     LD_LIBRARY_PATH = "${
-      with pkgs; lib.makeLibraryPath buildInputs ++ runtimePackages ++ [ pkgs.tesseract ])
+      with pkgs; lib.makeLibraryPath buildInputs ++ runtimePackages ++ [ pkgs.tesseract ]
     }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     OLLAMA_HOST = "0.0.0.0";
-    PYTORCH_CUDA_ALLOC_CONF= "expandable_segments:True";
+    PYTORCH_ALLOC_CONF= "expandable_segments:True";
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";

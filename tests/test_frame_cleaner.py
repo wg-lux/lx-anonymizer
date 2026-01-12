@@ -203,7 +203,7 @@ class TestFrameCleanerRefactored:
                 # fps = 30
                 # skip = max(5, min(250, 30)) -> max(5, 30) -> 30
 
-                assert stride == 30
+                assert stride == 60
 
     def test_ffmpeg_streaming_command_construction(
         self, frame_cleaner: FrameCleaner

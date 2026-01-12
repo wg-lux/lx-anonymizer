@@ -1,46 +1,25 @@
 # lx_anonymizer/frame_cleaner/sensitive_meta_interface.py
 import math
-from dataclasses import asdict, dataclass
 from typing import Any, Dict, Mapping, Optional
 
-# from django.template.defaultfilters import first  # <- not used; remove to avoid import cost
+from pydantic import BaseModel, ConfigDict, field_validator
+
 from lx_anonymizer.setup.custom_logger import logger
 
 
-def _is_blank(v: Any) -> bool:
-    """True if value is semantically empty/placeholder."""
-    if v is None:
-        return True
-    if isinstance(v, float) and math.isnan(v):
-        return True
-    if isinstance(v, (list, dict, set, tuple)) and len(v) == 0:
-        return True
-    if isinstance(v, str):
-        s = v.strip()
-        if not s:
-            return True
-        token = s.casefold()
-        if token in {"unknown", "undefined", "null", "none", "n/a", "na", "-"}:
-            return True
-    return False
+class SensitiveMeta(BaseModel):
+    """
+    Metadata container for sensitive patient information.
+    Handles safe updates and normalization of all sensitive fields, that will be needed in the anonymization process.
+    Migrated to Pydantic to ensure automatic normalization and validation.
+    """
 
+    model_config = ConfigDict(
+        extra="ignore",
+        populate_by_name=True,
+        validate_assignment=True,
+    )
 
-def _normalize_scalar(v: Any) -> Any:
-    """Light normalization: trim strings; pass through others."""
-    if isinstance(v, str):
-        return v.strip()
-    return v
-
-
-def _merge_values(current: Any, new: Any) -> Any:
-    # If new value is valid, take it (Overwrites current!)
-    if not _is_blank(new):
-        return new
-    return current
-
-
-@dataclass
-class SensitiveMeta:
     file_path: Optional[str] = None
     patient_first_name: Optional[str] = None
     patient_last_name: Optional[str] = None
@@ -57,6 +36,32 @@ class SensitiveMeta:
     endoscope_type: Optional[str] = None
     endoscope_sn: Optional[str] = None
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def normalize_and_clean(cls, v: Any) -> Any:
+        """
+        Global validator that runs on all fields BEFORE type checking.
+        Replaces legacy _is_blank and _normalize_scalar functions.
+        """
+        if v is None:
+            return None
+
+        if isinstance(v, float) and math.isnan(v):
+            return None
+
+        if isinstance(v, (list, dict, set, tuple)) and len(v) == 0:
+            return None
+
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            if s.casefold() in {"unknown", "undefined", "null", "none", "n/a", "na", "-"}:
+                return None
+            return s
+
+        return v
+
     def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
             return getattr(self, key)
@@ -69,7 +74,7 @@ class SensitiveMeta:
             raise KeyError(f"Invalid key '{key}' for SensitiveMeta")
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return self.model_dump()
 
     def safe_update(
         self,
@@ -87,42 +92,33 @@ class SensitiveMeta:
         """
         payload: Dict[str, Any] = {}
 
-        # --- Normalize the main `data` arg into a dict ---
-        if isinstance(data, SensitiveMeta):
-            payload.update(data.to_dict())
+        if isinstance(data, BaseModel):
+            payload.update(data.model_dump())
         elif isinstance(data, Mapping):
             payload.update(dict(data))
         elif data is not None:
-            # Be defensive: don't crash just because a caller passed the wrong type
             logger.warning(
                 "SensitiveMeta.safe_update: unsupported data type %r – ignoring.",
                 type(data),
             )
+            return
 
-        # --- Merge kwargs on top (kwargs win) ---
         if kwargs:
             payload.update(kwargs)
 
         if not payload:
             return
 
-        allowed = self.__annotations__.keys()
-        for k, v in payload.items():
-            if k not in allowed:
-                continue
+        try:
+            validated_updates = SensitiveMeta(**payload)
+        except Exception as e:
+            logger.error(f"Failed to validate updates in safe_update: {e}")
+            return
 
-            nv = _normalize_scalar(v)
-            if _is_blank(nv):
-                continue
-
-            cv = getattr(self, k)
-            merged = _merge_values(cv, nv)
-            if merged is not cv:
-                setattr(self, k, merged)
+        for field, new_value in validated_updates.model_dump().items():
+            if new_value is not None:
+                setattr(self, field, new_value)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SensitiveMeta":
-        data = dict(data or {})
-        initial = cls()
-        initial.safe_update({k: v for k, v in data.items() if k in cls.__annotations__})
-        return initial
+        return cls(**(data or {}))

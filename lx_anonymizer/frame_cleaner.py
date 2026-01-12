@@ -30,6 +30,7 @@ from lx_anonymizer.ocr.ocr_frame import FrameOCR
 #     _can_load_model,
 #     create_minicpm_ocr,
 # )
+from lx_anonymizer.config import settings
 from lx_anonymizer.ollama.ollama_llm_meta_extraction import (
     EnrichedMetadataExtractor, FrameSamplingOptimizer,
     OllamaOptimizedExtractor)
@@ -61,7 +62,7 @@ class FrameCleaner:
         self,
         use_minicpm: Optional[bool] = False,
         minicpm_config: Optional[Dict[str, Any]] = None,
-        use_llm: Optional[bool] = False,
+        use_llm: Optional[bool] = None,
     ):
         # Initialize specialized frame processing components
         self.frame_ocr = FrameOCR()
@@ -79,7 +80,7 @@ class FrameCleaner:
         self.use_enhanced_ocr = True
 
         # LLM usage flag (guard)
-        self.use_llm = bool(use_llm)
+        self.use_llm = settings.LLM_ENABLED if use_llm is None else bool(use_llm)
 
         # Initialize MiniCPM-o 2.6 if enabled
         # self.use_minicpm = use_minicpm
@@ -98,7 +99,10 @@ class FrameCleaner:
 
                 # Try to initialize OllamaOptimizedExtractor
                 # If it fails (no models available), it will raise an exception caught below
-                self.ollama_extractor = OllamaOptimizedExtractor()
+                self.ollama_extractor = OllamaOptimizedExtractor(
+                    preferred_model=settings.LLM_MODEL,
+                    model_timeout=settings.LLM_TIMEOUT,
+                )
 
                 # Only initialize other components if ollama_extractor succeeded
                 if self.ollama_extractor and self.ollama_extractor.current_model:
@@ -172,7 +176,7 @@ class FrameCleaner:
             endoscope_image_roi: ROI for image masking
             endoscope_data_roi_nested: Nested ROI for data extraction
             output_path: Optional path for the output cleaned video
-            technique: 'remove_frames' or 'mask_overlay'
+            technique: 'remove_frames', 'mask_overlay', or 'extract_only'
             extended: Whether to perform extended metadata extraction
 
         Returns:
@@ -200,21 +204,20 @@ class FrameCleaner:
         cap = cv2.VideoCapture(str(video_path))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
-        long_video = total_frames > 10_000
-        max_samples = min(500, total_frames // 20) if long_video else total_frames
+        target_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
+        max_samples = min(target_samples, total_frames) if total_frames else 0
         logger.info(
-            "%s video detected (%d frames). Sampling ≤%d frames.",
-            "Long" if long_video else "Short",
+            "Video detected (%d frames). Sampling ≤%d frames.",
             total_frames,
             max_samples,
         )
         sensitive_idx: list[int] = []
-        sampled = 0
+        frames_processed = 0
         self.frame_collection = []  # Reset für neuen Batch
         for idx, gray_frame, stride in self._iter_video(video_path, total_frames):
-            if sampled >= max_samples:
+            if frames_processed >= max_samples:
+                logger.info("Reached maximum frame sample limit. Stopping analysis.")
                 break
-            sampled += 1
             is_sensitive, frame_meta, ocr_text, ocr_conf = self._process_frame_single(
                 gray_frame,
                 endoscope_image_roi=endoscope_image_roi,
@@ -228,6 +231,14 @@ class FrameCleaner:
             if is_sensitive:
                 sensitive_idx.append(idx)
                 self.sensitive_meta.safe_update(accumulated)
+            frames_processed += 1
+            if (
+                settings.SMART_EARLY_STOPPING
+                and technique == "extract_only"
+                and self.frame_metadata_extractor.is_complete(accumulated)
+            ):
+                logger.info("Critical metadata found. Early stopping enabled.")
+                break
 
         # Batch-Metadaten-Anreicherung nach Frame-Loop
         if self.frame_collection:
@@ -262,6 +273,9 @@ class FrameCleaner:
             self._mask_video_streaming(
                 video_path, mask_cfg, output_video, use_named_pipe=True
             )
+        elif technique == "extract_only":
+            logger.info("Extraction-only mode: skipping video modification.")
+            output_video = video_path
 
         # ----------------------- persist metadata, apply type checking---------------------------
         self.sensitive_meta.safe_update(accumulated)
@@ -597,18 +611,16 @@ class FrameCleaner:
         except (AttributeError, cv2.error):
             pass
 
-        # FIX: Old logic forced max 50 frames total (too sparse).
-        # New logic: Sample roughly every 1 second (assuming ~30fps)
-        # or at least 200 frames total for proper batch analysis.
+        # Sampling density is configurable via settings to balance speed/accuracy.
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
 
-        # Calculate skip to get ~200 frames, but don't skip less than 5 frames
-        # (to avoid processing too much) and don't skip more than 1 second of video.
-        target_samples = 200
-        calculated_skip = math.ceil(total_frames / target_samples)
+        # Calculate skip to hit target samples, clamp to avoid over/under-sampling.
+        target_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
+        calculated_skip = math.ceil(total_frames / target_samples) if total_frames else 1
 
-        # Clamps: Min skip 5 (density), Max skip = FPS (1 second interval)
-        skip = max(5, min(calculated_skip, int(fps)))
+        # Clamps: Min skip 5 (density), Max skip = 2 seconds of video
+        max_skip_limit = int(fps * 2)
+        skip = max(5, min(calculated_skip, max_skip_limit))
 
         idx = 0
 
@@ -688,7 +700,10 @@ class FrameCleaner:
         if not self.frame_sampling_optimizer:
             self.frame_sampling_optimizer = FrameSamplingOptimizer()
         if not self.ollama_extractor:
-            self.ollama_extractor = OllamaOptimizedExtractor()
+            self.ollama_extractor = OllamaOptimizedExtractor(
+                preferred_model=settings.LLM_MODEL,
+                model_timeout=settings.LLM_TIMEOUT,
+            )
         if not self.enriched_extractor:
             self.enriched_extractor = EnrichedMetadataExtractor(
                 ollama_extractor=self.ollama_extractor,

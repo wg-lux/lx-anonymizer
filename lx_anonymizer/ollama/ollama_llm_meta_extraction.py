@@ -11,6 +11,7 @@ Diese Implementierung basiert auf den Best Practices:
 import hashlib
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -29,28 +30,28 @@ class ModelConfig:
     # Priorisierte Modelliste: leichte, instruction-tuned Modelle zuerst
     MODELS = [
         {
-            "name": "qwen2.5:1.5b-instruct",
-            "priority": 4,
-            "timeout": 12,
-            "description": "Qwen 2.5 1.5B instruction-tuned - optimal für strukturierte Extraktion",
+            "name": "llama3.2:1b",
+            "priority": 1,
+            "timeout": 10,
+            "description": "Llama 3.2 1B (Ultra Fast)",
         },
         {
-            "name": "llama3.2:1b",
+            "name": "qwen2.5:1.5b-instruct",
             "priority": 2,
-            "timeout": 15,
-            "description": "Llama 3.2 1B - kompakt und effizient",
+            "timeout": 12,
+            "description": "Qwen 2.5 1.5B",
         },
         {
             "name": "phi3.5:3.8b-mini-instruct-q4_K_M",
             "priority": 3,
             "timeout": 20,
-            "description": "Phi 3.5 Mini quantisiert - gute Balance aus Größe und Qualität",
+            "description": "Phi 3.5 Mini quantisiert",
         },
         {
             "name": "deepseek-r1:1.5b",
-            "priority": 1,
+            "priority": 10,
             "timeout": 60,
-            "description": "Deepseek R1 - nur als letzter Fallback (reasoning model, langsam)",
+            "description": "Deepseek R1",
         },
     ]
 
@@ -120,7 +121,11 @@ class OllamaOptimizedExtractor:
     """
 
     def __init__(
-        self, base_url: str = "http://localhost:11434", enable_cache: bool = True
+        self,
+        base_url: str = "http://localhost:11434",
+        enable_cache: bool = True,
+        preferred_model: Optional[str] = None,
+        model_timeout: Optional[int] = None,
     ):
         self.base_url = base_url
         self.chat_endpoint = f"{base_url}/api/chat"
@@ -128,6 +133,8 @@ class OllamaOptimizedExtractor:
         self.current_model: dict[str, Any]
         self.cache = MetadataCache()
         self.sensitive_meta = SensitiveMeta()
+        self.preferred_model = preferred_model
+        self.preferred_timeout = model_timeout
 
         self._initialize_best_model()
 
@@ -159,6 +166,38 @@ class OllamaOptimizedExtractor:
 
     def _initialize_best_model(self):
         """Initialisiert das beste verfügbare Modell."""
+        if self.preferred_model:
+            if self.preferred_model in self.available_models:
+                model_config = next(
+                    (
+                        m
+                        for m in ModelConfig.get_models_by_priority()
+                        if m["name"] == self.preferred_model
+                    ),
+                    None,
+                )
+                if model_config:
+                    model_config = dict(model_config)
+                else:
+                    model_config = {
+                        "name": self.preferred_model,
+                        "priority": 0,
+                        "timeout": self.preferred_timeout or 30,
+                        "description": "Preferred model",
+                    }
+                if self.preferred_timeout:
+                    model_config["timeout"] = self.preferred_timeout
+                self.current_model = model_config
+                logger.info(
+                    "Verwende bevorzugtes Modell: %s",
+                    model_config["name"],
+                )
+                return
+            logger.warning(
+                "Bevorzugtes Modell nicht verfuegbar: %s",
+                self.preferred_model,
+            )
+
         for model_config in ModelConfig.get_models_by_priority():
             if model_config["name"] in self.available_models:
                 self.current_model = model_config
@@ -193,26 +232,22 @@ class OllamaOptimizedExtractor:
         Returns:
             Optimierter Prompt-String für medizinische Dokumente
         """
-        # Erweiteter, spezifischer Prompt für medizinische Datenextraktion
-        return f"""Du bist ein Experte für die Extraktion von Patientendaten aus medizinischen Dokumenten. 
-Analysiere den folgenden Text und extrahiere alle verfügbaren Patienteninformationen.
+        return f"""Extract patient metadata from this OCR text into JSON.
+If a field is missing, use null.
 
-MEDIZINISCHER TEXT:
-{text[:800]}
+TEXT:
+{text[:1500]}
 
-Extrahiere und validiere ob folgende Informationen im Text sind. Formatiere als JSON:
+REQUIRED JSON FORMAT:
+{{
+    "patient_first_name": string or null,
+    "patient_last_name": string or null,
+    "patient_dob": "YYYY-MM-DD" or null,
+    "casenumber": string or null,
+    "examination_date": "YYYY-MM-DD" or null
+}}
 
-{self.sensitive_meta.to_dict()}
-
-SUCHHINWEISE:
-- Achte auf Begriffe wie: "Fall", "Case", "ID", "Nr.", "Nummer", "Pat-ID", "Geburtsdatum", "geb.", "geboren"
-- Datumsformate können variieren: 15.01.2024, 2024-01-15, 15/01/24
-- Namen können mit Titeln stehen: "Dr. Schmidt", "Herr Müller", "Frau Weber"
-- Fallnummern können alphanumerisch sein: "F2024-001", "CASE123", "PAT-456"
-
-Gib NUR das JSON-Objekt zurück. Wenn ein Feld nicht gefunden wird, setze es auf null.
-
-JSON:"""
+Return ONLY JSON."""
 
     def _create_json_schema(self) -> Dict[str, Any]:
         """Erstellt das erweiterte JSON-Schema für medizinische Metadaten-Extraktion."""
@@ -473,33 +508,27 @@ JSON:"""
         Returns:
             Bereinigter JSON-String
         """
+        # Entferne DeepSeek <think>...</think> Blöcke
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+
         # Entferne Markdown-Code-Blöcke falls vorhanden
         content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        elif content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-
-        # Entferne führende/nachfolgende Whitespaces und Erklärungen
-        lines = content.split("\n")
-        json_start = -1
-        json_end = -1
-
-        # Finde JSON-Block
-        for i, line in enumerate(lines):
-            if line.strip().startswith("{"):
-                json_start = i
-                break
-
-        for i in range(len(lines) - 1, -1, -1):
-            if lines[i].strip().endswith("}"):
-                json_end = i
-                break
-
-        if json_start >= 0 and json_end >= 0:
-            content = "\n".join(lines[json_start : json_end + 1])
+        if "```" in content:
+            match = re.search(
+                r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL
+            )
+            if match:
+                content = match.group(1)
+            else:
+                start = content.find("{")
+                end = content.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    content = content[start : end + 1]
+        else:
+            start = content.find("{")
+            end = content.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                content = content[start : end + 1]
 
         return content.strip()
 
@@ -542,6 +571,15 @@ JSON:"""
         fastest_model = self._get_fastest_available_model()
         if not fastest_model:
             return self.extract_metadata(text)  # Fallback zur normalen Extraktion
+        if (
+            fastest_model
+            and self.current_model
+            and fastest_model["name"] == self.current_model.get("name")
+        ):
+            logger.info(
+                "Fastest model is same as main model. Skipping sampling to avoid double-execution."
+            )
+            return self.extract_metadata(text)
 
         original_model = self.current_model
         self.current_model = fastest_model
@@ -688,6 +726,27 @@ JSON:"""
 
     def _get_fastest_available_model(self) -> Optional[Dict[str, Any]]:
         """Gibt das schnellste verfügbare Modell zurück."""
+        if self.preferred_model and self.preferred_model in self.available_models:
+            model_config = next(
+                (
+                    m
+                    for m in ModelConfig.get_models_by_priority()
+                    if m["name"] == self.preferred_model
+                ),
+                None,
+            )
+            if model_config:
+                if self.preferred_timeout:
+                    model_config = dict(model_config)
+                    model_config["timeout"] = self.preferred_timeout
+                return model_config
+            return {
+                "name": self.preferred_model,
+                "priority": 0,
+                "timeout": self.preferred_timeout or 30,
+                "description": "Preferred model",
+            }
+
         for model_config in ModelConfig.get_models_by_priority():
             if model_config["name"] in self.available_models:
                 return model_config
@@ -1044,28 +1103,38 @@ class EnrichedMetadataExtractor:
     def _aggregate_ocr_texts(
         self, frames_data: List[Dict[str, Any]], ocr_texts: List[str]
     ) -> str:
-        """Aggregiert OCR-Texte intelligent."""
-        all_texts: list[str] = []
+        """Aggregiert OCR-Texte intelligent und reduziert Input-Groesse."""
+        raw_texts: list[str] = []
 
         # Verwende bereitgestellte OCR-Texte oder extrahiere aus Frame-Daten
         if ocr_texts:
-            all_texts.extend(t for t in ocr_texts if t)
+            raw_texts.extend(t for t in ocr_texts if t)
 
         for frame_data in frames_data:
             if "ocr_text" in frame_data and frame_data["ocr_text"]:
-                all_texts.append(frame_data["ocr_text"])
+                raw_texts.append(frame_data["ocr_text"])
 
-        if not all_texts:
+        if not raw_texts:
             return ""
 
-        # Entferne Duplikate und sehr ähnliche Texte
-        unique_texts = self._deduplicate_texts(all_texts)
+        # Smart Deduplication (Zeilen-basiert, normalisiert)
+        unique_lines = set()
+        cleaned_text_parts = []
 
-        # Priorisiere Texte mit höherer Konfidenz
-        prioritized_texts = self._prioritize_by_confidence(unique_texts, frames_data)
+        for text in raw_texts:
+            for line in text.split("\n"):
+                line_clean = line.strip()
+                if len(line_clean) < 4:
+                    continue
+                comp_key = "".join(ch for ch in line_clean.lower() if ch.isalnum())
+                if not comp_key:
+                    continue
+                if comp_key not in unique_lines:
+                    unique_lines.add(comp_key)
+                    cleaned_text_parts.append(line_clean)
 
-        # Kombiniere zu einem kohärenten Text
-        return " | ".join(prioritized_texts[:5])  # Maximal 5 beste Texte
+        full_text = " | ".join(cleaned_text_parts)
+        return full_text[:1500]
 
     def _deduplicate_texts(self, texts: List[str]) -> List[str]:
         """Entfernt doppelte und sehr ähnliche Texte."""

@@ -66,6 +66,10 @@ nix develop
 ```
 This loads GPU, OCR, and tooling dependencies declared in `devenv.nix`.
 
+## Configuration
+Settings are loaded from environment variables and an optional `.env` file. See
+[`SETTINGS.md`](SETTINGS.md) for a quick overview and example configuration.
+
 ## Model downloads
 After installation, fetch the German spaCy model:
 ```bash
@@ -231,6 +235,5 @@ Released under the [MIT License](LICENSE).
 
 ## Contact
 Questions? Email lux@coloreg.de .
-
 
 
