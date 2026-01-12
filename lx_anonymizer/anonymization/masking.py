@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
+from lx_anonymizer.video_processing import video_utils
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,11 @@ class MaskApplication:
         use_named_pipe: bool = False,
     ) -> bool:
         """
-        Apply video masking using streaming approach to mask sensitive areas while preserving endoscope image.
+        Apply video masking using streaming approach to crop sensitive areas while preserving endoscope image.
 
         Based on olympus_cv_1500_mask.json:
         - Endoscope image: x=550-1900, y=0-1080 (preserve this area)
-        - Sensitive areas: x=0-550 (mask this area with black)
+        - Sensitive areas: x=0-550 (exclude this area by cropping)
 
         Args:
             input_video: Path to input video file
@@ -58,65 +59,127 @@ class MaskApplication:
         try:
             # Use default config if not provided or merge with defaults
             effective_config = self.default_mask_config.copy()
-            effective_config.update(mask_config)
+            for key, value in mask_config.items():
+                if value is not None:
+                    effective_config[key] = value
 
-            endoscope_x = effective_config.get("endoscope_image_x", 550)
-            endoscope_y = effective_config.get("endoscope_image_y", 0)
-            endoscope_w = effective_config.get("endoscope_image_width", 1350)
-            endoscope_h = effective_config.get("endoscope_image_height", 1080)
-            image_width = effective_config.get("image_width", 1920)
-            image_height = effective_config.get("image_height", 1080)
+            def _coerce_int(value: Any, fallback: int) -> int:
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return fallback
 
-            # Always use drawbox filters to mask sensitive areas (not crop)
-            mask_filters = []
+            endoscope_x = _coerce_int(effective_config.get("endoscope_image_x"), 550)
+            endoscope_y = _coerce_int(effective_config.get("endoscope_image_y"), 0)
+            endoscope_w = _coerce_int(
+                effective_config.get("endoscope_image_width"), 1350
+            )
+            endoscope_h = _coerce_int(
+                effective_config.get("endoscope_image_height"), 1080
+            )
+            image_width = _coerce_int(effective_config.get("image_width"), 0)
+            image_height = _coerce_int(effective_config.get("image_height"), 0)
 
-            # Mask left side (sensitive area) if endoscope doesn't start at x=0
-            if endoscope_x > 0:
-                mask_filters.append(
-                    f"drawbox=0:0:{endoscope_x}:{image_height}:color=black@1:t=fill"
-                )
-                logger.debug(
-                    "Masking left side sensitive area: x=0 to x=%d", endoscope_x
-                )
+            if image_width <= 0 or image_height <= 0:
+                format_info = video_utils.detect_video_format(input_video)
+                image_width = image_width or format_info.get("width", 0)
+                image_height = image_height or format_info.get("height", 0)
 
-            # Mask right side if endoscope doesn't extend to full width
-            right_start = endoscope_x + endoscope_w
-            if right_start < image_width:
-                right_width = image_width - right_start
-                mask_filters.append(
-                    f"drawbox={right_start}:0:{right_width}:{image_height}:color=black@1:t=fill"
+            if endoscope_w <= 0 or endoscope_h <= 0:
+                logger.error(
+                    "Invalid crop size: width=%d height=%d", endoscope_w, endoscope_h
                 )
-                logger.debug(
-                    "Masking right side area: x=%d to x=%d", right_start, image_width
-                )
+                return False
 
-            # Mask top area if endoscope doesn't start at y=0
-            if endoscope_y > 0:
-                mask_filters.append(
-                    f"drawbox={endoscope_x}:0:{endoscope_w}:{endoscope_y}:color=black@1:t=fill"
-                )
-                logger.debug("Masking top area: y=0 to y=%d", endoscope_y)
+            crop_x = max(0, endoscope_x)
+            crop_y = max(0, endoscope_y)
+            crop_w = endoscope_w
+            crop_h = endoscope_h
 
-            # Mask bottom area if endoscope doesn't extend to full height
-            bottom_start = endoscope_y + endoscope_h
-            if bottom_start < image_height:
-                bottom_height = image_height - bottom_start
-                mask_filters.append(
-                    f"drawbox={endoscope_x}:{bottom_start}:{endoscope_w}:{bottom_height}:color=black@1:t=fill"
-                )
-                logger.debug(
-                    "Masking bottom area: y=%d to y=%d", bottom_start, image_height
-                )
+            if image_width > 0:
+                if crop_x >= image_width:
+                    logger.error(
+                        "Crop x=%d exceeds image width=%d", crop_x, image_width
+                    )
+                    return False
+                max_crop_w = image_width - crop_x
+                if crop_w > max_crop_w:
+                    logger.warning(
+                        "Crop width %d exceeds image width; clamping to %d",
+                        crop_w,
+                        max_crop_w,
+                    )
+                    crop_w = max_crop_w
 
-            if not mask_filters:
-                logger.warning("No masking needed - endoscope covers entire frame")
-                # Just copy the video without changes
+            if image_height > 0:
+                if crop_y >= image_height:
+                    logger.error(
+                        "Crop y=%d exceeds image height=%d", crop_y, image_height
+                    )
+                    return False
+                max_crop_h = image_height - crop_y
+                if crop_h > max_crop_h:
+                    logger.warning(
+                        "Crop height %d exceeds image height; clamping to %d",
+                        crop_h,
+                        max_crop_h,
+                    )
+                    crop_h = max_crop_h
+
+            if crop_w <= 0 or crop_h <= 0:
+                logger.error(
+                    "Crop area collapsed: x=%d y=%d w=%d h=%d",
+                    crop_x,
+                    crop_y,
+                    crop_w,
+                    crop_h,
+                )
+                return False
+
+            if (
+                image_width > 0
+                and image_height > 0
+                and crop_x == 0
+                and crop_y == 0
+                and crop_w == image_width
+                and crop_h == image_height
+            ):
+                logger.warning("No cropping needed - endoscope covers entire frame")
                 import shutil
 
                 shutil.copy2(input_video, output_video)
                 return True
 
-            vf = ",".join(mask_filters)
+            if crop_x % 2 != 0:
+                crop_x += 1
+                crop_w -= 1
+                logger.debug(
+                    "Adjusted crop x to even boundary: x=%d w=%d", crop_x, crop_w
+                )
+            if crop_y % 2 != 0:
+                crop_y += 1
+                crop_h -= 1
+                logger.debug(
+                    "Adjusted crop y to even boundary: y=%d h=%d", crop_y, crop_h
+                )
+            if crop_w % 2 != 0:
+                crop_w -= 1
+                logger.debug("Adjusted crop width to even: w=%d", crop_w)
+            if crop_h % 2 != 0:
+                crop_h -= 1
+                logger.debug("Adjusted crop height to even: h=%d", crop_h)
+
+            if crop_w <= 0 or crop_h <= 0:
+                logger.error(
+                    "Crop area invalid after alignment: x=%d y=%d w=%d h=%d",
+                    crop_x,
+                    crop_y,
+                    crop_w,
+                    crop_h,
+                )
+                return False
+
+            vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"
             encoder_args = self.build_encoder_cmd("balanced")
 
             cmd = [
@@ -136,10 +199,11 @@ class MaskApplication:
             ]
 
             logger.info(
-                "Masking sensitive areas with %d regions, preserving endoscope image at x=%d-y=%d",
-                len(mask_filters),
-                endoscope_x,
-                endoscope_y,
+                "Cropping to endoscope image region x=%d y=%d w=%d h=%d",
+                crop_x,
+                crop_y,
+                crop_w,
+                crop_h,
             )
             logger.debug("FFmpeg command: %s", " ".join(cmd))
 
@@ -164,6 +228,17 @@ class MaskApplication:
                     output_video,
                     size_ratio * 100,
                 )
+                output_info = video_utils.detect_video_format(output_video)
+                out_w = output_info.get("width", 0)
+                out_h = output_info.get("height", 0)
+                if out_w and out_h and (out_w != crop_w or out_h != crop_h):
+                    logger.warning(
+                        "Masked video dimensions %dx%d do not match expected crop %dx%d",
+                        out_w,
+                        out_h,
+                        crop_w,
+                        crop_h,
+                    )
                 return True
             else:
                 logger.error("Masked video is empty or missing")
