@@ -71,10 +71,18 @@ Settings are loaded from environment variables and an optional `.env` file. See
 [`SETTINGS.md`](SETTINGS.md) for a quick overview and example configuration.
 
 ## Model downloads
-After installation, fetch the German spaCy model:
+After installation, the pipeline should handle model downloads automatically. If not, fetch the German spaCy model or any other version you desire:
 ```bash
 python -m spacy download de_core_news_lg
 ```
+
+Also, install the ollama client on your device and ensure it is running with your desired llm for llm support:
+```
+ollama run deepseek-r1
+ollama run llama-3.2
+```
+Caution: This is only recommended on devices with sufficient gpu capabilities
+
 First CLI runs also download OCR checkpoints (EAST, TrOCR, etc.). For air-gapped deployments, grab the archives listed in [`lx_anonymizer/settings.py`](lx_anonymizer/settings.py) and place them in `~/.cache/lx-anonymizer`.
 
 ## Quickstart
