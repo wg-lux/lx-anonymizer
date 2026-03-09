@@ -25,7 +25,6 @@ classifiers = [
 dependencies = [
   "certifi>=2024.8.30",
   "dateparser>=1.2.1",
-  "de-core-news-lg==3.8.0",
   "faker>=37.1.0",
   "gender-guesser>=0.4.0",
   "imutils>=0.5.4",
