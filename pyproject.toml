@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
   "certifi>=2024.8.30",
   "dateparser>=1.2.1",
+  "de-core-news-lg==3.8.0",
   "faker>=37.1.0",
   "gender-guesser>=0.4.0",
   "imutils>=0.5.4",
@@ -67,7 +68,7 @@ maintainers = [
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.9.0.0"
+version = "0.9.0.1"
 
 [project.urls]
 Changelog = "https://github.com/wg-lux/lx-anonymizer/blob/main/CHANGELOG.md"
