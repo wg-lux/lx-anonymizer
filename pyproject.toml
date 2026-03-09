@@ -68,7 +68,7 @@ maintainers = [
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.9.0.1"
+version = "0.9.0.2"
 
 [project.urls]
 Changelog = "https://github.com/wg-lux/lx-anonymizer/blob/main/CHANGELOG.md"
@@ -121,6 +121,3 @@ include = [
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.uv.sources]
-"de-core-news-lg" = {url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl"}
