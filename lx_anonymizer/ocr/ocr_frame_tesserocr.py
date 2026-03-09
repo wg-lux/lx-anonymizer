@@ -39,6 +39,12 @@ class TesseOCRFrameProcessor:
         self.language = language
         self._lock = threading.Lock()
         self.api: Optional[tesserocr.PyTessBaseAPI] = None
+        self.api_lstm: Optional[tesserocr.PyTessBaseAPI] = None
+        self._tessdata_path: Optional[str] = None
+        self._default_whitelist = (
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-"
+        )
+        self._numeric_overlay_whitelist = "0123456789 .,:;/-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         self._initialize_api()
 
         self.frame_config = {
@@ -67,37 +73,53 @@ class TesseOCRFrameProcessor:
     # ---------------- Tesseract init ----------------
     def _initialize_api(self) -> None:
         tessdata_path = self._get_tessdata_path()
+        self._tessdata_path = tessdata_path
         self.api = tesserocr.PyTessBaseAPI(
             lang=self.language,  # German prioritized
             path=tessdata_path,
             oem=tesserocr.OEM.DEFAULT,  # allow legacy fallback for tricky fonts
         )
-        # Default PSM: single block (we switch per-ROI later)
-        self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+        self._configure_api_common(self.api)
 
-        # Performance & stability
-        self.api.SetVariable("preserve_interword_spaces", "1")
-        self.api.SetVariable("user_defined_dpi", "400")
-        self.api.SetVariable("classify_enable_learning", "0")
-        self.api.SetVariable("tessedit_do_invert", "0")
-        self.api.SetVariable("tessedit_enable_doc_dict", "0")
-        self.api.SetVariable("load_system_dawg", "0")
-        self.api.SetVariable("load_freq_dawg", "1")
-        self.api.SetVariable("textord_really_old_xheight", "1")  # small caps overlays
-
-        # German bias & safe charset
-        self.api.SetVariable("language_model_penalty_non_dict_word", "1")
-        self.api.SetVariable("language_model_penalty_non_freq_dict_word", "1")
-        self.api.SetVariable(
-            "tessedit_char_whitelist",
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-",
-        )
+        try:
+            self.api_lstm = tesserocr.PyTessBaseAPI(
+                lang=self.language,
+                path=tessdata_path,
+                oem=tesserocr.OEM.LSTM_ONLY,
+            )
+            self._configure_api_common(self.api_lstm)
+            logger.info(
+                "TesseOCR alternate API initialized (OEM=LSTM_ONLY, lang=%s)",
+                self.language,
+            )
+        except Exception as e:
+            logger.warning("Could not initialize LSTM_ONLY fallback API: %s", e)
+            self.api_lstm = None
 
         logger.info(
             "TesseOCR initialized (OEM=DEFAULT, PSM=SINGLE_BLOCK, lang=%s, path=%s)",
             self.language,
             tessdata_path,
         )
+
+    def _configure_api_common(self, api: tesserocr.PyTessBaseAPI) -> None:
+        # Default PSM: single block (we switch per-ROI later)
+        api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+
+        # Performance & stability
+        api.SetVariable("preserve_interword_spaces", "1")
+        api.SetVariable("user_defined_dpi", "400")
+        api.SetVariable("classify_enable_learning", "0")
+        api.SetVariable("tessedit_do_invert", "0")
+        api.SetVariable("tessedit_enable_doc_dict", "0")
+        api.SetVariable("load_system_dawg", "0")
+        api.SetVariable("load_freq_dawg", "1")
+        api.SetVariable("textord_really_old_xheight", "1")  # small caps overlays
+
+        # German bias & safe charset
+        api.SetVariable("language_model_penalty_non_dict_word", "1")
+        api.SetVariable("language_model_penalty_non_freq_dict_word", "1")
+        api.SetVariable("tessedit_char_whitelist", self._default_whitelist)
 
     # ---------------- tessdata discovery ----------------
     def _get_tessdata_path(self) -> Optional[str]:
@@ -165,14 +187,20 @@ class TesseOCRFrameProcessor:
         date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
         # Case number patterns: E 12345/2024 or similar
         case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
+        # Compact case / device patterns: E 2001951, A123456
+        compact_code_pattern = r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b"
         # Device ID patterns: long numbers with optional separators
         device_pattern = r"\d{8,}"
+        # Numeric ratio / measurement overlays: 9.9/9.6, 12/34
+        ratio_pattern = r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b"
 
         if (
             re.search(time_pattern, text)
             or re.search(date_pattern, text)
             or re.search(case_pattern, text)
+            or re.search(compact_code_pattern, text)
             or re.search(device_pattern, text)
+            or re.search(ratio_pattern, text)
         ):
             # Contains structured data patterns - likely valid
             return False
@@ -239,8 +267,100 @@ class TesseOCRFrameProcessor:
         # Large boxes might have sparse text (device overlays)
         return tesserocr.PSM.SPARSE_TEXT
 
+    @staticmethod
+    def _gibberish_score(text: str) -> float:
+        """
+        Soft gibberish score in [0, 1] used for candidate selection.
+        Lower is better.
+        """
+        if not text:
+            return 1.0
+
+        score = 0.0
+        length = max(len(text), 1)
+
+        alpha_ratio = sum(c.isalpha() for c in text) / length
+        if alpha_ratio < 0.2:
+            score += 0.35
+        elif alpha_ratio < 0.35:
+            score += 0.15
+
+        expected_chars = set(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]"
+        )
+        nonstandard_ratio = sum(1 for c in text if c not in expected_chars) / length
+        score += min(nonstandard_ratio * 0.8, 0.4)
+
+        punct_like = sum(
+            1 for c in text if not c.isalnum() and not c.isspace() and c not in ".,:;/-"
+        )
+        score += min((punct_like / length) * 0.6, 0.2)
+
+        words = [w for w in text.split() if len(w) > 1]
+        if words:
+            vowels = set("aeiouäöüAEIOUÄÖÜ")
+            vowel_words = sum(1 for w in words if any(c in vowels for c in w))
+            ratio = vowel_words / len(words)
+            if ratio < 0.15:
+                score += 0.25
+            elif ratio < 0.3:
+                score += 0.1
+
+        return max(0.0, min(score, 1.0))
+
+    @staticmethod
+    def _looks_structured_overlay_text(text: str) -> bool:
+        """Detect short structured overlay snippets (IDs, timestamps, measurements)."""
+        if not text:
+            return False
+        patterns = [
+            r"\d{1,2}:\d{2}(?::\d{2})?",  # time
+            r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b",  # compact code
+            r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b",  # ratio/measurement
+            r"\b\d{4,}\b",  # long numeric id
+        ]
+        return any(re.search(p, text) for p in patterns)
+
+    def _candidate_rank(self, text: str, conf: float) -> Tuple[int, int, float, float, int]:
+        """
+        Lower tuple is better:
+        - prefer non-empty
+        - prefer non-gibberish
+        - prefer lower gibberish score
+        - prefer higher confidence
+        - prefer longer text (tie-break)
+        """
+        is_empty = 0 if text else 1
+        is_gib = 1 if (text and self._is_gibberish(text)) else 0
+        gib_score = self._gibberish_score(text)
+        return (is_empty, is_gib, gib_score, -float(conf), -len(text or ""))
+
+    @staticmethod
+    def _normalize_ocr_text(text: str) -> str:
+        """
+        Normalize OCR text and collapse repeated punctuation noise.
+        """
+        if not text:
+            return ""
+        text = unicodedata.normalize("NFC", text)
+        text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
+        # Collapse repeated punctuation runs like "....", ",,,", ":::"
+        text = re.sub(r"([.,:;])\1{1,}", r"\1", text)
+        text = re.sub(r"[.,:;]{2,}", lambda m: m.group(0)[0], text)
+        text = re.sub(r"\s{2,}", " ", text).strip()
+        return text
+
+    def _choose_whitelist_for_box(self, w: int, h: int) -> str:
+        """
+        Use a stricter whitelist for obvious numeric overlays (timestamps/IDs).
+        """
+        aspect_ratio = w / max(h, 1)
+        if h < 60 or aspect_ratio > 7:
+            return self._numeric_overlay_whitelist
+        return self._default_whitelist
+
     # ---------------- Preprocessing ----------------
-    def _preprocess_to_gray(self, frame, roi=None):
+    def _preprocess_to_gray(self, frame, roi=None, mode: str = "binary"):
         if frame.ndim == 3:
             img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         else:
@@ -269,19 +389,22 @@ class TesseOCRFrameProcessor:
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
         enhanced = clahe.apply(denoised)
 
-        # 3. Sharpen text edges (helps with blurry video text)
-        sharpen_kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-        sharpened = cv2.filter2D(enhanced, -1, sharpen_kernel)
-
         # 4. Detect if we have white-on-black text (common in medical overlays)
         # Calculate mean brightness to determine if inversion is needed
-        mean_brightness = np.mean(sharpened)
+        mean_brightness = np.mean(enhanced)
         is_dark_background = mean_brightness < 127  # More dark pixels than light
 
         if is_dark_background:
             # Invert for white-on-black text (makes it black-on-white for Tesseract)
             logger.debug("Detected dark background, inverting image for OCR")
-            sharpened = cv2.bitwise_not(sharpened)
+            enhanced = cv2.bitwise_not(enhanced)
+
+        if mode == "gray_clahe":
+            return enhanced
+
+        # 3b. Sharpen only for binary path (can introduce halos in grayscale OCR path)
+        sharpen_kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        sharpened = cv2.filter2D(enhanced, -1, sharpen_kernel)
 
         # 5. Adaptive thresholding for varying lighting
         # Use THRESH_BINARY (not INV) since we already inverted if needed
@@ -299,6 +422,233 @@ class TesseOCRFrameProcessor:
         binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
         return binary
+
+    def _ocr_processed_image(
+        self, processed: np.ndarray, has_roi: bool, dpi: int
+    ) -> Tuple[str, float, Dict[str, Any]]:
+        """
+        OCR a preprocessed frame/ROI image and return text, confidence, and metadata.
+        """
+        self.api.SetVariable("user_defined_dpi", str(dpi))
+
+        if not has_roi:
+            regions = self._detect_text_regions(processed)
+        else:
+            regions = []
+
+        text_parts: List[str] = []
+        accepted_regions = 0
+        rejected_regions = 0
+        best_region_text = ""
+        best_region_conf = 0.0
+        best_region_rank: Optional[Tuple[int, int, float, float, int]] = None
+        if has_roi:
+            h, w = processed.shape[:2]
+            self.api.SetVariable(
+                "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
+            )
+            self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+            self.api.SetImage(Image.fromarray(processed))
+            txt = (self.api.GetUTF8Text() or "").strip()
+            if txt:
+                text_parts.append(self._normalize_ocr_text(txt))
+        else:
+            for x, y, w, h in regions:
+                sub = processed[y : y + h, x : x + w]
+                self.api.SetVariable(
+                    "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
+                )
+                self.api.SetPageSegMode(self._choose_psm_for_box(w, h))
+                self.api.SetImage(Image.fromarray(sub))
+                part = (self.api.GetUTF8Text() or "").strip()
+                part_conf = max(self.api.MeanTextConf(), 0) / 100.0
+                if not part:
+                    rejected_regions += 1
+                    continue
+
+                part = self._normalize_ocr_text(part)
+                if not part:
+                    rejected_regions += 1
+                    continue
+
+                part_rank = self._candidate_rank(part, part_conf)
+                if best_region_rank is None or part_rank < best_region_rank:
+                    best_region_rank = part_rank
+                    best_region_text = part
+                    best_region_conf = part_conf
+
+                # Filter noisy regions early so one bad ROI doesn't poison merged text.
+                structured_part = self._looks_structured_overlay_text(part)
+                low_value_region = (
+                    self._is_gibberish(part)
+                    and not structured_part
+                    and part_conf < 0.45
+                    and len(part) < 48
+                )
+                if low_value_region:
+                    rejected_regions += 1
+                    logger.debug(
+                        "Rejecting ROI OCR part (conf=%.2f, %sx%s): %s",
+                        part_conf,
+                        w,
+                        h,
+                        part[:80],
+                    )
+                    continue
+
+                text_parts.append(part)
+                accepted_regions += 1
+                logger.debug(
+                    "Accepted ROI OCR part (conf=%.2f, %sx%s): %s",
+                    part_conf,
+                    w,
+                    h,
+                    part[:80],
+                )
+
+        # Safety net: avoid dropping all OCR output when ROI filtering is too strict.
+        if not has_roi and accepted_regions == 0 and best_region_text:
+            text_parts = [best_region_text]
+            accepted_regions = 1
+            logger.debug(
+                "All ROI parts were rejected; keeping best ROI candidate as safety net "
+                "(conf=%.2f): %s",
+                best_region_conf,
+                best_region_text[:120],
+            )
+
+        text = " ".join(text_parts)
+        text = self._normalize_ocr_text(text)
+
+        if self._is_gibberish(text):
+            logger.debug("Detected gibberish, filtering out: %s", text[:100])
+            text = ""
+
+        if text:
+            if len(regions) > 1:
+                self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+                self.api.SetImage(Image.fromarray(processed))
+            conf = max(self.api.MeanTextConf(), 0) / 100.0
+        else:
+            conf = 0.0
+
+        # Second safety net: merged text may be blanked as gibberish even when some ROIs were accepted.
+        # In that case, keep the best normalized ROI candidate to avoid total text loss.
+        if not text and best_region_text:
+            text = best_region_text
+            conf = best_region_conf
+            logger.debug(
+                "Merged OCR text was blank after filtering; restoring best ROI candidate "
+                "(accepted=%d rejected=%d conf=%.2f): %s",
+                accepted_regions,
+                rejected_regions,
+                best_region_conf,
+                best_region_text[:120],
+            )
+
+        # If region-wise filtering removed too much, prefer the best single region candidate.
+        if (not text or conf < 0.2) and best_region_text and best_region_conf >= conf:
+            if (
+                not self._is_gibberish(best_region_text)
+                or best_region_conf >= 0.55
+                or self._looks_structured_overlay_text(best_region_text)
+            ):
+                text = best_region_text
+                conf = best_region_conf
+
+        # ---------------- Adaptive fallback ----------------
+        if (not text or conf < 0.3) and regions:
+            largest = max(regions, key=lambda b: b[2] * b[3])
+            x, y, w, h = largest
+            sub = processed[y : y + h, x : x + w]
+
+            logger.debug(
+                "Low confidence (%.2f) -> retrying largest region %sx%s with SINGLE_BLOCK @600 dpi",
+                conf,
+                w,
+                h,
+            )
+            self.api.SetVariable("user_defined_dpi", "600")
+            self.api.SetVariable(
+                "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
+            )
+            self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+            self.api.SetImage(Image.fromarray(sub))
+
+            retry_text = (self.api.GetUTF8Text() or "").strip()
+            retry_text = self._normalize_ocr_text(retry_text)
+            retry_conf = max(self.api.MeanTextConf(), 0) / 100.0
+
+            if retry_conf > conf and not self._is_gibberish(retry_text):
+                text, conf = retry_text, retry_conf
+                meta_source = "retry"
+            else:
+                meta_source = "initial"
+                # Optional alternate OEM retry for hard overlay text (low-risk, only on weak ROI retries).
+                if self.api_lstm is not None and (retry_conf < 0.6 or not retry_text):
+                    try:
+                        self.api_lstm.SetVariable("user_defined_dpi", "600")
+                        self.api_lstm.SetVariable(
+                            "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
+                        )
+                        self.api_lstm.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+                        self.api_lstm.SetImage(Image.fromarray(sub))
+                        alt_text = self._normalize_ocr_text(
+                            (self.api_lstm.GetUTF8Text() or "").strip()
+                        )
+                        alt_conf = max(self.api_lstm.MeanTextConf(), 0) / 100.0
+                        self.api_lstm.SetVariable(
+                            "tessedit_char_whitelist", self._default_whitelist
+                        )
+
+                        alt_better = self._candidate_rank(alt_text, alt_conf) < self._candidate_rank(
+                            text, conf
+                        )
+                        if alt_better and (
+                            alt_text
+                            and (
+                                not self._is_gibberish(alt_text)
+                                or alt_conf >= 0.55
+                                or self._looks_structured_overlay_text(alt_text)
+                            )
+                        ):
+                            text, conf = alt_text, alt_conf
+                            meta_source = "retry_lstm"
+                            logger.debug(
+                                "LSTM_ONLY retry improved ROI OCR (conf %.2f -> %.2f): %s",
+                                retry_conf,
+                                alt_conf,
+                                alt_text[:80],
+                            )
+                    except Exception as e:
+                        logger.debug("LSTM_ONLY retry failed: %s", e)
+        else:
+            meta_source = "initial"
+
+        text = self._normalize_ocr_text(text)
+        # Restore default whitelist for subsequent calls.
+        self.api.SetVariable("tessedit_char_whitelist", self._default_whitelist)
+
+        meta = {
+            "dpi": dpi,
+            "regions": len(regions),
+            "regions_accepted": accepted_regions,
+            "regions_rejected": rejected_regions,
+            "psm": int(self.api.GetPageSegMode()),
+            "confidence": conf,
+            "gibberish_score": self._gibberish_score(text),
+            "method": f"tesserocr+regions({meta_source})",
+        }
+        logger.debug(
+            "OCR summary: regions=%d accepted=%d rejected=%d text_len=%d conf=%.2f method=%s",
+            len(regions),
+            accepted_regions,
+            rejected_regions,
+            len(text or ""),
+            conf,
+            meta["method"],
+        )
+        return text, conf, meta
 
     # ---------------- Text region detection ----------------
     def _detect_text_regions(self, gray: np.ndarray) -> List[Tuple[int, int, int, int]]:
@@ -365,106 +715,21 @@ class TesseOCRFrameProcessor:
         t0 = time.time()
         with self._lock:
             try:
-                gray = self._preprocess_to_gray(frame, roi)
-
                 # Choose DPI per mode
                 dpi = self.frame_config["high_quality_dpi" if high_quality else "dpi"]
-                self.api.SetVariable("user_defined_dpi", str(dpi))
-
-                # Detect candidate text boxes
-
-                if not roi:
-                    regions = self._detect_text_regions(gray)
-                    has_roi = False
-                else:
-                    regions = []
-                    has_roi = True
-                text_parts: List[str] = []
-                if has_roi:
-                    # if rois are present: OCR whole image, image was already cropped
-                    self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
-                    self.api.SetImage(Image.fromarray(gray))
-                    txt = (self.api.GetUTF8Text() or "").strip()
-                    if txt:
-                        text_parts.append(txt)
-                else:
-                    # OCR each detected region, if any
-                    for x, y, w, h in regions:
-                        sub = gray[y : y + h, x : x + w]
-                        self.api.SetPageSegMode(self._choose_psm_for_box(w, h))
-                        self.api.SetImage(Image.fromarray(sub))
-                        part = (self.api.GetUTF8Text() or "").strip()
-                        if part:
-                            text_parts.append(part)
-
-                # Combine & normalize
-                text = " ".join(text_parts)
-                text = unicodedata.normalize("NFC", text)
-                text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
-
-                # Filter gibberish early
-                if self._is_gibberish(text):
-                    logger.debug(f"Detected gibberish, filtering out: {text[:100]}")
-                    text = ""
-                    conf = 0.0
-
-                # Confidence (from last call). If multiple regions, MeanTextConf reflects last SetImage call.
-                # We approximate by re-measuring on the full image if we produced text from >1 region.
-                if len(regions) > 1 and text:
-                    self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
-                    self.api.SetImage(Image.fromarray(gray))
-                conf = max(self.api.MeanTextConf(), 0) / 100.0
-
-                # ---------------- Adaptive fallback ----------------
-                if (not text or conf < 0.3) and regions:
-                    # Choose largest detected region by area
-                    largest = max(regions, key=lambda b: b[2] * b[3])
-                    x, y, w, h = largest
-                    sub = gray[y : y + h, x : x + w]
-
-                    # Retry with high DPI and tighter PSM
-                    logger.debug(
-                        f"Low confidence ({conf:.2f}) → retrying largest region {w}x{h} with SINGLE_BLOCK @600 dpi"
+                has_roi = bool(roi)
+                candidates: List[Tuple[str, str, float, Dict[str, Any]]] = []
+                for preprocess_mode in ("gray_clahe", "binary"):
+                    processed = self._preprocess_to_gray(frame, roi, mode=preprocess_mode)
+                    c_text, c_conf, c_meta = self._ocr_processed_image(
+                        processed, has_roi=has_roi, dpi=dpi
                     )
-                    self.api.SetVariable("user_defined_dpi", "600")
-                    self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
-                    self.api.SetImage(Image.fromarray(sub))
+                    c_meta["preprocessing"] = preprocess_mode
+                    candidates.append((preprocess_mode, c_text, c_conf, c_meta))
 
-                    retry_text = (self.api.GetUTF8Text() or "").strip()
-                    retry_conf = max(self.api.MeanTextConf(), 0, 3) / 100.0
-
-                    # Use the retry result only if it improves confidence
-                    if retry_conf > conf and not self._is_gibberish(retry_text):
-                        text, conf = retry_text, retry_conf
-                        meta_source = "retry"
-                    else:
-                        meta_source = "initial"
-                else:
-                    meta_source = "initial"
-
-                # Normalize and clean text
-                text = unicodedata.normalize("NFC", text)
-                text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
-                texts, confs = [], []
-                for x, y, w, h in regions:
-                    sub = gray[y : y + h, x : x + w]
-                    self.api.SetPageSegMode(self._choose_psm_for_box(w, h))
-                    self.api.SetImage(Image.fromarray(sub))
-                    t = (self.api.GetUTF8Text() or "").strip()
-                    c = max(self.api.MeanTextConf(), 0) / 100.0
-                    texts.append(t)
-                    confs.append(c)
-                # visualize_ocr_regions(gray, regions, texts, confs, title=f"Frame debug ({len(regions)} regions)")
-
-                # Package metadata
-                meta = {
-                    "processing_time": time.time() - t0,
-                    "dpi": dpi,
-                    "regions": len(regions),
-                    "psm": int(self.api.GetPageSegMode()),
-                    "confidence": conf,
-                    "method": f"tesserocr+regions({meta_source})",
-                }
+                best = min(candidates, key=lambda c: self._candidate_rank(c[1], c[2]))
+                _, text, conf, meta = best
+                meta["processing_time"] = time.time() - t0
 
                 # Optional: HOCR metadata (disabled by default for speed)
                 # try:

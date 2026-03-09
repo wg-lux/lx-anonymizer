@@ -4,7 +4,7 @@ import os
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import dateparser
 import gender_guesser.detector as gender_detector
@@ -35,6 +35,14 @@ from lx_anonymizer.utils.ollama import ensure_ollama
 
 
 class ReportReader:
+    _SUPPORTED_FLAG_KEYS = {
+        "patient_info_line",
+        "endoscope_info_line",
+        "examiner_info_line",
+        "cut_off_below",
+        "cut_off_above",
+    }
+
     def __init__(
         self,
         report_root_path: Optional[str] = None,
@@ -44,6 +52,26 @@ class ReportReader:
         flags: Optional[Dict[Any, Any]] = None,
         text_date_format: str = DEFAULT_SETTINGS["text_date_format"],
     ):
+        """
+        Initialize the report reader.
+
+        Args:
+            report_root_path: Optional root path for report files.
+            locale: Faker locale used for anonymization replacements.
+            employee_first_names: Optional override for replacement first names.
+            employee_last_names: Optional override for replacement last names.
+            flags: Optional report parsing/anonymization flags.
+                Supported keys (all optional; missing keys fall back to defaults):
+                - ``patient_info_line``: str marker for patient info line detection
+                - ``endoscope_info_line``: str marker for endoscope info detection
+                - ``examiner_info_line``: str marker for examiner info detection
+                - ``cut_off_below``: list[str] (or str) markers for lower text cut-off
+                - ``cut_off_above``: list[str] (or str) markers for upper text cut-off
+                Behavior:
+                - If ``flags`` is passed, it is merged with ``DEFAULT_SETTINGS["flags"]``.
+                - Unknown keys are preserved for compatibility, but logged.
+            text_date_format: Date format string used during text anonymization.
+        """
         self.report_root_path = report_root_path
 
         self.locale = locale
@@ -58,7 +86,7 @@ class ReportReader:
             if employee_last_names is not None
             else DEFAULT_SETTINGS["last_names"]
         )
-        self.flags = flags if flags is not None else lx_anonymizer/setup/settings.py["flags"]
+        self.flags = self._resolve_flags(flags)
         self.fake = Faker(locale=locale)
         self.gender_detector = gender_detector.Detector(case_sensitive=True)
 
@@ -107,6 +135,56 @@ class ReportReader:
             self.ollama_proc = None
             self.ollama_extractor = None
 
+    @classmethod
+    def _resolve_flags(
+        cls, flags: Optional[Mapping[Any, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Merge caller-provided flags with defaults and normalize expected types.
+
+        This keeps initialization robust when callers provide only a subset of flags.
+        """
+        default_flags = dict(DEFAULT_SETTINGS.get("flags", {}))
+        if flags is None:
+            return default_flags
+
+        if not isinstance(flags, Mapping):
+            raise TypeError(
+                f"flags must be a mapping/dict or None, got {type(flags)!r}"
+            )
+
+        merged: Dict[str, Any] = dict(default_flags)
+        provided = dict(flags)
+
+        unknown_keys = [k for k in provided.keys() if k not in cls._SUPPORTED_FLAG_KEYS]
+        if unknown_keys:
+            logger.warning(
+                "ReportReader received unknown flags keys (preserved for compatibility): %s",
+                sorted(map(str, unknown_keys)),
+            )
+
+        merged.update(provided)
+
+        for key in ("patient_info_line", "endoscope_info_line", "examiner_info_line"):
+            value = merged.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                merged[key] = str(value)
+
+        for key in ("cut_off_below", "cut_off_above"):
+            value = merged.get(key)
+            if value is None:
+                merged[key] = []
+            elif isinstance(value, str):
+                merged[key] = [value]
+            elif isinstance(value, (list, tuple, set)):
+                merged[key] = [str(v) for v in value if v is not None]
+            else:
+                merged[key] = [str(value)]
+
+        return merged
+
     def process_report(
         self,
         pdf_path=None,
@@ -117,10 +195,13 @@ class ReportReader:
         text=None,
         create_anonymized_pdf=False,
         anonymized_pdf_output_path=None,
-    ) -> Tuple[str, str, dict[Any, Any], Path]:
+    ) -> Tuple[str, str, dict[Any, Any], Optional[Path]]:
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         """
+        # Ensure no metadata leakage across independent report calls.
+        self.sensitive_meta = SensitiveMeta()
+        text_input_provided = text is not None
 
         if text is None:
             if not pdf_path and not image_path:
@@ -156,9 +237,14 @@ class ReportReader:
                     return "", "", {}, Path(image_path)
 
         # --- OCR Fallback ---
+        skip_ocr_fallback_for_text_only = (
+            text_input_provided and not pdf_path and not image_path
+        )
+        text_for_eval = text if isinstance(text, str) else ""
         if (
-            not text or len(text.strip()) < 50
-        ):  # Trigger OCR if text is empty or very short
+            (not text_for_eval or len(text_for_eval.strip()) < 50)
+            and not skip_ocr_fallback_for_text_only
+        ):  # Trigger OCR if text is empty or very short and file-based input exists
             try:
                 assert isinstance(text, str)
                 logger.info(
@@ -241,12 +327,28 @@ class ReportReader:
                 if (
                     text and len(text.strip()) > 10
                 ):  # Only correct if OCR produced something meaningful
-                    logger.info("Applying LLM correction to OCR text via Ollama")
+                    attempted_ollama_correction = False
+                    if not getattr(self, "ollama_available", False):
+                        logger.info(
+                            "Skipping LLM correction for OCR text: Ollama unavailable"
+                        )
+                    else:
+                        logger.info("Applying LLM correction to OCR text via Ollama")
+                        attempted_ollama_correction = True
                     try:
                         from lx_anonymizer.ollama.ollama_service import \
-                            ollama_service  # Import locally if needed
+                            get_ollama_service
 
-                        corrected_text = ollama_service.correct_ocr_text_in_chunks(text)
+                        ollama_client = (
+                            get_ollama_service(auto_start=False)
+                            if getattr(self, "ollama_available", False)
+                            else None
+                        )
+                        corrected_text = (
+                            ollama_client.correct_ocr_text_in_chunks(text)
+                            if ollama_client is not None
+                            else None
+                        )
 
                         if (
                             corrected_text
@@ -257,7 +359,7 @@ class ReportReader:
                             text = corrected_text
                         elif corrected_text == text:
                             logger.info("Ollama correction resulted in the same text.")
-                        else:
+                        elif attempted_ollama_correction:
                             logger.warning(
                                 "Ollama OCR correction failed or produced poor result, using original OCR text."
                             )
@@ -289,6 +391,10 @@ class ReportReader:
                     {},
                     Path(str(pdf_path or "")),
                 )
+        elif skip_ocr_fallback_for_text_only:
+            logger.debug(
+                "Skipping OCR fallback for text-only input (no pdf_path/image_path provided)."
+            )
 
         # --- Metadata Extraction ---
         report_meta = {}
@@ -328,7 +434,7 @@ class ReportReader:
                 "Skipping metadata extraction due to insufficient text content."
             )
             report_meta = {
-                "pdf_hash": self.pdf_hash(open(str(pdf_path), "rb").read())
+                "pdf_hash": self.pdf_hash_file(pdf_path)
                 if pdf_path and os.path.exists(str(pdf_path))
                 else None
             }
@@ -397,7 +503,7 @@ class ReportReader:
             text,
             anonymized_text,
             self.sensitive_meta.to_dict(),
-            Path(str(anonymized_pdf_path)) if anonymized_pdf_path else Path("None"),
+            Path(str(anonymized_pdf_path)) if anonymized_pdf_path else None,
         )
 
     def read_pdf(self, pdf_path):
@@ -504,7 +610,7 @@ class ReportReader:
         final_patient_info = {
             "patient_first_name": patient_info.get("patient_first_name"),
             "patient_last_name": patient_info.get("patient_last_name"),
-            "patient_dob": parsed_dob,
+            "patient_dob": parsed_dob.isoformat() if isinstance(parsed_dob, date) else parsed_dob,
             "casenumber": patient_info.get("casenumber"),
             "patient_gender_name": patient_info.get("patient_gender_name"),
         }
@@ -514,7 +620,7 @@ class ReportReader:
         # Extract other information
         if lines:
             for line in lines:
-                if re.search(r"unters\w*\s*arzt", line, re.IGNORECASE):
+                if re.search(r"unters\W*arzt", line, re.IGNORECASE):
                     examiner_info = self.examiner_extractor.extract_examiner_info(line)
                     if examiner_info:
                         report_meta.update(examiner_info)
@@ -540,9 +646,7 @@ class ReportReader:
         # PDF Hash
         try:
             if pdf_path and os.path.exists(str(pdf_path)):
-                with open(str(pdf_path), "rb") as f:
-                    pdf_bytes = f.read()
-                    report_meta["pdf_hash"] = self.pdf_hash(pdf_bytes)
+                report_meta["pdf_hash"] = self.pdf_hash_file(pdf_path)
             else:
                 report_meta["pdf_hash"] = None
         except Exception as e:
@@ -553,58 +657,49 @@ class ReportReader:
 
     def extract_report_meta_deepseek(self, text):
         """Extract metadata using DeepSeek via Ollama structured output."""
+        return self._extract_report_meta_via_ollama(
+            text=text,
+            extractor_name="DeepSeek",
+            unavailable_log_level="warning",
+        )
+
+    def extract_report_meta_medllama(self, text):
+        return self._extract_report_meta_via_ollama(text=text, extractor_name="MedLLaMA")
+
+    def extract_report_meta_llama3(self, text):
+        return self._extract_report_meta_via_ollama(text=text, extractor_name="Llama3")
+
+    def _extract_report_meta_via_ollama(
+        self,
+        text: str,
+        extractor_name: str,
+        unavailable_log_level: str = "debug",
+    ) -> Dict[str, Any]:
+        """Shared wrapper for Ollama-based metadata extraction variants."""
         if not self.ollama_available or not self.ollama_extractor:
-            logger.warning(
-                "Ollama not available for DeepSeek extraction, returning empty dict."
-            )
+            msg = f"Ollama not available for {extractor_name} extraction, returning empty dict."
+            log_fn = getattr(logger, unavailable_log_level, logger.debug)
+            log_fn(msg)
             return {}
 
         logger.info(
-            "Attempting metadata extraction with DeepSeek (Ollama Structured Output)"
+            "Attempting metadata extraction with %s (Ollama Structured Output)",
+            extractor_name,
         )
         try:
             meta_obj = self.ollama_extractor.extract_metadata(text)
-
-            # FIX: safe_update returns None. Must call .to_dict() after update.
-            if meta_obj:
-                self.sensitive_meta.safe_update(meta_obj)
-                meta = self.sensitive_meta.to_dict()
-                logger.info("DeepSeek Ollama extraction successful.")
-            else:
-                meta = {}
+            if not meta_obj:
                 logger.warning(
-                    "DeepSeek Ollama extraction failed, returning empty dict."
+                    "%s Ollama extraction failed, returning empty dict.",
+                    extractor_name,
                 )
+                return {}
 
-            return meta
+            self.sensitive_meta.safe_update(meta_obj)
+            logger.info("%s Ollama extraction successful.", extractor_name)
+            return self.sensitive_meta.to_dict()
         except Exception as e:
-            logger.warning(f"DeepSeek Ollama extraction error: {e}")
-            return {}
-
-    def extract_report_meta_medllama(self, text):
-        if not self.ollama_available or not self.ollama_extractor:
-            return {}
-        try:
-            meta_obj = self.ollama_extractor.extract_metadata(text)
-            if meta_obj:
-                self.sensitive_meta.safe_update(meta_obj)
-                return self.sensitive_meta.to_dict()
-            return {}
-        except Exception as e:
-            logger.warning(f"MedLLaMA Ollama extraction error: {e}")
-            return {}
-
-    def extract_report_meta_llama3(self, text):
-        if not self.ollama_available or not self.ollama_extractor:
-            return {}
-        try:
-            meta_obj = self.ollama_extractor.extract_metadata(text)
-            if meta_obj:
-                self.sensitive_meta.safe_update(meta_obj)
-                return self.sensitive_meta.to_dict()
-            return {}
-        except Exception as e:
-            logger.warning(f"Llama3 Ollama extraction error: {e}")
+            logger.warning(f"{extractor_name} Ollama extraction error: {e}")
             return {}
 
     def anonymize_report(self, text, report_meta):
@@ -624,6 +719,29 @@ class ReportReader:
 
     def pdf_hash(self, pdf_binary):
         return hashlib.sha256(pdf_binary).hexdigest()
+
+    def pdf_hash_file(self, pdf_path, chunk_size: int = 1024 * 1024) -> Optional[str]:
+        """Calculate PDF SHA-256 hash with chunked IO to avoid loading full files into memory."""
+        if not pdf_path:
+            return None
+        try:
+            pdf_file = Path(pdf_path)
+        except Exception:
+            logger.error(f"Invalid PDF path for hashing: {pdf_path}")
+            return None
+
+        if not pdf_file.exists():
+            return None
+
+        try:
+            hasher = hashlib.sha256()
+            with open(pdf_file, "rb") as handle:
+                for chunk in iter(lambda: handle.read(chunk_size), b""):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except Exception as e:
+            logger.error(f"Could not stream-hash PDF {pdf_file}: {e}")
+            return None
 
     def process_report_with_cropping(
         self,

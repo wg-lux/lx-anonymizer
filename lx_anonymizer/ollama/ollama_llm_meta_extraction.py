@@ -32,7 +32,7 @@ class ModelConfig:
         {
             "name": "llama3.2:1b",
             "priority": 1,
-            "timeout": 10,
+            "timeout": 20,
             "description": "Llama 3.2 1B (Ultra Fast)",
         },
         {
@@ -156,10 +156,9 @@ class OllamaOptimizedExtractor:
         except Exception as e:
             logger.warning(f"could not check available models: {e}")
             try:
-                import time
-
+                # Short one-shot backoff to avoid slowing tests/pipeline startup by ~100s.
                 self.available_models_retry = True
-                time.sleep(100)
+                time.sleep(1.0)
                 return self._check_available_models()
             except Exception:
                 return []
@@ -232,11 +231,35 @@ class OllamaOptimizedExtractor:
         Returns:
             Optimierter Prompt-String für medizinische Dokumente
         """
+        model_name = (self.current_model or {}).get("name", "").lower()
+        text_window = text[:1200] if self._is_small_model(model_name) else text[:1500]
+
+        if self._is_small_model(model_name):
+            return f"""Return exactly one JSON object. No prose. No markdown. No comments.
+
+Task: Extract patient metadata from OCR text.
+If unknown, use null.
+
+Rules:
+- patient_dob = birth date (keywords like geboren, geb., born)
+- examination_date = exam/report date (not birth date)
+- Normalize dates to YYYY-MM-DD
+- Keep casenumber as seen (examples: "E 2001951", "EM 2001951")
+- OCR may contain noise/spelling errors (e.g. "Pat.ID", "P.ID", "TP. P.ID")
+- Do not invent values
+
+Required keys only:
+{{"patient_first_name":null,"patient_last_name":null,"patient_dob":null,"casenumber":null,"examination_date":null}}
+
+OCR_TEXT_BEGIN
+{text_window}
+OCR_TEXT_END"""
+
         return f"""Extract patient metadata from this OCR text into JSON.
 If a field is missing, use null.
 
 TEXT:
-{text[:1500]}
+{text_window}
 
 REQUIRED JSON FORMAT:
 {{
@@ -291,7 +314,7 @@ Return ONLY JSON."""
         """
         try:
             assert self.current_model is not None
-            timeout = self.current_model.get("timeout", 30)
+            timeout = self.current_model.get("timeout", 10)
 
             logger.debug(
                 f"🔗 API-Request an {self.chat_endpoint} mit Modell {payload['model']}"
@@ -754,6 +777,21 @@ Return ONLY JSON."""
 
     def _create_fast_extraction_prompt(self, text: str) -> str:
         """Erstellt einen optimierten Fast-Prompt für Smart-Sampling."""
+        model_name = (self.current_model or {}).get("name", "").lower()
+        if self._is_small_model(model_name):
+            return f"""Return JSON only. No text before or after JSON.
+Extract these keys from OCR text and use null when missing:
+{{"patient_first_name":null,"patient_last_name":null,"examination_date":null,"casenumber":null,"patient_dob":null,"patient_gender_name":"unknown"}}
+
+Rules:
+- Normalize dates to YYYY-MM-DD
+- patient_dob is birth date only
+- examination_date is report/exam date only
+- Keep case number exactly as text
+- Ignore OCR noise
+
+OCR_TEXT: {text}"""
+
         return f"""Schnelle Extraktion von Patientendaten aus medizinischem Text:
 
 TEXT: {text}
@@ -769,6 +807,15 @@ JSON Format:
 {{"patient_first_name": "...", "patient_last_name": "...", "examination_date": "...", "casenumber": "...", "patient_dob": "...", "patient_gender_name": "unknown"}}
 
 JSON:"""
+
+    def _is_small_model(self, model_name: str) -> bool:
+        """Heuristik für kleine Modelle, die stärker von knappen Prompts profitieren."""
+        if not model_name:
+            return False
+        return any(
+            token in model_name
+            for token in ("1b", "1.5b", "mini", "phi3.5", "qwen2.5:1.5b")
+        )
 
     def _calculate_confidence(self, metadata_dict: dict) -> float:
         """
@@ -1296,6 +1343,10 @@ class EnrichedMetadataExtractor:
         }
         overall = sum(confidence_scores[key] * weights[key] for key in weights.keys())
         confidence_scores["overall_confidence"] = overall
+
+        # Keep deterministic decimal outputs for comparisons and UI display.
+        for key in confidence_scores:
+            confidence_scores[key] = round(float(confidence_scores[key]), 6)
 
         return confidence_scores
 

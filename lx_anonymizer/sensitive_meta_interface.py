@@ -1,8 +1,9 @@
 # lx_anonymizer/frame_cleaner/sensitive_meta_interface.py
 import math
+from datetime import date, datetime
 from typing import Any, Dict, Mapping, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from lx_anonymizer.setup.custom_logger import logger
 
@@ -61,6 +62,44 @@ class SensitiveMeta(BaseModel):
             return s
 
         return v
+
+    @staticmethod
+    def _parse_date_like(value: Any) -> Optional[date]:
+        if not isinstance(value, str):
+            return None
+        s = value.strip()
+        if not s:
+            return None
+
+        for parser in (
+            lambda x: date.fromisoformat(x),
+            lambda x: datetime.strptime(x, "%d.%m.%Y").date(),
+            lambda x: datetime.strptime(x, "%d.%m.%y").date(),
+            lambda x: datetime.strptime(x, "%d/%m/%Y").date(),
+            lambda x: datetime.strptime(x, "%d-%m-%Y").date(),
+            lambda x: datetime.strptime(x, "%Y/%m/%d").date(),
+        ):
+            try:
+                return parser(s)
+            except Exception:
+                continue
+        return None
+
+    @model_validator(mode="after")
+    def validate_date_order(self) -> "SensitiveMeta":
+        """
+        If examination_date and patient_dob are swapped (exam date before birth date),
+        swap them back.
+        """
+        dob_dt = self._parse_date_like(self.patient_dob)
+        exam_dt = self._parse_date_like(self.examination_date)
+
+        if dob_dt and exam_dt and exam_dt < dob_dt:
+            self.patient_dob, self.examination_date = (
+                self.examination_date,
+                self.patient_dob,
+            )
+        return self
 
     def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):

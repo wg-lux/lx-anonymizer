@@ -21,6 +21,7 @@ let
     gcc # C/C++ compiler tool-chain
     pkg-config
     protobuf
+    libGL
   ];
 
   customTasks = (
@@ -29,22 +30,7 @@ let
     })
   );
   nixpkgs.config.allowUnfree = true;
-
-in
-{
-  dotenv.enable = true;
-  dotenv.disableHint = false;
-
-  languages.python = {
-    enable = true;
-    package = pkgs.python3.withPackages (ps: with ps; [ tkinter ]); # known devenv issue with python3Packages since python3Full was deprecated
-    uv = {
-      enable = true;
-      sync.enable = true;
-    };
-  };
-
-  packages = with pkgs; [
+  runtimePackages = with pkgs; [
     git
     cudaPackages.cuda_nvcc
     stdenv.cc.cc
@@ -68,12 +54,36 @@ in
     ffmpeg_6-headless
   ];
 
-  env = lib.mkDefault {
-    LD_LIBRARY_PATH = "${
-      with pkgs; lib.makeLibraryPath buildInputs ++ runtimePackages ++ [ pkgs.tesseract ]
-    }:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+in
+{
+  dotenv.enable = true;
+  dotenv.disableHint = false;
+
+  languages.python = {
+    enable = true;
+    package = pkgs.python3.withPackages (ps: with ps; [ tkinter ]); # known devenv issue with python3Packages since python3Full was deprecated
+    uv = {
+      enable = true;
+      sync.enable = true;
+    };
+  };
+
+
+  packages = lib.unique (buildInputs ++ runtimePackages);
+
+
+  env = {
+    LD_LIBRARY_PATH = 
+      with pkgs; lib.makeLibraryPath (runtimePackages)
+          + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+          + ":/usr/lib/wsl/lib"
+          + ":/usr/lib/x86_64-linux-gnu"
+          + ":/usr/lib"
+          ;
     OLLAMA_HOST = "0.0.0.0";
     PYTORCH_ALLOC_CONF= "expandable_segments:True";
+    
+
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";

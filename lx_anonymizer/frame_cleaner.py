@@ -14,6 +14,7 @@ import logging
 import math
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
 
@@ -95,7 +96,9 @@ class FrameCleaner:
         if self.use_llm:
             try:
                 # Initialize Ollama for LLM processing
-                self.ollama_proc = ensure_ollama()
+                self.ollama_proc = ensure_ollama(
+                    auto_pull_model=getattr(settings, "LLM_MODEL", None)
+                )
 
                 # Try to initialize OllamaOptimizedExtractor
                 # If it fails (no models available), it will raise an exception caught below
@@ -151,6 +154,7 @@ class FrameCleaner:
 
         # Sensitive metadata dictionary
         self.sensitive_meta: SensitiveMeta = SensitiveMeta()
+        self._reset_frame_collection() # clear ocr and sm states
 
         # ROI Processor - dict traversal for convenience
         self.roi_processor = ROIProcessor()
@@ -184,6 +188,10 @@ class FrameCleaner:
 
         Refactored version: single code path, fewer duplicated branches. Batch Metadata logic preserves previous output based on confidence.
         """
+        # Reset per-run state to avoid metadata/text bleed across videos.
+        self.sensitive_meta = SensitiveMeta()
+        self._reset_frame_collection()
+
         default_center = os.environ.get("DEFAULT_CENTER", "Endoscopy Center")
         output_video = output_path or video_path.with_stem(f"{video_path.stem}_anony")
         accumulated: dict[str, Any] = {
@@ -198,7 +206,7 @@ class FrameCleaner:
             "examiner_first_name": None,
             "examiner_last_name": None,
             "center": default_center,
-            "representative_ocr_text": None,
+            "text": None,
             "source": "frame_extraction",
         }
         cap = cv2.VideoCapture(str(video_path))
@@ -213,7 +221,8 @@ class FrameCleaner:
         )
         sensitive_idx: list[int] = []
         frames_processed = 0
-        self.frame_collection = []  # Reset für neuen Batch
+        best_ocr_text = ""
+        best_ocr_conf = -1.0
         for idx, gray_frame, stride in self._iter_video(video_path, total_frames):
             if frames_processed >= max_samples:
                 logger.info("Reached maximum frame sample limit. Stopping analysis.")
@@ -228,6 +237,18 @@ class FrameCleaner:
             accumulated = self.frame_metadata_extractor.merge_metadata(
                 accumulated, frame_meta
             )
+            if ocr_text and ocr_text.strip():
+                candidate = ocr_text.strip()
+                # Prefer higher confidence; break ties by longer text to avoid tiny overlays dominating.
+                if (
+                    ocr_conf > best_ocr_conf
+                    or (
+                        abs(ocr_conf - best_ocr_conf) < 1e-6
+                        and len(candidate) > len(best_ocr_text)
+                    )
+                ):
+                    best_ocr_text = candidate
+                    best_ocr_conf = float(ocr_conf)
             if is_sensitive:
                 sensitive_idx.append(idx)
                 self.sensitive_meta.safe_update(accumulated)
@@ -241,12 +262,17 @@ class FrameCleaner:
                 break
 
         # Batch-Metadaten-Anreicherung nach Frame-Loop
-        if self.frame_collection:
+        if self.use_llm and self.frame_collection:
             batch_enriched = self._extract_enriched_metadata_batch()
             if batch_enriched:
                 accumulated = self.frame_metadata_extractor.merge_metadata(
                     accumulated, batch_enriched
                 )
+        elif self.frame_collection:
+            logger.debug(
+                "Skipping batch enrichment because LLM is disabled (frames=%d).",
+                len(self.frame_collection),
+            )
         sensitive_ratio = len(sensitive_idx) / total_frames if total_frames else 0.0
         logger.info(
             "Sensitive frames: %d/%d (%.1f %%)",
@@ -278,9 +304,47 @@ class FrameCleaner:
             output_video = video_path
 
         # ----------------------- persist metadata, apply type checking---------------------------
+        if best_ocr_text:
+            accumulated["text"] = best_ocr_text
+        elif not accumulated.get("text"):
+            # Fallback for cases where OCR text was fully filtered but metadata was extracted.
+            fallback_text = self._build_representative_text_from_meta(accumulated)
+            if fallback_text:
+                accumulated["text"] = fallback_text
         self.sensitive_meta.safe_update(accumulated)
 
         return output_video, self.sensitive_meta.to_dict()
+
+    @staticmethod
+    def _build_representative_text_from_meta(meta: Dict[str, Any]) -> str:
+        """
+        Build a compact diagnostic text from extracted metadata when raw OCR text
+        is unavailable (e.g. filtered as gibberish).
+        """
+        if not isinstance(meta, dict):
+            return ""
+
+        parts: list[str] = []
+
+        first = str(meta.get("patient_first_name") or "").strip()
+        last = str(meta.get("patient_last_name") or "").strip()
+        if first or last:
+            parts.append(" ".join(p for p in [first, last] if p))
+
+        for key, label in (
+            ("casenumber", "Case"),
+            ("patient_dob", "DOB"),
+            ("examination_date", "Date"),
+            ("examination_time", "Time"),
+            ("examiner_last_name", "Examiner"),
+            ("endoscope_type", "Scope"),
+            ("endoscope_sn", "SN"),
+        ):
+            value = meta.get(key)
+            if value:
+                parts.append(f"{label}: {value}")
+
+        return " | ".join(parts).strip()
 
     def remove_frames_from_video_streaming(
         self,
@@ -303,6 +367,8 @@ class FrameCleaner:
         Returns:
             True if successful, False otherwise
         """
+        filter_script_paths: List[Path] = []
+        ffmpeg_timeout = max(10, int(getattr(settings, "LLM_TIMEOUT", 30)) * 10)
         try:
             if not frames_to_remove:
                 logger.info("No frames to remove, using stream copy")
@@ -316,14 +382,15 @@ class FrameCleaner:
                 f"Removing {len(frames_to_remove)} frames using streaming method"
             )
 
-            # Create frame selection filter
-            idx_list = "+".join([f"eq(n\\,{idx})" for idx in frames_to_remove])
-            vf = f"select='not({idx_list})',setpts=N/FRAME_RATE/TB"
-            af = f"aselect='not({idx_list})',asetpts=N/SR/TB"
+            vf, af = self._build_frame_drop_filters(frames_to_remove)
+            vf_args, af_args, filter_script_paths = self._build_filter_args(vf, af)
+
+            has_audio = bool(format_info.get("has_audio", True))
 
             if use_named_pipe and len(frames_to_remove) < (total_frames or 1000) * 0.1:
                 # Use named pipe for small frame removal operations
                 with video_utils.named_pipe() as pipe_path:
+                    filter_proc: Optional[subprocess.Popen] = None
                     try:
                         # Pipeline: filter frames -> pipe -> stream copy to final output
                         filter_cmd = [
@@ -332,14 +399,17 @@ class FrameCleaner:
                             "-y",
                             "-i",
                             str(original_video),
-                            "-vf",
-                            vf,
-                            "-af",
-                            af,
-                            "-f",
-                            "matroska",  # Use MKV for better streaming compatibility
-                            str(pipe_path),
+                            *vf_args,
                         ]
+                        if has_audio:
+                            filter_cmd.extend(af_args)
+                        filter_cmd.extend(
+                            [
+                                "-f",
+                                "matroska",  # Use MKV for better streaming compatibility
+                                str(pipe_path),
+                            ]
+                        )
 
                         copy_cmd = [
                             "ffmpeg",
@@ -366,82 +436,109 @@ class FrameCleaner:
                             f"Copy command with -nostdin: {' '.join(copy_cmd)}"
                         )
 
-                        # Start filter process in background
+                        # Start filter process in background without PIPE buffering risk.
                         filter_proc = subprocess.Popen(
-                            filter_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                            filter_cmd,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
 
                         # Start copy process (blocks until complete)
-                        subprocess.run(
-                            copy_cmd, capture_output=True, text=True, check=True
+                        copy_result = subprocess.run(
+                            copy_cmd,
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=ffmpeg_timeout,
                         )
+                        if (
+                            isinstance(copy_result.returncode, int)
+                            and copy_result.returncode != 0
+                        ):
+                            raise subprocess.CalledProcessError(
+                                copy_result.returncode,
+                                copy_cmd,
+                                output=copy_result.stdout,
+                                stderr=copy_result.stderr,
+                            )
 
                         # Wait for filter to complete
-                        filter_proc.communicate()
+                        filter_return = filter_proc.wait(timeout=ffmpeg_timeout)
+                        if isinstance(filter_return, int) and filter_return != 0:
+                            raise subprocess.CalledProcessError(
+                                filter_return, filter_cmd
+                            )
 
                         logger.debug("Streaming frame removal completed via named pipe")
-
+                    except subprocess.TimeoutExpired as timeout_exc:
+                        logger.error(
+                            "Named-pipe frame removal timed out after %ss",
+                            timeout_exc.timeout,
+                        )
+                        raise
                     finally:
-                        # Clean up pipe
-                        if pipe_path.exists():
+                        if filter_proc is not None and filter_proc.poll() is None:
+                            filter_proc.terminate()
                             try:
-                                pipe_path.unlink()
-                                pipe_path.parent.rmdir()
-                            except OSError:
-                                pass
+                                filter_proc.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                filter_proc.kill()
+                                filter_proc.wait(timeout=10)
 
             else:
                 # Direct processing for larger removals or when pipes unavailable
-                if format_info["can_stream_copy"] and format_info["has_audio"]:
-                    # Use hardware-optimized encoding to preserve quality
-                    encoder_args = self.build_encoder_cmd("balanced")
-                    cmd = [
-                        "ffmpeg",
-                        "-nostdin",
-                        "-y",
-                        "-i",
-                        str(original_video),
-                        "-vf",
-                        vf,
-                        "-af",
-                        af,
-                        *encoder_args,  # Use hardware-optimized encoder
-                        "-c:a",
-                        "aac",
-                        "-b:a",
-                        "128k",  # Re-encode audio with high quality
-                        "-movflags",
-                        "+faststart",
-                        str(output_video),
-                    ]
+                encoder_args = self.build_encoder_cmd("balanced")
+                cmd = [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-y",
+                    "-i",
+                    str(original_video),
+                    *vf_args,
+                ]
+                if has_audio:
+                    # Keep A/V timelines aligned while dropping selected frames.
+                    cmd.extend(
+                        [
+                            *af_args,
+                            *encoder_args,
+                            "-c:a",
+                            "aac",
+                            "-b:a",
+                            "128k",
+                            "-movflags",
+                            "+faststart",
+                            str(output_video),
+                        ]
+                    )
                 else:
-                    # Video-only or format needs re-encoding
-                    encoder_args = self.build_encoder_cmd("balanced")
-                    cmd = [
-                        "ffmpeg",
-                        "-nostdin",
-                        "-y",
-                        "-i",
-                        str(original_video),
-                        "-vf",
-                        vf,
-                        *encoder_args,  # Use hardware-optimized encoder
-                        "-an" if not format_info["has_audio"] else "-af",
-                        af if format_info["has_audio"] else "",
-                        "-movflags",
-                        "+faststart" if format_info["has_audio"] else "",
-                        str(output_video),
-                    ]
-
-                    # Remove empty arguments
-                    cmd = [arg for arg in cmd if arg]
+                    cmd.extend(
+                        [
+                            *encoder_args,
+                            "-an",
+                            str(output_video),
+                        ]
+                    )
 
                 logger.info(
                     f"Direct frame removal processing using {self.preferred_encoder['type']}"
                 )
                 logger.debug(f"FFmpeg command with -nostdin: {' '.join(cmd)}")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=ffmpeg_timeout,
+                )
+                if isinstance(result.returncode, int) and result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        result.returncode,
+                        cmd,
+                        output=result.stdout,
+                        stderr=result.stderr,
+                    )
                 logger.debug(f"Direct frame removal output: {result.stderr}")
 
             # Verify output
@@ -467,26 +564,53 @@ class FrameCleaner:
                     "-y",
                     "-i",
                     str(original_video),
-                    "-vf",
-                    vf,
+                    *vf_args,
                     "-an",  # No audio
                     *fallback_encoder_args,
                     str(output_video),
                 ]
                 result = subprocess.run(
-                    cmd_no_audio, capture_output=True, text=True, check=True
+                    cmd_no_audio,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=ffmpeg_timeout,
                 )
+                if isinstance(result.returncode, int) and result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        result.returncode,
+                        cmd_no_audio,
+                        output=result.stdout,
+                        stderr=result.stderr,
+                    )
                 logger.info(
                     "Successfully removed frames without audio using CPU fallback"
                 )
                 return True
+            except subprocess.TimeoutExpired as timeout_exc:
+                logger.error(
+                    "Frame removal CPU fallback timed out after %ss",
+                    timeout_exc.timeout,
+                )
+                return False
             except subprocess.CalledProcessError as e2:
                 logger.error(f"Frame removal CPU fallback also failed: {e2.stderr}")
                 return False
 
+        except subprocess.TimeoutExpired as timeout_exc:
+            logger.error(
+                "Streaming frame removal timed out after %ss", timeout_exc.timeout
+            )
+            return False
         except Exception as e:
             logger.error(f"Streaming frame removal error: {e}")
             return False
+        finally:
+            for script_path in filter_script_paths:
+                try:
+                    script_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.debug("Could not remove temporary filter script %s", script_path)
 
     def _unified_metadata_extract(self, text: str) -> Dict[str, Any]:
         """Hierarchische Metadaten-Extraktion: LLM → spaCy → Regex-Fallback."""
@@ -495,17 +619,26 @@ class FrameCleaner:
             try:
                 meta_obj = self.ollama_extractor.extract_metadata(text)
                 if meta_obj is not None:
-                    self.sensitive_meta.safe_update(meta_obj)
-                    meta = self.sensitive_meta.to_dict()
+                    candidate = (
+                        meta_obj.to_dict() if isinstance(meta_obj, SensitiveMeta) else dict(meta_obj)
+                    )
+                    if self._metadata_has_signal(candidate):
+                        self.sensitive_meta.safe_update(candidate)
+                        meta = self.sensitive_meta.to_dict()
+                    else:
+                        meta = None
                 else:
                     meta = None
             except Exception:
                 meta = None
         if not meta and self.patient_data_extractor:
             try:
-                meta = self.patient_data_extractor(text)
-                self.sensitive_meta.safe_update(meta)
-                meta = self.sensitive_meta.to_dict()
+                candidate = self.patient_data_extractor(text)
+                if self._metadata_has_signal(candidate):
+                    self.sensitive_meta.safe_update(candidate)
+                    meta = self.sensitive_meta.to_dict()
+                else:
+                    meta = None
             except Exception:
                 meta = None
         if not meta:
@@ -518,6 +651,35 @@ class FrameCleaner:
             meta.to_dict()
 
         return meta
+
+    @staticmethod
+    def _metadata_has_signal(meta: Any) -> bool:
+        """
+        Return True if extracted metadata contains at least one meaningful field.
+        Prevents empty extractor dicts from blocking regex fallback.
+        """
+        if not isinstance(meta, dict):
+            return False
+        signal_keys = (
+            "patient_first_name",
+            "patient_last_name",
+            "patient_dob",
+            "casenumber",
+            "patient_gender_name",
+            "examination_date",
+            "examination_time",
+            "examiner_first_name",
+            "examiner_last_name",
+            "endoscope_type",
+            "endoscope_sn",
+        )
+        return any(
+            (
+                (value := meta.get(key)) is not None
+                and (not isinstance(value, str) or bool(value.strip()))
+            )
+            for key in signal_keys
+        )
 
     def _process_frame_single(
         self,
@@ -689,6 +851,10 @@ class FrameCleaner:
         Returns:
             Erweiterte Metadaten-Dictionary
         """
+        if not self.use_llm:
+            logger.debug("Batch enrichment disabled because LLM is not enabled.")
+            return {}
+
         if not self.frame_collection:
             logger.warning("Keine Frame-Daten für Batch-Extraktion gesammelt")
             return {}
@@ -696,34 +862,115 @@ class FrameCleaner:
         logger.info(
             f"Extracting enriched metadata from {len(self.frame_collection)} collected frames"
         )
-        # Verwende EnrichedMetadataExtractor für Multi-Frame-Analyse
-        if not self.frame_sampling_optimizer:
-            self.frame_sampling_optimizer = FrameSamplingOptimizer()
-        if not self.ollama_extractor:
-            self.ollama_extractor = OllamaOptimizedExtractor(
-                preferred_model=settings.LLM_MODEL,
-                model_timeout=settings.LLM_TIMEOUT,
+        try:
+            # Verwende EnrichedMetadataExtractor für Multi-Frame-Analyse
+            if not self.frame_sampling_optimizer:
+                self.frame_sampling_optimizer = FrameSamplingOptimizer()
+            if not self.ollama_extractor:
+                self.ollama_extractor = OllamaOptimizedExtractor(
+                    preferred_model=settings.LLM_MODEL,
+                    model_timeout=settings.LLM_TIMEOUT,
+                )
+            if not self.enriched_extractor:
+                self.enriched_extractor = EnrichedMetadataExtractor(
+                    ollama_extractor=self.ollama_extractor,
+                    frame_optimizer=self.frame_sampling_optimizer,
+                )
+            enriched_metadata = self.enriched_extractor.extract_from_frame_sequence(
+                frames_data=self.frame_collection, ocr_texts=self.ocr_text_collection
             )
-        if not self.enriched_extractor:
-            self.enriched_extractor = EnrichedMetadataExtractor(
-                ollama_extractor=self.ollama_extractor,
-                frame_optimizer=self.frame_sampling_optimizer,
+
+            logger.info(
+                "✅ Enriched metadata extraction successful: %d fields",
+                len(enriched_metadata),
             )
-        enriched_metadata = self.enriched_extractor.extract_from_frame_sequence(
-            frames_data=self.frame_collection, ocr_texts=self.ocr_text_collection
-        )
-
-        logger.info(
-            f"✅ Enriched metadata extraction successful: {len(enriched_metadata)} fields"
-        )
-
-        return enriched_metadata
+            return enriched_metadata
+        except Exception as exc:
+            logger.warning(
+                "Batch enrichment failed softly (returning empty metadata): %s",
+                exc,
+            )
+            return {}
 
     def _reset_frame_collection(self):
         """Setzt die Frame-Sammlung für ein neues Video zurück."""
         self.frame_collection.clear()
         self.ocr_text_collection.clear()
         logger.debug("Frame collection reset for new video")
+
+    @staticmethod
+    def _frame_ranges(indices: List[int]) -> List[Tuple[int, int]]:
+        """Convert sorted frame indices into inclusive ranges."""
+        clean = sorted({int(idx) for idx in indices if int(idx) >= 0})
+        if not clean:
+            return []
+        ranges: List[Tuple[int, int]] = []
+        start = clean[0]
+        end = clean[0]
+        for value in clean[1:]:
+            if value == end + 1:
+                end = value
+                continue
+            ranges.append((start, end))
+            start = value
+            end = value
+        ranges.append((start, end))
+        return ranges
+
+    def _build_frame_drop_filters(self, frames_to_remove: List[int]) -> Tuple[str, str]:
+        """
+        Build compact ffmpeg select/aselect filters using interval-based ranges.
+        This avoids extremely long eq(n,...) chains for large frame sets.
+        """
+        clean = sorted({int(idx) for idx in frames_to_remove if int(idx) >= 0})
+        if not clean:
+            return "select='1',setpts=N/FRAME_RATE/TB", "aselect='1',asetpts=N/SR/TB"
+
+        terms: List[str] = []
+        # Keep explicit eq(...) terms for small lists to preserve existing behavior/tests.
+        if len(clean) <= 64:
+            terms = [f"eq(n\\,{idx})" for idx in clean]
+        else:
+            ranges = self._frame_ranges(clean)
+            for start, end in ranges:
+                if start == end:
+                    terms.append(f"eq(n\\,{start})")
+                else:
+                    terms.append(f"between(n\\,{start}\\,{end})")
+
+        condition = "+".join(terms)
+        vf = f"select='not({condition})',setpts=N/FRAME_RATE/TB"
+        af = f"aselect='not({condition})',asetpts=N/SR/TB"
+        return vf, af
+
+    def _build_filter_args(
+        self, vf: str, af: str
+    ) -> Tuple[List[str], List[str], List[Path]]:
+        """
+        Provide ffmpeg filter args either inline or as temporary script files
+        when expressions get too long for safe CLI handling.
+        """
+        if len(vf) + len(af) < 8000:
+            return ["-vf", vf], ["-af", af], []
+
+        script_paths: List[Path] = []
+        vf_script = self._write_filter_script(vf, "vf")
+        af_script = self._write_filter_script(af, "af")
+        script_paths.extend([vf_script, af_script])
+        return (
+            ["-filter_script:v", str(vf_script)],
+            ["-filter_script:a", str(af_script)],
+            script_paths,
+        )
+
+    @staticmethod
+    def _write_filter_script(content: str, prefix: str) -> Path:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=f".{prefix}.ffscript", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(content)
+            tmp.flush()
+            return Path(tmp.name)
 
     def _validate_roi(self, roi: Dict[str, Any]) -> bool:
         """

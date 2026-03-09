@@ -101,3 +101,24 @@ def test_from_dict_and_extra_input() -> None:
 def test_nan_handling_on_init() -> None:
     meta = SensitiveMeta(examination_time=math.nan)
     assert meta.examination_time is None
+
+
+def test_swaps_exam_and_birth_dates_when_order_is_invalid_on_init() -> None:
+    meta = SensitiveMeta(
+        patient_dob="2024-02-15",
+        examination_date="1994-03-21",
+    )
+    assert meta.patient_dob == "1994-03-21"
+    assert meta.examination_date == "2024-02-15"
+
+
+def test_safe_update_swaps_exam_and_birth_dates_when_order_is_invalid() -> None:
+    meta = SensitiveMeta()
+    meta.safe_update(
+        {
+            "patient_dob": "15.02.2024",
+            "examination_date": "21.03.1994",
+        }
+    )
+    assert meta.patient_dob == "21.03.1994"
+    assert meta.examination_date == "15.02.2024"

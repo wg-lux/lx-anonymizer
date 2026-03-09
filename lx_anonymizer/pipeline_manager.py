@@ -51,6 +51,169 @@ from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 logger = get_logger(__name__)
 
 sensitive_meta = SensitiveMeta()
+_MIME_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+    "tiff": "image/tiff",
+    "pdf": "application/pdf",
+}
+_SUPPORTED_FILE_TYPES = {"jpg", "jpeg", "png", "tiff", "pdf"}
+
+
+def _resolve_file_type(file_path: Path) -> str:
+    file_extension = file_path.suffix.lower().lstrip(".")
+    file_type = _MIME_TYPES.get(file_extension, "application/octet-stream").split("/")[
+        -1
+    ]
+    if file_type not in _SUPPORTED_FILE_TYPES:
+        raise ValueError("Invalid file type.")
+    return file_type
+
+
+def _prepare_image_paths(
+    file_path: Path, file_type: str, temp_dir: Path
+) -> Tuple[List[Path], str]:
+    image_paths: List[Path] = []
+    extracted_text = ""
+
+    if file_type == "pdf":
+        doc = pymupdf.open(file_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text()
+            if text:
+                extracted_text += text
+            pix = page.get_pixmap()
+            image_path = temp_dir / f"{uuid.uuid4()}_page_{page_num}.png"
+            pix.save(image_path)
+            image_paths.append(image_path)
+    else:
+        image_paths = [file_path]
+
+    if not image_paths:
+        error_message = "No images to process."
+        logger.error(error_message)
+        raise RuntimeError(error_message)
+
+    return image_paths, extracted_text
+
+
+def _load_device_defaults(
+    device: str, img_path: Path
+) -> Tuple[Optional[Tuple[int, int, int, int]], Optional[Tuple[int, int, int, int]], Tuple[int, int, int]]:
+    try:
+        first_name_box, last_name_box = read_name_boxes(device)
+        background_color = read_background_color(device)
+    except Exception:
+        logger.warning("Using default values for name replacement.")
+        first_name_box, last_name_box = None, None
+        background_color = get_dominant_color(cv2.imread(str(img_path)))
+    return first_name_box, last_name_box, background_color
+
+
+def _run_llm_image_analysis(img_path: Path) -> Dict:
+    logger.info("Skipping blur, running LLM analysis on image")
+    extractor = OllamaOptimizedExtractor()
+
+    try:
+        image = Image.open(img_path).convert("RGB")
+        ocr_text = pytesseract.image_to_string(image)
+    except Exception as e:
+        logger.warning(f"Failed to extract OCR text: {e}")
+        ocr_text = ""
+
+    if not ocr_text:
+        return {}
+
+    llm_metadata = extractor.extract_metadata(ocr_text)
+    if not llm_metadata:
+        return {}
+
+    sensitive_meta.safe_update(llm_metadata)
+    return sensitive_meta.to_dict()
+
+
+def _detect_combined_text_boxes(
+    img_path: Path,
+    east_path: str,
+    min_confidence: float,
+    width: int,
+    height: int,
+) -> List[Tuple[int, int, int, int]]:
+    east_boxes, _ = east_text_detection(img_path, east_path, min_confidence, width, height)
+    tesseract_boxes, _ = tesseract_text_detection(
+        img_path, min_confidence, width, height
+    )
+    craft_boxes, _ = craft_text_detection(img_path, min_confidence, width, height)
+    return east_boxes + tesseract_boxes + craft_boxes
+
+
+def _run_ocr_for_boxes(
+    img_path: Path, combined_boxes: List[Tuple[int, int, int, int]]
+) -> Tuple[List[Tuple[str, Tuple[int, int, int, int]]], List[float]]:
+    logger.info("Running OCR on boxes")
+    trocr_results, trocr_confidences = trocr_on_boxes(img_path, combined_boxes)
+    tesseract_results, tess_confidences = tesseract_on_boxes(img_path, combined_boxes)
+
+    all_ocr_results = trocr_results + tesseract_results
+    all_ocr_confidences = trocr_confidences + tess_confidences
+    all_ocr_results = filter_empty_boxes(all_ocr_results)
+    return all_ocr_results, all_ocr_confidences
+
+
+def _write_ner_csv(
+    csv_dir: Path, file_path: Path, combined_results: List[Tuple[str, Tuple[int, int, int, int], float, List[Tuple[str, str]]]]
+) -> Path:
+    csv_path = csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
+    with open(csv_path, mode="w", newline="", encoding="utf-8") as csv_file:
+        fieldnames = [
+            "filename",
+            "startX",
+            "startY",
+            "endX",
+            "endY",
+            "text",
+            "phrase_box",
+            "ocr_confidence",
+            "entity_text",
+            "entity_tag",
+        ]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for combined_result in combined_results:
+            phrase, phrase_box, ocr_confidence, entities = combined_result
+            startX, startY, endX, endY = phrase_box
+            for entity_text, entity_tag in entities:
+                writer.writerow(
+                    {
+                        "filename": file_path,
+                        "startX": startX,
+                        "startY": startY,
+                        "endX": endX,
+                        "endY": endY,
+                        "text": phrase,
+                        "phrase_box": phrase_box,
+                        "ocr_confidence": ocr_confidence,
+                        "entity_text": entity_text,
+                        "entity_tag": entity_tag,
+                    }
+                )
+    return csv_path
+
+
+def _save_final_blurred_image(blurred_image_path: Optional[Path]) -> None:
+    if blurred_image_path is None:
+        return
+    output_filename = f"blurred_image_{uuid.uuid4()}.jpg"
+    blur_dir = create_blur_directory()
+    output_path = Path(blur_dir) / output_filename
+    final_image = cv2.imread(str(blurred_image_path))
+    cv2.imwrite(str(output_path), final_image)
+    logger.info(f"Final blurred image saved to: {output_path}")
 
 
 def process_images_with_OCR_and_NER(
@@ -84,92 +247,32 @@ def process_images_with_OCR_and_NER(
     - skip_reassembly: bool
         Skip reassembling the PDF after processing. Default is False.
     """
+    file_path = Path(file_path)
     temp_dir, base_dir, csv_dir = create_temp_directory()
+    temp_dir = Path(temp_dir)
+    csv_dir = Path(csv_dir)
     logger.info(f"Processing file: {file_path}")
     modified_images_map = {}
     combined_results = []
     names_detected = []
     gender_pars = []
+    llm_results = {}
 
     try:
-        file_extension = file_path.suffix.lower().lstrip(
-            "."
-        )  # lstrip removes the leading '.'
-        mime_types = {
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "png": "image/png",
-            "gif": "image/gif",
-            "bmp": "image/bmp",
-            "tiff": "image/tiff",
-            "pdf": "application/pdf",
-        }
-        file_type = mime_types.get(file_extension, "application/octet-stream").split(
-            "/"
-        )[-1]
-
-        if file_type not in ["jpg", "jpeg", "png", "tiff", "pdf"]:
-            raise ValueError("Invalid file type.")
-
-        image_paths = []
-        extracted_text = ""
-
-        if file_type == "pdf":
-            # Open PDF using pymupdf
-            doc = pymupdf.open(file_path)
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                text = page.get_text()
-                if text:
-                    extracted_text += text
-                pix = page.get_pixmap()
-                image_path = Path(temp_dir) / f"{uuid.uuid4()}_page_{page_num}.png"
-                pix.save(image_path)
-                image_paths.append(image_path)
-        else:
-            image_paths = [file_path]
-
-        if not image_paths:
-            error_message = "No images to process."
-            logger.error(error_message)
-            raise RuntimeError(error_message)
+        file_type = _resolve_file_type(file_path)
+        image_paths, extracted_text = _prepare_image_paths(file_path, file_type, temp_dir)
 
         blurred_image_path = image_paths[0]
         for img_path in image_paths:
             logger.info(f"Processing image: {img_path}")
             full_text, word_boxes = tesseract_full_image_ocr(img_path)
-            try:
-                first_name_box, last_name_box = read_name_boxes(device)
-                background_color = read_background_color(device)
-            except Exception:
-                logger.warning("Using default values for name replacement.")
-                first_name_box, last_name_box = None, None
-                background_color = get_dominant_color(cv2.imread(str(img_path)))
+            first_name_box, last_name_box, background_color = _load_device_defaults(
+                device, img_path
+            )
 
             # Handle LLM analysis of the image
             if skip_blur:
-                logger.info("Skipping blur, running LLM analysis on image")
-                # Create OllamaOptimizedExtractor instance
-                extractor = OllamaOptimizedExtractor()
-
-                # Extract text from image for LLM analysis
-                try:
-                    image = Image.open(img_path).convert("RGB")
-                    ocr_text = pytesseract.image_to_string(image)
-                except Exception as e:
-                    logger.warning(f"Failed to extract OCR text: {e}")
-                    ocr_text = ""
-
-                # Use LLM to analyze the extracted text
-                if ocr_text:
-                    llm_metadata = extractor.extract_metadata(ocr_text)
-                    if llm_metadata:
-                        sensitive_meta.safe_update(llm_metadata)
-                        llm_results = sensitive_meta.to_dict()
-                    else:
-                        llm_results = {}
-                else:
-                    llm_results = {}
+                llm_results = _run_llm_image_analysis(img_path)
 
             logger.info(
                 f"LLM image analysis results: {len(llm_results) if llm_results else 0} entities"
@@ -185,30 +288,12 @@ def process_images_with_OCR_and_NER(
                         blurred_image_path, last_name_box, background_color
                     )
 
-            east_boxes, east_confidences_json = east_text_detection(
+            combined_boxes = _detect_combined_text_boxes(
                 img_path, east_path, min_confidence, width, height
             )
-            tesseract_boxes, tesseract_confidences_json = tesseract_text_detection(
-                img_path, min_confidence, width, height
-            )
-            craft_boxes, craft_confidences_json = craft_text_detection(
-                img_path, min_confidence, width, height
-            )
-            combined_boxes = east_boxes + tesseract_boxes + craft_boxes
-
-            logger.info("Running OCR on boxes")
-            trocr_results, trocr_confidences = trocr_on_boxes(img_path, combined_boxes)
-            tesseract_results, tess_confidences = tesseract_on_boxes(
+            all_ocr_results, all_ocr_confidences = _run_ocr_for_boxes(
                 img_path, combined_boxes
             )
-
-            all_ocr_results = trocr_results + tesseract_results
-            all_ocr_confidences = trocr_confidences + tess_confidences
-            # east_confidences = json.loads(east_confidences_json)
-            # tesseract_confidences = json.loads(tesseract_confidences_json)
-            # craft_confidences = json.loads(craft_confidences_json)
-
-            all_ocr_results = filter_empty_boxes(all_ocr_results)
 
             for (phrase, phrase_box), ocr_confidence in zip(
                 all_ocr_results, all_ocr_confidences
@@ -240,46 +325,7 @@ def process_images_with_OCR_and_NER(
                 )
                 gender_pars.extend(updated_genders)
 
-        # Prepare CSV writing
-        csv_path = (
-            csv_dir
-            / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
-        )
-        with open(csv_path, mode="w", newline="", encoding="utf-8") as csv_file:
-            fieldnames = [
-                "filename",
-                "startX",
-                "startY",
-                "endX",
-                "endY",
-                "text",
-                "phrase_box",
-                "ocr_confidence",
-                "entity_text",
-                "entity_tag",
-            ]
-            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-
-            writer.writeheader()
-
-            for combined_result in combined_results:
-                phrase, phrase_box, ocr_confidence, entities = combined_result
-                startX, startY, endX, endY = phrase_box
-                for entity_text, entity_tag in entities:
-                    writer.writerow(
-                        {
-                            "filename": file_path,
-                            "startX": startX,
-                            "startY": startY,
-                            "endX": endX,
-                            "endY": endY,
-                            "text": phrase,
-                            "phrase_box": phrase_box,
-                            "ocr_confidence": ocr_confidence,
-                            "entity_text": entity_text,
-                            "entity_tag": entity_tag,
-                        }
-                    )
+        csv_path = _write_ner_csv(csv_dir, file_path, combined_results)
 
         logger.info(f"NER results saved to {csv_path}")
 
@@ -295,12 +341,7 @@ def process_images_with_OCR_and_NER(
 
         # If not skipping blur and we have a blurred image path
         if not skip_blur and blurred_image_path is not None:
-            output_filename = f"blurred_image_{uuid.uuid4()}.jpg"
-            blur_dir = create_blur_directory()
-            output_path = Path(blur_dir) / output_filename
-            final_image = cv2.imread(str(blurred_image_path))
-            cv2.imwrite(str(output_path), final_image)
-            logger.info(f"Final blurred image saved to: {output_path}")
+            _save_final_blurred_image(blurred_image_path)
 
         # Always run LLM analysis and add results
         result["llm_results"] = llm_results

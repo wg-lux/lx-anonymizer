@@ -45,7 +45,7 @@ class MaskApplication:
 
         Args:
             input_video: Path to input video file
-            mask_config: Dictionary containing mask coordinates
+            mask_config: Dictionary containing mask coordinates (endoscope_image_* or x/y/width/height)
             output_video: Path for output masked video
             use_named_pipe: Whether to use named pipes for streaming (currently not implemented)
 
@@ -57,9 +57,32 @@ class MaskApplication:
             logger.debug("Named pipe functionality requested but not yet implemented")
 
         try:
+            mask_config = mask_config or {}
+            normalized_config = dict(mask_config)
+            if (
+                normalized_config.get("endoscope_image_x") is None
+                and normalized_config.get("x") is not None
+            ):
+                normalized_config["endoscope_image_x"] = normalized_config["x"]
+            if (
+                normalized_config.get("endoscope_image_y") is None
+                and normalized_config.get("y") is not None
+            ):
+                normalized_config["endoscope_image_y"] = normalized_config["y"]
+            if (
+                normalized_config.get("endoscope_image_width") is None
+                and normalized_config.get("width") is not None
+            ):
+                normalized_config["endoscope_image_width"] = normalized_config["width"]
+            if (
+                normalized_config.get("endoscope_image_height") is None
+                and normalized_config.get("height") is not None
+            ):
+                normalized_config["endoscope_image_height"] = normalized_config["height"]
+
             # Use default config if not provided or merge with defaults
             effective_config = self.default_mask_config.copy()
-            for key, value in mask_config.items():
+            for key, value in normalized_config.items():
                 if value is not None:
                     effective_config[key] = value
 
