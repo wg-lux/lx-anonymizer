@@ -47,9 +47,13 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 pip install lx-anonymizer
 ```
 
-Install extras to tailor the footprint:
+Install extras only when you need the corresponding feature set:
 ```bash
-pip install "lx-anonymizer[gpu,ocr,llm,dev]"
+pip install "lx-anonymizer[ocr]"      # TrOCR, tesserocr, CRAFT helpers
+pip install "lx-anonymizer[llm]"      # Ollama client helpers
+pip install "lx-anonymizer[nlu]"      # Flair NER
+pip install "lx-anonymizer[django]"   # Django integration
+pip install "lx-anonymizer[dev]"      # local development tooling
 ```
 
 ### From source
@@ -71,7 +75,7 @@ Settings are loaded from environment variables and an optional `.env` file. See
 [`SETTINGS.md`](SETTINGS.md) for a quick overview and example configuration.
 
 ## Model downloads
-After installation, the pipeline should handle model downloads automatically. If not, fetch the German spaCy model or any other version you desire:
+After installation, fetch the German spaCy model used by the report pipeline:
 ```bash
 python -m spacy download de_core_news_lg
 ```
@@ -83,37 +87,29 @@ ollama run llama-3.2
 ```
 Caution: This is only recommended on devices with sufficient gpu capabilities
 
-First CLI runs also download OCR checkpoints (EAST, TrOCR, etc.). For air-gapped deployments, grab the archives listed in [`lx_anonymizer/settings.py`](lx_anonymizer/settings.py) and place them in `~/.cache/lx-anonymizer`.
+The EAST detector now downloads on first use, not on import. TrOCR and other optional OCR assets download only when those paths are exercised. For air-gapped deployments, pre-seed the required model files before running the relevant pipeline steps.
 
 ## Quickstart
 
 ### CLI Usage
 
-#### Report Processing
+#### Image / PDF Pipeline
 ```bash
-# Process a single medical report
-python -m cli.report_reader process report.pdf --ensemble --output-dir ./anonymized
+# Process a single image or PDF with the packaged console script
+lx-anonymizer -i report.pdf
 
-# Use LLM for enhanced metadata extraction
-python -m cli.report_reader process report.pdf --llm-extractor deepseek --use-ocr
+# Use a custom EAST model and device profile
+lx-anonymizer -i frame.png -east /models/frozen_east_text_detection.pb -d olympus_cv_1500
 
-# Batch process multiple reports
-python -m cli.report_reader batch /path/to/reports/ --output-dir ./output --max-files 10
-```
-
-#### Video Frame Cleaning
-```bash
-# Clean a single video file
-python -m lx_anonymizer.cli.frame_cleaner_cli clean video.mp4 --output-dir ./cleaned
-
-# Batch clean multiple videos
-python -m lx_anonymizer.cli.frame_cleaner_cli batch /path/to/videos/ --output-dir ./output
+# Return validation metadata in addition to the output path
+lx-anonymizer -i report.pdf -V
 ```
 
 **Useful CLI options:**
-- `--llm-extractor {deepseek,medllama,llama3}` for LLM-powered metadata extraction.
-- `--use-ocr` and `--ensemble` to switch OCR strategies.
-- `batch` and `extract` sub-commands for folder processing or metadata-only runs.
+- `-d/--device` selects the device profile used for ROI handling.
+- `-c/--min-confidence`, `-w/--width`, and `-e/--height` tune EAST detection.
+- `-V/--validation` returns extra validation metadata.
+- `python -m lx_anonymizer.cli --help` shows the same CLI help as `lx-anonymizer --help`.
 
 ### Python API
 
@@ -170,7 +166,7 @@ cleaned_path, metadata = cleaner.clean_video(
 )
 ```
 
-See [`tests/test_cli_integration.py`](tests/test_cli_integration.py) and [`tests/test_frame_cleaner.py`](tests/test_frame_cleaner.py) for more examples.
+See [`tests/test_report_reader_init.py`](tests/test_report_reader_init.py) and [`tests/test_frame_cleaner.py`](tests/test_frame_cleaner.py) for concrete usage patterns.
 
 ## Advanced Features
 
@@ -219,8 +215,8 @@ By default, outputs live in `~/etc/lx-anonymizer/{data,temp}`. Adjust them in [`
 
 ## Project roadmap
 1. **Release Management**:
-   - Publish CPU-only wheel to TestPyPI
-   - Add optional extras for GPU/LLM workloads and slim default install
+   - Publish the slim base wheel to TestPyPI/PyPI
+   - Continue separating optional GPU/LLM workloads behind extras
    - Automate release workflow (wheel + sdist upload, GitHub release notes)
 2. **API Enhancement**:
    - Expose REST/gRPC service with validation UI
@@ -243,5 +239,4 @@ Released under the [MIT License](LICENSE).
 
 ## Contact
 Questions? Email lux@coloreg.de .
-
 

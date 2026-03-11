@@ -21,7 +21,7 @@ This guide describes how to cut a new release to PyPI and GitHub.
    - Update `CHANGELOG.md`:
      - Move items from `[Unreleased]` into a new section `[vX.Y.Z] - YYYY-MM-DD`.
      - Add an empty `[Unreleased]` header.
-   - Verify `README.md` references the correct version if applicable.
+   - Verify `README.md` install extras and CLI examples still match the package.
 
 3. **Run preflight checks**
    ```bash
@@ -29,13 +29,14 @@ This guide describes how to cut a new release to PyPI and GitHub.
    uv run flake8
    uv run pytest -m "not gpu"
    uv run python -m build
+   uv run python -m twine check dist/*
    ```
    Optionally run GPU/LLM markers if the change affects those paths.
 
 4. **Test the wheel locally**
    ```bash
    uv pip install dist/lx_anonymizer-<version>-py3-none-any.whl
-   uv run python -m cli.report_reader --help
+   uv run lx-anonymizer --help
    ```
 
 5. **Publish to TestPyPI (optional but recommended)**
@@ -81,6 +82,7 @@ This guide describes how to cut a new release to PyPI and GitHub.
 ## Troubleshooting
 - **Build failures**: Delete `dist/` and `build/`, reinstall dependencies, re-run `python -m build`.
 - **Missing assets**: Ensure `MANIFEST.in` covers all required data files (`names_dict/`, `devices/`).
+- **OpenCV import errors on headless hosts**: keep `opencv-python-headless` in the base dependency set unless a GUI dependency is truly required.
 - **PyPI upload permission denied**: Regenerate the API token and update the GitHub secret.
 
 Feel free to automate additional steps as the release process matures.

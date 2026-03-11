@@ -1,10 +1,8 @@
-from typing import List, Tuple  # Added List, Tuple, Any
+from typing import Any, List, Tuple
 
 import numpy as np
 import pytesseract
-import torch
 from PIL import Image
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 # Import CRAFT text detection if available (requires hezar)
 try:
@@ -20,32 +18,58 @@ except ImportError:
             "CRAFT text detection requires 'hezar' package. Install with: pip install lx-anonymizer[llm]"
         )
 
-
-from lx_anonymizer.ollama.model_service import model_service
 from lx_anonymizer.region_processing.region_detector import \
     expand_roi  # Ensure this module is correctly referenced
 from lx_anonymizer.setup.custom_logger import get_logger
 
-# Import optimized tesserocr if available
-try:
-    TESSEROCR_AVAILABLE = True
-    logger = get_logger(__name__)
-    logger.info("TesseOCR available - using optimized OCR processing")
-except ImportError as e:
-    TESSEROCR_AVAILABLE = False
-    logger = get_logger(__name__)
-    logger.warning(f"TesseOCR not available ({e}), falling back to pytesseract")
-
 logger = get_logger(__name__)
-# At the start of your script
-if torch.cuda.is_available():
-    logger.info(f"CUDA version: {torch.version.cuda}")
-    logger.info(f"GPU Device: {torch.cuda.get_device_name(0)}")
-    logger.info(f"Number of GPUs: {torch.cuda.device_count()}")
+
+try:
+    import torch
+
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
+
+try:
+    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TrOCRProcessor = VisionEncoderDecoderModel = None
+    TRANSFORMERS_AVAILABLE = False
+
+try:
+    import tesserocr  # noqa: F401
+
+    TESSEROCR_AVAILABLE = True
+except ImportError:
+    TESSEROCR_AVAILABLE = False
+
+
+def _trocr_dependencies_available() -> bool:
+    return TORCH_AVAILABLE and TRANSFORMERS_AVAILABLE
+
+
+def _get_model_service():
+    if not _trocr_dependencies_available():
+        return None
+    try:
+        from lx_anonymizer.ollama.model_service import model_service
+
+        return model_service
+    except ImportError:
+        return None
 
 
 def preload_models():
     global processor, model, device
+
+    if not _trocr_dependencies_available():
+        raise ImportError(
+            "TrOCR dependencies are not installed. Install with: pip install lx-anonymizer[ocr]"
+        )
 
     logger.info("Preloading models...")
 
@@ -74,13 +98,13 @@ def preload_models():
 
 def cleanup_gpu():
     """Clean up GPU memory"""
-    if torch.cuda.is_available():
+    if TORCH_AVAILABLE and torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
 
 
 def print_gpu_info():
-    if torch.cuda.is_available():
+    if TORCH_AVAILABLE and torch.cuda.is_available():
         logger.info(f"GPU Memory used: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
         logger.info(f"GPU Memory cached: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
         cudasupport = True
@@ -156,7 +180,12 @@ def trocr_full_image_ocr(image_input):
             return ""
 
     # 2) Modelle laden
-    processor, model, tokenizer, device = model_service.load_trocr_model()
+    service = _get_model_service()
+    if service is None:
+        logger.info("TrOCR dependencies unavailable, falling back to Tesseract")
+        return pytesseract.image_to_string(pil_img, config="--psm 6").strip()
+
+    processor, model, tokenizer, device = service.load_trocr_model()
     if processor is None or model is None:
         logger.warning("TrOCR model not available, falling back to Tesseract")
         return pytesseract.image_to_string(pil_img, config="--psm 6").strip()
@@ -183,7 +212,14 @@ def trocr_full_image_ocr_on_boxes(image_path):
     Perform OCR on the entire image using TrOCR.
     """
     # Lade Modelle vom Service anstatt von preload_models
-    processor, model, tokenizer, device = model_service.load_trocr_model()
+    service = _get_model_service()
+    if service is None:
+        logger.info("TrOCR dependencies unavailable, falling back to tesseract")
+        image = Image.open(image_path).convert("RGB")
+        full_text = pytesseract.image_to_string(image, config="--psm 6")
+        return full_text.strip()
+
+    processor, model, tokenizer, device = service.load_trocr_model()
 
     # Behandle Fehler, wenn Modelle nicht geladen werden konnten
     if processor is None or model is None or tokenizer is None:
@@ -246,6 +282,10 @@ def trocr_on_boxes(
     List[Tuple[str, Tuple[int, int, int, int]]], List[float]
 ]:  # Corrected return type hint
     try:
+        if not _trocr_dependencies_available():
+            logger.info("TrOCR dependencies unavailable, falling back to pytesseract")
+            return tesseract_on_boxes_pytesseract(image_path, boxes)
+
         if hasattr(image_path, "convert"):
             image = image_path.convert("RGB")
         else:
@@ -274,7 +314,7 @@ def trocr_on_boxes(
                 cropped_image = image.crop((startX_exp, startY_exp, endX_exp, endY_exp))
 
                 # Process the cropped image using the processor
-                if cudasupport:
+                if cudasupport and TORCH_AVAILABLE:
                     # Use CUDA with automatic mixed precision
                     with torch.amp.autocast(device_type="cuda"):
                         pixel_values = processor(

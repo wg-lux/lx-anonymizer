@@ -1,10 +1,6 @@
-from flair.data import Sentence
-from flair.models import SequenceTagger
-
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
-# Load the NER tagger once at module level
 """
 Flair NER Tagger
 This script loads a Flair Named Entity Recognition (NER) tagger for German text.
@@ -13,25 +9,49 @@ or Person Tag is found.
 input: text (str) - The text to be analyzed for entities.
 output: entities (List) - A list of entities found in the text.
 """
+
+tagger = None
+_flair_import_error = None
+
 try:
-    logger.info("Loading Flair German NER tagger...")
-    tagger = SequenceTagger.load("flair/ner-german")  # Use the correct model name
-    logger.info("Flair German NER tagger loaded successfully.")
-except Exception as e:
-    logger.error(f"Failed to load Flair German NER tagger: {e}")
-    tagger = None
+    from flair.data import Sentence
+    from flair.models import SequenceTagger
+except ImportError as exc:
+    Sentence = None
+    SequenceTagger = None
+    _flair_import_error = exc
+
+
+def _get_tagger():
+    global tagger
+    if tagger is not None:
+        return tagger
+    if SequenceTagger is None:
+        logger.info(
+            "Flair is not installed. Install with: pip install lx-anonymizer[nlp]"
+        )
+        return None
+    try:
+        logger.info("Loading Flair German NER tagger...")
+        tagger = SequenceTagger.load("flair/ner-german")
+        logger.info("Flair German NER tagger loaded successfully.")
+        return tagger
+    except Exception as e:
+        logger.error(f"Failed to load Flair German NER tagger: {e}")
+        return None
 
 
 def flair_NER_German(text):
     if not isinstance(text, str):
         logger.error(f"Expected a string, but got {type(text)}")
         return None
-    if tagger is None:
+    active_tagger = _get_tagger()
+    if active_tagger is None or Sentence is None:
         logger.error("NER tagger is not loaded.")
         return None
     try:
         sentence = Sentence(text)
-        tagger.predict(sentence)
+        active_tagger.predict(sentence)
         entities = sentence.get_spans("ner")
         if entities:
             logger.info("The following NER tags are found:")

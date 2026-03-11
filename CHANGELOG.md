@@ -6,15 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 ### Added
-- Community docs: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `RELEASING.md` (in progress)
-- Packaging assets included via `MANIFEST.in`
-- Updated README with quickstart, installation matrix, and roadmap
+- None yet
 
 ### Changed
-- Repository hygiene improvements: new MIT `LICENSE`, cleaned `.gitignore`
+- None yet
 
 ### Fixed
 - None yet
+
+## [0.9.0.4] - 2026-03-11
+### Added
+- Packaged console entry point `lx-anonymizer`
+- Optional extras split for OCR, LLM, Flair NER, Django, and development tooling
+
+### Changed
+- Slimmed default dependency set for PyPI installs
+- Switched base OpenCV dependency to `opencv-python-headless`
+- Updated README and release instructions to match shipped extras and CLI
+
+### Fixed
+- Removed EAST model download on import
+- Avoided heavyweight OCR/NER initialization during package import
+- Excluded generated reports, backup files, and unused scripts from release artifacts
 
 ## [0.8.0] - 2024-12-30
 ### Added
@@ -39,5 +52,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Fixed
 - Stabilized TesserOCR fallback and directory creation errors
 
-[Unreleased]: https://github.com/wg-lux/lx-anonymizer/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/wg-lux/lx-anonymizer/compare/v0.9.0.4...HEAD
+[0.9.0.4]: https://github.com/wg-lux/lx-anonymizer/releases/tag/v0.9.0.4
 [0.8.0]: https://github.com/wg-lux/lx-anonymizer/releases/tag/v0.8.0

@@ -4,13 +4,24 @@ from pathlib import Path
 import fitz
 
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
-from lx_anonymizer.ocr.ocr_tesserocr import tesseract_on_boxes_fast
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 
 
 logger = get_logger(__name__)
+
+
+def _ocr_text_on_boxes(image, text_boxes, language="deu+eng"):
+    try:
+        from lx_anonymizer.ocr.ocr_tesserocr import tesseract_on_boxes_fast
+
+        return tesseract_on_boxes_fast(image, text_boxes, language=language)
+    except ImportError:
+        from lx_anonymizer.ocr.ocr import tesseract_on_boxes_pytesseract
+
+        logger.info("tesserocr not available; falling back to pytesseract OCR")
+        return tesseract_on_boxes_pytesseract(image, text_boxes)
 
 
 class Anonymizer:
@@ -88,7 +99,7 @@ class Anonymizer:
 
                     # Step 2: Use TesseOCR for fast and accurate text extraction
                     logger.debug(f"Running TesseOCR on {len(text_boxes)} boxes")
-                    text_with_boxes, ocr_confidences = tesseract_on_boxes_fast(
+                    text_with_boxes, ocr_confidences = _ocr_text_on_boxes(
                         image,  # Use PIL image directly
                         text_boxes,
                         language="deu+eng",
@@ -226,7 +237,7 @@ class Anonymizer:
 
                 # Step 2: OCR within detected boxes
                 logger.debug(f"Running TesseOCR on {len(text_boxes)} boxes")
-                text_with_boxes, ocr_confidences = tesseract_on_boxes_fast(
+                text_with_boxes, ocr_confidences = _ocr_text_on_boxes(
                     image, text_boxes, language="deu+eng"
                 )
 

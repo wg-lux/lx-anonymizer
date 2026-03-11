@@ -2,23 +2,20 @@
 LX Anonymizer package for anonymizing medical reports and images.
 """
 
-# Make all modules directly importable from this package
-from lx_anonymizer.frame_cleaner import FrameCleaner
-from lx_anonymizer.report_reader import ReportReader
+from importlib import import_module
 
-# Import ollama_llm if available (requires ollama)
-try:
-    from lx_anonymizer.ollama import ollama_llm
+__all__ = ["ReportReader", "FrameCleaner", "ollama_llm"]
 
-    _ollama_available = True
-except ImportError:
-    _ollama_available = False
-    ollama_llm = None
 
-__all__ = [
-    "ReportReader",
-    "FrameCleaner",
-]
+def __getattr__(name: str):
+    if name == "FrameCleaner":
+        from lx_anonymizer.frame_cleaner import FrameCleaner
 
-if _ollama_available:
-    __all__.append("ollama_llm")
+        return FrameCleaner
+    if name == "ReportReader":
+        from lx_anonymizer.report_reader import ReportReader
+
+        return ReportReader
+    if name == "ollama_llm":
+        return import_module("lx_anonymizer.ollama.ollama_llm")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

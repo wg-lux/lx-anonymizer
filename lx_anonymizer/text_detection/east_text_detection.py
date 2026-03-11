@@ -1,15 +1,17 @@
 # import the necessary packages
-from imutils.object_detection import non_max_suppression
-import numpy as np
-import cv2
 import json
-from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
-from lx_anonymizer.setup.directory_setup import create_temp_directory, create_model_directory
-from lx_anonymizer.setup.custom_logger import get_logger
-from pathlib import Path
-import certifi
-import urllib.request
 import ssl
+import urllib.request
+from pathlib import Path
+
+import certifi
+import cv2
+import numpy as np
+from imutils.object_detection import non_max_suppression
+
+from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.setup.directory_setup import create_model_directory
 
 logger = get_logger(__name__)
 
@@ -26,38 +28,33 @@ TO-DO
 # Define the URL to download the frozen EAST model from GitHub
 MODEL_URL = "https://github.com/ZER-0-NE/EAST-Detector-for-text-detection-using-OpenCV/raw/master/frozen_east_text_detection.pb"
 
-# Create or use the existing temp directory and define the model path
-temp_dir, base_dir, csv_dir = create_temp_directory()
-model_dir = create_model_directory()
+def _default_east_model_path() -> Path:
+    return Path(create_model_directory()) / "frozen_east_text_detection.pb"
 
-# At the top level, after creating model_dir
-east_model_path = Path(model_dir) / "frozen_east_text_detection.pb"
-# Download once when module loads
 
-if not east_model_path.exists():
+def _ensure_east_model(east_path: str | Path | None = None) -> Path:
+    resolved_path = Path(east_path) if east_path is not None else _default_east_model_path()
+    if resolved_path.exists():
+        return resolved_path
+
+    logger.info("Model not found. Downloading EAST model to %s...", resolved_path)
     try:
-        logger.info(
-            f"Model not found. Downloading EAST model to {str(east_model_path)}..."
-        )
-        # Create SSL context with certifi's certificates
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
         ssl_context = ssl.create_default_context(cafile=certifi.where())
-
         with urllib.request.urlopen(MODEL_URL, context=ssl_context) as response:
-            east_model_path.write_bytes(response.read())
+            resolved_path.write_bytes(response.read())
         logger.debug("Download complete.")
-    except Exception as e:
-        logger.error(f"Error downloading the model: {e}")
-        raiselogger = get_logger(__name__)
+        return resolved_path
+    except Exception as exc:
+        logger.error("Error downloading the model: %s", exc)
+        raise
 
 
 def east_text_detection(
     image_path, east_path=None, min_confidence=0.6, width=320, height=320
 ):
-    if east_path is None:
-        east_path = str(east_model_path)  # Convert to string for cv2
-
-    if not Path(east_path).exists():
-        raise FileNotFoundError(f"EAST model not found at: {east_path}")
+    east_model_path = _ensure_east_model(east_path)
+    east_path = str(east_model_path)
 
     logger.debug(
         f"Using EAST model at: {east_path} (size: {Path(east_path).stat().st_size} bytes)"
