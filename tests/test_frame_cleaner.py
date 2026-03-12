@@ -161,8 +161,8 @@ class TestFrameCleanerRefactored:
 
             # 4. Verify Metadata Persistence
             assert "patient_first_name" in meta
-            # Safe update usually keeps the last seen value or merges
-            assert meta["patient_last_name"] == "Doe"
+            # Fill-only semantics preserve the first nonblank value.
+            assert meta["patient_last_name"] == "Smith"
 
     def test_sampling_logic_long_video(self, frame_cleaner: FrameCleaner) -> None:
         """

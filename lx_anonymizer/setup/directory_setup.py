@@ -37,9 +37,6 @@ To change the default installation paths, update these variables:
 #
 # CHANGE THIS IF YOU WANT TO USE A DIFFERENT DIRECTORY
 
-
-logger = get_logger(__name__)
-
 default_main_directory = Path("./data/")
 default_temp_directory = Path("./temp/")
 
@@ -126,7 +123,7 @@ def create_results_directory(default_main_directory: Optional[Path] = None) -> P
         logger.debug("Using default blur directory settings")
         return results_dir  # Add return here
     else:
-        logger.info(f"Creating blur directory, directory at {results_dir} not found")
+        logger.info(f"Creating results directory, directory at {results_dir} not found")
         results_dir = Path(default_main_directory) / "results"
         create_directories([results_dir])
         logger.debug(f"Anonymization results directory created at {results_dir}")
@@ -161,8 +158,8 @@ def create_model_directory(default_main_directory: Optional[Path] = None) -> Pat
 
 
 def create_temp_directory(
-    default_temp_directory: Optional[Path] = default_temp_directory,
-    default_main_directory: Optional[Path] = default_main_directory,
+    default_temp_directory: Optional[Path] = None,
+    default_main_directory: Optional[Path] = None,
 ) -> tuple[Path, Path, Path]:
     """
     Creates 'temp' and 'csv' directories in the given temp and main directories.

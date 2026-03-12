@@ -2,21 +2,24 @@ import math
 
 import pytest
 from pydantic import BaseModel
+from pydantic import ValidationError
 
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 
 def test_init_normalizes_blanks_and_trims() -> None:
-    meta = SensitiveMeta(
-        patient_first_name="  John  ",
-        patient_last_name="Doe",
-        casenumber="n/a",
-        patient_dob="",
-        examination_time=float("nan"),
-        text=[],
-        anonymized_text={},
-        endoscope_sn="UNKNOWN",
-        extra_field="ignored",
+    meta = SensitiveMeta.model_validate(
+        {
+            "patient_first_name": "  John  ",
+            "patient_last_name": "Doe",
+            "casenumber": "n/a",
+            "patient_dob": "",
+            "examination_time": float("nan"),
+            "text": [],
+            "anonymized_text": {},
+            "endoscope_sn": "UNKNOWN",
+            "extra_field": "ignored",
+        }
     )
 
     assert meta.patient_first_name == "John"
@@ -122,3 +125,100 @@ def test_safe_update_swaps_exam_and_birth_dates_when_order_is_invalid() -> None:
     )
     assert meta.patient_dob == "21.03.1994"
     assert meta.examination_date == "15.02.2024"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("unknown", None),
+        ("UNDEFINED", None),
+        ("Null", None),
+        (" none ", None),
+        ("NA", None),
+        ("-", None),
+        (" value ", "value"),
+    ],
+)
+def test_normalize_and_clean_handles_null_equivalents(raw: str, expected: str | None) -> None:
+    meta = SensitiveMeta(patient_first_name=raw)
+    assert meta.patient_first_name == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2024-01-31", "2024-01-31"),
+        ("31.01.2024", "2024-01-31"),
+        ("31.01.24", "2024-01-31"),
+        ("31/01/2024", "2024-01-31"),
+        ("31-01-2024", "2024-01-31"),
+        ("2024/01/31", "2024-01-31"),
+    ],
+)
+def test_parse_date_like_supports_all_configured_formats(
+    raw: str, expected: str
+) -> None:
+    parsed = SensitiveMeta._parse_date_like(raw)
+    assert parsed is not None
+    assert parsed.isoformat() == expected
+
+
+def test_parse_date_like_rejects_unrecognized_format() -> None:
+    assert SensitiveMeta._parse_date_like("01-31-2024") is None
+
+
+def test_parse_date_like_uses_cached_results_for_repeated_inputs() -> None:
+    SensitiveMeta._parse_date_like_cached.cache_clear()
+    first = SensitiveMeta._parse_date_like("2024-01-31")
+    second = SensitiveMeta._parse_date_like("2024-01-31")
+    assert first is second
+
+    cache_info = SensitiveMeta._parse_date_like_cached.cache_info()
+    assert cache_info.hits >= 1
+
+
+def test_date_order_swap_only_applies_when_both_dates_are_parseable() -> None:
+    meta = SensitiveMeta(patient_dob="2024-01-31", examination_date="not-a-date")
+    assert meta.patient_dob == "2024-01-31"
+    assert meta.examination_date == "not-a-date"
+
+
+def test_type_validation_rejects_non_string_scalars_after_preprocessing() -> None:
+    with pytest.raises(ValidationError):
+        SensitiveMeta(patient_first_name=["Alice"])
+
+
+def test_safe_update_is_validation_gated_and_prevents_partial_mutation() -> None:
+    meta = SensitiveMeta(patient_first_name="Alice", patient_last_name="Smith")
+    meta.safe_update({"patient_first_name": "Bob", "patient_last_name": ["bad"]})
+
+    # Payload is validated as a whole before assignment, so no field should change.
+    assert meta.patient_first_name == "Alice"
+    assert meta.patient_last_name == "Smith"
+
+
+def test_safe_update_fill_only_keeps_existing_nonblank_values() -> None:
+    meta = SensitiveMeta(patient_dob="2000-01-01", examination_date="2020-01-01")
+    meta.safe_update({"patient_dob": "2024-01-01"})
+    assert meta.patient_dob == "2000-01-01"
+    assert meta.examination_date == "2020-01-01"
+
+
+def test_safe_update_bypasses_instance_setattr_hook(monkeypatch: pytest.MonkeyPatch) -> None:
+    meta = SensitiveMeta(patient_first_name="Alice")
+    target_id = id(meta)
+    original_setattr = SensitiveMeta.__setattr__
+    trap_calls = {"count": 0}
+
+    def trap(self: SensitiveMeta, name: str, value: object) -> None:
+        if id(self) == target_id and name in SensitiveMeta.model_fields:
+            trap_calls["count"] += 1
+            raise AssertionError("safe_update should bypass SensitiveMeta.__setattr__")
+        original_setattr(self, name, value)
+
+    monkeypatch.setattr(SensitiveMeta, "__setattr__", trap)
+
+    meta.safe_update({"patient_last_name": "Doe"})
+
+    assert trap_calls["count"] == 0
+    assert meta.patient_last_name == "Doe"

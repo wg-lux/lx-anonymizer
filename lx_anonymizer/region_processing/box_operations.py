@@ -188,7 +188,7 @@ def find_or_create_close_box(
     if same_line_boxes:
         same_line_boxes.sort(key=lambda b: b[0])
         for b in same_line_boxes:
-            if b[0] > end_x + required_offset:
+            if b[0] >= end_x + required_offset:
                 return b
 
     new_start_x = min(end_x + required_offset, image_width - box_width)
@@ -196,7 +196,9 @@ def find_or_create_close_box(
     return (new_start_x, start_y, new_end_x, end_y)
 
 
-def combine_boxes(text_with_boxes: List[OcrResult]) -> List[OcrResult]:
+def combine_boxes(
+    text_with_boxes: List[OcrResult], y_tolerance: int = 10
+) -> List[OcrResult]:
     """Merges boxes on the same line that are horizontally close."""
     if not text_with_boxes:
         return text_with_boxes
@@ -211,8 +213,13 @@ def combine_boxes(text_with_boxes: List[OcrResult]) -> List[OcrResult]:
         l_sx, l_sy, l_ex, l_ey = last_box
         c_sx, c_sy, c_ex, c_ey = current_box
 
-        if l_sy == c_sy and (c_sx - l_ex) <= 10:
-            new_box = (min(l_sx, c_sx), l_sy, max(l_ex, c_ex), l_ey)
+        if abs(l_sy - c_sy) <= y_tolerance and (c_sx - l_ex) <= 10:
+            new_box = (
+                min(l_sx, c_sx),
+                min(l_sy, c_sy),
+                max(l_ex, c_ex),
+                max(l_ey, c_ey),
+            )
             new_text = f"{last_text} {current_text}"
             merged[-1] = (new_text, new_box)
         else:

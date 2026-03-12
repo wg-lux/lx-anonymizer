@@ -60,7 +60,14 @@ def detect_video_format(video_path: Path) -> Dict[str, Any]:
             "container": info["format"].get("format_name", "unknown"),
             "can_stream_copy": can_use_stream_copy(v_stream, a_streams),
         }
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        KeyError,
+        TypeError,
+        ValueError,
+        subprocess.CalledProcessError,
+    ) as e:
         logger.warning(f"Metadata probe failed for {video_path}: {e}")
         return {"can_stream_copy": False, "has_audio": True}
 

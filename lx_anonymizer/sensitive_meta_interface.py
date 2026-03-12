@@ -1,9 +1,11 @@
 # lx_anonymizer/frame_cleaner/sensitive_meta_interface.py
 import math
+import re
 from datetime import date, datetime
-from typing import Any, Dict, Mapping, Optional
+from functools import lru_cache
+from typing import Any, ClassVar, Dict, Mapping, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 from lx_anonymizer.setup.custom_logger import logger
 
@@ -36,6 +38,15 @@ class SensitiveMeta(BaseModel):
     anonymized_text: Optional[str] = None
     endoscope_type: Optional[str] = None
     endoscope_sn: Optional[str] = None
+
+    _DATE_PATTERNS: ClassVar[tuple[tuple[re.Pattern[str], str], ...]] = (
+        (re.compile(r"^\d{4}-\d{2}-\d{2}$"), "%Y-%m-%d"),
+        (re.compile(r"^\d{2}\.\d{2}\.\d{4}$"), "%d.%m.%Y"),
+        (re.compile(r"^\d{2}\.\d{2}\.\d{2}$"), "%d.%m.%y"),
+        (re.compile(r"^\d{2}/\d{2}/\d{4}$"), "%d/%m/%Y"),
+        (re.compile(r"^\d{2}-\d{2}-\d{4}$"), "%d-%m-%Y"),
+        (re.compile(r"^\d{4}/\d{2}/\d{2}$"), "%Y/%m/%d"),
+    )
 
     @field_validator("*", mode="before")
     @classmethod
@@ -70,19 +81,23 @@ class SensitiveMeta(BaseModel):
         s = value.strip()
         if not s:
             return None
+        return SensitiveMeta._parse_date_like_cached(s)
 
-        for parser in (
-            lambda x: date.fromisoformat(x),
-            lambda x: datetime.strptime(x, "%d.%m.%Y").date(),
-            lambda x: datetime.strptime(x, "%d.%m.%y").date(),
-            lambda x: datetime.strptime(x, "%d/%m/%Y").date(),
-            lambda x: datetime.strptime(x, "%d-%m-%Y").date(),
-            lambda x: datetime.strptime(x, "%Y/%m/%d").date(),
-        ):
-            try:
-                return parser(s)
-            except Exception:
+    @staticmethod
+    @lru_cache(maxsize=4096)
+    def _parse_date_like_cached(value: str) -> Optional[date]:
+        for pattern, date_format in SensitiveMeta._DATE_PATTERNS:
+            if not pattern.match(value):
                 continue
+            if date_format == "%Y-%m-%d":
+                try:
+                    return date.fromisoformat(value)
+                except ValueError:
+                    return None
+            try:
+                return datetime.strptime(value, date_format).date()
+            except ValueError:
+                return None
         return None
 
     @model_validator(mode="after")
@@ -149,14 +164,47 @@ class SensitiveMeta(BaseModel):
             return
 
         try:
-            validated_updates = SensitiveMeta(**payload)
-        except Exception as e:
-            logger.error(f"Failed to validate updates in safe_update: {e}")
+            validated_updates = SensitiveMeta.model_validate(payload)
+        except ValidationError as e:
+            logger.warning(f"Failed to validate updates in safe_update: {e}")
             return
 
-        for field, new_value in validated_updates.model_dump().items():
-            if new_value is not None:
-                setattr(self, field, new_value)
+        def _is_nonblank(value: Any) -> bool:
+            if value is None:
+                return False
+            if isinstance(value, str):
+                return bool(value.strip())
+            return True
+
+        updates = {
+            field: new_value
+            for field, new_value in validated_updates.model_dump().items()
+            if new_value is not None
+        }
+        if not updates:
+            return
+
+        fill_updates = {
+            field: new_value
+            for field, new_value in updates.items()
+            if not _is_nonblank(getattr(self, field))
+        }
+        if not fill_updates:
+            return
+
+        merged_payload = self.model_dump()
+        merged_payload.update(fill_updates)
+
+        try:
+            merged = SensitiveMeta.model_validate(merged_payload)
+        except ValidationError as e:
+            logger.warning(f"Failed to validate merged data in safe_update: {e}")
+            return
+
+        for field, value in merged.model_dump().items():
+            object.__setattr__(self, field, value)
+
+        self.__pydantic_fields_set__.update(fill_updates.keys())
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SensitiveMeta":
