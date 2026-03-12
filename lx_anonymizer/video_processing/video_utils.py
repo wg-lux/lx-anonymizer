@@ -4,13 +4,15 @@ import subprocess
 import tempfile
 import logging
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
 
-def can_use_stream_copy(video_stream: Dict, audio_streams: List[Dict]) -> bool:
+def can_use_stream_copy(
+    video_stream: Dict[str, Any], audio_streams: List[Dict[str, Any]]
+) -> bool:
     """Determine if FFmpeg -c copy is viable based on codecs and pixel formats."""
     good_video_codecs = {"h264", "h265", "hevc", "vp8", "vp9", "av1"}
     good_audio_codecs = {"aac", "mp3", "opus", "vorbis"}
@@ -48,8 +50,13 @@ def detect_video_format(video_path: Path) -> Dict[str, Any]:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(result.stdout)
 
-        v_stream = next((s for s in info["streams"] if s["codec_type"] == "video"), {})
-        a_streams = [s for s in info["streams"] if s["codec_type"] == "audio"]
+        streams: List[Dict[str, Any]] = info["streams"]
+        v_stream: Dict[str, Any] = next(
+            (s for s in streams if s.get("codec_type") == "video"), {}
+        )
+        a_streams: List[Dict[str, Any]] = [
+            s for s in streams if s.get("codec_type") == "audio"
+        ]
 
         return {
             "video_codec": v_stream.get("codec_name", "unknown"),

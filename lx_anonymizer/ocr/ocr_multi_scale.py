@@ -1,10 +1,10 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
 
-from lx_anonymizer.ocr_preprocessing import preprocess_image
+from lx_anonymizer.ocr.ocr_preprocessing import preprocess_image
 from lx_anonymizer.setup.custom_logger import logger
 
 
@@ -276,14 +276,10 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
 
     if is_low_contrast:
         logger.info("Low contrast image detected, applying contrast enhancement")
-        from lx_anonymizer.ocr_preprocessing import preprocess_image
-
         image = preprocess_image(image, methods=["grayscale", "contrast", "threshold"])
 
     if is_noisy:
         logger.info("Noisy image detected, applying denoising")
-        from lx_anonymizer.ocr_preprocessing import preprocess_image
-
         image = preprocess_image(image, methods=["grayscale", "denoise"])
 
     # Default: try both Tesseract and TrOCR and pick the best result
@@ -294,7 +290,7 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
         tesseract_text = ""
 
     try:
-        from lx_anonymizer.ocr import trocr_full_image_ocr
+        from lx_anonymizer.ocr.ocr import trocr_full_image_ocr
 
         trocr_text = trocr_full_image_ocr(image)
     except Exception as e:

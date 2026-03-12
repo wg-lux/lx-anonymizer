@@ -9,8 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import \
-    OllamaOptimizedExtractor
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
 
 logger = logging.getLogger(__name__)
 

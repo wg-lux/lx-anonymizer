@@ -16,10 +16,11 @@ import re
 from datetime import date, datetime
 from typing import Any, Dict, Optional, Tuple
 
-import dateparser
+import dateparser  # type: ignore[import-untyped]
 
-from lx_anonymizer.sensitive_meta_interface import \
-    SensitiveMeta  # <<< integrate SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import (
+    SensitiveMeta,
+)  # <<< integrate SensitiveMeta
 
 logger = logging.getLogger(__name__)
 

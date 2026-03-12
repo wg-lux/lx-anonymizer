@@ -78,7 +78,9 @@ class MaskApplication:
                 normalized_config.get("endoscope_image_height") is None
                 and normalized_config.get("height") is not None
             ):
-                normalized_config["endoscope_image_height"] = normalized_config["height"]
+                normalized_config["endoscope_image_height"] = normalized_config[
+                    "height"
+                ]
 
             # Use default config if not provided or merge with defaults
             effective_config = self.default_mask_config.copy()

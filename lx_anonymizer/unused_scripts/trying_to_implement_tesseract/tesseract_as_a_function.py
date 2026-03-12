@@ -1,5 +1,5 @@
 import cv2
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from pytesseract import Output
 
 

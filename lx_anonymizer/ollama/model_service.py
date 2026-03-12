@@ -1,11 +1,18 @@
 import gc
 import os
 from typing import (  # Added Any for pipeline, consider specific type if known
-    Any, Optional)
+    Any,
+    Optional,
+)
 
-import torch
-from transformers import (AutoModelForCausalLM, AutoTokenizer, TrOCRProcessor,
-                          VisionEncoderDecoderModel, pipeline)
+import torch  # type: ignore[import-untyped]
+from transformers import (  # type: ignore[import-untyped]
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    TrOCRProcessor,
+    VisionEncoderDecoderModel,
+    pipeline,
+)
 
 from lx_anonymizer.ollama.ollama_service import ollama_service
 from lx_anonymizer.setup.custom_logger import get_logger

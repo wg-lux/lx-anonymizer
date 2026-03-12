@@ -7,7 +7,7 @@ from pathlib import Path
 import certifi
 import cv2
 import numpy as np
-from imutils.object_detection import non_max_suppression
+from imutils.object_detection import non_max_suppression  # type: ignore[import-untyped]
 
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -28,12 +28,15 @@ TO-DO
 # Define the URL to download the frozen EAST model from GitHub
 MODEL_URL = "https://github.com/ZER-0-NE/EAST-Detector-for-text-detection-using-OpenCV/raw/master/frozen_east_text_detection.pb"
 
+
 def _default_east_model_path() -> Path:
     return Path(create_model_directory()) / "frozen_east_text_detection.pb"
 
 
 def _ensure_east_model(east_path: str | Path | None = None) -> Path:
-    resolved_path = Path(east_path) if east_path is not None else _default_east_model_path()
+    resolved_path = (
+        Path(east_path) if east_path is not None else _default_east_model_path()
+    )
     if resolved_path.exists():
         return resolved_path
 

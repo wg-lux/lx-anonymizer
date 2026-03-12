@@ -1,9 +1,9 @@
 import importlib
 
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image, ImageEnhance
 
-# import fitz
+# import pymupdf
 try:
     import pypdf  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency

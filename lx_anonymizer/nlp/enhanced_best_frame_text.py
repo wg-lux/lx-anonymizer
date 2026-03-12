@@ -1,15 +1,26 @@
 import os
 import re
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
+
+
+class _FrameCandidate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    text: str
+    confidence: float
+    quality_score: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class EnhancedBestFrameText:
     def __init__(self, max_candidates: int = 5):
         self.max_candidates = max_candidates
-        self.candidates = []
+        self.candidates: list[_FrameCandidate] = []
         self.enable_quality_mode = bool(os.getenv("OCR_FIX_V1", "0") == "1")
 
     def _calculate_text_quality_score(self, text: str, confidence: float) -> float:
@@ -81,7 +92,7 @@ class EnhancedBestFrameText:
         return len(readable_words) > 0
 
     def push(
-        self, text: str, confidence: float, metadata: Optional[Dict[str, Any]] = None
+        self, text: str, confidence: float, metadata: Optional[dict[str, Any]] = None
     ) -> None:
         if self.enable_quality_mode:
             # Quality-based selection
@@ -91,17 +102,17 @@ class EnhancedBestFrameText:
 
             quality_score = self._calculate_text_quality_score(text, confidence)
 
-            candidate = {
-                "text": text,
-                "confidence": confidence,
-                "quality_score": quality_score,
-                "metadata": metadata or {},
-            }
+            candidate = _FrameCandidate(
+                text=text,
+                confidence=confidence,
+                quality_score=quality_score,
+                metadata=metadata or {},
+            )
 
             self.candidates.append(candidate)
 
             # Sort by quality score and keep best candidates
-            self.candidates.sort(key=lambda x: x["quality_score"], reverse=True)
+            self.candidates.sort(key=lambda x: x.quality_score, reverse=True)
             if len(self.candidates) > self.max_candidates:
                 self.candidates = self.candidates[: self.max_candidates]
 
@@ -109,17 +120,17 @@ class EnhancedBestFrameText:
 
         else:
             # Original length-based selection
-            candidate = {
-                "text": text,
-                "confidence": confidence,
-                "quality_score": len(text),
-                "metadata": metadata or {},
-            }
+            candidate = _FrameCandidate(
+                text=text,
+                confidence=confidence,
+                quality_score=len(text),
+                metadata=metadata or {},
+            )
 
             self.candidates.append(candidate)
 
             # Sort by text length
-            self.candidates.sort(key=lambda x: len(x["text"]), reverse=True)
+            self.candidates.sort(key=lambda x: len(x.text), reverse=True)
             if len(self.candidates) > self.max_candidates:
                 self.candidates = self.candidates[: self.max_candidates]
 
@@ -131,30 +142,30 @@ class EnhancedBestFrameText:
 
         if self.enable_quality_mode:
             logger.info(
-                f"Best text selected with quality score: {best_candidate['quality_score']:.3f}"
+                f"Best text selected with quality score: {best_candidate.quality_score:.3f}"
             )
 
-        return best_candidate["text"]
+        return best_candidate.text
 
-    def get_all_candidates(self) -> list:
-        return self.candidates.copy()
+    def get_all_candidates(self) -> list[dict[str, Any]]:
+        return [candidate.model_dump() for candidate in self.candidates]
 
     def clear(self) -> None:
         self.candidates.clear()
 
-    def get_quality_stats(self) -> Dict[str, Any]:
+    def get_quality_stats(self) -> dict[str, Any]:
         if not self.candidates:
             return {"total_candidates": 0}
 
-        quality_scores = [c["quality_score"] for c in self.candidates]
-        confidences = [c["confidence"] for c in self.candidates]
+        quality_scores = [c.quality_score for c in self.candidates]
+        confidences = [c.confidence for c in self.candidates]
 
         return {
             "total_candidates": len(self.candidates),
             "avg_quality_score": sum(quality_scores) / len(quality_scores),
             "max_quality_score": max(quality_scores),
             "avg_confidence": sum(confidences) / len(confidences),
-            "best_candidate_length": len(self.candidates[0]["text"])
+            "best_candidate_length": len(self.candidates[0].text)
             if self.candidates
             else 0,
             "quality_mode_enabled": self.enable_quality_mode,

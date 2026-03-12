@@ -7,8 +7,7 @@ import cv2
 import pytesseract
 from PIL import Image
 
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import \
-    OllamaOptimizedExtractor
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from lx_anonymizer.pipeline_manager import process_images_with_OCR_and_NER
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -82,9 +81,9 @@ def process_image(
             llm_results = {}
 
         # Combine analysis results if we have text
-        if text_extracted and not disable_llm:
+        if text_extracted and not disable_llm and isinstance(ocr_text, str):
             # Create analysis for text_extracted as well
-            text_metadata = extractor.extract_metadata(text_extracted)
+            text_metadata = extractor.extract_metadata(ocr_text)
             if text_metadata:
                 sensitive_meta.safe_update(text_metadata)
 

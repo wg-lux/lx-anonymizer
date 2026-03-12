@@ -1,11 +1,10 @@
 import json
 
 import cv2
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from pytesseract import Output
 
-from lx_anonymizer.region_processing.box_operations import \
-    extend_boxes_if_needed
+from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)

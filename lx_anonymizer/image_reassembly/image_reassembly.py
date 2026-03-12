@@ -10,7 +10,10 @@ logger = get_logger(__name__)
 
 
 def reassemble_image(
-    modified_images_map: dict[tuple[str, Any]], output_dir, id, original_image_path=None
+    modified_images_map: dict[tuple[tuple[str, Any], str], str],
+    output_dir,
+    id,
+    original_image_path=None,
 ):
     """
     Reassembles an image by overlaying modified image regions (patches) on the original image.

@@ -1,4 +1,5 @@
 from lx_anonymizer.setup.custom_logger import get_logger
+from typing import Any
 
 logger = get_logger(__name__)
 """
@@ -12,13 +13,13 @@ output: entities (List) - A list of entities found in the text.
 
 tagger = None
 _flair_import_error = None
+SentenceType: Any = None
+SequenceTaggerType: Any = None
 
 try:
-    from flair.data import Sentence
-    from flair.models import SequenceTagger
+    from flair.data import Sentence as SentenceType
+    from flair.models import SequenceTagger as SequenceTaggerType
 except ImportError as exc:
-    Sentence = None
-    SequenceTagger = None
     _flair_import_error = exc
 
 
@@ -26,14 +27,14 @@ def _get_tagger():
     global tagger
     if tagger is not None:
         return tagger
-    if SequenceTagger is None:
+    if SequenceTaggerType is None:
         logger.info(
             "Flair is not installed. Install with: pip install lx-anonymizer[nlp]"
         )
         return None
     try:
         logger.info("Loading Flair German NER tagger...")
-        tagger = SequenceTagger.load("flair/ner-german")
+        tagger = SequenceTaggerType.load("flair/ner-german")
         logger.info("Flair German NER tagger loaded successfully.")
         return tagger
     except Exception as e:
@@ -46,11 +47,11 @@ def flair_NER_German(text):
         logger.error(f"Expected a string, but got {type(text)}")
         return None
     active_tagger = _get_tagger()
-    if active_tagger is None or Sentence is None:
+    if active_tagger is None or SentenceType is None:
         logger.error("NER tagger is not loaded.")
         return None
     try:
-        sentence = Sentence(text)
+        sentence = SentenceType(text)
         active_tagger.predict(sentence)
         entities = sentence.get_spans("ner")
         if entities:

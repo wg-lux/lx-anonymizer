@@ -1,4 +1,4 @@
-import pymupdf  # pymupdf
+import pymupdf  # type: ignore[import-untyped]
 import numpy as np
 from pathlib import Path
 from PIL import Image
@@ -34,7 +34,7 @@ def convert_pdf_to_images(pdf_path):
     if not isinstance(pdf_path, Path):
         pdf_path = Path(pdf_path)
 
-    # Open the PDF using PyMuPDF (fitz)
+    # Open the PDF using PyMuPDF (pymupdf)
     doc = pymupdf.open(str(pdf_path))
     images = []
 

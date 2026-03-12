@@ -5,7 +5,13 @@ from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, ClassVar, Dict, Mapping, Optional
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from lx_anonymizer.setup.custom_logger import logger
 
@@ -68,7 +74,15 @@ class SensitiveMeta(BaseModel):
             s = v.strip()
             if not s:
                 return None
-            if s.casefold() in {"unknown", "undefined", "null", "none", "n/a", "na", "-"}:
+            if s.casefold() in {
+                "unknown",
+                "undefined",
+                "null",
+                "none",
+                "n/a",
+                "na",
+                "-",
+            }:
                 return None
             return s
 

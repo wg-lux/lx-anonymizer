@@ -38,7 +38,9 @@ def _report_reader_stub() -> ReportReader:
     rr.examination_extractor = SimpleNamespace(
         extract_examination_info=Mock(return_value={})
     )
-    rr.endoscope_extractor = SimpleNamespace(extract_endoscope_info=Mock(return_value={}))
+    rr.endoscope_extractor = SimpleNamespace(
+        extract_endoscope_info=Mock(return_value={})
+    )
     rr.ollama_available = False
     rr.ollama_extractor = None
     return rr
@@ -170,7 +172,9 @@ def test_report_reader_pdf_hash_is_deterministic():
 
 def test_report_reader_anonymize_report_passes_config():
     rr = _report_reader_stub()
-    with patch("lx_anonymizer.report_reader.anonymize_text", return_value="anon") as mock_anon:
+    with patch(
+        "lx_anonymizer.report_reader.anonymize_text", return_value="anon"
+    ) as mock_anon:
         result = rr.anonymize_report("raw text", {"patient_first_name": "Max"})
 
     assert result == "anon"
@@ -228,7 +232,10 @@ def test_extract_report_meta_uses_line_fallback_parses_dob_and_enriches_fields()
 
     with (
         patch("lx_anonymizer.report_reader.PatientDataExtractor", PatientExtractorStub),
-        patch("lx_anonymizer.report_reader.dateparser.parse", return_value=datetime(1990, 1, 2)),
+        patch(
+            "lx_anonymizer.report_reader.dateparser.parse",
+            return_value=datetime(1990, 1, 2),
+        ),
     ):
         meta = rr.extract_report_meta(text, pdf_path=None)
 

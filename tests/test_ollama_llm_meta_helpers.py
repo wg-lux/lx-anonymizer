@@ -170,7 +170,11 @@ def test_enriched_temporal_analysis_detects_change_points():
     frames = [
         {"ocr_text": "Patient Max Muster", "ocr_confidence": 0.9, "timestamp": 0.0},
         {"ocr_text": "Patient Max Muster", "ocr_confidence": 0.8, "timestamp": 1.0},
-        {"ocr_text": "Totally different content", "ocr_confidence": 0.7, "timestamp": 2.0},
+        {
+            "ocr_text": "Totally different content",
+            "ocr_confidence": 0.7,
+            "timestamp": 2.0,
+        },
     ]
 
     temporal = ext._perform_temporal_analysis(frames, {})
@@ -225,7 +229,9 @@ def test_frame_data_processor_accepts_generators():
 def test_video_metadata_merge_sources_uses_legacy_as_fallback_only():
     enricher = VideoMetadataEnricher.__new__(VideoMetadataEnricher)
     enriched = {
-        "enriched_data": {"llm_extracted": {"patient_first_name": "LLM", "patient_dob": None}}
+        "enriched_data": {
+            "llm_extracted": {"patient_first_name": "LLM", "patient_dob": None}
+        }
     }
     legacy = {"patient_first_name": "OCR", "patient_dob": "1990-01-01"}
 

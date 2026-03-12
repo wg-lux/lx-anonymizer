@@ -85,7 +85,7 @@ def main(generated_path: str, gold_path: str) -> None:
     last_scores: List[float] = []
     per_file: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
 
-    missing = Counter()
+    missing: Counter[str] = Counter()
 
     for key, gold_rec in gold.items():
         if key not in gen:

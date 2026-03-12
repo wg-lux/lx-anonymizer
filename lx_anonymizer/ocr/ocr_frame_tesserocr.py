@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import tesserocr
+import tesserocr  # type: ignore[import-untyped]
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -38,12 +38,10 @@ class TesseOCRFrameProcessor:
     def __init__(self, language: str = "deu"):
         self.language = language
         self._lock = threading.Lock()
-        self.api: Optional[tesserocr.PyTessBaseAPI] = None
-        self.api_lstm: Optional[tesserocr.PyTessBaseAPI] = None
+        self.api: Any = None
+        self.api_lstm: Any = None
         self._tessdata_path: Optional[str] = None
-        self._default_whitelist = (
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-"
-        )
+        self._default_whitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-"
         self._numeric_overlay_whitelist = "0123456789 .,:;/-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         self._initialize_api()
 
@@ -321,7 +319,9 @@ class TesseOCRFrameProcessor:
         ]
         return any(re.search(p, text) for p in patterns)
 
-    def _candidate_rank(self, text: str, conf: float) -> Tuple[int, int, float, float, int]:
+    def _candidate_rank(
+        self, text: str, conf: float
+    ) -> Tuple[int, int, float, float, int]:
         """
         Lower tuple is better:
         - prefer non-empty
@@ -382,7 +382,7 @@ class TesseOCRFrameProcessor:
         # Enhanced preprocessing for video frames
         # 1. Denoise to remove video compression artifacts
         denoised = cv2.fastNlMeansDenoising(
-            gray, None, h=10, templateWindowSize=7, searchWindowSize=21
+            gray, h=10, templateWindowSize=7, searchWindowSize=21
         )
 
         # 2. CLAHE for adaptive contrast enhancement
@@ -589,7 +589,8 @@ class TesseOCRFrameProcessor:
                     try:
                         self.api_lstm.SetVariable("user_defined_dpi", "600")
                         self.api_lstm.SetVariable(
-                            "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
+                            "tessedit_char_whitelist",
+                            self._choose_whitelist_for_box(w, h),
                         )
                         self.api_lstm.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
                         self.api_lstm.SetImage(Image.fromarray(sub))
@@ -601,9 +602,9 @@ class TesseOCRFrameProcessor:
                             "tessedit_char_whitelist", self._default_whitelist
                         )
 
-                        alt_better = self._candidate_rank(alt_text, alt_conf) < self._candidate_rank(
-                            text, conf
-                        )
+                        alt_better = self._candidate_rank(
+                            alt_text, alt_conf
+                        ) < self._candidate_rank(text, conf)
                         if alt_better and (
                             alt_text
                             and (
@@ -720,7 +721,9 @@ class TesseOCRFrameProcessor:
                 has_roi = bool(roi)
                 candidates: List[Tuple[str, str, float, Dict[str, Any]]] = []
                 for preprocess_mode in ("gray_clahe", "binary"):
-                    processed = self._preprocess_to_gray(frame, roi, mode=preprocess_mode)
+                    processed = self._preprocess_to_gray(
+                        frame, roi, mode=preprocess_mode
+                    )
                     c_text, c_conf, c_meta = self._ocr_processed_image(
                         processed, has_roi=has_roi, dpi=dpi
                     )

@@ -1,5 +1,5 @@
 [
- {
+  {
     "file": "reports_20250414_161405.json",
     "report_id": "Report 1",
     "first_name": "Albrecht",
@@ -753,7 +753,7 @@
     "file": "reports_20250425_130903.json",
     "report_id": "Report 1",
     "first_name": "Sari",
-    "last_name": "Koskinen"    
+    "last_name": "Koskinen"
   },
   {
     "file": "reports_20250425_130903.json",
@@ -976,7 +976,6 @@
     "report_id": "Report 3",
     "first_name": "Elena",
     "last_name": "Stoica"
-
   },
   {
     "file": "reports_20250425_131059.json",

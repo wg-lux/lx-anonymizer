@@ -25,7 +25,9 @@ def test_build_parser_defaults_and_required_args() -> None:
     assert args.verbose is False
 
 
-def test_cli_main_success_path(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_main_success_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     pipeline_calls: list[tuple[object, ...]] = []
     logger_calls: list[bool] = []
 
@@ -44,8 +46,12 @@ def test_cli_main_success_path(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
 
     fake_logger_module.configure_global_logger = fake_configure_global_logger  # type: ignore[attr-defined]
 
-    monkeypatch.setitem(sys.modules, "lx_anonymizer.main_with_reassembly", fake_pipeline_module)
-    monkeypatch.setitem(sys.modules, "lx_anonymizer.setup.custom_logger", fake_logger_module)
+    monkeypatch.setitem(
+        sys.modules, "lx_anonymizer.main_with_reassembly", fake_pipeline_module
+    )
+    monkeypatch.setitem(
+        sys.modules, "lx_anonymizer.setup.custom_logger", fake_logger_module
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -73,20 +79,24 @@ def test_cli_main_success_path(monkeypatch: pytest.MonkeyPatch, capsys: pytest.C
 
     assert rc == 0
     assert logger_calls == [True]
-    assert pipeline_calls == [
-        ("input.pdf", "model.pb", "default", True, 0.7, 640, 480)
-    ]
+    assert pipeline_calls == [("input.pdf", "model.pb", "default", True, 0.7, 640, 480)]
     assert "done" in out
 
 
-def test_cli_main_missing_dependency_exits_with_code_2(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_main_missing_dependency_exits_with_code_2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     missing_pipeline_module = ModuleType("lx_anonymizer.main_with_reassembly")
     fake_logger_module = ModuleType("lx_anonymizer.setup.custom_logger")
     fake_logger_module.configure_global_logger = lambda **_: None  # type: ignore[attr-defined]
 
     # Importing `main` from this module should fail.
-    monkeypatch.setitem(sys.modules, "lx_anonymizer.main_with_reassembly", missing_pipeline_module)
-    monkeypatch.setitem(sys.modules, "lx_anonymizer.setup.custom_logger", fake_logger_module)
+    monkeypatch.setitem(
+        sys.modules, "lx_anonymizer.main_with_reassembly", missing_pipeline_module
+    )
+    monkeypatch.setitem(
+        sys.modules, "lx_anonymizer.setup.custom_logger", fake_logger_module
+    )
     monkeypatch.setattr(sys, "argv", ["lx-anonymizer", "-i", "input.pdf"])
 
     with pytest.raises(SystemExit) as exc_info:
@@ -94,7 +104,9 @@ def test_cli_main_missing_dependency_exits_with_code_2(monkeypatch: pytest.Monke
     assert exc_info.value.code == 2
 
 
-def test_package_getattr_resolves_frame_cleaner(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_getattr_resolves_frame_cleaner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_module = ModuleType("lx_anonymizer.frame_cleaner")
     fake_cls = type("FakeFrameCleaner", (), {})
     fake_module.FrameCleaner = fake_cls  # type: ignore[attr-defined]
@@ -103,7 +115,9 @@ def test_package_getattr_resolves_frame_cleaner(monkeypatch: pytest.MonkeyPatch)
     assert lx_anonymizer.__getattr__("FrameCleaner") is fake_cls
 
 
-def test_package_getattr_resolves_report_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_getattr_resolves_report_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_module = ModuleType("lx_anonymizer.report_reader")
     fake_cls = type("FakeReportReader", (), {})
     fake_module.ReportReader = fake_cls  # type: ignore[attr-defined]
@@ -112,7 +126,9 @@ def test_package_getattr_resolves_report_reader(monkeypatch: pytest.MonkeyPatch)
     assert lx_anonymizer.__getattr__("ReportReader") is fake_cls
 
 
-def test_package_getattr_resolves_ollama_module(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_getattr_resolves_ollama_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sentinel = SimpleNamespace(name="ollama")
 
     def fake_import_module(name: str) -> object:

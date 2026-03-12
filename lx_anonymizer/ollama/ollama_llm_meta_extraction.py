@@ -67,7 +67,7 @@ class MetadataCache:
     """
 
     def __init__(self, max_size: int = 100):
-        self.cache = {}
+        self.cache: dict[str, SensitiveMeta] = {}
         self.max_size = max_size
         self.hit_count = 0
         self.miss_count = 0
@@ -88,7 +88,7 @@ class MetadataCache:
             self.miss_count += 1
             return None
 
-    def put(self, text: str, metadata: SensitiveMeta):
+    def put(self, text: str, metadata: SensitiveMeta) -> None:
         """Speichert Metadaten im Cache."""
         if len(self.cache) >= self.max_size:
             # Remove oldest entry (simple FIFO)
@@ -387,7 +387,7 @@ Return ONLY JSON."""
         logger.warning("⚠️ Keine weiteren Modelle für Fallback verfügbar")
         return False
 
-    def extract_metadata(self, text: str) -> Optional[dict[str, Any]]:
+    def extract_metadata(self, text: str) -> Optional[SensitiveMeta]:
         """
         Extrahiert Patientenmetadaten aus Text mit fail-safe Modell-System.
 
@@ -409,7 +409,7 @@ Return ONLY JSON."""
         if cached_metadata:
             logger.info("✅ Metadaten aus Cache geladen")
             self.sensitive_meta.safe_update(cached_metadata)
-            return self.sensitive_meta.to_dict()
+            return self.sensitive_meta
 
         if not self.current_model:
             logger.error("Kein Modell verfügbar für Extraktion")
@@ -478,7 +478,7 @@ Return ONLY JSON."""
                     )
 
                     self.sensitive_meta.safe_update(metadata)
-                    return self.sensitive_meta.to_dict()
+                    return self.sensitive_meta
 
                 except (json.JSONDecodeError, ValidationError) as e:
                     logger.warning(
@@ -537,9 +537,7 @@ Return ONLY JSON."""
         # Entferne Markdown-Code-Blöcke falls vorhanden
         content = content.strip()
         if "```" in content:
-            match = re.search(
-                r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL
-            )
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
             if match:
                 content = match.group(1)
             else:
@@ -891,8 +889,8 @@ class FrameSamplingOptimizer:
     def __init__(self, max_frames: int = 50, skip_similar_threshold: float = 0.85):
         self.max_frames = max_frames
         self.skip_similar_threshold = skip_similar_threshold
-        self.processed_hashes = set()
-        self.last_metadata = None
+        self.processed_hashes: set[str] = set()
+        self.last_metadata: Optional[dict[str, Any]] = None
 
     def should_process_frame(
         self, frame_idx: int, total_frames: int, frame_hash: str
@@ -931,7 +929,9 @@ class FrameSamplingOptimizer:
             # Lange Videos: jeden 10. Frame
             return frame_idx % 10 == 0
 
-    def register_processed_frame(self, frame_hash: str, metadata: dict):
+    def register_processed_frame(
+        self, frame_hash: str, metadata: dict[str, Any]
+    ) -> None:
         """Registriert einen verarbeiteten Frame."""
         if frame_hash:
             self.processed_hashes.add(frame_hash)
@@ -1059,8 +1059,8 @@ class EnrichedMetadataExtractor:
             self.ollama_extractor = create_ollama_extractor()
         if not self.frame_optimizer:
             self.frame_optimizer = FrameSamplingOptimizer()
-        self.frame_context = {}
-        self.temporal_metadata = []
+        self.frame_context: dict[str, Any] = {}
+        self.temporal_metadata: list[dict[str, Any]] = []
         self.sensitive_meta = SensitiveMeta()
 
     def extract_from_frame_sequence(
@@ -1113,9 +1113,9 @@ class EnrichedMetadataExtractor:
 
     def _analyze_frame_context(
         self, frames_data: List[Dict[str, Any]], enriched_metadata: Dict[str, Any]
-    ):
+    ) -> None:
         """Analysiert visuellen Kontext der Frames."""
-        frame_stats = {
+        frame_stats: dict[str, Any] = {
             "total_frames": len(frames_data),
             "text_frames": 0,
             "quality_scores": [],
@@ -1239,7 +1239,7 @@ class EnrichedMetadataExtractor:
         self, frames_data: List[Dict[str, Any]], enriched_metadata: Dict[str, Any]
     ) -> dict[str, Any]:
         """Führt temporale Analyse der Frame-Sequenz durch."""
-        temporal_info = {
+        temporal_info: dict[str, Any] = {
             "duration_analysis": {},
             "text_appearance_timeline": [],
             "stability_scores": {},
@@ -1516,7 +1516,7 @@ class VideoMetadataEnricher:
     def _calculate_integration_stats(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Berechnet Statistiken über die Metadaten-Integration."""
 
-        stats = {
+        stats: dict[str, Any] = {
             "data_sources_used": [],
             "confidence_comparison": {},
             "data_completeness": 0.0,

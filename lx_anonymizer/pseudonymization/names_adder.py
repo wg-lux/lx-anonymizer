@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 import time
 import ast
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 from numpy import ndarray
 
 from lx_anonymizer.setup.device_reader import read_device, read_text_formatting
@@ -262,8 +262,8 @@ def draw_free_text(
 def add_device_name_to_image(
     name: str,
     gender_par: str,
-    device: str = None,
-    font: str = None,
+    device: Optional[str] = None,
+    font: Optional[str] = None,
     font_size: int = 100,
     background_color: Tuple[int, int, int] = (0, 0, 0),
     font_color=(255, 255, 255),
@@ -273,6 +273,8 @@ def add_device_name_to_image(
     font_thickness=1,
 ):
     try:
+        if device is None:
+            raise ValueError("device is required for device-specific rendering")
         device_config = read_device(device)
         if device_config is None:
             logger.error(f"No configuration found for device: {device}")

@@ -10,10 +10,10 @@ import io
 import json
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
 
 import ollama
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
 
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -53,28 +53,27 @@ class OllamaLLMProcessor:
     def call_llm(
         self,
         prompt: str,
-        context=None,
+        context: Optional[Sequence[int]] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         image: Optional[Path] = None,
-    ) -> dict:
-        kwargs = {
-            "model": self.model_name,
-            "prompt": prompt,
-            "options": {
-                "temperature": temperature,
-                "top_p": top_p,
-                "num_predict": 1000,
-            },
-            "stream": False,  # optional: disable streaming for one-shot
+    ) -> dict[str, Any]:
+        options: dict[str, float | int] = {
+            "temperature": temperature,
+            "top_p": top_p,
+            "num_predict": 1000,
         }
+        images = [self._encode_image_to_base64(image)] if image else None
 
-        if context:
-            kwargs["context"] = context  # keeps chat memory
-        if image:
-            kwargs["images"] = [self._encode_image_to_base64(image)]
-
-        return self.client.generate(**kwargs)
+        response = self.client.generate(
+            model=self.model_name,
+            prompt=prompt,
+            options=options,
+            stream=False,
+            context=context,
+            images=images,
+        )
+        return cast(dict[str, Any], response)
 
     def _verify_model_availability(self) -> bool:
         """
@@ -135,8 +134,8 @@ class OllamaLLMProcessor:
             return ""
 
     def analyze_image_for_names(
-        self, image_path: Path, context_data: Optional[Dict] = None
-    ) -> List[Dict]:
+        self, image_path: Path, context_data: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Analyze image for person names using Ollama vision model.
 
@@ -211,7 +210,7 @@ class OllamaLLMProcessor:
             logger.error(f"Error analyzing image with Ollama: {e}")
             return []
 
-    def _parse_names_from_response(self, response_text: str) -> List[Dict]:
+    def _parse_names_from_response(self, response_text: str) -> List[Dict[str, Any]]:
         """
         Parse names from Ollama response text.
 
@@ -228,13 +227,16 @@ class OllamaLLMProcessor:
 
             if start_idx != -1 and end_idx != -1:
                 json_str = response_text[start_idx:end_idx]
-                data = json.loads(json_str)
-                return data.get("names", [])
+                data = cast(dict[str, Any], json.loads(json_str))
+                parsed_names = data.get("names", [])
+                if isinstance(parsed_names, list):
+                    return [item for item in parsed_names if isinstance(item, dict)]
+                return []
 
             # Fallback: parse structured text
-            names = []
+            names: list[dict[str, Any]] = []
             lines = response_text.split("\n")
-            current_name = {}
+            current_name: dict[str, Any] = {}
 
             for line in lines:
                 line = line.strip()
@@ -260,7 +262,7 @@ class OllamaLLMProcessor:
 
     def analyze_text_for_names(
         self, text: str, context: Optional[str] = None
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
         """
         Analyze text for person names using Ollama text model.
 

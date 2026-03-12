@@ -10,7 +10,7 @@ import unicodedata
 import re
 import cv2
 import numpy as np
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 
@@ -25,7 +25,7 @@ class DiagnosticFrameOCR:
     ):
         """Initialize with optional diagnostic mode."""
         self.enable_diagnostics = enable_diagnostics or bool(os.getenv("OCR_DIAG", "0"))
-        self.diag_dir = Path(diag_dir or os.getenv("OCR_DIAG_DIR", "./debug/ocr"))
+        self.diag_dir = Path(diag_dir or os.getenv("OCR_DIAG_DIR") or "./debug/ocr")
 
         if self.enable_diagnostics:
             self.diag_dir.mkdir(parents=True, exist_ok=True)
@@ -35,7 +35,7 @@ class DiagnosticFrameOCR:
         # Enhanced OCR configuration with robust defaults
         self.ocr_config = self._get_robust_ocr_config()
         self.frame_count = 0
-        self.diag_samples = []
+        self.diag_samples: list[dict[str, Any]] = []
 
     def _get_robust_ocr_config(self) -> Dict[str, Any]:
         """Get robust OCR configuration based on environment or defaults."""

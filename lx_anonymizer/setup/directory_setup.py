@@ -200,7 +200,7 @@ def create_temp_directory(
         return temp_dir, default_main_directory, csv_dir
 
 
-def create_blur_directory(default_main_directory: Path) -> Path:
+def create_blur_directory(default_main_directory: Path | None) -> Path:
     if not default_main_directory:
         default_main_directory = MAIN_DIR
     else:

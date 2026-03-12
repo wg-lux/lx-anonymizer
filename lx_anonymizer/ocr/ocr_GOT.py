@@ -1,7 +1,8 @@
-from transformers import AutoModel, AutoTokenizer
-from PIL import Image
 import io
+
 import torch
+from PIL import Image
+from transformers import AutoModel, AutoTokenizer  # type: ignore[import-untyped]
 
 # Check if CUDA is available and set device accordingly
 device = "cuda" if torch.cuda.is_available() else "cpu"

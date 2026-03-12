@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import subprocess
 
 from lx_anonymizer.region_processing import box_operations as box_ops
 from lx_anonymizer.setup import directory_setup
@@ -78,7 +79,9 @@ def test_can_use_stream_copy_decisions() -> None:
     )
 
 
-def test_detect_video_format_success_and_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_detect_video_format_success_and_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     payload = {
         "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
         "streams": [
@@ -116,7 +119,9 @@ def test_detect_video_format_success_and_failure(monkeypatch: pytest.MonkeyPatch
     assert fallback == {"can_stream_copy": False, "has_audio": True}
 
 
-def test_named_pipe_context_cleans_up(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_named_pipe_context_cleans_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     temp_root = tmp_path / "pipes"
     temp_root.mkdir()
     made = {"i": 0}
@@ -152,7 +157,11 @@ def test_box_operations_core_behaviors(monkeypatch: pytest.MonkeyPatch) -> None:
     assert filtered == [("BB", (6, 0, 10, 5)), ("CC", (0, 20, 5, 25))]
 
     combined = box_ops.combine_boxes(
-        [("left", (0, 10, 10, 20)), ("right", (15, 10, 25, 20)), ("next", (0, 30, 5, 35))]
+        [
+            ("left", (0, 10, 10, 20)),
+            ("right", (15, 10, 25, 20)),
+            ("next", (0, 30, 5, 35)),
+        ]
     )
     assert combined == [
         ("left right", (0, 10, 25, 20)),
@@ -190,7 +199,9 @@ def test_box_operations_core_behaviors(monkeypatch: pytest.MonkeyPatch) -> None:
 
     image2 = np.zeros((100, 100, 3), dtype=np.uint8)
 
-    def fake_dominant(_img: np.ndarray, box: tuple[int, int, int, int] | None = None) -> tuple[int, int, int]:
+    def fake_dominant(
+        _img: np.ndarray, box: tuple[int, int, int, int] | None = None
+    ) -> tuple[int, int, int]:
         color_map = {
             (20, 20, 40, 40): (0, 0, 0),
             (20, 10, 40, 20): (100, 0, 0),  # upper differs
@@ -209,4 +220,3 @@ def test_box_operations_core_behaviors(monkeypatch: pytest.MonkeyPatch) -> None:
         color_threshold=5,
     )
     assert extended == [(10, 10, 40, 50)]
-import subprocess

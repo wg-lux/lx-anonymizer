@@ -1,11 +1,14 @@
+from datetime import datetime
 import re
+import warnings
+from typing import Any, Literal, Optional, cast
+
 import spacy
 from spacy.matcher import Matcher
-from datetime import datetime
-import warnings
 from spacy.tokens import Doc
 
 from lx_anonymizer.ner.determine_gender import determine_gender
+from lx_anonymizer.ner.spacy_extractor import PatientInfo
 from lx_anonymizer.ner.spacy_extractor import _clean_date
 
 # Compile heavy regexes once at module level
@@ -14,6 +17,14 @@ NUMBER_RE = re.compile(r"^\d+$")
 
 
 class PatientDataExtractorLg:
+    FieldName = Literal[
+        "patient_first_name",
+        "patient_last_name",
+        "patient_dob",
+        "casenumber",
+        "patient_gender_name",
+    ]
+
     def __init__(self):
         self.nlp = spacy.load("de_core_news_lg")
         # Initialize ruler here and add it to the pipeline
@@ -45,9 +56,11 @@ class PatientDataExtractorLg:
     # Improved VALUE pattern to handle UTF-8 names with accents
     _VALUE = r'["\']?(?P<val>[\w\.\-\/ äöüßÄÖÜéèêç]+?)["\']?$'
 
-    clean_date = _clean_date
+    @staticmethod
+    def clean_date(value: str) -> Optional[str]:
+        return _clean_date(value)
 
-    def _build_regex_patterns(self):
+    def _build_regex_patterns(self) -> list[dict[str, str]]:
         patts = []
         for key, lbl in self._FIELDS.items():
             # (?m) → multiline; ^\s*-? optional bullet or list dash
@@ -55,7 +68,7 @@ class PatientDataExtractorLg:
             patts.append({"label": key, "pattern": pattern})
         return patts
 
-    def regex_extract_llm_meta(self, text: str) -> dict[str, str | None]:
+    def regex_extract_llm_meta(self, text: str) -> PatientInfo:
         """
         Parse an LLM answer *that is NOT valid JSON* and recover
         first name / last name / dob / casenumber / gender.
@@ -64,29 +77,36 @@ class PatientDataExtractorLg:
 
         """
         doc = self.nlp(text)
-        meta = {k: None for k in self._FIELDS}  # initialise blanks
+        meta: PatientInfo = {
+            "patient_first_name": None,
+            "patient_last_name": None,
+            "patient_dob": None,
+            "casenumber": None,
+            "patient_gender_name": None,
+        }
 
         for ent in doc.ents:  # RegexRuler creates ents
-            key = ent.label_
+            key = cast(PatientDataExtractorLg.FieldName, ent.label_)
             # drop the field name, keep only captured value (last group)
             m = re.search(self._VALUE, ent.text)
             if not m:
                 continue
-            val = m.group("val").strip()
+            val: Optional[str] = m.group("val").strip()
             # basic normalisation
-            if key == "patient_dob":
+            if key == "patient_dob" and val is not None:
                 # try to normalise dd.mm.yyyy → yyyy-mm-dd (reuse your _clean_date)
                 val = self.clean_date(val) or val
             meta[key] = val
 
         # sanity: if either name field still None but the other has value "Unknown"
         for k in ("patient_first_name", "patient_last_name"):
-            if meta[k] and meta[k].lower() in ("unknown", "unbekannt"):
+            value = meta[k]
+            if value and value.lower() in ("unknown", "unbekannt"):
                 meta[k] = None
 
         return meta
 
-    def setup_matcher(self):
+    def setup_matcher(self) -> None:
         """Setup the SpaCy Matcher and Ruler with robust patient information patterns"""
         # Define pattern components using token attributes
         pat_header = [
@@ -149,11 +169,11 @@ class PatientDataExtractorLg:
         if len(self.ruler.patterns) == 0:
             warnings.warn("No patterns were added to the EntityRuler in setup_matcher.")
 
-    def patient_data_extractor(self, text):
+    def patient_data_extractor(self, text: str) -> PatientInfo:
         # Simple alias without deprecation spam
         return self.extract_patient_info(text)
 
-    def extract_patient_info(self, text):
+    def extract_patient_info(self, text: str) -> PatientInfo:
         """
         Extract patient information using SpaCy's matcher based on token patterns.
         """
@@ -285,7 +305,7 @@ class PatientDataExtractorLg:
             "patient_gender_name": None,
         }
 
-    def _extract_using_entity_ruler(self, text):
+    def _extract_using_entity_ruler(self, text: str) -> dict[str, Any]:
         """
         Helper method potentially using entity ruler results.
         NOTE: The string patterns previously here were problematic.
@@ -316,7 +336,7 @@ class PatientDataExtractorLg:
             "patient_gender_name": None,
         }
 
-    def examiner_data_extractor(self, text):
+    def examiner_data_extractor(self, text: str) -> Optional[str]:
         # FIX: Reuse self.nlp instead of loading spacy.load("de_core_news_lg") every time
         # Initialize examiner ruler once if not already done
         if not self._examiner_ruler:

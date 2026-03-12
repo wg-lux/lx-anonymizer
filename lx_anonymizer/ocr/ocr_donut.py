@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import torch
 from PIL import Image
-from transformers import DonutProcessor, VisionEncoderDecoderModel
+from transformers import DonutProcessor, VisionEncoderDecoderModel  # type: ignore[import-untyped]
 
 from lx_anonymizer.setup.custom_logger import get_logger
 
@@ -218,7 +218,7 @@ def post_process_chunks(
     positioned_texts.sort(key=lambda x: (x[1][1], x[1][0]))  # Sort by upper then left
 
     # Find and remove duplicate text segments
-    processed_texts = []
+    processed_texts: list[str] = []
     for i, (text, _) in enumerate(positioned_texts):
         if not text.strip():
             continue
@@ -421,7 +421,5 @@ if __name__ == "__main__":
         image_path = sys.argv[1]
         text = donut_full_image_ocr(image_path)
         print(f"Extracted text:\n{text}")
-    else:
-        print("Usage: python donut_ocr.py <image_path>")
     else:
         print("Usage: python donut_ocr.py <image_path>")

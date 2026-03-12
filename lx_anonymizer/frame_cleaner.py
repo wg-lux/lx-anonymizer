@@ -16,7 +16,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Generator, Iterator, List, Mapping, Optional, Tuple, cast
 
 import cv2
 import numpy as np
@@ -27,20 +27,22 @@ from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
 from lx_anonymizer.ocr.ocr_frame import FrameOCR
+
 # from lx_anonymizer.ocr_minicpm import (
 #     _can_load_model,
 #     create_minicpm_ocr,
 # )
 from lx_anonymizer.config import settings
 from lx_anonymizer.ollama.ollama_llm_meta_extraction import (
-    EnrichedMetadataExtractor, FrameSamplingOptimizer,
-    OllamaOptimizedExtractor)
+    EnrichedMetadataExtractor,
+    FrameSamplingOptimizer,
+    OllamaOptimizedExtractor,
+)
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
 from lx_anonymizer.utils.ollama import ensure_ollama
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
-from lx_anonymizer.video_processing import (video_encoder, video_processor,
-                                            video_utils)
+from lx_anonymizer.video_processing import video_encoder, video_processor, video_utils
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ class FrameCleaner:
         logger.info("Huggingface cache status:")
         hf = HF_Cache()
         hf.log_hf_cache_info()
-    
+
         # Enhanced OCR integration - use enhanced components if available
         logger.info("Initializing with Enhanced OCR components (OCR_FIX_V1 enabled)")
         self.use_enhanced_ocr = True
@@ -134,7 +136,7 @@ class FrameCleaner:
 
         # Frame data collection for batch processing
         self.frame_collection: List[Dict[str, Any]] = []
-        self.ocr_text_collection = []
+        self.ocr_text_collection: List[str] = []
         self.current_video_total_frames = 0
 
         # Hardware acceleration detection, Encoder setup
@@ -154,7 +156,7 @@ class FrameCleaner:
 
         # Sensitive metadata dictionary
         self.sensitive_meta: SensitiveMeta = SensitiveMeta()
-        self._reset_frame_collection() # clear ocr and sm states
+        self._reset_frame_collection()  # clear ocr and sm states
 
         # ROI Processor - dict traversal for convenience
         self.roi_processor = ROIProcessor()
@@ -209,7 +211,7 @@ class FrameCleaner:
             "text": None,
             "source": "frame_extraction",
         }
-        cap = cv2.VideoCapture(str(video_path))
+        cap = cv2.VideoCapture(str(video_path))  # type: ignore[call-arg]
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
         target_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
@@ -240,12 +242,9 @@ class FrameCleaner:
             if ocr_text and ocr_text.strip():
                 candidate = ocr_text.strip()
                 # Prefer higher confidence; break ties by longer text to avoid tiny overlays dominating.
-                if (
-                    ocr_conf > best_ocr_conf
-                    or (
-                        abs(ocr_conf - best_ocr_conf) < 1e-6
-                        and len(candidate) > len(best_ocr_text)
-                    )
+                if ocr_conf > best_ocr_conf or (
+                    abs(ocr_conf - best_ocr_conf) < 1e-6
+                    and len(candidate) > len(best_ocr_text)
                 ):
                     best_ocr_text = candidate
                     best_ocr_conf = float(ocr_conf)
@@ -610,17 +609,21 @@ class FrameCleaner:
                 try:
                     script_path.unlink(missing_ok=True)
                 except OSError:
-                    logger.debug("Could not remove temporary filter script %s", script_path)
+                    logger.debug(
+                        "Could not remove temporary filter script %s", script_path
+                    )
 
     def _unified_metadata_extract(self, text: str) -> Dict[str, Any]:
         """Hierarchische Metadaten-Extraktion: LLM → spaCy → Regex-Fallback."""
-        meta = {}
+        meta: Optional[Dict[str, Any]] = {}
         if self.use_llm and self.ollama_extractor:
             try:
                 meta_obj = self.ollama_extractor.extract_metadata(text)
                 if meta_obj is not None:
                     candidate = (
-                        meta_obj.to_dict() if isinstance(meta_obj, SensitiveMeta) else dict(meta_obj)
+                        meta_obj.to_dict()
+                        if isinstance(meta_obj, SensitiveMeta)
+                        else dict(meta_obj)
                     )
                     if self._metadata_has_signal(candidate):
                         self.sensitive_meta.safe_update(candidate)
@@ -633,9 +636,9 @@ class FrameCleaner:
                 meta = None
         if not meta and self.patient_data_extractor:
             try:
-                candidate = self.patient_data_extractor(text)
-                if self._metadata_has_signal(candidate):
-                    self.sensitive_meta.safe_update(candidate)
+                patient_candidate: Mapping[str, Any] = self.patient_data_extractor(text)
+                if self._metadata_has_signal(patient_candidate):
+                    self.sensitive_meta.safe_update(patient_candidate)
                     meta = self.sensitive_meta.to_dict()
                 else:
                     meta = None
@@ -648,9 +651,9 @@ class FrameCleaner:
 
         # Ensure Dict is returned
         if isinstance(meta, SensitiveMeta):
-            meta.to_dict()
+            return meta.to_dict()
 
-        return meta
+        return meta or {}
 
     @staticmethod
     def _metadata_has_signal(meta: Any) -> bool:
@@ -693,12 +696,10 @@ class FrameCleaner:
         Konsolidierte Einzel-Frame-Verarbeitung mit OCR, Metadaten und optionaler Batch-Sammlung.
         """
         logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
-        ocr_text, ocr_conf, frame_metadata, is_sensitive = (
-            None,
-            0.0,
-            self.sensitive_meta.to_dict(),
-            False,
-        )
+        ocr_text: str = ""
+        ocr_conf: float = 0.0
+        frame_metadata: dict[str, Any] = self.sensitive_meta.to_dict()
+        is_sensitive = False
 
         ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
             gray_frame, endoscope_data_roi_nested
@@ -728,7 +729,6 @@ class FrameCleaner:
                 }
             )
             self.ocr_text_collection.append(ocr_text)
-        assert isinstance(frame_metadata, Dict)
         return is_sensitive, frame_metadata, ocr_text, ocr_conf
 
     def video_ocr_stream(
@@ -763,7 +763,7 @@ class FrameCleaner:
         """
         Yields frames with higher density to allow temporal analysis in batch processing.
         """
-        cap = cv2.VideoCapture(str(video_path))
+        cap = cv2.VideoCapture(str(video_path))  # type: ignore[call-arg]
         if not cap.isOpened():
             logger.error("Cannot open %s", video_path)
             return
@@ -778,7 +778,9 @@ class FrameCleaner:
 
         # Calculate skip to hit target samples, clamp to avoid over/under-sampling.
         target_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
-        calculated_skip = math.ceil(total_frames / target_samples) if total_frames else 1
+        calculated_skip = (
+            math.ceil(total_frames / target_samples) if total_frames else 1
+        )
 
         # Clamps: Min skip 5 (density), Max skip = 2 seconds of video
         max_skip_limit = int(fps * 2)
@@ -829,15 +831,15 @@ class FrameCleaner:
         if meta == {}:
             try:
                 if callable(self.patient_data_extractor):
-                    spacy_meta = self.patient_data_extractor(text)
+                    spacy_meta: Mapping[str, Any] = self.patient_data_extractor(text)
                 elif hasattr(self.patient_data_extractor, "extract"):
                     spacy_meta = self.patient_data_extractor.extract(text)
                 elif hasattr(self.patient_data_extractor, "patient_extractor"):
                     spacy_meta = self.patient_data_extractor.patient_extractor(text)
                 else:
                     spacy_meta = {}
-                if isinstance(spacy_meta, dict):
-                    meta = spacy_meta
+                if isinstance(spacy_meta, Mapping):
+                    meta = dict(spacy_meta)
             except Exception as e:
                 logger.error(f"spaCy fallback failed: {e}")
                 meta = {}
@@ -989,7 +991,7 @@ class FrameCleaner:
         if not normalized:
             return False
 
-        roi = normalized
+        roi = cast(dict[str, int], normalized)
 
         # Check for reasonable values (non-negative, not too large)
         try:

@@ -16,11 +16,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from lx_anonymizer.ollama_llm_processor import (OllamaLLMProcessor,
-                                                analyze_full_image_with_ollama,
-                                                analyze_text_with_ollama,
-                                                initialize_ollama_processor,
-                                                replace_phi4_with_ollama)
+from lx_anonymizer.ollama.ollama_llm_processor import (  # type: ignore[import-untyped]
+    OllamaLLMProcessor,
+    analyze_full_image_with_ollama,
+    analyze_text_with_ollama,
+    initialize_ollama_processor,
+    replace_phi4_with_ollama,
+)
 
 try:  # pillow is an optional dependency
     from PIL import Image  # type: ignore

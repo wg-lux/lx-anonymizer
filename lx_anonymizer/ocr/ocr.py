@@ -1,47 +1,55 @@
 from typing import Any, List, Tuple
 
 import numpy as np
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
 
 # Import CRAFT text detection if available (requires hezar)
 try:
-    from lx_anonymizer.text_detection.craft_text_detection import \
-        craft_text_detection
+    from lx_anonymizer.text_detection.craft_text_detection import craft_text_detection
 
     CRAFT_AVAILABLE = True
 except ImportError:
     CRAFT_AVAILABLE = False
 
-    def craft_text_detection(*args, **kwargs):
+    def craft_text_detection(
+        image_input: Any,
+        min_confidence: Any = None,
+        width: Any = None,
+        height: Any = None,
+    ) -> Any:
         raise ImportError(
             "CRAFT text detection requires 'hezar' package. Install with: pip install lx-anonymizer[llm]"
         )
 
-from lx_anonymizer.region_processing.region_detector import \
-    expand_roi  # Ensure this module is correctly referenced
+
+from lx_anonymizer.region_processing.region_detector import (
+    expand_roi,
+)  # Ensure this module is correctly referenced
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
+torch: Any
 
 try:
-    import torch
+    import torch as torch_mod  # type: ignore[import-untyped]
 
+    torch = torch_mod
     TORCH_AVAILABLE = True
 except ImportError:
     torch = None
     TORCH_AVAILABLE = False
 
 try:
-    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+    from transformers import TrOCRProcessor, VisionEncoderDecoderModel  # type: ignore[import-untyped]
 
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
-    TrOCRProcessor = VisionEncoderDecoderModel = None
+    TrOCRProcessor = VisionEncoderDecoderModel = None  # type: ignore[assignment]
     TRANSFORMERS_AVAILABLE = False
 
 try:
-    import tesserocr  # noqa: F401
+    import tesserocr  # type: ignore[import-untyped]  # noqa: F401
 
     TESSEROCR_AVAILABLE = True
 except ImportError:
@@ -56,7 +64,7 @@ def _get_model_service():
     if not _trocr_dependencies_available():
         return None
     try:
-        from lx_anonymizer.ollama.model_service import model_service
+        from lx_anonymizer.ollama.model_service import model_service  # type: ignore[import-untyped]
 
         return model_service
     except ImportError:

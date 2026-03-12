@@ -208,9 +208,7 @@ def _parse_json_lines(raw_text: str, source_path: Path) -> list[dict[str, Any]]:
             records.append(parsed)
             continue
 
-        raise ValueError(
-            f"Line {line_number} in {source_path} is not a JSON object."
-        )
+        raise ValueError(f"Line {line_number} in {source_path} is not a JSON object.")
 
     return records
 
@@ -259,7 +257,9 @@ def evaluate_records(
     scenario: str,
     key_fields: Sequence[str] = ("file", "report_id"),
 ) -> ScenarioEvaluation:
-    prediction_map, duplicate_prediction_keys = _build_record_map(predictions, key_fields)
+    prediction_map, duplicate_prediction_keys = _build_record_map(
+        predictions, key_fields
+    )
     gold_map, duplicate_gold_keys = _build_record_map(gold, key_fields)
 
     matched_keys = sorted(set(prediction_map) & set(gold_map))
@@ -364,7 +364,9 @@ def evaluate_pair_files(
 ) -> ScenarioEvaluation:
     prediction_records = load_records(prediction_path)
     gold_records = load_records(gold_path)
-    scenario_name = scenario or f"{Path(prediction_path).name} vs {Path(gold_path).name}"
+    scenario_name = (
+        scenario or f"{Path(prediction_path).name} vs {Path(gold_path).name}"
+    )
 
     return evaluate_records(
         predictions=prediction_records,
@@ -378,7 +380,7 @@ def evaluate_pair_files(
 def evaluate_study_dataset(study_dir: Path | str) -> list[ScenarioEvaluation]:
     base = Path(study_dir)
 
-    scenarios = [
+    scenarios: list[dict[str, object]] = [
         {
             "name": "control_vs_gold",
             "pred": base / "names_control.json",
@@ -403,14 +405,24 @@ def evaluate_study_dataset(study_dir: Path | str) -> list[ScenarioEvaluation]:
     for scenario in scenarios:
         pred_path = scenario["pred"]
         gold_path = scenario["gold"]
+        fields = scenario["fields"]
+        scenario_name = scenario["name"]
+        if not isinstance(pred_path, Path) or not isinstance(gold_path, Path):
+            continue
+        if not isinstance(fields, tuple) or not all(
+            isinstance(field, str) for field in fields
+        ):
+            continue
+        if not isinstance(scenario_name, str):
+            continue
         if not pred_path.exists() or not gold_path.exists():
             continue
 
         result = evaluate_pair_files(
             prediction_path=pred_path,
             gold_path=gold_path,
-            fields=scenario["fields"],
-            scenario=scenario["name"],
+            fields=fields,
+            scenario=scenario_name,
             key_fields=("file", "report_id"),
         )
         results.append(result)

@@ -4,30 +4,32 @@ import os
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
-import dateparser
-import gender_guesser.detector as gender_detector
+import dateparser  # type: ignore[import-untyped]
+import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
 import pdfplumber
 from faker import Faker
 from PIL import Image
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
-from lx_anonymizer.anonymization.sensitive_region_cropper import \
-    SensitiveRegionCropper  # Import the new cropper
+from lx_anonymizer.anonymization.sensitive_region_cropper import (
+    SensitiveRegionCropper,
+)  # Import the new cropper
 from lx_anonymizer.anonymization.text_anonymizer import anonymize_text
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
-from lx_anonymizer.ner.spacy_extractor import (EndoscopeDataExtractor,
-                                               ExaminationDataExtractor,
-                                               ExaminerDataExtractor,
-                                               PatientDataExtractor)
+from lx_anonymizer.ner.spacy_extractor import (
+    EndoscopeDataExtractor,
+    ExaminationDataExtractor,
+    ExaminerDataExtractor,
+    PatientDataExtractor,
+)
 from lx_anonymizer.ner.spacy_ner_fallback import extract_patient_info_from_text
-from lx_anonymizer.ocr.ocr import \
-    tesseract_full_image_ocr  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
-from lx_anonymizer.ocr.ocr_ensemble import \
-    ensemble_ocr  # Import the new ensemble OCR
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import \
-    OllamaOptimizedExtractor
+from lx_anonymizer.ocr.ocr import (
+    tesseract_full_image_ocr,
+)  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
+from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
+from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import logger
 from lx_anonymizer.setup.private_settings import DEFAULT_SETTINGS
@@ -46,11 +48,11 @@ class ReportReader:
     def __init__(
         self,
         report_root_path: Optional[str] = None,
-        locale: str = DEFAULT_SETTINGS["locale"],
+        locale: str = cast(str, DEFAULT_SETTINGS["locale"]),
         employee_first_names: Optional[List[str]] = None,
         employee_last_names: Optional[List[str]] = None,
         flags: Optional[Dict[Any, Any]] = None,
-        text_date_format: str = DEFAULT_SETTINGS["text_date_format"],
+        text_date_format: str = cast(str, DEFAULT_SETTINGS["text_date_format"]),
     ):
         """
         Initialize the report reader.
@@ -136,15 +138,15 @@ class ReportReader:
             self.ollama_extractor = None
 
     @classmethod
-    def _resolve_flags(
-        cls, flags: Optional[Mapping[Any, Any]]
-    ) -> Dict[str, Any]:
+    def _resolve_flags(cls, flags: Optional[Mapping[Any, Any]]) -> Dict[str, Any]:
         """
         Merge caller-provided flags with defaults and normalize expected types.
 
         This keeps initialization robust when callers provide only a subset of flags.
         """
-        default_flags = dict(DEFAULT_SETTINGS.get("flags", {}))
+        default_flags: Dict[str, Any] = dict(
+            cast(Mapping[str, Any], DEFAULT_SETTINGS.get("flags", {}))
+        )
         if flags is None:
             return default_flags
 
@@ -336,8 +338,9 @@ class ReportReader:
                         logger.info("Applying LLM correction to OCR text via Ollama")
                         attempted_ollama_correction = True
                     try:
-                        from lx_anonymizer.ollama.ollama_service import \
-                            get_ollama_service
+                        from lx_anonymizer.ollama.ollama_service import (
+                            get_ollama_service,
+                        )
 
                         ollama_client = (
                             get_ollama_service(auto_start=False)
@@ -610,7 +613,9 @@ class ReportReader:
         final_patient_info = {
             "patient_first_name": patient_info.get("patient_first_name"),
             "patient_last_name": patient_info.get("patient_last_name"),
-            "patient_dob": parsed_dob.isoformat() if isinstance(parsed_dob, date) else parsed_dob,
+            "patient_dob": parsed_dob.isoformat()
+            if isinstance(parsed_dob, date)
+            else parsed_dob,
             "casenumber": patient_info.get("casenumber"),
             "patient_gender_name": patient_info.get("patient_gender_name"),
         }
@@ -664,7 +669,9 @@ class ReportReader:
         )
 
     def extract_report_meta_medllama(self, text):
-        return self._extract_report_meta_via_ollama(text=text, extractor_name="MedLLaMA")
+        return self._extract_report_meta_via_ollama(
+            text=text, extractor_name="MedLLaMA"
+        )
 
     def extract_report_meta_llama3(self, text):
         return self._extract_report_meta_via_ollama(text=text, extractor_name="Llama3")

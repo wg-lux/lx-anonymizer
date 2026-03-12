@@ -1,7 +1,7 @@
 from PIL import ImageOps, Image, ImageFilter, ImageEnhance
 import numpy as np
 import cv2
-from typing import List, Tuple, Optional
+from typing import Any, List, Tuple, Optional, cast
 
 
 def preprocess_image(
@@ -34,14 +34,17 @@ def preprocess_image(
         elif method == "denoise":
             # Apply denoising
             image_cv = np.array(image)
+            cv2_any = cv2
             if len(image_cv.shape) == 3 and image_cv.shape[2] == 3:
                 # Color image
-                image_cv = cv2.fastNlMeansDenoisingColored(
+                image_cv = cast(Any, cv2_any).fastNlMeansDenoisingColored(
                     image_cv, None, 10, 10, 7, 21
                 )
             else:
                 # Grayscale image
-                image_cv = cv2.fastNlMeansDenoising(image_cv, None, 30, 7, 21)
+                image_cv = cast(Any, cv2_any).fastNlMeansDenoising(
+                    image_cv, None, 30, 7, 21
+                )
             image = Image.fromarray(image_cv)
 
         elif method == "contrast":

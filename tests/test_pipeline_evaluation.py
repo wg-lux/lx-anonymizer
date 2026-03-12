@@ -79,7 +79,9 @@ def test_evaluate_records_returns_expected_core_metrics() -> None:
     assert result.macro_exact_match_rate == pytest.approx(0.5)
 
 
-def test_evaluate_feedback_alignment_uses_text_change_when_no_explicit_prediction() -> None:
+def test_evaluate_feedback_alignment_uses_text_change_when_no_explicit_prediction() -> (
+    None
+):
     predictions = [
         {
             "file": "f1",

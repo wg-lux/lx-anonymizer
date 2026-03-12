@@ -1,11 +1,22 @@
 import re
 from datetime import datetime
-from typing import Any, Dict, Optional, Pattern, Tuple
+from typing import (
+    Any,
+    Final,
+    Mapping,
+    Optional,
+    Pattern,
+    Sequence,
+    Tuple,
+    TypedDict,
+    cast,
+)
 
 import spacy
 import spacy.cli
 from spacy.language import Language
 from spacy.matcher import Matcher
+from spacy.tokens import Span, Token
 
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ner.determine_gender import determine_gender
@@ -15,7 +26,7 @@ logger = get_logger(__name__)
 
 # --- Constants ---
 
-TITLE_WORDS = {
+TITLE_WORDS: Final[set[str]] = {
     "herr",
     "herrn",
     "frau",
@@ -41,7 +52,33 @@ TITLE_WORDS = {
     "baron",
 }
 
-DATE_RE: Pattern = re.compile(r"(\d{1,2}[.\s]?\d{1,2}[.\s]?\d{2,4})|(\d{8})")
+DATE_RE: Pattern[str] = re.compile(r"(\d{1,2}[.\s]?\d{1,2}[.\s]?\d{2,4})|(\d{8})")
+
+
+class PatientInfo(TypedDict):
+    patient_first_name: Optional[str]
+    patient_last_name: Optional[str]
+    patient_dob: Optional[str]
+    casenumber: Optional[str]
+    patient_gender_name: Optional[str]
+
+
+class ExaminerInfo(TypedDict):
+    examiner_title: Optional[str]
+    examiner_first_name: Optional[str]
+    examiner_last_name: Optional[str]
+
+
+class EndoscopeInfo(TypedDict):
+    model_name: Optional[str]
+    serial_number: Optional[str]
+
+
+class ExaminationInfo(TypedDict):
+    examiner_last_name: Optional[str]
+    examiner_first_name: Optional[str]
+    examination_date: Optional[str]
+    examination_time: Optional[str]
 
 
 # --- Utilities ---
@@ -131,11 +168,11 @@ class BaseExtractor:
         # Hook for subclasses to register their specific rules
         self._register_patterns()
 
-    def _register_patterns(self):
+    def _register_patterns(self) -> None:
         """Subclasses should override this to add patterns to self.matcher"""
         pass
 
-    def safe_update_meta(self, data: Dict[str, Any]):
+    def safe_update_meta(self, data: Mapping[str, object]) -> None:
         """Helper wrapper for meta updates."""
         self.meta.safe_update(data)
 
@@ -144,7 +181,7 @@ class BaseExtractor:
 
 
 class PatientDataExtractor(BaseExtractor):
-    def _register_patterns(self):
+    def _register_patterns(self) -> None:
         # Header variations
         header_variants = r"(?i)^(pat(ient|ientin|\.?)|pationt|patbien)$"
 
@@ -170,7 +207,8 @@ class PatientDataExtractor(BaseExtractor):
         ]
 
         # Consolidated pattern
-        pattern = (
+        pattern = cast(
+            list[dict[str, Any]],
             pat_header
             + [space]
             + [name_part]  # Last name (rough approx)
@@ -181,17 +219,23 @@ class PatientDataExtractor(BaseExtractor):
             + geb_block
             + [space]
             + [{"OP": "?"}]
-            + fall_block
+            + fall_block,
         )
 
         self.matcher.add("PATIENT_LINE", [pattern])
 
-    def __call__(self, text: str) -> Dict[str, Optional[str]]:
+    def __call__(self, text: str) -> PatientInfo:
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
         if not matches:
-            return self.meta.to_dict()
+            return PatientInfo(
+                patient_first_name=self.meta.patient_first_name,
+                patient_last_name=self.meta.patient_last_name,
+                patient_dob=self.meta.patient_dob,
+                casenumber=self.meta.casenumber,
+                patient_gender_name=self.meta.patient_gender_name,
+            )
 
         # Get longest match
         _, start, end = max(matches, key=lambda m: m[2] - m[1])
@@ -201,7 +245,7 @@ class PatientDataExtractor(BaseExtractor):
         # Extraction logic helpers
         first_name, last_name = self._extract_names(tokens)
         birthdate = self._extract_dob(span, tokens)
-        case_num = self._extract_case_number(tokens, birthdate)
+        case_num = self._extract_case_number(tokens)
         gender = determine_gender(first_name) if first_name else None
 
         self.safe_update_meta(
@@ -214,16 +258,24 @@ class PatientDataExtractor(BaseExtractor):
             }
         )
 
-        return self.meta.to_dict()
+        return PatientInfo(
+            patient_first_name=self.meta.patient_first_name,
+            patient_last_name=self.meta.patient_last_name,
+            patient_dob=self.meta.patient_dob,
+            casenumber=self.meta.casenumber,
+            patient_gender_name=self.meta.patient_gender_name,
+        )
 
-    def _extract_names(self, tokens) -> Tuple[Optional[str], Optional[str]]:
+    def _extract_names(
+        self, tokens: Sequence[Token]
+    ) -> Tuple[Optional[str], Optional[str]]:
         """Heuristics to split names based on commas or position."""
         header_end_idx = 0
         # Find where "Patient:" ends
         for i, token in enumerate(tokens):
             if token.lower_ in ["patient", "patientin", "pat.", "pationt", ":"]:
                 header_end_idx = i + 1
-            elif tokens[header_end_idx - 1].text != ":":
+            elif header_end_idx > 0 and tokens[header_end_idx - 1].text != ":":
                 break
 
         comma_idx = next((i for i, t in enumerate(tokens) if t.text == ","), None)
@@ -236,26 +288,16 @@ class PatientDataExtractor(BaseExtractor):
         ]
         end_name_idx = min(stop_indices) if stop_indices else len(tokens)
 
-        if comma_idx:
+        if comma_idx is not None:
             ln_tokens = tokens[header_end_idx:comma_idx]
             fn_tokens = tokens[comma_idx + 1 : end_name_idx]
         else:
             # Fallback: assume Lastname Firstname order without comma
             full_name_tokens = tokens[header_end_idx:end_name_idx]
             if len(full_name_tokens) >= 2:
-                # Naive split: Last token is first name, rest is last name?
-                # Or German convention: First token(s) usually last name if written "Mustermann Max"
-                # The original code logic was ambiguous here, preserving "Lastname Firstname" assumption
-                ln_tokens = full_name_tokens
-                fn_tokens = []  # Cannot reliably split without comma in this simplified logic
-                if len(full_name_tokens) >= 2:
-                    ln_tokens = (
-                        full_name_tokens  # Logic in original was slightly circular.
-                    )
-                    # Keeping it safe: if no comma, dump to last_name or try to split?
-                    # Let's stick to original behavior:
-                    pass
-
+                # Without a comma the original source appears to use "LastName FirstName".
+                ln_tokens = full_name_tokens[:-1]
+                fn_tokens = full_name_tokens[-1:]
             else:
                 ln_tokens = full_name_tokens
                 fn_tokens = []
@@ -270,7 +312,7 @@ class PatientDataExtractor(BaseExtractor):
 
         return (" ".join(fn_clean) or None, " ".join(ln_clean) or None)
 
-    def _extract_dob(self, span, tokens) -> Optional[str]:
+    def _extract_dob(self, span: Span, tokens: Sequence[Token]) -> Optional[str]:
         date_match = DATE_RE.search(span.text)
         if not date_match:
             return None
@@ -281,7 +323,7 @@ class PatientDataExtractor(BaseExtractor):
                 return _clean_date(token.text)
         return None
 
-    def _extract_case_number(self, tokens, birthdate_str) -> Optional[str]:
+    def _extract_case_number(self, tokens: Sequence[Token]) -> Optional[str]:
         # Look for explicitly labeled case number
         for i, t in enumerate(tokens):
             if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]:
@@ -295,9 +337,19 @@ class PatientDataExtractor(BaseExtractor):
         # (This is a simplified version of original logic)
         return None
 
+    @staticmethod
+    def _blank() -> PatientInfo:
+        return PatientInfo(
+            patient_first_name=None,
+            patient_last_name=None,
+            patient_dob=None,
+            casenumber=None,
+            patient_gender_name=None,
+        )
+
 
 class ExaminerDataExtractor(BaseExtractor):
-    def _register_patterns(self):
+    def _register_patterns(self) -> None:
         self.matcher.add(
             "EXAMINER_WITH_TITLE",
             [
@@ -324,7 +376,7 @@ class ExaminerDataExtractor(BaseExtractor):
             ],
         )
 
-    def extract_examiner_info(self, text: str) -> Optional[Dict[str, Optional[str]]]:
+    def extract_examiner_info(self, text: str) -> Optional[ExaminerInfo]:
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
@@ -337,26 +389,33 @@ class ExaminerDataExtractor(BaseExtractor):
         tokens = list(span)
         pattern_name = self.nlp.vocab.strings[match_id]
 
-        title, first, last = None, None, None
+        title: Optional[str] = None
+        first: Optional[str] = None
+        last: Optional[str] = None
 
-        if pattern_name == "EXAMINER_WITH_TITLE":
+        if pattern_name == "EXAMINER_WITH_TITLE" and len(tokens) >= 6:
             title, first, last = tokens[3].text, tokens[4].text, tokens[5].text
-        elif pattern_name == "EXAMINER_NO_TITLE":
+        elif pattern_name == "EXAMINER_NO_TITLE" and len(tokens) >= 5:
             first, last = tokens[3].text, tokens[4].text
+        else:
+            logger.debug(
+                "Unexpected examiner token layout for pattern %s", pattern_name
+            )
+            return None
 
         self.safe_update_meta(
             {"examiner_first_name": first, "examiner_last_name": last}
         )
 
-        return {
-            "examiner_title": title,
-            "examiner_first_name": first,
-            "examiner_last_name": last,
-        }
+        return ExaminerInfo(
+            examiner_title=title,
+            examiner_first_name=first,
+            examiner_last_name=last,
+        )
 
 
 class EndoscopeDataExtractor(BaseExtractor):
-    def _register_patterns(self):
+    def _register_patterns(self) -> None:
         self.matcher.add(
             "ENDOSCOPE_INFO",
             [
@@ -371,7 +430,7 @@ class EndoscopeDataExtractor(BaseExtractor):
             ],
         )
 
-    def extract_endoscope_info(self, text: str) -> Optional[Dict[str, Optional[str]]]:
+    def extract_endoscope_info(self, text: str) -> Optional[EndoscopeInfo]:
         doc = self.nlp(text)
         matches = self.matcher(doc)
 
@@ -395,7 +454,7 @@ class EndoscopeDataExtractor(BaseExtractor):
             {"endoscope_type": model_name, "endoscope_sn": serial_number}
         )
 
-        return {"model_name": model_name, "serial_number": serial_number}
+        return EndoscopeInfo(model_name=model_name, serial_number=serial_number)
 
 
 class ExaminationDataExtractor(BaseExtractor):
@@ -406,20 +465,27 @@ class ExaminationDataExtractor(BaseExtractor):
 
     def extract_examination_info(
         self, text: str, remove_examiner_titles: bool = True
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[ExaminationInfo]:
         if "1. Unters.:" in text or "Unters.:" in text:
-            return self._extract_format_1(text)
+            return self._extract_format_1(
+                text, remove_examiner_titles=remove_examiner_titles
+            )
         if "Eingang am:" in text:
             return self._extract_format_2(text)
         return None
 
-    def _extract_format_1(self, line: str) -> Dict[str, Any]:
+    def _extract_format_1(
+        self, line: str, remove_examiner_titles: bool = True
+    ) -> Optional[ExaminationInfo]:
         # Format: Unters.: LastName, FirstName U-datum: DD.MM.YYYY HH:MM
         pattern = r"Unters\.:\s*([\w\s\.]+),\s*([\w\s]+)\s*U-datum:\s*(\d{2}\.\d{2}\.\d{4})\s*(\d{2}:\d{2})"
         match = re.search(pattern, line)
 
         if match:
             last_name, first_name = match.group(1).strip(), match.group(2).strip()
+            if remove_examiner_titles:
+                last_name = self._remove_title_words(last_name)
+                first_name = self._remove_title_words(first_name)
             # Parse date
             try:
                 date_obj = datetime.strptime(match.group(3), "%d.%m.%Y")
@@ -437,27 +503,47 @@ class ExaminationDataExtractor(BaseExtractor):
                     "examination_time": ex_time,
                 }
             )
-            return {
-                "examiner_last_name": last_name,
-                "examiner_first_name": first_name,
-                "examination_date": ex_date,
-                "examination_time": ex_time,
-            }
+            return ExaminationInfo(
+                examiner_last_name=last_name,
+                examiner_first_name=first_name,
+                examination_date=ex_date,
+                examination_time=ex_time,
+            )
 
         # Fallback to SpaCy extractor if regex fails
         fallback_extractor = ExaminerDataExtractor(meta=self.meta)
-        return fallback_extractor.extract_examiner_info(line)
+        examiner_info = fallback_extractor.extract_examiner_info(line)
+        if examiner_info is None:
+            return None
+        first_name = examiner_info["examiner_first_name"]
+        last_name = examiner_info["examiner_last_name"]
+        if remove_examiner_titles:
+            if first_name:
+                first_name = self._remove_title_words(first_name)
+            if last_name:
+                last_name = self._remove_title_words(last_name)
+        return ExaminationInfo(
+            examiner_last_name=last_name,
+            examiner_first_name=first_name,
+            examination_date=self.meta.examination_date,
+            examination_time=self.meta.examination_time,
+        )
 
-    def _extract_format_2(self, line: str) -> Optional[Dict[str, Any]]:
+    def _extract_format_2(self, line: str) -> Optional[ExaminationInfo]:
         match = re.search(r"Eingang am:\s*(\d{2}\.\d{2}\.\d{4})", line)
         if match:
             ex_date = _clean_date(match.group(1))
             self.safe_update_meta({"examination_date": ex_date, "examination_time": ""})
-            return {
-                "examiner_last_name": "",
-                "examiner_first_name": "",
-                "examination_date": ex_date,
-                "examination_time": "",
-            }
+            return ExaminationInfo(
+                examiner_last_name="",
+                examiner_first_name="",
+                examination_date=ex_date,
+                examination_time="",
+            )
 
         return None
+
+    @staticmethod
+    def _remove_title_words(name: str) -> str:
+        parts = [part for part in name.split() if part.casefold() not in TITLE_WORDS]
+        return " ".join(parts).strip()

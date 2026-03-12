@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-import fitz
+import pymupdf  # type: ignore[import-untyped]
 
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
@@ -61,7 +61,7 @@ class Anonymizer:
             logger.info(f"Creating anonymized PDF with EAST + TesseOCR: {output_path}")
 
             # Open the original PDF
-            doc = fitz.open(pdf_path)
+            doc = pymupdf.open(pdf_path)
 
             # Convert PDF to images for analysis
             images = convert_pdf_to_images(pdf_path)
@@ -135,7 +135,7 @@ class Anonymizer:
 
                             # Create black rectangle with slight padding for better coverage
                             padding = 2  # PDF points
-                            rect = fitz.Rect(
+                            rect = pymupdf.Rect(
                                 pdf_x1 - padding,
                                 pdf_y1 - padding,
                                 pdf_x2 + padding,
@@ -307,7 +307,7 @@ class Anonymizer:
             logger.info(f"Creating anonymized PDF from ROIs: {output_path}")
 
             # Open PDF and its raster images (for scaling)
-            doc = fitz.open(pdf_path)
+            doc = pymupdf.open(pdf_path)
             images = convert_pdf_to_images(pdf_path)
 
             for page_num, image in enumerate(images):
@@ -330,7 +330,7 @@ class Anonymizer:
                     pdf_y1 = page_height - (y2 * scale_y)
                     pdf_x2 = x2 * scale_x
                     pdf_y2 = page_height - (y1 * scale_y)
-                    rect = fitz.Rect(pdf_x1 - 2, pdf_y1 - 2, pdf_x2 + 2, pdf_y2 + 2)
+                    rect = pymupdf.Rect(pdf_x1 - 2, pdf_y1 - 2, pdf_x2 + 2, pdf_y2 + 2)
                     page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
 
             doc.save(output_path)

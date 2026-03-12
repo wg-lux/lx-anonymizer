@@ -19,8 +19,8 @@ import re
 import unicodedata
 import cv2
 import numpy as np
-import pandas as pd
-import pytesseract
+import pandas as pd  # type: ignore[import-untyped]
+import pytesseract  # type: ignore[import-untyped]
 
 
 # Setup logging
@@ -48,13 +48,13 @@ class OCRDiagnostic:
             {"name": "deu_only", "lang": "deu", "psm": 6, "oem": 3, "dpi": 300},
         ]
 
-        self.results = []
+        self.results: list[dict[str, Any]] = []
 
     def check_tesseract_setup(self) -> Dict[str, Any]:
         """Überprüft Tesseract-Installation und verfügbare Sprachen."""
         logger.info("🔍 Checking Tesseract setup...")
 
-        setup_info = {}
+        setup_info: Dict[str, Any] = {}
 
         try:
             # Tesseract Version
@@ -383,7 +383,7 @@ class OCRDiagnostic:
         logger.info(f"🚀 Starting OCR diagnosis for video {video_id}")
 
         # Video öffnen
-        cap = cv2.VideoCapture(video_path)
+        cap = cv2.VideoCapture(video_path)  # type: ignore[call-arg]
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {video_path}")
 

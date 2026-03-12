@@ -21,9 +21,9 @@ Usage:
 import logging
 import threading
 import time
-from typing import List, Tuple, Union
+from typing import Any, List, Tuple, Union
 
-import tesserocr
+import tesserocr  # type: ignore[import-untyped]
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class TesseOCROptimized:
 
         try:
             # Initialize Tesseract API - this is the key performance improvement!
-            self.api = tesserocr.PyTessBaseAPI(lang=language, path=tessdata_path)
+            self.api: Any = tesserocr.PyTessBaseAPI(lang=language, path=tessdata_path)
 
             # Set optimal parameters for medical text recognition
             self.api.SetPageSegMode(tesserocr.PSM.SINGLE_WORD)  # PSM 8 for single words
@@ -233,7 +233,7 @@ def compare_ocr_performance(
     image_path: Union[str, Image.Image],
     boxes: List[Tuple[int, int, int, int]],
     language: str = "deu+eng",
-) -> dict:
+) -> dict[str, object]:
     """
     Compare performance between pytesseract and tesserocr implementations.
 
@@ -258,7 +258,7 @@ def compare_ocr_performance(
     pytesseract_confidences = None
 
     try:
-        from lx_anonymizer.ocr import tesseract_on_boxes
+        from lx_anonymizer.ocr.ocr import tesseract_on_boxes
 
         start_time = time.time()
         pytesseract_results, pytesseract_confidences = tesseract_on_boxes(
@@ -268,7 +268,7 @@ def compare_ocr_performance(
     except ImportError:
         logger.warning("pytesseract implementation not available for comparison")
 
-    comparison = {
+    comparison: dict[str, object] = {
         "tesserocr": {
             "time": tesserocr_time,
             "results_count": len(tesserocr_results),

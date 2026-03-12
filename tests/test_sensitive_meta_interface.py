@@ -139,7 +139,9 @@ def test_safe_update_swaps_exam_and_birth_dates_when_order_is_invalid() -> None:
         (" value ", "value"),
     ],
 )
-def test_normalize_and_clean_handles_null_equivalents(raw: str, expected: str | None) -> None:
+def test_normalize_and_clean_handles_null_equivalents(
+    raw: str, expected: str | None
+) -> None:
     meta = SensitiveMeta(patient_first_name=raw)
     assert meta.patient_first_name == expected
 
@@ -204,7 +206,9 @@ def test_safe_update_fill_only_keeps_existing_nonblank_values() -> None:
     assert meta.examination_date == "2020-01-01"
 
 
-def test_safe_update_bypasses_instance_setattr_hook(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_safe_update_bypasses_instance_setattr_hook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     meta = SensitiveMeta(patient_first_name="Alice")
     target_id = id(meta)
     original_setattr = SensitiveMeta.__setattr__

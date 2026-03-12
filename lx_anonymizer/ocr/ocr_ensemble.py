@@ -1,15 +1,18 @@
 import re
-from typing import Dict, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
 from spellchecker import SpellChecker
 
-from lx_anonymizer.ocr.ocr_preprocessing import (optimize_image_for_medical_text,
-                                             preprocess_image)
+from lx_anonymizer.ocr.ocr_preprocessing import (
+    optimize_image_for_medical_text,
+    preprocess_image,
+)
 from lx_anonymizer.setup.custom_logger import logger
 
 # Initialize spellchecker with medical dictionary if available
+spell: Optional[SpellChecker]
 try:
     spell = SpellChecker(language="en", distance=1)
     # Add medical terms
@@ -108,7 +111,7 @@ def ensemble_ocr(
 
     # TrOCR using imported function
     try:
-        from lx_anonymizer.ocr import trocr_full_image_ocr
+        from lx_anonymizer.ocr.ocr import trocr_full_image_ocr
 
         text_trocr = trocr_full_image_ocr(image_trocr)
         # TrOCR doesn't provide confidence scores directly, use length as proxy
@@ -124,7 +127,7 @@ def ensemble_ocr(
 
     # Donut OCR using imported function
     try:
-        from lx_anonymizer.ocr_donut import donut_full_image_ocr
+        from lx_anonymizer.ocr_donut import donut_full_image_ocr  # type: ignore[import-untyped]
 
         logger.info("Running Donut OCR with improved parameters")
         text_donut = donut_full_image_ocr(image_donut)
@@ -313,7 +316,7 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
     for scale in scales:
         width, height = image.size
         resized_image = image.resize(
-            (int(width * scale), int(height * scale)), Image.LANCZOS
+            (int(width * scale), int(height * scale)), Image.Resampling.LANCZOS
         )
 
         try:

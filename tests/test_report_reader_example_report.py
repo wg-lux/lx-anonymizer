@@ -30,7 +30,9 @@ def test_example_report_populates_sensitive_meta_fields() -> None:
         pytest.skip(f"Example report not found: {pdf_path}")
 
     # Avoid external Ollama dependency during initialization.
-    with patch("lx_anonymizer.report_reader.ensure_ollama", side_effect=RuntimeError("test")):
+    with patch(
+        "lx_anonymizer.report_reader.ensure_ollama", side_effect=RuntimeError("test")
+    ):
         reader = ReportReader()
 
     original_text, anonymized_text, meta, _ = reader.process_report(
@@ -77,4 +79,3 @@ def test_example_report_populates_sensitive_meta_fields() -> None:
             "meta['anonymized_text'] was not populated despite metadata extraction output. "
             f"Populated fields: {sorted(populated.keys())}"
         )
-

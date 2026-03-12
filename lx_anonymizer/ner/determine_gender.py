@@ -1,10 +1,10 @@
-import gender_guesser.detector as gender_detector
+import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
 
 # Initialize the detector
 detector = gender_detector.Detector(case_sensitive=False)
 
 
-def determine_gender(first_name):
+def determine_gender(first_name: str | None) -> str:
     """
     Determines the gender of a given first name.
 

@@ -2,11 +2,11 @@ import csv
 import re
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
-import pymupdf
-import pytesseract
+import pymupdf  # type: ignore[import-untyped]
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
 
 from lx_anonymizer.anonymization.blur import blur_function
@@ -25,7 +25,12 @@ try:
 except ImportError:
     CRAFT_AVAILABLE = False
 
-    def craft_text_detection(*args, **kwargs):
+    def craft_text_detection(
+        image_input: Any,
+        min_confidence: Any = None,
+        width: Any = None,
+        height: Any = None,
+    ) -> Any:
         raise ImportError(
             "CRAFT text detection requires 'hezar' package. Install with: pip install lx-anonymizer[llm]"
         )
@@ -33,18 +38,30 @@ except ImportError:
 
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.setup.device_reader import read_background_color, read_name_boxes
-from lx_anonymizer.setup.directory_setup import create_blur_directory, create_temp_directory
+from lx_anonymizer.setup.directory_setup import (
+    create_blur_directory,
+    create_temp_directory,
+)
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
 from lx_anonymizer.ner.flair_NER import flair_NER_German
-from lx_anonymizer.nlp.fuzzy_matching import correct_box_for_new_text, fuzzy_match_snippet
+from lx_anonymizer.nlp.fuzzy_matching import (
+    correct_box_for_new_text,
+    fuzzy_match_snippet,
+)
 from lx_anonymizer.pseudonymization.names_generator import (
     gender_and_handle_device_names,
     gender_and_handle_separate_names,
 )
-from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr, tesseract_on_boxes, trocr_on_boxes
+from lx_anonymizer.ocr.ocr import (
+    tesseract_full_image_ocr,
+    tesseract_on_boxes,
+    trocr_on_boxes,
+)
 from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
 from lx_anonymizer.ner.spacy_NER import spacy_NER_German
-from lx_anonymizer.text_detection.tesseract_text_detection import tesseract_text_detection
+from lx_anonymizer.text_detection.tesseract_text_detection import (
+    tesseract_text_detection,
+)
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 # Configure logging
@@ -103,7 +120,11 @@ def _prepare_image_paths(
 
 def _load_device_defaults(
     device: str, img_path: Path
-) -> Tuple[Optional[Tuple[int, int, int, int]], Optional[Tuple[int, int, int, int]], Tuple[int, int, int]]:
+) -> Tuple[
+    Optional[Tuple[int, int, int, int]],
+    Optional[Tuple[int, int, int, int]],
+    Tuple[int, int, int],
+]:
     try:
         first_name_box, last_name_box = read_name_boxes(device)
         background_color = read_background_color(device)
@@ -143,7 +164,9 @@ def _detect_combined_text_boxes(
     width: int,
     height: int,
 ) -> List[Tuple[int, int, int, int]]:
-    east_boxes, _ = east_text_detection(img_path, east_path, min_confidence, width, height)
+    east_boxes, _ = east_text_detection(
+        img_path, east_path, min_confidence, width, height
+    )
     tesseract_boxes, _ = tesseract_text_detection(
         img_path, min_confidence, width, height
     )
@@ -165,9 +188,15 @@ def _run_ocr_for_boxes(
 
 
 def _write_ner_csv(
-    csv_dir: Path, file_path: Path, combined_results: List[Tuple[str, Tuple[int, int, int, int], float, List[Tuple[str, str]]]]
+    csv_dir: Path,
+    file_path: Path,
+    combined_results: List[
+        Tuple[str, Tuple[int, int, int, int], float, List[Tuple[str, str]]]
+    ],
 ) -> Path:
-    csv_path = csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
+    csv_path = (
+        csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
+    )
     with open(csv_path, mode="w", newline="", encoding="utf-8") as csv_file:
         fieldnames = [
             "filename",
@@ -209,7 +238,7 @@ def _save_final_blurred_image(blurred_image_path: Optional[Path]) -> None:
     if blurred_image_path is None:
         return
     output_filename = f"blurred_image_{uuid.uuid4()}.jpg"
-    blur_dir = create_blur_directory()
+    blur_dir = create_blur_directory(default_main_directory=None)
     output_path = Path(blur_dir) / output_filename
     final_image = cv2.imread(str(blurred_image_path))
     cv2.imwrite(str(output_path), final_image)
@@ -260,7 +289,9 @@ def process_images_with_OCR_and_NER(
 
     try:
         file_type = _resolve_file_type(file_path)
-        image_paths, extracted_text = _prepare_image_paths(file_path, file_type, temp_dir)
+        image_paths, extracted_text = _prepare_image_paths(
+            file_path, file_type, temp_dir
+        )
 
         blurred_image_path = image_paths[0]
         for img_path in image_paths:

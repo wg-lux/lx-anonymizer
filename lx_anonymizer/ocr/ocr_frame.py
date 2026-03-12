@@ -1,19 +1,28 @@
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, TypeAlias, Tuple, cast
 
 import cv2
 import numpy as np
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image, ImageEnhance, ImageFilter
+
+from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
+
+_TesseOCRFrameProcessor: Any = None
 
 # Import TesseOCR if available (requires tesserocr)
 try:
-    from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
+    from lx_anonymizer.ocr.ocr_frame_tesserocr import (
+        TesseOCRFrameProcessor as _TesseOCRFrameProcessor,
+    )
 
     TESSEROCR_AVAILABLE = True
 except ImportError:
     TESSEROCR_AVAILABLE = False
-    TesseOCRFrameProcessor = None
+
+FlatRoi: TypeAlias = dict[str, int | None]
+NestedRoi: TypeAlias = dict[str, FlatRoi]
+RoiInput: TypeAlias = NestedRoi | FlatRoi | None
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +37,11 @@ class FrameOCR:
     """
 
     def __init__(self):
-        if TESSEROCR_AVAILABLE and TesseOCRFrameProcessor:
+        self.frame_metadata_extractor = FrameMetadataExtractor()
+        self.tesserocr_processor: Optional[Any]
+        if TESSEROCR_AVAILABLE and _TesseOCRFrameProcessor is not None:
             try:
-                self.tesserocr_processor = TesseOCRFrameProcessor(language="deu")
+                self.tesserocr_processor = _TesseOCRFrameProcessor(language="deu")
                 logger.info("FrameOCR initialized with TesseOCR acceleration")
             except Exception as e:
                 logger.warning(
@@ -52,7 +63,7 @@ class FrameOCR:
     def extract_text_from_frame(
         self,
         frame: np.ndarray,
-        roi: Optional[dict[str, dict[str, int | None]] | None],
+        roi: RoiInput,
         high_quality: bool = True,
     ) -> Tuple[str, float, Dict[str, Any]]:
         """
@@ -69,13 +80,16 @@ class FrameOCR:
                 logger.error(f"TesseOCR failed, falling back to PyTesseract: {e}")
 
         # Fallback to pytesseract
-        return self._extract_text_pytesseract(frame, roi, high_quality)
+        flat_roi = roi if roi and "x" in roi else None
+        return self._extract_text_pytesseract(
+            frame, cast(Optional[FlatRoi], flat_roi), high_quality
+        )
 
     # ---------------- PyTesseract fallback ----------------
     def _extract_text_pytesseract(
         self,
         frame: np.ndarray,
-        roi: Optional[Dict[str, Any]] = None,
+        roi: Optional[FlatRoi] = None,
         high_quality: bool = True,
     ) -> Tuple[str, float, Dict[str, Any]]:
         """Simplified pytesseract fallback for emergency OCR."""
@@ -105,13 +119,16 @@ class FrameOCR:
 
     # ---------------- Preprocessing ----------------
     def _preprocess_frame(
-        self, frame: np.ndarray, roi: Optional[Dict[str, Any]]
+        self, frame: np.ndarray, roi: Optional[FlatRoi]
     ) -> Image.Image:
         """Light preprocessing for pytesseract fallback."""
         try:
             img = frame
             if roi and self._validate_roi(roi):
-                x, y, w, h = map(int, (roi["x"], roi["y"], roi["width"], roi["height"]))
+                x = int(cast(int, roi["x"]))
+                y = int(cast(int, roi["y"]))
+                w = int(cast(int, roi["width"]))
+                h = int(cast(int, roi["height"]))
                 img = img[y : y + h, x : x + w]
 
             if img.ndim == 3:
@@ -129,13 +146,17 @@ class FrameOCR:
 
     # ---------------- Validation ----------------
     @staticmethod
-    def _validate_roi(roi: Dict[str, Any]) -> bool:
+    def _validate_roi(roi: FlatRoi) -> bool:
         """Validate ROI dictionary structure."""
         try:
+            width = roi["width"]
+            height = roi["height"]
             return (
                 all(k in roi for k in ("x", "y", "width", "height"))
-                and roi["width"] > 0
-                and roi["height"] > 0
+                and width is not None
+                and height is not None
+                and width > 0
+                and height > 0
             )
         except Exception:
             return False
@@ -143,7 +164,7 @@ class FrameOCR:
     def _ocr_with_tesserocr(
         self,
         gray_frame: np.ndarray,
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+        endoscope_data_roi_nested: Optional[NestedRoi | list[Any]] = None,
     ) -> tuple[str, float, dict, bool]:
         """
         OCR with TesserOCR and metadata extraction.
@@ -184,7 +205,7 @@ class FrameOCR:
             # --- Run OCR ---
             if not has_roi:
                 ocr_text, ocr_conf, _ = self.extract_text_from_frame(
-                    gray_frame, roi={}, high_quality=True
+                    gray_frame, roi=None, high_quality=True
                 )
 
                 # Validate full-frame OCR

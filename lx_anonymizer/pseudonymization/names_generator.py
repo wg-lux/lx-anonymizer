@@ -1,5 +1,5 @@
 import random
-import gender_guesser.detector as gender
+import gender_guesser.detector as gender  # type: ignore[import-untyped]
 from lx_anonymizer.pseudonymization.names_adder import (
     add_name_to_image,
     add_full_name_to_image,

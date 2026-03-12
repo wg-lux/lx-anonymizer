@@ -3,8 +3,7 @@ from pathlib import Path
 
 import cv2
 
-from lx_anonymizer.region_processing.box_operations import \
-    make_box_from_device_list
+from lx_anonymizer.region_processing.box_operations import make_box_from_device_list
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -46,9 +45,9 @@ def read_device(device: str):
     with open(str(device_file_path)) as json_parameters:
         data = json.load(json_parameters)
 
-        background_color = "(255, 255, 255)"
-        font_color = "(0, 0, 0)"
-        font = "FONT_HERSHEY_DUPLEX"
+        background_color: str | tuple[int, ...] = "(255, 255, 255)"
+        font_color: str | tuple[int, ...] = "(0, 0, 0)"
+        font: str | int = "FONT_HERSHEY_DUPLEX"
         font_size = 40
         font_scale = font_size / 20
         font_thickness = 2
@@ -213,7 +212,7 @@ def read_background_color(device):
     with open(str(device_file_path)) as json_parameters:
         data = json.load(json_parameters)
 
-        background_color = "(225, 225, 225)"
+        background_color: str | tuple[int, ...] = "(225, 225, 225)"
 
         keys_to_check = ["background_color"]
         for key in data["fields"]:
@@ -228,10 +227,12 @@ def read_text_formatting(device: str):
     with open(str(device_file_path)) as json_parameters:
         data = json.load(json_parameters)
 
-        text_formatting = "first_name last_name"
-        background_color = "(255, 255, 255)"  # Default background color
-        font_color = "(0, 0, 0)"  # Default font color
-        font = cv2.FONT_HERSHEY_SIMPLEX  # Default font
+        text_formatting: str = "first_name last_name"
+        background_color: str | tuple[int, ...] = (
+            "(255, 255, 255)"  # Default background color
+        )
+        font_color: str | tuple[int, ...] = "(0, 0, 0)"  # Default font color
+        font: int | str = cv2.FONT_HERSHEY_SIMPLEX  # Default font
         font_size = 20
         font_scale = font_size / 20
         font_thickness = 2

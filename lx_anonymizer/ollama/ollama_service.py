@@ -8,7 +8,9 @@ import sys
 import threading
 import time
 from functools import lru_cache
+from io import TextIOBase
 from pathlib import Path
+from typing import Any, BinaryIO, Optional
 
 import requests
 import urllib3
@@ -57,8 +59,11 @@ class OllamaService:
     DEBUG = os.environ.get("OLLAMA_DEBUG", "False").lower() in ("true", "1", "yes")
 
     def __init__(
-        self, base_url: str = None, model_name: str = None, auto_start: bool = True
-    ):
+        self,
+        base_url: Optional[str] = None,
+        model_name: Optional[str] = None,
+        auto_start: bool = True,
+    ) -> None:
         """
         Initialize the OllamaService.
 
@@ -79,8 +84,8 @@ class OllamaService:
         # Setup enhanced logging
         self._setup_logging()
 
-        self._ollama_process = None
-        self._log_file = None
+        self._ollama_process: Optional[subprocess.Popen[str]] = None
+        self._log_file: Optional[BinaryIO] = None
 
         # Print initial debug info to stdout for Django to capture
         self._stdout_log(
@@ -116,7 +121,7 @@ class OllamaService:
         # Register shutdown handler
         atexit.register(self.stop)
 
-    def _stdout_log(self, message, level="INFO"):
+    def _stdout_log(self, message: object, level: str = "INFO") -> None:
         """
         Print a message to stdout with a timestamp so Django can capture it.
         This helps debug Ollama startup issues in management commands.
@@ -128,7 +133,7 @@ class OllamaService:
         )
         sys.stdout.flush()  # Ensure output is flushed immediately
 
-    def _setup_logging(self):
+    def _setup_logging(self) -> None:
         """Configure enhanced logging for the Ollama service."""
         # Add a stream handler with a nice format if not already present
         if not any(
@@ -150,7 +155,7 @@ class OllamaService:
             logging.getLevelName(self._logger.level),
         )
 
-    def _setup_http_session(self):
+    def _setup_http_session(self) -> None:
         """Configure HTTP session with retries and timeouts."""
         self._http = requests.Session()
 
@@ -166,7 +171,9 @@ class OllamaService:
         self._http.mount("http://", adapter)
         self._http.mount("https://", adapter)
 
-    def _stream_to_logger(self, pipe, log_level=logging.INFO):
+    def _stream_to_logger(
+        self, pipe: TextIOBase, log_level: int = logging.INFO
+    ) -> None:
         """Stream subprocess output to logger."""
         try:
             for line in iter(pipe.readline, ""):
@@ -185,7 +192,7 @@ class OllamaService:
     # --------------------------------------------------------------------- #
     # 1) Lifecycle Management                                                #
     # --------------------------------------------------------------------- #
-    def stop(self):
+    def stop(self) -> None:
         """
         Explicitly stop the Ollama process and any child processes.
         """
@@ -224,7 +231,7 @@ class OllamaService:
             self._log_file.close()
             self._log_file = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         """
         Cleanup resources when object is destroyed.
         Note: This is not guaranteed to run, use stop() explicitly.
@@ -300,37 +307,37 @@ class OllamaService:
             self._logger.info(f"Running: {self.OLLAMA_BIN} serve")
 
             # Create a detached process that won't be killed when the parent exits
-            self._ollama_process = subprocess.Popen(
+            process = subprocess.Popen(
                 [self.OLLAMA_BIN, "serve"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 start_new_session=True,  # Create a new process group
             )
+            self._ollama_process = process
 
             # Start a background thread to read and log the output
-            threading.Thread(
-                target=self._stream_to_logger,
-                args=(self._ollama_process.stdout,),
-                daemon=True,
-            ).start()
+            if process.stdout is not None:
+                threading.Thread(
+                    target=self._stream_to_logger,
+                    args=(process.stdout,),
+                    daemon=True,
+                ).start()
 
             # Give it a moment to start
             time.sleep(1)
 
             # Check if process is still running
-            if self._ollama_process.poll() is not None:
-                error_message = f"Failed to start Ollama. Exit code: {self._ollama_process.returncode}"
+            if process.poll() is not None:
+                error_message = (
+                    f"Failed to start Ollama. Exit code: {process.returncode}"
+                )
                 self._stdout_log(error_message, "ERROR")
                 self._logger.error(error_message)
                 raise self.Unavailable(error_message)
 
-            self._stdout_log(
-                f"Ollama server process started with PID {self._ollama_process.pid}"
-            )
-            self._logger.info(
-                f"Ollama server process started with PID {self._ollama_process.pid}"
-            )
+            self._stdout_log(f"Ollama server process started with PID {process.pid}")
+            self._logger.info(f"Ollama server process started with PID {process.pid}")
 
         except Exception as e:
             error_msg = f"Error starting Ollama: {e}"
@@ -341,7 +348,9 @@ class OllamaService:
     # --------------------------------------------------------------------- #
     # 4) Wait    — poll until probe succeeds (max_wait seconds)             #
     # --------------------------------------------------------------------- #
-    def wait_until_ready(self, interval: int = 2, max_wait: int = None) -> None:
+    def wait_until_ready(
+        self, interval: int = 2, max_wait: Optional[int] = None
+    ) -> None:
         """
         Wait until the Ollama server is responsive.
 
@@ -386,7 +395,7 @@ class OllamaService:
     # --------------------------------------------------------------------- #
     # 5) Ensure model is loaded and ready                                   #
     # --------------------------------------------------------------------- #
-    def ensure_model_is_running(self, force_check=False) -> None:
+    def ensure_model_is_running(self, force_check: bool = False) -> None:
         """
         Ensure the model is downloaded and running.
 
@@ -453,7 +462,7 @@ class OllamaService:
             self._logger.error(error_msg)
             raise self.ModelError(error_msg)
 
-    def _warm_up_model(self):
+    def _warm_up_model(self) -> None:
         """Send a simple request to warm up the model."""
         try:
             self._logger.debug(f"Warming up model {self.model_name}...")
@@ -481,7 +490,7 @@ class OllamaService:
     # --------------------------------------------------------------------- #
     # 6) Health and diagnostics                                             #
     # --------------------------------------------------------------------- #
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         """
         Get health status of the Ollama service and models.
 
@@ -494,7 +503,7 @@ class OllamaService:
         if not self.probe_server():
             raise self.Unavailable("Ollama server is not running")
 
-        health_info = {
+        health_info: dict[str, Any] = {
             "status": "healthy",
             "server_url": self.base_url,
             "default_model": self.model_name,
@@ -532,7 +541,9 @@ class OllamaService:
     # --------------------------------------------------------------------- #
     # 7) Text generation helpers                                            #
     # --------------------------------------------------------------------- #
-    def generate_text(self, prompt, max_tokens=1000, temperature=0.3):
+    def generate_text(
+        self, prompt: str, max_tokens: int = 1000, temperature: float = 0.3
+    ) -> str:
         """
         Generate text using the specified model.
 
@@ -582,7 +593,9 @@ class OllamaService:
             logger.error(error_msg)
             raise self.RequestError(error_msg)
 
-    def split_text_into_chunks(self, text, max_chunk_size=2048):
+    def split_text_into_chunks(
+        self, text: str | bytes, max_chunk_size: int = 2048
+    ) -> list[str]:
         """
         Split text into smaller chunks, improved to handle large words and UTF-8.
 
@@ -604,7 +617,7 @@ class OllamaService:
             text_bytes = text
             encoding = "utf-8"  # Default encoding for decoding
 
-        chunks = []
+        chunks: list[str] = []
         start = 0
         text_len = len(text_bytes)
 
@@ -636,7 +649,7 @@ class OllamaService:
 
         return chunks
 
-    def correct_ocr_text(self, text):
+    def correct_ocr_text(self, text: object) -> str:
         """
         Correct OCR text using an Ollama model.
 
@@ -703,7 +716,7 @@ class OllamaService:
             logger.error(error_msg)
             raise self.RequestError(error_msg)
 
-    def correct_ocr_text_in_chunks(self, text):
+    def correct_ocr_text_in_chunks(self, text: str | bytes) -> str:
         """
         Correct OCR text in chunks, for handling long texts.
 
@@ -721,7 +734,7 @@ class OllamaService:
 
         # Split the text into chunks
         text_chunks = self.split_text_into_chunks(text)
-        corrected_chunks = []
+        corrected_chunks: list[str] = []
 
         # Process each chunk independently
         for chunk in text_chunks:

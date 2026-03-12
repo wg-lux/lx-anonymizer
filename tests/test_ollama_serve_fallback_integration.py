@@ -64,7 +64,9 @@ def test_ensure_ollama_real_fallback_starts_server_when_port_is_free() -> None:
         assert _port_open(), "Ollama port 11434 is not open after ensure_ollama()"
         assert _ollama_ps_ok(), "`ollama ps` failed after ensure_ollama() startup"
     except RuntimeError as e:
-        pytest.xfail(f"ensure_ollama() could not start a usable server in this env: {e}")
+        pytest.xfail(
+            f"ensure_ollama() could not start a usable server in this env: {e}"
+        )
     finally:
         if proc is not None:
             proc.terminate()
@@ -72,4 +74,3 @@ def test_ensure_ollama_real_fallback_starts_server_when_port_is_free() -> None:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-

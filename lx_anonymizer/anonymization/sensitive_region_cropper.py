@@ -7,14 +7,18 @@ der entsprechenden Bereiche für die Anonymisierung.
 
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Iterable, List, Mapping, Optional, Tuple
 
 from PIL import Image, ImageDraw
 
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
-from lx_anonymizer.ner.spacy_extractor import ExaminerDataExtractor, PatientDataExtractor
+from lx_anonymizer.ner.spacy_extractor import (
+    ExaminerDataExtractor,
+    PatientDataExtractor,
+    PatientInfo,
+)
 
 logger = get_logger(__name__)
 
@@ -46,7 +50,7 @@ class SensitiveRegionCropper:
         self.patient_extractor = PatientDataExtractor()
         self.examiner_extractor = ExaminerDataExtractor()
 
-        self.patient_info = None
+        self.patient_info: Optional[PatientInfo] = None
 
         # Definiere sensitive Datentypen und ihre Regex-Patterns
         self.sensitive_patterns = {
@@ -308,7 +312,7 @@ class SensitiveRegionCropper:
 
     def _find_patient_data_regions(
         self,
-        patient_info: Dict,
+        patient_info: PatientInfo | Mapping[str, Optional[str]],
         word_boxes: List[Tuple[str, Tuple[int, int, int, int]]],
         full_text: str,
     ) -> List[Tuple[int, int, int, int]]:
@@ -417,7 +421,7 @@ class SensitiveRegionCropper:
 
     def crop_sensitive_regions(
         self, pdf_path: str, output_dir: str, page_numbers: Optional[List[int]] = None
-    ) -> Dict[str, List[str]]:
+    ) -> dict[str, list[str]]:
         """
         Croppt sensitive Regionen aus einem PDF und speichert sie als separate Bilder.
 
@@ -440,7 +444,7 @@ class SensitiveRegionCropper:
             if page_numbers is None:
                 page_numbers = list(range(len(images)))
 
-            results = {}
+            results: dict[str, list[str]] = {}
             pdf_name = Path(pdf_path).stem
 
             for page_num in page_numbers:
@@ -539,12 +543,12 @@ class SensitiveRegionCropper:
             anonymized_pdf_path: Pfad für das anonymisierte PDF
         """
         try:
-            import fitz  # PyMuPDF
+            import pymupdf  # type: ignore[import-untyped]  # PyMuPDF
 
             logger.info(f"Erstelle anonymisiertes PDF: {anonymized_pdf_path}")
 
             # Öffne das ursprüngliche PDF
-            doc = fitz.open(pdf_path)
+            doc = pymupdf.open(pdf_path)
 
             # Konvertiere PDF zu Bildern für die Analyse
             images = convert_pdf_to_images(pdf_path)
@@ -584,7 +588,7 @@ class SensitiveRegionCropper:
                         pdf_y2 = page_height - (y1 * scale_y)  # Y-Achse umkehren
 
                         # Erstelle schwarzes Rechteck
-                        rect = fitz.Rect(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
+                        rect = pymupdf.Rect(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
 
                         # Füge schwarzes Rechteck hinzu
                         page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
@@ -609,7 +613,7 @@ class SensitiveRegionCropper:
 
 def crop_sensitive_regions_from_pdf(
     pdf_path: str, output_dir: str, margin: int = 20, visualize: bool = False
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     """
     Convenience-Funktion zum Cropping sensitiver Regionen aus einem PDF.
 

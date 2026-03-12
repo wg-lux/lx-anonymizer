@@ -3,14 +3,14 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
-from hezar.models import Model
-from hezar.utils import load_image
+import torch  # type: ignore[import-untyped]
+from hezar.models import Model  # type: ignore[import-untyped]
+from hezar.utils import load_image  # type: ignore[import-untyped]
+
 # Import PIL.Image to check if input is already a PIL Image
 from PIL import Image
 
-from lx_anonymizer.region_processing.box_operations import \
-    extend_boxes_if_needed
+from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)

@@ -27,7 +27,7 @@ if [[ -n "$(git ls-files -u)" ]]; then
 fi
 
 # Detect conflict markers/whitespace errors in staged changes.
-if ! git diff --cached --check --quiet; then
+if ! git diff --cached --check >/dev/null; then
   echo "Error: staged diff contains conflict markers or whitespace issues."
   exit 1
 fi

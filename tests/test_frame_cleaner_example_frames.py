@@ -3,10 +3,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-cv2 = pytest.importorskip("cv2")
 
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+
+cv2 = pytest.importorskip("cv2")
 
 
 def _example_processed_frames() -> list[Path]:
