@@ -15,8 +15,8 @@ repos:
         entry: mypy lx_anonymizer
         language: system
         pass_filenames: false
-      - id: pytest
-        name: pytest suite
-        entry: pytest
+      - id: repo-state-and-tests
+        name: repository state and tests
+        entry: scripts/pre_commit_checks.sh
         language: system
         pass_filenames: false
