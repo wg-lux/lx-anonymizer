@@ -1,5 +1,8 @@
 # LX Anonymizer
 
+
+[![Built with devenv](https://devenv.sh/assets/devenv-badge.svg)](https://devenv.sh)
+
 LX Anonymizer is a comprehensive toolkit for de-identifying endoscopy frames and medical reports. It combines advanced OCR pipelines, spaCy-based NER, heuristic sanitizers, and report-specific rules to redact or pseudonymize sensitive information while preserving clinical context.
 
 ## Core Components
