@@ -120,7 +120,7 @@ jobs:
       - name: Build sdist
         run: |
           uv build --sdist
-          uvx pkginfo --metadata dist/*.tar.gz
+          uvx pkginfo -m dist/lx_anonymizer-*.tar.gz
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
