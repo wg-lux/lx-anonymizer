@@ -37,19 +37,19 @@ jobs:
   build-wheels:
     name: Build wheels (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            os: ubuntu-latest
-            target: x86_64
-          - name: macos-x86_64
-            os: macos-15-intel
-            target: x86_64
-          - name: macos-arm64
-            os: macos-latest
-            target: aarch64
+    strategy:
+          fail-fast: false
+          matrix:
+            include:
+              - name: linux-x86_64
+                os: ubuntu-latest
+                target: x86_64
+              - name: macos-x86_64
+                os: macos-15-intel
+                target: x86_64
+              - name: macos-arm64
+                os: macos-latest
+                target: aarch64
 
     steps:
       - name: Check out the repository
