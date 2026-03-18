@@ -1,7 +1,9 @@
-import matplotlib.pyplot as plt
+from importlib import import_module
+from typing import Any, List, Optional, Tuple, cast
+
 import cv2
 import numpy as np
-from typing import List, Tuple, Optional
+
 
 def visualize_ocr_regions(
     frame: np.ndarray,
@@ -20,6 +22,13 @@ def visualize_ocr_regions(
         confidences: optional list of confidence values (0.0–1.0)
         title: window title for matplotlib
     """
+    try:
+        plt = cast(Any, import_module("matplotlib.pyplot"))
+    except ImportError as exc:
+        raise RuntimeError(
+            "matplotlib is required for OCR debug visualization."
+        ) from exc
+
     # Convert to RGB if grayscale
     if frame.ndim == 2:
         vis = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)

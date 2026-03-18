@@ -22,7 +22,158 @@ import numpy as np
 import tesserocr  # type: ignore[import-untyped]
 from PIL import Image
 
+from lx_anonymizer._native import native as _native
+
 logger = logging.getLogger(__name__)
+
+
+_EXPECTED_OCR_CHARS = set(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]"
+)
+_OCR_VOWELS = set("aeiouäöüAEIOUÄÖÜ")
+
+
+def _py_is_gibberish(text: str) -> bool:
+    """Enhanced gibberish detection for video OCR with support for structured data."""
+    if not text or len(text) < 3:
+        return True
+
+    time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
+    date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
+    case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
+    compact_code_pattern = r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b"
+    device_pattern = r"\d{8,}"
+    ratio_pattern = r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b"
+
+    if (
+        re.search(time_pattern, text)
+        or re.search(date_pattern, text)
+        or re.search(case_pattern, text)
+        or re.search(compact_code_pattern, text)
+        or re.search(device_pattern, text)
+        or re.search(ratio_pattern, text)
+    ):
+        return False
+
+    alpha = sum(c.isalpha() for c in text)
+    alpha_ratio = alpha / max(len(text), 1)
+    if alpha_ratio < 0.20:
+        return True
+
+    nonstandard = sum(1 for c in text if c not in _EXPECTED_OCR_CHARS)
+    if nonstandard > 0.4 * len(text):
+        return True
+
+    words = text.split()
+    if not words:
+        return True
+
+    words_with_vowels = sum(
+        1 for word in words if any(c in _OCR_VOWELS for c in word) and len(word) > 1
+    )
+    multi_char_words = sum(1 for word in words if len(word) > 1)
+    if multi_char_words > 0 and words_with_vowels < 0.15 * multi_char_words:
+        return True
+
+    unique_chars = len(set(text.replace(" ", "")))
+    if unique_chars < len(text) * 0.1:
+        return True
+
+    return False
+
+
+def _py_gibberish_score(text: str) -> float:
+    if not text:
+        return 1.0
+
+    score = 0.0
+    length = max(len(text), 1)
+
+    alpha_ratio = sum(c.isalpha() for c in text) / length
+    if alpha_ratio < 0.2:
+        score += 0.35
+    elif alpha_ratio < 0.35:
+        score += 0.15
+
+    nonstandard_ratio = sum(1 for c in text if c not in _EXPECTED_OCR_CHARS) / length
+    score += min(nonstandard_ratio * 0.8, 0.4)
+
+    punct_like = sum(
+        1 for c in text if not c.isalnum() and not c.isspace() and c not in ".,:;/-"
+    )
+    score += min((punct_like / length) * 0.6, 0.2)
+
+    words = [w for w in text.split() if len(w) > 1]
+    if words:
+        vowel_words = sum(1 for w in words if any(c in _OCR_VOWELS for c in w))
+        ratio = vowel_words / len(words)
+        if ratio < 0.15:
+            score += 0.25
+        elif ratio < 0.3:
+            score += 0.1
+
+    return max(0.0, min(score, 1.0))
+
+
+def _py_looks_structured_overlay_text(text: str) -> bool:
+    if not text:
+        return False
+    patterns = [
+        r"\d{1,2}:\d{2}(?::\d{2})?",
+        r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b",
+        r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b",
+        r"\b\d{4,}\b",
+    ]
+    return any(re.search(p, text) for p in patterns)
+
+
+def _py_normalize_ocr_text(text: str) -> str:
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFC", text)
+    text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
+    text = re.sub(r"([.,:;])\1{1,}", r"\1", text)
+    text = re.sub(r"[.,:;]{2,}", lambda m: m.group(0)[0], text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return text
+
+
+def _py_candidate_rank(text: str, conf: float) -> Tuple[int, int, float, float, int]:
+    is_empty = 0 if text else 1
+    is_gib = 1 if (text and _py_is_gibberish(text)) else 0
+    gib_score = _py_gibberish_score(text)
+    return (is_empty, is_gib, gib_score, -float(conf), -len(text or ""))
+
+
+def _is_gibberish_impl(text: str) -> bool:
+    if _native is not None:
+        return _native.is_gibberish(text)
+    return _py_is_gibberish(text)
+
+
+def _gibberish_score_impl(text: str) -> float:
+    if _native is not None:
+        return _native.gibberish_score(text)
+    return _py_gibberish_score(text)
+
+
+def _looks_structured_overlay_text_impl(text: str) -> bool:
+    if _native is not None:
+        return _native.looks_structured_overlay_text(text)
+    return _py_looks_structured_overlay_text(text)
+
+
+def _normalize_ocr_text_impl(text: str) -> str:
+    if _native is not None:
+        return _native.normalize_ocr_text(text)
+    return _py_normalize_ocr_text(text)
+
+
+def _candidate_rank_impl(text: str, conf: float) -> Tuple[int, int, float, float, int]:
+    if _native is not None:
+        return _native.candidate_rank(text, conf)
+    return _py_candidate_rank(text, conf)
+
 
 # ---------------- Global processor cache (per language) ----------------
 _GLOBAL_PROCESSORS: Dict[str, "TesseOCRFrameProcessor"] = {}
@@ -171,80 +322,7 @@ class TesseOCRFrameProcessor:
 
     @staticmethod
     def _is_gibberish(text: str) -> bool:
-        """Enhanced gibberish detection for video OCR with support for structured data"""
-        if not text or len(text) < 3:
-            return True
-
-        # Special case: Allow date/time patterns and numeric IDs (common in medical videos)
-        # Examples: "09:53:32", "2024-01-15", "15702/2024", "E 15702/2024809:53:32"
-        import re
-
-        # Time patterns: HH:MM:SS or HH:MM
-        time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
-        # Date patterns: YYYY-MM-DD, DD.MM.YYYY, YYYY/MM/DD
-        date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
-        # Case number patterns: E 12345/2024 or similar
-        case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
-        # Compact case / device patterns: E 2001951, A123456
-        compact_code_pattern = r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b"
-        # Device ID patterns: long numbers with optional separators
-        device_pattern = r"\d{8,}"
-        # Numeric ratio / measurement overlays: 9.9/9.6, 12/34
-        ratio_pattern = r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b"
-
-        if (
-            re.search(time_pattern, text)
-            or re.search(date_pattern, text)
-            or re.search(case_pattern, text)
-            or re.search(compact_code_pattern, text)
-            or re.search(device_pattern, text)
-            or re.search(ratio_pattern, text)
-        ):
-            # Contains structured data patterns - likely valid
-            return False
-
-        # Count alphabetic characters
-        alpha = sum(c.isalpha() for c in text)
-        alpha_ratio = alpha / max(len(text), 1)
-
-        # Reject if too few alphabetic characters (only for non-structured text)
-        # Relaxed from 0.35 to 0.20 to allow more numeric/mixed content
-        if alpha_ratio < 0.20:
-            return True
-
-        # Count non-standard characters (not in expected charset)
-        expected_chars = set(
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]"
-        )
-        nonstandard = sum(1 for c in text if c not in expected_chars)
-
-        # Reject if too many non-standard characters
-        # Relaxed from 0.3 to 0.4 to allow more special characters
-        if nonstandard > 0.4 * len(text):
-            return True
-
-        # Check for reasonable word structure
-        words = text.split()
-        if not words:
-            return True
-
-        # Most words should have vowels (German/English)
-        vowels = set("aeiouäöüAEIOUÄÖÜ")
-        words_with_vowels = sum(
-            1 for word in words if any(c in vowels for c in word) and len(word) > 1
-        )
-
-        # At least 15% of multi-char words should have vowels (relaxed from 30%)
-        multi_char_words = sum(1 for word in words if len(word) > 1)
-        if multi_char_words > 0 and words_with_vowels < 0.15 * multi_char_words:
-            return True
-
-        # Check for excessive repetition (sign of bad OCR)
-        unique_chars = len(set(text.replace(" ", "")))
-        if unique_chars < len(text) * 0.1:  # Less than 10% unique chars
-            return True
-
-        return False
+        return _is_gibberish_impl(text)
 
     def _choose_psm_for_box(self, w, h):
         """Choose optimal PSM based on ROI dimensions and expected content"""
@@ -267,88 +345,20 @@ class TesseOCRFrameProcessor:
 
     @staticmethod
     def _gibberish_score(text: str) -> float:
-        """
-        Soft gibberish score in [0, 1] used for candidate selection.
-        Lower is better.
-        """
-        if not text:
-            return 1.0
-
-        score = 0.0
-        length = max(len(text), 1)
-
-        alpha_ratio = sum(c.isalpha() for c in text) / length
-        if alpha_ratio < 0.2:
-            score += 0.35
-        elif alpha_ratio < 0.35:
-            score += 0.15
-
-        expected_chars = set(
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]"
-        )
-        nonstandard_ratio = sum(1 for c in text if c not in expected_chars) / length
-        score += min(nonstandard_ratio * 0.8, 0.4)
-
-        punct_like = sum(
-            1 for c in text if not c.isalnum() and not c.isspace() and c not in ".,:;/-"
-        )
-        score += min((punct_like / length) * 0.6, 0.2)
-
-        words = [w for w in text.split() if len(w) > 1]
-        if words:
-            vowels = set("aeiouäöüAEIOUÄÖÜ")
-            vowel_words = sum(1 for w in words if any(c in vowels for c in w))
-            ratio = vowel_words / len(words)
-            if ratio < 0.15:
-                score += 0.25
-            elif ratio < 0.3:
-                score += 0.1
-
-        return max(0.0, min(score, 1.0))
+        return _gibberish_score_impl(text)
 
     @staticmethod
     def _looks_structured_overlay_text(text: str) -> bool:
-        """Detect short structured overlay snippets (IDs, timestamps, measurements)."""
-        if not text:
-            return False
-        patterns = [
-            r"\d{1,2}:\d{2}(?::\d{2})?",  # time
-            r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b",  # compact code
-            r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b",  # ratio/measurement
-            r"\b\d{4,}\b",  # long numeric id
-        ]
-        return any(re.search(p, text) for p in patterns)
+        return _looks_structured_overlay_text_impl(text)
 
     def _candidate_rank(
         self, text: str, conf: float
     ) -> Tuple[int, int, float, float, int]:
-        """
-        Lower tuple is better:
-        - prefer non-empty
-        - prefer non-gibberish
-        - prefer lower gibberish score
-        - prefer higher confidence
-        - prefer longer text (tie-break)
-        """
-        is_empty = 0 if text else 1
-        is_gib = 1 if (text and self._is_gibberish(text)) else 0
-        gib_score = self._gibberish_score(text)
-        return (is_empty, is_gib, gib_score, -float(conf), -len(text or ""))
+        return _candidate_rank_impl(text, conf)
 
     @staticmethod
     def _normalize_ocr_text(text: str) -> str:
-        """
-        Normalize OCR text and collapse repeated punctuation noise.
-        """
-        if not text:
-            return ""
-        text = unicodedata.normalize("NFC", text)
-        text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
-        # Collapse repeated punctuation runs like "....", ",,,", ":::"
-        text = re.sub(r"([.,:;])\1{1,}", r"\1", text)
-        text = re.sub(r"[.,:;]{2,}", lambda m: m.group(0)[0], text)
-        text = re.sub(r"\s{2,}", " ", text).strip()
-        return text
+        return _normalize_ocr_text_impl(text)
 
     def _choose_whitelist_for_box(self, w: int, h: int) -> str:
         """

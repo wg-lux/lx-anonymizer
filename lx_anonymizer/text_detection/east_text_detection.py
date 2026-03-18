@@ -7,7 +7,6 @@ from pathlib import Path
 import certifi
 import cv2
 import numpy as np
-from imutils.object_detection import non_max_suppression  # type: ignore[import-untyped]
 
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -27,6 +26,48 @@ TO-DO
 
 # Define the URL to download the frozen EAST model from GitHub
 MODEL_URL = "https://github.com/ZER-0-NE/EAST-Detector-for-text-detection-using-OpenCV/raw/master/frozen_east_text_detection.pb"
+
+
+def non_max_suppression(boxes, probs=None, overlapThresh=0.3):
+    """
+    Local NMS implementation to avoid importing imutils at module import time.
+    """
+    if len(boxes) == 0:
+        return np.array([])
+
+    if boxes.dtype.kind == "i":
+        boxes = boxes.astype("float")
+
+    pick = []
+
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+
+    area = (x2 - x1 + 1) * (y2 - y1 + 1)
+    idxs = np.argsort(probs if probs is not None else y2)
+
+    while len(idxs) > 0:
+        last = len(idxs) - 1
+        i = idxs[last]
+        pick.append(i)
+
+        xx1 = np.maximum(x1[i], x1[idxs[:last]])
+        yy1 = np.maximum(y1[i], y1[idxs[:last]])
+        xx2 = np.minimum(x2[i], x2[idxs[:last]])
+        yy2 = np.minimum(y2[i], y2[idxs[:last]])
+
+        w = np.maximum(0, xx2 - xx1 + 1)
+        h = np.maximum(0, yy2 - yy1 + 1)
+
+        overlap = (w * h) / area[idxs[:last]]
+
+        idxs = np.delete(
+            idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0]))
+        )
+
+    return boxes[pick].astype("int")
 
 
 def _default_east_model_path() -> Path:

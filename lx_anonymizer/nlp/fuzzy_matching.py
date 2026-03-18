@@ -2,6 +2,7 @@ import difflib
 
 import cv2
 
+from lx_anonymizer._native import native as _native
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -13,10 +14,13 @@ def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
     Returns (best_match, best_ratio).
     Only returns a valid match if best_ratio >= threshold; otherwise (None, best_ratio).
     """
+    logger.debug(f"Fuzzy matching: snippet text: {snippet_text}")
+
+    if _native is not None:
+        return _native.fuzzy_match_best(snippet_text, candidates, threshold)
+
     best_match = None
     best_ratio = 0.0
-
-    logger.debug(f"Fuzzy matching: snippet text: {snippet_text}")
 
     for candidate in candidates:
         ratio = difflib.SequenceMatcher(None, snippet_text, candidate).ratio()

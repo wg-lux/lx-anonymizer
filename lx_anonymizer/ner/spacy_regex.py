@@ -3,11 +3,11 @@ import re
 import warnings
 from typing import Any, Literal, Optional, cast
 
-import spacy
 from spacy.matcher import Matcher
 from spacy.tokens import Doc
 
 from lx_anonymizer.ner.determine_gender import determine_gender
+from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
 from lx_anonymizer.ner.spacy_extractor import PatientInfo
 from lx_anonymizer.ner.spacy_extractor import _clean_date
 
@@ -26,13 +26,14 @@ class PatientDataExtractorLg:
     ]
 
     def __init__(self):
-        self.nlp = spacy.load("de_core_news_lg")
+        self.nlp = SpacyModelManager.get_model()
         # Initialize ruler here and add it to the pipeline
         # overwrite_ents=True allows the ruler to overwrite existing entities if needed
         if "entity_ruler" not in self.nlp.pipe_names:
-            self.ruler = self.nlp.add_pipe(
-                "entity_ruler", config={"overwrite_ents": True}, before="ner"
-            )
+            add_pipe_kwargs: dict[str, Any] = {"config": {"overwrite_ents": True}}
+            if "ner" in self.nlp.pipe_names:
+                add_pipe_kwargs["before"] = "ner"
+            self.ruler = self.nlp.add_pipe("entity_ruler", **add_pipe_kwargs)
         else:
             self.ruler = self.nlp.get_pipe("entity_ruler")
 

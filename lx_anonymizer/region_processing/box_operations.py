@@ -5,12 +5,13 @@ The functions in this script define operations on coordinate
 bounding boxes in images.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Protocol, Tuple, cast
 
 import cv2
 import numpy as np
 import numpy.typing as npt
 
+from lx_anonymizer._native import native
 from lx_anonymizer.setup.custom_logger import get_logger
 
 # Define a type alias for a bounding box (startX, startY, endX, endY)
@@ -21,12 +22,57 @@ OcrResult = Tuple[str, Box]
 logger = get_logger(__name__)
 
 
+class _NativeBoxOperations(Protocol):
+    def filter_empty_boxes_native(
+        self, ocr_results: List[OcrResult], min_text_len: int
+    ) -> List[OcrResult]: ...
+
+    def get_dominant_color_native(
+        self, image: npt.NDArray[np.uint8], box: Optional[Box]
+    ) -> Tuple[int, int, int]: ...
+
+    def make_box_from_name_native(
+        self, image: npt.NDArray[np.uint8], name: str, padding: int
+    ) -> Box: ...
+
+    def make_box_from_device_list_native(
+        self, x: int, y: int, w: int, h: int
+    ) -> Box: ...
+
+    def extend_boxes_if_needed_native(
+        self,
+        image: npt.NDArray[np.uint8],
+        boxes: List[Box],
+        extension_margin: int,
+        color_threshold: float,
+    ) -> List[Box]: ...
+
+    def find_or_create_close_box_native(
+        self, phrase_box: Box, boxes: List[Box], image_width: int, min_offset: int
+    ) -> Box: ...
+
+    def combine_boxes_native(
+        self, text_with_boxes: List[OcrResult], y_tolerance: int
+    ) -> List[OcrResult]: ...
+
+    def close_to_box_native(self, name_box: Box, phrase_box: Box) -> bool: ...
+
+
+native_box_ops = cast(Optional[_NativeBoxOperations], native)
+
+
+def _has_native_method(name: str) -> bool:
+    return native is not None and hasattr(native, name)
+
+
 def filter_empty_boxes(
     ocr_results: List[OcrResult], min_text_len: int = 2
 ) -> List[OcrResult]:
     """
     Returns only entries where stripped text length >= min_text_len.
     """
+    if native_box_ops is not None and _has_native_method("filter_empty_boxes_native"):
+        return native_box_ops.filter_empty_boxes_native(ocr_results, min_text_len)
     filtered: List[OcrResult] = []
     for text, box in ocr_results:
         if len(text.strip()) >= min_text_len:
@@ -40,6 +86,8 @@ def get_dominant_color(
     """
     Get the dominant color in a given box region of the image.
     """
+    if native_box_ops is not None and _has_native_method("get_dominant_color_native"):
+        return native_box_ops.get_dominant_color_native(image, box)
     if box is None:
         # Return average color of the whole image or a default shape
         return tuple(map(int, np.mean(image, axis=(0, 1))))[:3]  # type: ignore
@@ -67,12 +115,17 @@ def get_dominant_color(
     return (int(dominant[0]), int(dominant[1]), int(dominant[2]))
 
 
+_DEFAULT_GET_DOMINANT_COLOR = get_dominant_color
+
+
 def make_box_from_name(
     image: npt.NDArray[np.uint8], name: str, padding: int = 2
 ) -> Box:
     """
     Create a bounding box around the given name based on font size.
     """
+    if native_box_ops is not None and _has_native_method("make_box_from_name_native"):
+        return native_box_ops.make_box_from_name_native(image, name, padding)
     # Get the text size of the name
     size_result = cv2.getTextSize(name, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
     text_w, text_h = size_result[0]
@@ -97,6 +150,10 @@ def make_box_from_device_list(x: int, y: int, w: int, h: int) -> Box:
     """
     Generate box coordinates from x, y, width, height.
     """
+    if native_box_ops is not None and _has_native_method(
+        "make_box_from_device_list_native"
+    ):
+        return native_box_ops.make_box_from_device_list_native(x, y, w, h)
     start_x, start_y = x, y
     end_x, end_y = x + w, y + h
     logger.debug(
@@ -118,6 +175,14 @@ def extend_boxes_if_needed(
     """
     Extends the Box if surrounding colors differ significantly from dominant color.
     """
+    if (
+        native_box_ops is not None
+        and _has_native_method("extend_boxes_if_needed_native")
+        and get_dominant_color is _DEFAULT_GET_DOMINANT_COLOR
+    ):
+        return native_box_ops.extend_boxes_if_needed_native(
+            image, boxes, extension_margin, float(color_threshold)
+        )
     logger.debug("Starting box extension to make room for names.")
     extended_boxes: List[Box] = []
 
@@ -179,6 +244,12 @@ def find_or_create_close_box(
     phrase_box: Box, boxes: List[Box], image_width: int, min_offset: int = 20
 ) -> Box:
     """Dynamic box creation based on text length"""
+    if native_box_ops is not None and _has_native_method(
+        "find_or_create_close_box_native"
+    ):
+        return native_box_ops.find_or_create_close_box_native(
+            phrase_box, boxes, image_width, min_offset
+        )
     start_x, start_y, end_x, end_y = phrase_box
     same_line_boxes = [b for b in boxes if abs(b[1] - start_y) <= 10]
 
@@ -200,6 +271,8 @@ def combine_boxes(
     text_with_boxes: List[OcrResult], y_tolerance: int = 10
 ) -> List[OcrResult]:
     """Merges boxes on the same line that are horizontally close."""
+    if native_box_ops is not None and _has_native_method("combine_boxes_native"):
+        return native_box_ops.combine_boxes_native(text_with_boxes, y_tolerance)
     if not text_with_boxes:
         return text_with_boxes
 
@@ -230,6 +303,8 @@ def combine_boxes(
 
 def close_to_box(name_box: Box, phrase_box: Box) -> bool:
     """Checks if two boxes are within a 10px threshold."""
+    if native_box_ops is not None and _has_native_method("close_to_box_native"):
+        return native_box_ops.close_to_box_native(name_box, phrase_box)
     return (
         abs(name_box[0] - phrase_box[0]) <= 10
         and abs(name_box[1] - phrase_box[1]) <= 10

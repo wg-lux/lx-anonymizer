@@ -1,0 +1,20 @@
+[package]
+name = "lx-anonymizer"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "_lx_anonymizer_native"
+crate-type = ["cdylib"]
+path = "rust/lx-anonymizer-native/src/lib.rs"
+
+[dependencies]
+# The glue that binds Rust to Python
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py312"] }
+numpy = "0.21"
+# Fast parallelism for ranking large batches of frame text
+rayon = "1.10"
+# Fast regex if you use it for validation
+regex = "1.10"
+# For string similarity/ranking
+strsim = "0.11"

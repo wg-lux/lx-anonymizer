@@ -1,5 +1,7 @@
-from lx_anonymizer.setup.custom_logger import get_logger
+from importlib import import_module
 from typing import Any
+
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 """
@@ -17,8 +19,8 @@ SentenceType: Any = None
 SequenceTaggerType: Any = None
 
 try:
-    from flair.data import Sentence as SentenceType
-    from flair.models import SequenceTagger as SequenceTaggerType
+    SentenceType = getattr(import_module("flair.data"), "Sentence")
+    SequenceTaggerType = getattr(import_module("flair.models"), "SequenceTagger")
 except ImportError as exc:
     _flair_import_error = exc
 
@@ -29,7 +31,7 @@ def _get_tagger():
         return tagger
     if SequenceTaggerType is None:
         logger.info(
-            "Flair is not installed. Install with: pip install lx-anonymizer[nlp]"
+            "Flair is not installed. Install with: pip install lx-anonymizer[nlu]"
         )
         return None
     try:

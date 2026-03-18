@@ -80,7 +80,7 @@ def _run_noisy_text_case() -> bool:
         f"Status: {'✓ PASS' if text and len(text) > 5 else '✗ FAIL (filtered as gibberish)'}"
     )
 
-    return text and len(text) > 5
+    return bool(text and len(text) > 5)
 
 
 def test_noisy_text():
@@ -108,7 +108,7 @@ def _run_gibberish_filtering_case() -> bool:
         f"Status: {'✓ PASS (gibberish filtered)' if not text or len(text) < 5 else '✗ FAIL (should filter gibberish)'}"
     )
 
-    return not text or len(text) < 5
+    return bool((not text) or len(text) < 5)
 
 
 def test_gibberish_filtering():

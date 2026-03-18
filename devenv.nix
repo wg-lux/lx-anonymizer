@@ -3,13 +3,41 @@
   lib,
   config,
   inputs,
-  buildInputs,
   ...
 }:
 let
-  appName = "lx_anonymizer";
+  python = pkgs.python312;
+  rustSrc = lib.cleanSourceWith {
+    src = ./.;
+    filter =
+      path: type:
+      let
+        rel = lib.removePrefix "${toString ./.}/" (toString path);
+        base = builtins.baseNameOf (toString path);
+        ignoredBaseNames = [
+          ".devenv"
+          ".direnv"
+          ".env"
+          ".git"
+          ".mypy_cache"
+          ".pytest_cache"
+          ".ruff_cache"
+          ".venv"
+          "__pycache__"
+          "result"
+          "target"
+        ];
+        ignoredPrefixes = [
+          "dist/"
+          "logs/"
+        ];
+      in
+      !(builtins.elem base ignoredBaseNames || lib.any (prefix: lib.hasPrefix prefix rel) ignoredPrefixes);
+  };
+
   buildInputs = with pkgs; [
-    python311
+    python
+    python312Packages.tkinter
     stdenv.cc.cc
     git
     direnv
@@ -17,19 +45,13 @@ let
     zlib
     libglvnd
     ollama
-    cmake # build system
-    gcc # C/C++ compiler tool-chain
+    cmake
+    gcc
     pkg-config
     protobuf
     libGL
   ];
 
-  customTasks = (
-    import ./devenv/tasks/default.nix ({
-      inherit config pkgs lib;
-    })
-  );
-  nixpkgs.config.allowUnfree = true;
   runtimePackages = with pkgs; [
     git
     cudaPackages.cuda_nvcc
@@ -52,8 +74,10 @@ let
     protobuf
     python312Packages.sentencepiece
     ffmpeg_6-headless
+    maturin
+    cargo
+    rustc
   ];
-
 in
 {
   dotenv.enable = true;
@@ -61,29 +85,59 @@ in
 
   languages.python = {
     enable = true;
-    package = pkgs.python3.withPackages (ps: with ps; [ tkinter ]); # known devenv issue with python3Packages since python3Full was deprecated
+    version = "3.12";
     uv = {
       enable = true;
       sync.enable = true;
     };
   };
 
+  languages.rust.enable = true;
 
   packages = lib.unique (buildInputs ++ runtimePackages);
 
+  # devenv 2 outputs only become useful for Python once pyproject-nix is added
+  # via `devenv inputs add pyproject-nix github:pyproject-nix/pyproject.nix --follows nixpkgs`.
+  outputs =
+    lib.optionalAttrs (inputs ? pyproject-nix) (
+      let
+        pythonApp = config.languages.python.import ./. { };
+        nativeDrv = config.languages.rust.import ./. { };
+        nativeLibDrv = lib.getLib nativeDrv;
+
+        nativeApp = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
+          mkdir -p "$out/${python.sitePackages}/lx_anonymizer"
+          native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
+          test -n "$native_lib"
+          cp "$native_lib" "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
+        '';
+      in
+      {
+        python = pythonApp;
+        native = nativeApp;
+        native-raw = nativeDrv;
+        app = pkgs.symlinkJoin {
+          name = "lx-anonymizer-with-native";
+          paths = [
+            pythonApp
+            nativeApp
+          ];
+        };
+      }
+    );
 
   env = {
-    LD_LIBRARY_PATH = 
-      with pkgs; lib.makeLibraryPath (runtimePackages)
-          + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib"
-          + ":/usr/lib/wsl/lib"
-          + ":/usr/lib/x86_64-linux-gnu"
-          + ":/usr/lib"
-          ;
+    LD_LIBRARY_PATH =
+      with pkgs;
+      lib.makeLibraryPath runtimePackages
+      + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+      + ":/usr/lib/wsl/lib"
+      + ":/usr/lib/x86_64-linux-gnu"
+      + ":/usr/lib";
     OLLAMA_HOST = "0.0.0.0";
-    PYTORCH_ALLOC_CONF= "expandable_segments:True";
-    
-
+    PYTORCH_ALLOC_CONF = "expandable_segments:True";
+    PYO3_PYTHON = "${python}/bin/python";
+    UV_PYTHON = lib.mkForce "${python}/bin/python";
   };
 
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
@@ -107,12 +161,8 @@ in
   '';
 
   processes = {
-    #ollama-pull-llama.exec = "ollama pull llama3.3";
-    #ollama-run-llama.exec = "ollama run llama3.3";
     ollama-pull-deepseek-model.exec = "ollama pull deepseek-r1:1.5b&";
     ollama-run-deepseek-model.exec = "ollama run deepseek-r1:1.5b";
-    #ollama-pull-med-model.exec = "ollama pull rjmalagon/medllama3-v20:fp16";
-    #ollama-run-med-model.exec = "ollama run rjmalagon/medllama3-v20:fp16";
     ollama-verify.exec = "curl http://127.0.0.1:11434/api/models";
   };
 
@@ -122,21 +172,15 @@ in
 
   enterShell = ''
     export SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
-    # uv run python env_setup.py # modifies env
-       
 
-    # Ensure dependencies are synced using uv
-    # Check if venv exists. If not, run sync verbosely. If it exists, sync quietly.
     if [ ! -d ".devenv/state/venv" ]; then
        echo "Virtual environment not found. Running initial uv sync..."
        $SYNC_CMD || echo "Error: Initial uv sync failed. Please check network and pyproject.toml."
     else
-       # Sync quietly if venv exists
        echo "Syncing Python dependencies with uv..."
        $SYNC_CMD --quiet || echo "Warning: uv sync failed. Environment might be outdated."
     fi
 
-    # Activate Python virtual environment managed by uv
     ACTIVATED=false
     if [ -f ".devenv/state/venv/bin/activate" ]; then
       source .devenv/state/venv/bin/activate

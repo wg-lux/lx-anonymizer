@@ -1,7 +1,5 @@
-import spacy
 from lx_anonymizer.setup.custom_logger import get_logger
-import subprocess
-import sys
+from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
 
 
 nlp = None
@@ -19,21 +17,11 @@ def spacy_NER_German(text):
         logger.error("NER model is not loaded.")
         try:
             logger.info("Loading spaCy German NER model...")
-            nlp = spacy.load("de_core_news_lg")
+            nlp = SpacyModelManager.get_model()
             logger.info("spaCy German NER model loaded successfully.")
         except Exception as e:
-            logger.error(f"Trying to download spaCy German NER model: {e}")
-            try:
-                logger.info("Loading spaCy German NER model...")
-                subprocess.run(
-                    [sys.executable, "-m", "spacy", "download", "de_core_news_lg"],
-                    check=True,
-                )
-                nlp = spacy.load("de_core_news_lg")
-                logger.info("spaCy German NER model loaded successfully.")
-            except subprocess.CalledProcessError as err:
-                logger.error(f"Failed to load spaCy German NER model: {err}")
-                nlp = None
+            logger.error(f"Failed to load spaCy German NER model: {e}")
+            nlp = None
 
     if nlp is None:
         return None
@@ -72,19 +60,9 @@ def model_load():
     global nlp
     try:
         logger.info("Loading spaCy German NER model...")
-        nlp = spacy.load("de_core_news_lg")
+        nlp = SpacyModelManager.get_model()
         logger.info("spaCy German NER model loaded successfully.")
     except Exception as e:
-        logger.error(f"Trying to download spaCy German NER model: {e}")
-        try:
-            logger.info("Loading spaCy German NER model...")
-            subprocess.run(
-                [sys.executable, "-m", "spacy", "download", "de_core_news_lg"],
-                check=True,
-            )
-            nlp = spacy.load("de_core_news_lg")
-            logger.info("spaCy German NER model loaded successfully.")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to load spaCy German NER model: {e}")
-            nlp = None
+        logger.error(f"Failed to load spaCy German NER model: {e}")
+        nlp = None
     return nlp
