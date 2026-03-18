@@ -92,16 +92,19 @@ This loads GPU, OCR, and tooling dependencies declared in `devenv.nix`.
 
 ### Python package
 
-PyPI builds are currently produced as standard Python source and wheel artifacts
-from `pyproject.toml` using Hatchling:
+PyPI releases now use a split artifact strategy:
+
+- platform wheels are built in GitHub Actions with `maturin` and include the Rust extension
+- the source distribution is still built from `pyproject.toml` with `python -m build --sdist`
+
+For a local source-package sanity check:
 
 ```bash
-uv run python -m build
+uv run python -m build --sdist
 ```
 
-The published Python package should be treated as the portable baseline package.
-Optional OCR, LLM, and Flair support are enabled through extras such as
-`[ocr]`, `[llm]`, and `[nlu]`.
+The published Python package remains the baseline install path, with optional
+feature sets enabled through extras such as `[ocr]`, `[llm]`, and `[nlu]`.
 
 ### Native extension
 
@@ -110,9 +113,9 @@ packaging. The Python code loads it opportunistically through
 `lx_anonymizer._native` and falls back to pure Python implementations when the
 native module is unavailable or only partially implemented.
 
-At the moment, the native extension is not the default PyPI build artifact.
-If you need the native build, prefer the Nix package or a local build workflow
-that explicitly produces the extension.
+PyPI wheels built by CI now include this extension. Pure-Python fallback still
+exists for environments that install from source without a compiled native
+module.
 
 ### Nix packages
 
@@ -129,10 +132,26 @@ They are build outputs, not repository contents, and should remain uncommitted.
 
 ### Release guidance
 
-- Use `uv run python -m build` to validate the Python sdist and wheel.
+- Use `uv run python -m build --sdist` to validate the source distribution locally.
+- Use GitHub Actions to build release wheels with `maturin`.
 - Use `nix build .#lx-anonymizer` or `nix build .#lx-anonymizer-with-native` to validate flake packaging.
 - Do not commit `result` or `result-app`.
-- If releasing to PyPI, document native acceleration as optional rather than guaranteed.
+- Configure PyPI trusted publishing before the first tagged release.
+- Prefer a TestPyPI dry run before the first production PyPI publication.
+
+### Release workflow
+
+The intended release path is now:
+
+1. Push a branch and let CI build wheels and the sdist.
+2. Verify the wheel smoke tests pass on Linux and macOS.
+3. Run a TestPyPI publication from the release workflow if this is the first native-wheel release.
+4. Tag `vX.Y.Z` to trigger the production publish workflow.
+
+The release workflow publishes:
+
+- native wheels built with `maturin`
+- an sdist built with `python -m build --sdist`
 
 ## Configuration
 Settings are loaded from environment variables and an optional `.env` file. See
@@ -339,7 +358,7 @@ By default, outputs live in `~/etc/lx-anonymizer/{data,temp}`. Adjust them in [`
   - Integration tests: `uv run pytest tests/test_cli_integration.py`
   - Frame processing tests: `uv run pytest tests/test_frame_cleaner.py`
 - **Performance profiling**: Use `--log-level DEBUG` for detailed timing information
-- **Build**: `uv run python -m build` for wheel creation
+- **Build**: `uv run python -m build --sdist` for local sdist validation; GitHub Actions builds release wheels
 - **Full validation**: `scripts/run_checks.sh` for comprehensive local testing
 
 ## Testing Medical Workflows
@@ -349,9 +368,9 @@ By default, outputs live in `~/etc/lx-anonymizer/{data,temp}`. Adjust them in [`
 
 ## Project roadmap
 1. **Release Management**:
-   - Publish the slim base wheel to TestPyPI/PyPI
+   - Continue hardening native-wheel publishing across release targets
    - Continue separating optional GPU/LLM workloads behind extras
-   - Automate release workflow (wheel + sdist upload, GitHub release notes)
+   - Extend release automation with GitHub release notes and TestPyPI promotion flow
 2. **API Enhancement**:
    - Expose REST/gRPC service with validation UI
    - WebSocket support for real-time video processing

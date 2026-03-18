@@ -6,10 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 ### Added
-- None yet
+- GitHub Actions native wheel build and release pipeline for Linux and macOS
+- PyPI trusted-publishing based release workflow
+- Import smoke test coverage for core package modules
 
 ### Changed
-- None yet
+- README and contributing docs to match native-wheel CI and flake/devenv packaging
+- Local release guidance to treat `python -m build --sdist` as sdist validation while CI produces wheels
 
 ### Fixed
 - None yet

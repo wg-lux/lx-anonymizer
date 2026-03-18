@@ -34,8 +34,7 @@ If a proposal falls outside these boundaries, consider opening a discussion firs
    # optional: direnv allow && nix develop for GPU tooling
    ```
 2. **Install extras**
-   - CPU-only work: `uv pip install -e .[dev,nlp,ocr]`
-   - GPU pipelines: add `[gpu]`
+   - CPU-focused development: `uv pip install -e .[dev,ocr,nlu]`
    - LLM features: add `[llm]`
 3. **Run checks**
    ```bash
@@ -55,7 +54,7 @@ If a proposal falls outside these boundaries, consider opening a discussion firs
 - [ ] Updated changelog entry under the “Unreleased” section
 - [ ] Confirmed large assets aren’t committed (logs, model weights, datasets)
 
-CI will run linting, tests, and build the wheel/tarball automatically. Fix any reported regressions before requesting review.
+CI will run linting, lightweight tests, native wheel builds, and sdist creation automatically. Fix any reported regressions before requesting review.
 
 ## Communication
 - **Issues:** https://github.com/wg-lux/lx-anonymizer/issues
