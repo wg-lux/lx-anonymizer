@@ -37,7 +37,7 @@ jobs:
   build-wheels:
     name: Build wheels (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    strategy:
+strategy:
       fail-fast: false
       matrix:
         include:
@@ -45,10 +45,10 @@ jobs:
             os: ubuntu-latest
             target: x86_64
           - name: macos-x86_64
-            os: macos-13
+            os: macos-15-intel
             target: x86_64
           - name: macos-arm64
-            os: macos-14
+            os: macos-latest
             target: aarch64
 
     steps:
@@ -105,9 +105,8 @@ jobs:
 
       - name: Build sdist
         run: |
-          uv run python -m pip install build twine
-          uv run python -m build --sdist
-          uv run python -m twine check dist/*
+          uv build --sdist
+          uvx pkginfo --metadata dist/*.tar.gz
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
