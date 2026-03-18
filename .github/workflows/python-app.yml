@@ -120,8 +120,10 @@ jobs:
       - name: Build sdist
         run: |
           uv build --sdist
-          uvx pkginfo -m dist/lx_anonymizer-*.tar.gz
-
+          for f in dist/*.tar.gz; do
+            echo "Checking $f..."
+            uvx pkginfo -m "$f"
+          done
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
         with:

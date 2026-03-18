@@ -1,5 +1,6 @@
 [package]
-name = "lx-anonymizer"
+name = "lx-anonymizer-native"
+description = "Native acceleration for OCR-driven anonymization"
 version = "0.1.0"
 edition = "2024"
 
