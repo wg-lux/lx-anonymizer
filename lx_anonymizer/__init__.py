@@ -3,8 +3,14 @@ LX Anonymizer package for anonymizing medical reports and images.
 """
 
 from importlib import import_module
+import importlib.metadata
 
-__all__ = ["ReportReader", "FrameCleaner", "ollama_llm"]
+__all__ = ["ReportReader", "FrameCleaner", "ollama_llm", "__version__"]
+
+try:
+    __version__ = importlib.metadata.version("lx-anonymizer")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"
 
 
 def __getattr__(name: str):
@@ -18,4 +24,5 @@ def __getattr__(name: str):
         return ReportReader
     if name == "ollama_llm":
         return import_module("lx_anonymizer.ollama.ollama_llm")
+
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
