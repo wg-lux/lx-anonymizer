@@ -45,7 +45,17 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 
 ## Installation
 
-### From PyPI *(upcoming release)*
+### From Nix
+
+There exists an output from the flake using devenv to package lx-anonnymizer. We recommend using devenv with  this in devenv.yaml
+
+```yaml
+inputs:
+  lx-anonymizer:
+    url: github:wg-lux/lx-anonymizer
+```
+
+### From PyPI
 ```bash
 pip install lx-anonymizer
 ```
