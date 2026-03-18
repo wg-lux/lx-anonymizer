@@ -96,10 +96,7 @@ jobs:
       - name: Build sdist
         run: |
           uv build --sdist
-          for f in dist/*.tar.gz; do
-            echo "Checking $f..."
-            uvx pkginfo -m "$f"
-          done
+          uvx twine check dist/*
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
         with:

@@ -91,7 +91,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lx-anonymizer"
+name = "lx-anonymizer-native"
 version = "0.1.0"
 dependencies = [
  "numpy",
