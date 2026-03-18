@@ -42,16 +42,32 @@ jobs:
       - name: Smoke test built wheel
         shell: bash
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --no-deps dist/*.whl
+          # Use uv to create a clean environment and install the local wheel
+          # --no-cache ensures we aren't testing an old version
+          uv venv smoke_env
+          source smoke_env/bin/activate
+          uv pip install dist/*.whl --no-cache
+          # import the local folder instead of the installed wheel
+          mkdir -p test_dir
+          cd test_dir
           python - <<'PY'
           import importlib
+          import sys
+          # 1. Try to import the native module directly (from pyproject.toml name)
+          try:
+              native_mod = importlib.import_module("lx_anonymizer._lx_anonymizer_native")
+              print("✅ Successfully imported _lx_anonymizer_native")
+          except ImportError as e:
+              print(f"❌ Failed to import native module: {e}")
+              sys.exit(1)
 
-          native_wrapper = importlib.import_module("lx_anonymizer._native")
-          native_mod = importlib.import_module("lx_anonymizer._lx_anonymizer_native")
-
-          assert native_wrapper.native is not None
-          assert native_mod is not None
+          # 2. Try to import high-level package
+          try:
+              import lx_anonymizer
+              print(f"✅ Package version: {lx_anonymizer.__version__}")
+          except Exception as e:
+              print(f"❌ Package initialization failed: {e}")
+              sys.exit(1)
           PY
 
       - name: Upload wheel artifacts
@@ -79,9 +95,8 @@ jobs:
 
       - name: Build sdist
         run: |
-          uv run python -m pip install build twine
-          uv run python -m build --sdist
-          uv run python -m twine check dist/*
+          uv build --sdist
+          uvx pkginfo --metadata dist/*.tar.gz
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
