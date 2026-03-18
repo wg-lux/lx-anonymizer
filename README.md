@@ -47,13 +47,18 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 
 ### From Nix
 
-There exists an output from the flake using devenv to package lx-anonnymizer. We recommend using devenv with  this in devenv.yaml
+The repository exposes flake packages and can be consumed directly from another
+project's `devenv.yaml`:
 
 ```yaml
 inputs:
   lx-anonymizer:
     url: github:wg-lux/lx-anonymizer
 ```
+
+After adding the input, reference the package through your own `devenv.nix` or
+flake outputs. You do not need to commit or publish local `result` or
+`result-app` symlinks for this to work.
 
 ### From PyPI
 ```bash
@@ -82,6 +87,52 @@ direnv allow
 nix develop
 ```
 This loads GPU, OCR, and tooling dependencies declared in `devenv.nix`.
+
+## Packaging
+
+### Python package
+
+PyPI builds are currently produced as standard Python source and wheel artifacts
+from `pyproject.toml` using Hatchling:
+
+```bash
+uv run python -m build
+```
+
+The published Python package should be treated as the portable baseline package.
+Optional OCR, LLM, and Flair support are enabled through extras such as
+`[ocr]`, `[llm]`, and `[nlu]`.
+
+### Native extension
+
+The repository also contains an optional Rust extension used for local and Nix
+packaging. The Python code loads it opportunistically through
+`lx_anonymizer._native` and falls back to pure Python implementations when the
+native module is unavailable or only partially implemented.
+
+At the moment, the native extension is not the default PyPI build artifact.
+If you need the native build, prefer the Nix package or a local build workflow
+that explicitly produces the extension.
+
+### Nix packages
+
+The flake exports multiple package variants, including the base CLI package and
+a native-enabled package:
+
+```bash
+nix build .#lx-anonymizer
+nix build .#lx-anonymizer-with-native
+```
+
+Those commands create local `./result` symlinks for inspection on your machine.
+They are build outputs, not repository contents, and should remain uncommitted.
+
+### Release guidance
+
+- Use `uv run python -m build` to validate the Python sdist and wheel.
+- Use `nix build .#lx-anonymizer` or `nix build .#lx-anonymizer-with-native` to validate flake packaging.
+- Do not commit `result` or `result-app`.
+- If releasing to PyPI, document native acceleration as optional rather than guaranteed.
 
 ## Configuration
 Settings are loaded from environment variables and an optional `.env` file. See
@@ -126,6 +177,8 @@ lx-anonymizer -i report.pdf -V
 
 ### Python API
 
+It is recommended to call the python api. Here, the main integration is with the endoreg-db package that is tightly integrated with lx-anonymizer to provide a private medical database.
+
 #### ReportReader API
 ```python
 from lx_anonymizer import ReportReader
@@ -154,6 +207,45 @@ original, anonymized, meta, cropped_regions, pdf_path = reader.process_report_wi
 )
 ```
 
+`ReportReader` is the report-oriented entry point for PDFs, report screenshots, and
+pre-extracted raw text.
+
+`ReportReader(...)` constructor:
+- `report_root_path`: optional base path for report assets.
+- `locale`: Faker locale for pseudonymized replacements.
+- `employee_first_names` / `employee_last_names`: optional replacement pools.
+- `flags`: optional parsing markers merged with `DEFAULT_SETTINGS["flags"]`.
+- `text_date_format`: output format used for anonymized date text.
+
+`process_report(...)` accepts one primary content source:
+- `pdf_path`: use `pdfplumber` first, then OCR fallback when extracted text is too short.
+- `image_path`: OCR a single report image.
+- `text`: process already extracted text directly without file OCR.
+
+`process_report(...)` parameters:
+- `use_ensemble`: enable ensemble OCR on OCR fallback paths.
+- `use_llm_extractor`: preferred LLM extractor hint, used when Ollama-backed extraction is available.
+- `create_anonymized_pdf`: render a blackened PDF output for PDF inputs.
+- `anonymized_pdf_output_path`: optional explicit path for that anonymized PDF.
+
+`process_report(...)` returns:
+- `original_text`: extracted or provided source text.
+- `anonymized_text`: anonymized text output.
+- `report_meta`: metadata dict in the standardized sensitive-meta shape.
+- `anonymized_pdf_path`: `Path | None` for generated anonymized PDFs.
+
+`process_report_with_cropping(...)` extends `process_report(...)` with:
+- `crop_output_dir`: where cropped sensitive regions are written.
+- `crop_sensitive_regions`: enable or disable crop extraction.
+- `anonymization_output_dir`: output directory for the crop-based anonymized PDF.
+
+`process_report_with_cropping(...)` returns:
+- `original_text`
+- `anonymized_text`
+- `report_meta`
+- `cropped_regions_info`: mapping of cropped sensitive regions.
+- `anonymized_pdf_path`: `Path | None`
+
 #### FrameCleaner API
 ```python
 from lx_anonymizer.frame_cleaner import FrameCleaner
@@ -178,6 +270,35 @@ cleaned_path, metadata = cleaner.clean_video(
     technique="remove_frames"
 )
 ```
+
+`FrameCleaner` is the video-oriented entry point for endoscopy footage and
+frame-level overlays.
+
+`FrameCleaner(...)` constructor:
+- `use_llm`: enables Ollama-backed batch metadata enrichment when available.
+- `use_minicpm` and `minicpm_config`: reserved for optional OCR backends.
+
+`clean_video(...)` parameters:
+- `video_path`: input video file.
+- `endoscope_image_roi`: flat ROI dict for the visible endoscope image, typically with `x`, `y`, `width`, `height`.
+- `endoscope_data_roi_nested`: nested ROI mapping for text-bearing overlay regions such as patient info blocks.
+- `output_path`: optional explicit output path.
+- `technique`: one of `mask_overlay`, `remove_frames`, or `extract_only`.
+- `device`: device profile name, defaulting to `olympus_cv_1500`.
+
+`clean_video(...)` behavior by technique:
+- `mask_overlay`: preserves the timeline and overlays masks onto sensitive regions.
+- `remove_frames`: drops sensitive frames and rewrites the stream.
+- `extract_only`: does metadata extraction without producing a masked/removal-focused anonymization pass.
+
+`clean_video(...)` returns:
+- `output_video_path`: resulting video path. With `extract_only`, this is still the path chosen for the run.
+- `sensitive_meta`: accumulated metadata dictionary extracted from sampled frames.
+
+ROI guidance:
+- Use `endoscope_image_roi` for the main picture area that may need masking.
+- Use `endoscope_data_roi_nested` for device-specific overlay fields.
+- The helper stack normalizes common ROI key variants, but using `x`, `y`, `width`, `height` directly is the least ambiguous form.
 
 See [`tests/test_report_reader_init.py`](tests/test_report_reader_init.py) and [`tests/test_frame_cleaner.py`](tests/test_frame_cleaner.py) for concrete usage patterns.
 
@@ -252,4 +373,3 @@ Released under the [MIT License](LICENSE).
 
 ## Contact
 Questions? Email lux@coloreg.de .
-
