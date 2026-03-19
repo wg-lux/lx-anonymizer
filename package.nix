@@ -1,4 +1,7 @@
 {
+  cargo,
+  rustc,
+  pkg-config,
   lib,
   python312Packages,
   fetchPypi,
@@ -13,7 +16,7 @@
 let
   py = python312Packages;
   pname = "lx-anonymizer";
-  version = "0.9.0.5";
+  version = "0.9.0.6";
   tesseractWithLangs = tesseract.override {
     enableLanguages = [
       "deu"
@@ -113,7 +116,11 @@ py.buildPythonApplication {
   dontCheckRuntimeDeps = true;
 
   nativeBuildInputs = with py; [
-    hatchling
+    maturin
+  ] ++ [
+    cargo
+    rustc
+    pkg-config
   ];
 
   propagatedBuildInputs = selectedDeps;

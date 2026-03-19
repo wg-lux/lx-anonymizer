@@ -33,28 +33,7 @@
           withOcr = true;
           withNlu = true;
         };
-        nativeDrv = pkgs.rustPlatform.buildRustPackage {
-          pname = "rust_lx-anonymizer";
-          version = "0.1.0";
-          src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
-          cargoBuildFlags = [ "--lib" ];
-          doCheck = false;
-        };
-        nativeLibDrv = pkgs.lib.getLib nativeDrv;
-        nativePythonExt = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
-          mkdir -p "$out/lib/python3.12/site-packages/lx_anonymizer"
-          native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
-          test -n "$native_lib"
-          cp "$native_lib" "$out/lib/python3.12/site-packages/lx_anonymizer/_lx_anonymizer_native.so"
-        '';
-        withNative = pkgs.symlinkJoin {
-          name = "lx-anonymizer-with-native";
-          paths = [
-            base
-            nativePythonExt
-          ];
-        };
+        withNative = base;
 
         nixtestSuite = ntlib.mkNixtest {
           modules = ntlib.autodiscover { dir = ./nix/tests; };

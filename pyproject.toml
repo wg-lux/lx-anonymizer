@@ -42,7 +42,6 @@ dependencies = [
   "spacy==3.8.3",
   "tenacity>=9.1.2",
   "types-requests>=2.32.4.20260107",
-  "maturin",
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
 keywords = [
