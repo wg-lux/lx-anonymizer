@@ -2,6 +2,7 @@
   cargo,
   rustc,
   pkg-config,
+  rustPlatform,
   lib,
   python312Packages,
   fetchPypi,
@@ -115,9 +116,13 @@ py.buildPythonApplication {
   pythonRelaxDeps = true;
   dontCheckRuntimeDeps = true;
 
-  nativeBuildInputs = with py; [
-    maturin
-  ] ++ [
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = ./Cargo.lock;
+  };
+
+  nativeBuildInputs = [
+    rustPlatform.cargoSetupHook
+    rustPlatform.maturinBuildHook
     cargo
     rustc
     pkg-config

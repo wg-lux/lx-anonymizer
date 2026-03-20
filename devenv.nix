@@ -101,7 +101,7 @@ in
   outputs =
     lib.optionalAttrs (inputs ? pyproject-nix) (
       let
-        pythonApp = config.languages.python.import ./. { };
+        pythonApp = pkgs.callPackage ./package.nix { };
         nativeDrv = config.languages.rust.import ./. { };
         nativeLibDrv = lib.getLib nativeDrv;
 
