@@ -29,9 +29,9 @@ def test_example_report_populates_sensitive_meta_fields() -> None:
     if not pdf_path.exists():
         pytest.skip(f"Example report not found: {pdf_path}")
 
-    # Avoid external Ollama dependency during initialization.
     with patch(
-        "lx_anonymizer.report_reader.ensure_ollama", side_effect=RuntimeError("test")
+        "lx_anonymizer.report_reader.VLLMMetadataExtractor",
+        side_effect=RuntimeError("test"),
     ):
         reader = ReportReader()
 

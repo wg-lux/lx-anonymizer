@@ -740,6 +740,16 @@ class TesseOCRFrameProcessor:
                     c_meta["preprocessing"] = preprocess_mode
                     candidates.append((preprocess_mode, c_text, c_conf, c_meta))
 
+                    # Fast path: for explicit ROIs, stop once the first pass already
+                    # produced usable structured OCR with solid confidence.
+                    if (
+                        has_roi
+                        and c_text
+                        and c_conf >= 0.55
+                        and not self._is_gibberish(c_text)
+                    ):
+                        break
+
                 best = min(candidates, key=lambda c: self._candidate_rank(c[1], c[2]))
                 _, text, conf, meta = best
                 meta["processing_time"] = time.time() - t0

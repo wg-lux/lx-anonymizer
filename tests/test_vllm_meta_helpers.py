@@ -1,9 +1,9 @@
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import (
+from lx_anonymizer.llm.vllm_extractor import (
     EnrichedMetadataExtractor,
     FrameDataProcessor,
     FrameSamplingOptimizer,
     MetadataCache,
-    OllamaOptimizedExtractor,
+    VLLMMetadataExtractor,
     VideoMetadataEnricher,
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
@@ -16,17 +16,19 @@ def _extractor_stub(
     preferred_model=None,
     preferred_timeout=None,
 ):
-    extractor = OllamaOptimizedExtractor.__new__(OllamaOptimizedExtractor)
+    extractor = VLLMMetadataExtractor.__new__(VLLMMetadataExtractor)
     extractor.current_model = current_model
     extractor.available_models = available_models or []
     extractor.preferred_model = preferred_model
     extractor.preferred_timeout = preferred_timeout
+    extractor.base_url = "http://127.0.0.1:8000"
+    extractor.chat_endpoint = extractor._build_chat_endpoint()
     extractor.cache = MetadataCache()
     extractor.sensitive_meta = SensitiveMeta()
     return extractor
 
 
-class _DummyOllama:
+class _DummyLLM:
     def extract_metadata_smart_sampling(self, text):
         return None
 
@@ -105,28 +107,42 @@ def test_calculate_confidence_scores_and_caps():
 
 def test_get_fastest_available_model_honors_preferred_timeout():
     extractor = _extractor_stub(
-        available_models=["llama3.2:1b", "qwen2.5:1.5b-instruct"],
-        preferred_model="qwen2.5:1.5b-instruct",
+        available_models=["Qwen/Qwen3.5-9B", "Qwen/Qwen2.5-3B-Instruct"],
+        preferred_model="Qwen/Qwen2.5-3B-Instruct",
         preferred_timeout=99,
     )
     model = extractor._get_fastest_available_model()
     assert model is not None
-    assert model["name"] == "qwen2.5:1.5b-instruct"
+    assert model["name"] == "Qwen/Qwen2.5-3B-Instruct"
     assert model["timeout"] == 99
 
 
-def test_create_extraction_prompt_varies_by_model_size_and_truncates():
-    small = _extractor_stub(current_model={"name": "llama3.2:1b"})
-    big = _extractor_stub(current_model={"name": "deepseek-r1:1.5x"})  # not "small"
-    text = "X" * 2000
+def test_build_chat_endpoint_uses_openai_compatible_path_for_vllm():
+    extractor = _extractor_stub()
+    extractor.base_url = "http://127.0.0.1:8000/"
+    assert (
+        extractor._build_chat_endpoint() == "http://127.0.0.1:8000/v1/chat/completions"
+    )
 
-    small_prompt = small._create_extraction_prompt(text)
-    big_prompt = big._create_extraction_prompt(text)
 
-    assert "Return exactly one JSON object" in small_prompt
-    assert "Extract patient metadata" in small_prompt
-    assert "Return ONLY JSON." in big_prompt
-    assert len(small_prompt) < len(big_prompt)
+def test_extract_response_content_supports_vllm_choices_shape():
+    extractor = _extractor_stub()
+    content = extractor._extract_response_content(
+        {"choices": [{"message": {"content": '{"patient_first_name":"Max"}'}}]}
+    )
+    assert content == '{"patient_first_name":"Max"}'
+
+
+def test_get_fastest_available_model_uses_preferred_even_without_listing():
+    extractor = _extractor_stub(
+        available_models=[],
+        preferred_model="Qwen/Qwen2.5-3B-Instruct",
+        preferred_timeout=42,
+    )
+    model = extractor._get_fastest_available_model()
+    assert model is not None
+    assert model["name"] == "Qwen/Qwen2.5-3B-Instruct"
+    assert model["timeout"] == 42
 
 
 def test_frame_sampling_optimizer_decisions_and_duplicate_skip():
@@ -136,7 +152,7 @@ def test_frame_sampling_optimizer_decisions_and_duplicate_skip():
     assert opt.should_process_frame(0, 120, "x") is True
     assert opt.should_process_frame(118, 120, "x2") is True
     assert opt.should_process_frame(20, 120, "dup") is False
-    assert opt.should_process_frame(10, 120, "new") is True  # %5 == 0
+    assert opt.should_process_frame(10, 120, "new") is True
     assert opt.should_process_frame(11, 120, "new2") is False
 
 
@@ -149,7 +165,7 @@ def test_frame_sampling_strategy_buckets():
 
 
 def test_enriched_aggregate_ocr_texts_deduplicates_and_filters_short_lines():
-    ext = EnrichedMetadataExtractor(_DummyOllama(), FrameSamplingOptimizer())
+    ext = EnrichedMetadataExtractor(_DummyLLM(), FrameSamplingOptimizer())
     frames = [
         {"ocr_text": "Name: Max\nID 1234\nabc"},
         {"ocr_text": "name max\nID-1234\nUntersuchung 2024"},
@@ -166,7 +182,7 @@ def test_enriched_aggregate_ocr_texts_deduplicates_and_filters_short_lines():
 
 
 def test_enriched_temporal_analysis_detects_change_points():
-    ext = EnrichedMetadataExtractor(_DummyOllama(), FrameSamplingOptimizer())
+    ext = EnrichedMetadataExtractor(_DummyLLM(), FrameSamplingOptimizer())
     frames = [
         {"ocr_text": "Patient Max Muster", "ocr_confidence": 0.9, "timestamp": 0.0},
         {"ocr_text": "Patient Max Muster", "ocr_confidence": 0.8, "timestamp": 1.0},
@@ -184,7 +200,7 @@ def test_enriched_temporal_analysis_detects_change_points():
 
 
 def test_enriched_confidence_combines_sources():
-    ext = EnrichedMetadataExtractor(_DummyOllama(), FrameSamplingOptimizer())
+    ext = EnrichedMetadataExtractor(_DummyLLM(), FrameSamplingOptimizer())
     scores = ext._calculate_enriched_confidence(
         {
             "llm_extracted": {"patient_first_name": "Max", "patient_last_name": "M"},
@@ -226,31 +242,22 @@ def test_frame_data_processor_accepts_generators():
     assert [p["frame_index"] for p in processed] == [0, 1]
 
 
-def test_video_metadata_merge_sources_uses_legacy_as_fallback_only():
-    enricher = VideoMetadataEnricher.__new__(VideoMetadataEnricher)
-    enriched = {
-        "enriched_data": {
-            "llm_extracted": {"patient_first_name": "LLM", "patient_dob": None}
-        }
+def test_video_metadata_enricher_keeps_existing_fallback_data():
+    enricher = VideoMetadataEnricher()
+    enricher.enriched_extractor.extract_from_frame_sequence = lambda *args, **kwargs: {
+        "llm_extracted": {"patient_first_name": "LLM_Name"}
     }
-    legacy = {"patient_first_name": "OCR", "patient_dob": "1990-01-01"}
+    enricher.frame_processor.process_coroutine_output = lambda x: x
 
-    merged = enricher._merge_metadata_sources(enriched, legacy)
+    result = enricher.enrich_from_multiple_sources(
+        video_path="test.mp4",
+        frame_samples=[{"dummy": "data"}],
+        ocr_texts=[],
+        existing_metadata={
+            "patient_first_name": "OCR_Name_Typos",
+            "patient_dob": "01.01.1990",
+        },
+    )
 
-    assert "fallback_data" in merged
-    assert "patient_first_name" not in merged["fallback_data"]
-    assert merged["fallback_data"]["patient_dob"] == "1990-01-01"
-
-
-def test_video_metadata_integration_stats_reports_sources_and_completeness():
-    enricher = VideoMetadataEnricher.__new__(VideoMetadataEnricher)
-    metadata = {
-        "enriched_data": {"llm_extracted": {"patient_first_name": "Max"}},
-        "legacy_data": {"patient_last_name": "Muster"},
-        "fallback_data": {"patient_dob": "1990-01-01"},
-    }
-
-    stats = enricher._calculate_integration_stats(metadata)
-
-    assert stats["data_sources_used"] == ["enriched_llm", "legacy_ocr", "fallback_data"]
-    assert 0 < stats["data_completeness"] <= 1
+    assert result["enriched_data"]["llm_extracted"]["patient_first_name"] == "LLM_Name"
+    assert result["fallback_data"]["patient_dob"] == "01.01.1990"

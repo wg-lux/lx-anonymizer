@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Any, Dict
 
 import cv2
-import pytesseract
+import pytesseract  # type: ignore
 from PIL import Image
 
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from lx_anonymizer.config import settings
+from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
 from lx_anonymizer.pipeline_manager import process_images_with_OCR_and_NER
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -58,8 +59,11 @@ def process_image(
     if skip_blur and not disable_llm:
         logger.info("Skipping blur operations, performing analysis only")
 
-        # Create OllamaOptimizedExtractor instance
-        extractor = OllamaOptimizedExtractor()
+        extractor = VLLMMetadataExtractor(
+            base_url=settings.LLM_BASE_URL,
+            preferred_model=settings.LLM_MODEL,
+            model_timeout=settings.LLM_TIMEOUT,
+        )
 
         # Extract text from image for LLM analysis
         try:

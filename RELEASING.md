@@ -17,7 +17,8 @@ This guide describes how to cut a new release to PyPI and GitHub.
    ```
 
 2. **Update version**
-   - Edit `pyproject.toml` with the new semantic version (e.g., `1.0.0`).
+   - Run the GitHub Actions `Release` workflow manually and provide the target semantic version (for example `1.0.0`).
+   - The workflow updates both `pyproject.toml` and `package.nix`, commits the change, and creates/pushes the matching `vX.Y.Z` tag.
    - Update `CHANGELOG.md`:
      - Move items from `[Unreleased]` into a new section `[vX.Y.Z] - YYYY-MM-DD`.
      - Add an empty `[Unreleased]` header.
@@ -53,11 +54,11 @@ This guide describes how to cut a new release to PyPI and GitHub.
 
 6. **Commit and tag**
    ```bash
-   git add pyproject.toml CHANGELOG.md
-   git commit -m "chore(release): vX.Y.Z"
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
-   git push origin main --tags
+   git add CHANGELOG.md
+   git commit -m "docs(changelog): prepare vX.Y.Z"
+   git push origin main
    ```
+   Then trigger the `Release` workflow with version `X.Y.Z`. It will commit the synchronized version bump for `pyproject.toml` and `package.nix`, create tag `vX.Y.Z`, and push both.
 
 7. **Create GitHub release**
    - Open https://github.com/wg-lux/lx-anonymizer/releases/new
@@ -69,7 +70,7 @@ This guide describes how to cut a new release to PyPI and GitHub.
 
 8. **Publish to PyPI**
    - Ensure `PYPI_API_TOKEN` is configured in GitHub Actions secrets.
-   - Trigger the `publish.yml` workflow by pushing the tag (step 6). The workflow will build and upload the distribution. Alternatively, publish manually:
+   - The tag pushed by the `Release` workflow triggers the publish pipeline automatically. Alternatively, publish manually:
    ```bash
    uv run python -m twine upload dist/*
    ```

@@ -83,7 +83,6 @@ django = [
   "django>=5.2",
 ]
 llm = [
-  "ollama>=0.4.7",
   "tiktoken>=0.9.0",
 ]
 ocr = [

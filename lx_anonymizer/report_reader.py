@@ -17,6 +17,7 @@ from lx_anonymizer.anonymization.sensitive_region_cropper import (
     SensitiveRegionCropper,
 )  # Import the new cropper
 from lx_anonymizer.anonymization.text_anonymizer import anonymize_text
+from lx_anonymizer.config import settings
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.ner.spacy_extractor import (
     EndoscopeDataExtractor,
@@ -29,11 +30,11 @@ from lx_anonymizer.ocr.ocr import (
     tesseract_full_image_ocr,
 )  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
+from lx_anonymizer.llm.vllm_service import VLLMService
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import logger
 from lx_anonymizer.setup.private_settings import DEFAULT_SETTINGS
-from lx_anonymizer.utils.ollama import ensure_ollama
 
 
 class ReportReader:
@@ -104,38 +105,37 @@ class ReportReader:
         # Initialize Anonymizer
         self.anonymizer = Anonymizer()
 
-        # Initialize Ollama (with graceful degradation)
-        self.ollama_proc = None
-        self.ollama_extractor = None
-        self.ollama_available = False
+        # Initialize vLLM-backed extractor
+        self.llm_extractor = None
+        self.llm_available = False
 
         # initialize global sensitive meta
         self.sensitive_meta = SensitiveMeta()
 
         try:
-            self.ollama_proc = ensure_ollama()
-
-            # Try to initialize OllamaOptimizedExtractor
-            self.ollama_extractor = OllamaOptimizedExtractor()
+            self.llm_extractor = VLLMMetadataExtractor(
+                base_url=settings.LLM_BASE_URL,
+                preferred_model=settings.LLM_MODEL,
+                model_timeout=settings.LLM_TIMEOUT,
+            )
 
             # Check if models are available
-            if self.ollama_extractor and self.ollama_extractor.current_model:
-                self.ollama_available = True
-                logger.info("Ollama LLM features enabled for ReportReader")
+            if self.llm_extractor and self.llm_extractor.current_model:
+                self.llm_available = True
+                logger.info("vLLM features enabled for ReportReader")
             else:
                 logger.warning(
-                    "Ollama models not available, LLM extraction disabled for ReportReader"
+                    "vLLM models not available, LLM extraction disabled for ReportReader"
                 )
-                self.ollama_available = False
-                self.ollama_extractor = None
+                self.llm_available = False
+                self.llm_extractor = None
 
         except Exception as e:
             logger.warning(
-                f"Ollama/LLM unavailable for ReportReader, will use SpaCy/regex fallback: {e}"
+                f"vLLM unavailable for ReportReader, will use SpaCy/regex fallback: {e}"
             )
-            self.ollama_available = False
-            self.ollama_proc = None
-            self.ollama_extractor = None
+            self.llm_available = False
+            self.llm_extractor = None
 
     @classmethod
     def _resolve_flags(cls, flags: Optional[Mapping[Any, Any]]) -> Dict[str, Any]:
@@ -325,31 +325,27 @@ class ReportReader:
                     f"OCR fallback finished. Total text length: {len(text)}. Preview: {text[:200]}..."
                 )
 
-                # Apply correction using Ollama (Keep this if you want to correct OCR text)
+                # Apply optional OCR correction through vLLM
                 if (
                     text and len(text.strip()) > 10
                 ):  # Only correct if OCR produced something meaningful
-                    attempted_ollama_correction = False
-                    if not getattr(self, "ollama_available", False):
+                    attempted_llm_correction = False
+                    if not getattr(self, "llm_available", False):
                         logger.info(
-                            "Skipping LLM correction for OCR text: Ollama unavailable"
+                            "Skipping LLM correction for OCR text: vLLM unavailable"
                         )
                     else:
-                        logger.info("Applying LLM correction to OCR text via Ollama")
-                        attempted_ollama_correction = True
+                        logger.info("Applying LLM correction to OCR text via vLLM")
+                        attempted_llm_correction = True
                     try:
-                        from lx_anonymizer.ollama.ollama_service import (
-                            get_ollama_service,
-                        )
-
-                        ollama_client = (
-                            get_ollama_service(auto_start=False)
-                            if getattr(self, "ollama_available", False)
+                        llm_client = (
+                            VLLMService()
+                            if getattr(self, "llm_available", False)
                             else None
                         )
                         corrected_text = (
-                            ollama_client.correct_ocr_text_in_chunks(text)
-                            if ollama_client is not None
+                            llm_client.correct_ocr_text_in_chunks(text)
+                            if llm_client is not None
                             else None
                         )
 
@@ -358,16 +354,16 @@ class ReportReader:
                             and corrected_text != text
                             and len(corrected_text) > 0.5 * len(text)
                         ):
-                            logger.info("OCR text successfully corrected by Ollama.")
+                            logger.info("OCR text successfully corrected by vLLM.")
                             text = corrected_text
                         elif corrected_text == text:
-                            logger.info("Ollama correction resulted in the same text.")
-                        elif attempted_ollama_correction:
+                            logger.info("vLLM correction resulted in the same text.")
+                        elif attempted_llm_correction:
                             logger.warning(
-                                "Ollama OCR correction failed or produced poor result, using original OCR text."
+                                "vLLM OCR correction failed or produced poor result, using original OCR text."
                             )
                     except Exception as e:
-                        logger.warning(f"Error using Ollama for correction: {e}")
+                        logger.warning(f"Error using vLLM for correction: {e}")
 
                 if not text or len(text.strip()) < 10:
                     logger.error(
@@ -661,52 +657,50 @@ class ReportReader:
         return report_meta
 
     def extract_report_meta_deepseek(self, text):
-        """Extract metadata using DeepSeek via Ollama structured output."""
-        return self._extract_report_meta_via_ollama(
+        """Extract metadata using the shared vLLM structured-output path."""
+        return self._extract_report_meta_via_llm(
             text=text,
             extractor_name="DeepSeek",
             unavailable_log_level="warning",
         )
 
     def extract_report_meta_medllama(self, text):
-        return self._extract_report_meta_via_ollama(
-            text=text, extractor_name="MedLLaMA"
-        )
+        return self._extract_report_meta_via_llm(text=text, extractor_name="MedLLaMA")
 
     def extract_report_meta_llama3(self, text):
-        return self._extract_report_meta_via_ollama(text=text, extractor_name="Llama3")
+        return self._extract_report_meta_via_llm(text=text, extractor_name="Llama3")
 
-    def _extract_report_meta_via_ollama(
+    def _extract_report_meta_via_llm(
         self,
         text: str,
         extractor_name: str,
         unavailable_log_level: str = "debug",
     ) -> Dict[str, Any]:
-        """Shared wrapper for Ollama-based metadata extraction variants."""
-        if not self.ollama_available or not self.ollama_extractor:
-            msg = f"Ollama not available for {extractor_name} extraction, returning empty dict."
+        """Shared wrapper for vLLM-based metadata extraction variants."""
+        if not self.llm_available or not self.llm_extractor:
+            msg = f"vLLM not available for {extractor_name} extraction, returning empty dict."
             log_fn = getattr(logger, unavailable_log_level, logger.debug)
             log_fn(msg)
             return {}
 
         logger.info(
-            "Attempting metadata extraction with %s (Ollama Structured Output)",
+            "Attempting metadata extraction with %s (vLLM Structured Output)",
             extractor_name,
         )
         try:
-            meta_obj = self.ollama_extractor.extract_metadata(text)
+            meta_obj = self.llm_extractor.extract_metadata(text)
             if not meta_obj:
                 logger.warning(
-                    "%s Ollama extraction failed, returning empty dict.",
+                    "%s vLLM extraction failed, returning empty dict.",
                     extractor_name,
                 )
                 return {}
 
             self.sensitive_meta.safe_update(meta_obj)
-            logger.info("%s Ollama extraction successful.", extractor_name)
+            logger.info("%s vLLM extraction successful.", extractor_name)
             return self.sensitive_meta.to_dict()
         except Exception as e:
-            logger.warning(f"{extractor_name} Ollama extraction error: {e}")
+            logger.warning(f"{extractor_name} vLLM extraction error: {e}")
             return {}
 
     def anonymize_report(self, text, report_meta):

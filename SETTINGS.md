@@ -18,7 +18,7 @@ if settings.LLM_ENABLED:
 - `MODE` (default: `production`) - general mode flag.
 - `DEBUG_SAVE_FRAMES` (default: `False`) - save intermediate frames for debugging.
 - `LLM_ENABLED` (default: `True`) - enable LLM metadata extraction.
-- `LLM_MODEL` (default: `llama3.2:1b`) - preferred Ollama model name.
+- `LLM_MODEL` (default: `Qwen/Qwen3.5-9B`) - preferred vLLM model name.
 - `LLM_TIMEOUT` (default: `30`) - request timeout in seconds.
 - `MAX_FRAMES_TO_SAMPLE` (default: `50`) - cap for OCR frames per video.
 - `SMART_EARLY_STOPPING` (default: `True`) - stop early when metadata is complete
@@ -32,7 +32,7 @@ if settings.LLM_ENABLED:
 ```ini
 MODE=production
 LLM_ENABLED=True
-LLM_MODEL=llama3.2:1b
+LLM_MODEL=Qwen/Qwen3.5-9B
 LLM_TIMEOUT=15
 MAX_FRAMES_TO_SAMPLE=40
 SMART_EARLY_STOPPING=True

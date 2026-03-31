@@ -1,6 +1,6 @@
 import argparse
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import pytest
 
@@ -124,19 +124,6 @@ def test_package_getattr_resolves_report_reader(
     monkeypatch.setitem(sys.modules, "lx_anonymizer.report_reader", fake_module)
 
     assert lx_anonymizer.__getattr__("ReportReader") is fake_cls
-
-
-def test_package_getattr_resolves_ollama_module(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sentinel = SimpleNamespace(name="ollama")
-
-    def fake_import_module(name: str) -> object:
-        assert name == "lx_anonymizer.ollama.ollama_llm"
-        return sentinel
-
-    monkeypatch.setattr(lx_anonymizer, "import_module", fake_import_module)
-    assert lx_anonymizer.__getattr__("ollama_llm") is sentinel
 
 
 def test_package_getattr_unknown_raises_attribute_error() -> None:

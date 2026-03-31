@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from sklearn.cluster import KMeans  # type: ignore[import-untyped]
+from sklearn.cluster import KMeans  # type: ignore[import-not-found,import-untyped]
 
 
 def get_dominant_color(image, box, k=1):

@@ -6,10 +6,12 @@ class Settings(BaseSettings):
     MODE: str = "production"
     DEBUG_SAVE_FRAMES: bool = False
 
-    # --- LLM / Ollama Configuration ---
+    # --- LLM / vLLM Configuration ---
     LLM_ENABLED: bool = True
-    LLM_MODEL: str = "llama3.2:1b"
-    LLM_TIMEOUT: int = 30
+    LLM_PROVIDER: str = "vllm"
+    LLM_BASE_URL: str = "http://127.0.0.1:8000"
+    LLM_MODEL: str = "Qwen/Qwen3.5-9B"
+    LLM_TIMEOUT: int = 60
 
     # --- Performance & Sampling ---
     MAX_FRAMES_TO_SAMPLE: int = 50

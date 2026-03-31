@@ -12,7 +12,7 @@ from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 def _frame_cleaner_stub() -> FrameCleaner:
     fc = FrameCleaner.__new__(FrameCleaner)
     fc.use_llm = False
-    fc.ollama_extractor = None
+    fc.llm_extractor = None
     fc.patient_data_extractor = None
     fc.frame_metadata_extractor = SimpleNamespace(
         extract_metadata_from_frame_text=Mock(return_value={}),
@@ -41,8 +41,8 @@ def _report_reader_stub() -> ReportReader:
     rr.endoscope_extractor = SimpleNamespace(
         extract_endoscope_info=Mock(return_value={})
     )
-    rr.ollama_available = False
-    rr.ollama_extractor = None
+    rr.llm_available = False
+    rr.llm_extractor = None
     return rr
 
 
@@ -111,7 +111,7 @@ def test_frame_cleaner_validate_roi_accepts_alias_keys_and_rejects_bad_values():
 def test_unified_metadata_extract_prefers_llm_when_signal_present():
     fc = _frame_cleaner_stub()
     fc.use_llm = True
-    fc.ollama_extractor = SimpleNamespace(
+    fc.llm_extractor = SimpleNamespace(
         extract_metadata=Mock(return_value={"patient_last_name": "LLM"})
     )
     fc.patient_data_extractor = Mock(return_value={"patient_last_name": "spacy"})
@@ -129,7 +129,7 @@ def test_unified_metadata_extract_prefers_llm_when_signal_present():
 def test_unified_metadata_extract_falls_back_when_llm_has_no_signal():
     fc = _frame_cleaner_stub()
     fc.use_llm = True
-    fc.ollama_extractor = SimpleNamespace(extract_metadata=Mock(return_value={}))
+    fc.llm_extractor = SimpleNamespace(extract_metadata=Mock(return_value={}))
     fc.patient_data_extractor = Mock(return_value={"patient_first_name": "SpaCy"})
     fc.frame_metadata_extractor.extract_metadata_from_frame_text.return_value = {
         "patient_first_name": "Regex"
@@ -185,18 +185,18 @@ def test_report_reader_anonymize_report_passes_config():
     assert kwargs["upper_cut_off_flags"] == []
 
 
-def test_report_reader_shared_ollama_wrapper_success_and_failure_paths():
+def test_report_reader_shared_llm_wrapper_success_and_failure_paths():
     rr = _report_reader_stub()
-    rr.ollama_available = True
-    rr.ollama_extractor = SimpleNamespace(
+    rr.llm_available = True
+    rr.llm_extractor = SimpleNamespace(
         extract_metadata=Mock(return_value={"patient_first_name": "LLM"})
     )
 
-    ok = rr._extract_report_meta_via_ollama("txt", "DeepSeek")
+    ok = rr._extract_report_meta_via_llm("txt", "DeepSeek")
     assert ok["patient_first_name"] == "LLM"
 
-    rr.ollama_extractor.extract_metadata.return_value = None
-    fail = rr._extract_report_meta_via_ollama("txt", "DeepSeek")
+    rr.llm_extractor.extract_metadata.return_value = None
+    fail = rr._extract_report_meta_via_llm("txt", "DeepSeek")
     assert fail == {}
 
 

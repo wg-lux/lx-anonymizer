@@ -1,5 +1,5 @@
 """
-Optimierte Ollama LLM Metadaten-Extraktion mit leichtgewichtigen Modellen und REST API.
+Optimierte vLLM-Metadaten-Extraktion mit leichtgewichtigen Modellen und REST API.
 
 Diese Implementierung basiert auf den Best Practices:
 1. Verwendung von instruction-tuned, quantisierten Modellen für bessere Performance
@@ -113,22 +113,23 @@ class MetadataCache:
         }
 
 
-class OllamaOptimizedExtractor:
+class VLLMMetadataExtractor:
     """
-    Optimierte Ollama-Integration für Metadaten-Extraktion.
+    Optimierte vLLM-Integration für Metadaten-Extraktion.
 
-    Verwendet REST API direkt und implement ein fail-safe Modell-System.
+    Verwendet eine OpenAI-kompatible REST API direkt und implementiert ein
+    fail-safe Modell-System.
     """
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str = "http://localhost:8000",
         enable_cache: bool = True,
         preferred_model: Optional[str] = None,
         model_timeout: Optional[int] = None,
     ):
         self.base_url = base_url
-        self.chat_endpoint = f"{base_url}/api/chat"
+        self.chat_endpoint = self._build_chat_endpoint()
         self.available_models = self._check_available_models()
         self.current_model: dict[str, Any]
         self.cache = MetadataCache()
@@ -137,6 +138,10 @@ class OllamaOptimizedExtractor:
         self.preferred_timeout = model_timeout
 
         self._initialize_best_model()
+
+    def _build_chat_endpoint(self) -> str:
+        base = self.base_url.rstrip("/")
+        return f"{base}/v1/chat/completions"
 
     def _check_available_models(self) -> List[str]:
         """Überprüft, welche Modelle verfügbar sind."""
@@ -148,10 +153,14 @@ class OllamaOptimizedExtractor:
 
         self.available_models_retry = False
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            response = requests.get(f"{self.base_url.rstrip('/')}/v1/models", timeout=5)
             if response.status_code == 200:
                 models_data = response.json()
-                return [model["name"] for model in models_data.get("models", [])]
+                return [
+                    model["id"]
+                    for model in models_data.get("data", [])
+                    if isinstance(model, dict) and model.get("id")
+                ]
             return []
         except Exception as e:
             logger.warning(f"could not check available models: {e}")
@@ -192,6 +201,18 @@ class OllamaOptimizedExtractor:
                     model_config["name"],
                 )
                 return
+            if not self.available_models:
+                self.current_model = {
+                    "name": self.preferred_model,
+                    "priority": 0,
+                    "timeout": self.preferred_timeout or 30,
+                    "description": "Preferred model (unverified)",
+                }
+                logger.warning(
+                    "Modellliste nicht verfügbar, verwende konfiguriertes Modell direkt: %s",
+                    self.preferred_model,
+                )
+                return
             logger.warning(
                 "Bevorzugtes Modell nicht verfuegbar: %s",
                 self.preferred_model,
@@ -217,7 +238,7 @@ class OllamaOptimizedExtractor:
             logger.warning(f"Verwende Fallback-Modell: {fallback_model['name']}")
         else:
             logger.warning(
-                "Keine Ollama-Modelle verfügbar! LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt."
+                "Keine vLLM-Modelle verfügbar. LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt."
             )
             self.current_model = None
 
@@ -303,7 +324,7 @@ Return ONLY JSON."""
         Macht API-Request mit Retry-Logik und robuster Fehlerbehandlung.
 
         Args:
-            payload: Request-Payload für Ollama API
+            payload: Request-Payload für die vLLM/OpenAI-kompatible API
 
         Returns:
             Response-Dictionary von der API
@@ -329,9 +350,7 @@ Return ONLY JSON."""
 
             if response.status_code == 200:
                 result = response.json()
-                content = result.get("message", {}).get("content", "") or result.get(
-                    "content", ""
-                )
+                content = self._extract_response_content(result)
 
                 # Validiere Antwort
                 if not content:
@@ -353,11 +372,20 @@ Return ONLY JSON."""
             )
             raise
         except requests.ConnectionError as e:
-            logger.error(f"🔌 Verbindungsfehler zu Ollama: {e}")
-            raise requests.RequestException(f"Ollama nicht erreichbar: {e}")
+            logger.error(f"🔌 Verbindungsfehler zu vLLM: {e}")
+            raise requests.RequestException(f"vLLM nicht erreichbar: {e}")
         except Exception as e:
             logger.error(f"💥 Unerwarteter API-Fehler: {e}")
             raise
+
+    def _extract_response_content(self, result: Dict[str, Any]) -> str:
+        choices = result.get("choices", [])
+        if choices and isinstance(choices[0], dict):
+            message = choices[0].get("message", {})
+            if isinstance(message, dict):
+                return message.get("content", "") or ""
+
+        return result.get("message", {}).get("content", "") or result.get("content", "")
 
     def _try_next_model(self) -> bool:
         """
@@ -399,9 +427,7 @@ Return ONLY JSON."""
         """
         # Early return if no models are available
         if not self.current_model and not self.available_models:
-            logger.warning(
-                "Keine Ollama-Modelle verfügbar. Überspringe LLM-Extraktion."
-            )
+            logger.warning("Keine vLLM-Modelle verfügbar. Überspringe LLM-Extraktion.")
             return None
 
         # Überprüfe zuerst den Cache
@@ -443,8 +469,8 @@ Return ONLY JSON."""
                         }
                     ],
                     "stream": False,
-                    "format": self._create_json_schema(),
                 }
+                payload["response_format"] = {"type": "json_object"}
 
                 logger.info(
                     f"Versuch {model_attempt + 1}/{len(available_model_configs)}: Extraktion mit {self.current_model['name']}"
@@ -452,9 +478,7 @@ Return ONLY JSON."""
 
                 # API-Request mit Retry-Logik
                 response = self._make_api_request(payload)
-                content = response.get("message", {}).get(
-                    "content", ""
-                ) or response.get("content", "")
+                content = self._extract_response_content(response)
 
                 # Performance-Metriken loggen
                 duration = time.time() - start_time
@@ -620,16 +644,15 @@ Return ONLY JSON."""
                     }
                 ],
                 "stream": False,
-                "options": {
-                    "temperature": 0.1,  # Niedriger für konsistentere Ergebnisse
-                    "top_p": 0.9,
-                    "num_predict": 150,  # Begrenzte Token-Anzahl für Geschwindigkeit
-                },
             }
+            payload["response_format"] = {"type": "json_object"}
+            payload["temperature"] = 0.1
+            payload["top_p"] = 0.9
+            payload["max_tokens"] = 150
 
             logger.info(f"Smart-Sampling mit {self.current_model['name']}")
             response = self._make_api_request(payload)
-            content = response["message"]["content"]
+            content = self._extract_response_content(response)
 
             duration = time.time() - start_time
             logger.info(f"Smart-Sampling in {duration:.2f}s abgeschlossen")
@@ -747,7 +770,9 @@ Return ONLY JSON."""
 
     def _get_fastest_available_model(self) -> Optional[Dict[str, Any]]:
         """Gibt das schnellste verfügbare Modell zurück."""
-        if self.preferred_model and self.preferred_model in self.available_models:
+        if self.preferred_model and (
+            self.preferred_model in self.available_models or not self.available_models
+        ):
             model_config = next(
                 (
                     m
@@ -812,7 +837,16 @@ JSON:"""
             return False
         return any(
             token in model_name
-            for token in ("1b", "1.5b", "mini", "phi3.5", "qwen2.5:1.5b")
+            for token in (
+                "1b",
+                "1.5b",
+                "3b",
+                "mini",
+                "phi3.5",
+                "qwen2.5:1.5b",
+                "qwen2.5-1.5b",
+                "qwen2.5-3b",
+            )
         )
 
     def _calculate_confidence(self, metadata_dict: dict) -> float:
@@ -975,17 +1009,17 @@ class FrameSamplingOptimizer:
 
 
 # Factory-Funktion für einfache Verwendung
-def create_ollama_extractor(
+def create_vllm_extractor(
     enable_cache: bool = True, enable_smart_sampling: bool = True
-) -> OllamaOptimizedExtractor:
+) -> VLLMMetadataExtractor:
     """
-    Erstellt eine optimierte Ollama-Extractor-Instanz.
+    Erstellt eine optimierte vLLM-Extractor-Instanz.
 
     Args:
         enable_cache: Aktiviert Metadaten-Caching
         enable_smart_sampling: Aktiviert Smart-Sampling für bessere Performance
     """
-    extractor = OllamaOptimizedExtractor(enable_cache=enable_cache)
+    extractor = VLLMMetadataExtractor(enable_cache=enable_cache)
 
     # Setze optimale Einstellungen für medizinische Datenextraktion
     if enable_smart_sampling:
@@ -995,17 +1029,17 @@ def create_ollama_extractor(
 
 
 # Convenience-Funktion für maximale Performance
-def create_fast_extractor() -> OllamaOptimizedExtractor:
+def create_fast_extractor() -> VLLMMetadataExtractor:
     """Erstellt Extractor mit maximaler Performance-Optimierung."""
-    return create_ollama_extractor(enable_cache=True, enable_smart_sampling=True)
+    return create_vllm_extractor(enable_cache=True, enable_smart_sampling=True)
 
 
 # Erweiterte Factory-Funktion
 def create_optimized_extractor_with_sampling() -> tuple[
-    OllamaOptimizedExtractor, FrameSamplingOptimizer
+    VLLMMetadataExtractor, FrameSamplingOptimizer
 ]:
     """Erstellt optimierte Extractor- und Sampling-Instanzen."""
-    extractor = OllamaOptimizedExtractor()
+    extractor = VLLMMetadataExtractor()
     optimizer = FrameSamplingOptimizer()
     return extractor, optimizer
 
@@ -1016,7 +1050,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     # Extractor erstellen
-    extractor = create_ollama_extractor()
+    extractor = create_vllm_extractor()
 
     # Test-Texte
     test_texts = [
@@ -1050,13 +1084,13 @@ class EnrichedMetadataExtractor:
 
     def __init__(
         self,
-        ollama_extractor: OllamaOptimizedExtractor,
+        llm_extractor: VLLMMetadataExtractor,
         frame_optimizer: FrameSamplingOptimizer,
     ):
-        self.ollama_extractor = ollama_extractor
+        self.llm_extractor = llm_extractor
         self.frame_optimizer = frame_optimizer
-        if not self.ollama_extractor:
-            self.ollama_extractor = create_ollama_extractor()
+        if not self.llm_extractor:
+            self.llm_extractor = create_vllm_extractor()
         if not self.frame_optimizer:
             self.frame_optimizer = FrameSamplingOptimizer()
         self.frame_context: dict[str, Any] = {}
@@ -1092,7 +1126,7 @@ class EnrichedMetadataExtractor:
 
         # 3. LLM-Extraktion auf aggregiertem Text
         if combined_text:
-            llm_metadata = self.ollama_extractor.extract_metadata_smart_sampling(
+            llm_metadata = self.llm_extractor.extract_metadata_smart_sampling(
                 combined_text
             )
             if llm_metadata:
@@ -1315,7 +1349,7 @@ class EnrichedMetadataExtractor:
         llm_data = enriched_metadata.get("llm_extracted", {})
         if llm_data:
             confidence_scores["llm_confidence"] = (
-                self.ollama_extractor._calculate_confidence(llm_data)
+                self.llm_extractor._calculate_confidence(llm_data)
             )
 
         # Frame-Qualität-Konfidenz
@@ -1417,9 +1451,9 @@ class FrameDataProcessor:
 # Erweiterte Factory-Funktion für angereicherte Extraktion
 def create_enriched_extractor() -> EnrichedMetadataExtractor:
     """Erstellt einen angereicherten Metadaten-Extractor."""
-    ollama_extractor = create_fast_extractor()
+    llm_extractor = create_fast_extractor()
     frame_optimizer = FrameSamplingOptimizer()
-    return EnrichedMetadataExtractor(ollama_extractor, frame_optimizer)
+    return EnrichedMetadataExtractor(llm_extractor, frame_optimizer)
 
 
 class VideoMetadataEnricher:

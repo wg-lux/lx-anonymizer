@@ -41,7 +41,7 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 - Optional extras:
   - spaCy `de_core_news_lg` model (download after installation)
   - Torch vision/audio for video OCR workloads
-  - Ollama-compatible LLMs for advanced metadata extraction
+  - vLLM-hosted Qwen models for advanced metadata extraction
 
 ## Installation
 
@@ -68,7 +68,7 @@ pip install lx-anonymizer
 Install extras only when you need the corresponding feature set:
 ```bash
 pip install "lx-anonymizer[ocr]"      # TrOCR, tesserocr, CRAFT helpers
-pip install "lx-anonymizer[llm]"      # Ollama client helpers
+pip install "lx-anonymizer[llm]"      # vLLM client-side helpers
 pip install "lx-anonymizer[nlu]"      # Flair NER
 pip install "lx-anonymizer[django]"   # Django integration
 pip install "lx-anonymizer[dev]"      # local development tooling
@@ -163,10 +163,9 @@ After installation, fetch the German spaCy model used by the report pipeline:
 python -m spacy download de_core_news_lg
 ```
 
-Also, install the ollama client on your device and ensure it is running with your desired llm for llm support:
+Start a vLLM server exposing an OpenAI-compatible API for LLM support:
 ```
-ollama run deepseek-r1
-ollama run llama-3.2
+vllm serve Qwen/Qwen3.5-9B --port 8000
 ```
 Caution: This is only recommended on devices with sufficient gpu capabilities
 
@@ -243,7 +242,7 @@ pre-extracted raw text.
 
 `process_report(...)` parameters:
 - `use_ensemble`: enable ensemble OCR on OCR fallback paths.
-- `use_llm_extractor`: preferred LLM extractor hint, used when Ollama-backed extraction is available.
+- `use_llm_extractor`: preferred LLM extractor hint, used when vLLM-backed extraction is available.
 - `create_anonymized_pdf`: render a blackened PDF output for PDF inputs.
 - `anonymized_pdf_output_path`: optional explicit path for that anonymized PDF.
 
@@ -294,7 +293,7 @@ cleaned_path, metadata = cleaner.clean_video(
 frame-level overlays.
 
 `FrameCleaner(...)` constructor:
-- `use_llm`: enables Ollama-backed batch metadata enrichment when available.
+- `use_llm`: enables vLLM-backed batch metadata enrichment when available.
 - `use_minicpm` and `minicpm_config`: reserved for optional OCR backends.
 
 `clean_video(...)` parameters:

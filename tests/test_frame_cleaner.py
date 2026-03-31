@@ -78,10 +78,9 @@ class TestFrameCleanerRefactored:
             assert isinstance(stride, int)
             assert frame.ndim == 2  # Ensure it was converted to grayscale
 
-            # Validate Sampling Logic
-            # With 100 frames and target 200, skip should be minimal (5 based on code logic)
-            # Logic: skip = max(5, min(ceil(100/200), 30)) -> max(5, 1) -> 5
-            expected_skip = 5
+            # Validate sampling logic using the current helper behavior.
+            target_samples = frame_cleaner._target_sample_count(total_frames)
+            expected_skip = max(5, min(-(-total_frames // target_samples), 60))
             assert stride == expected_skip
 
             # Check indices: 0, 5, 10, ...

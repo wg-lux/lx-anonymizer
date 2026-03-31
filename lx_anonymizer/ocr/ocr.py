@@ -64,7 +64,7 @@ def _get_model_service():
     if not _trocr_dependencies_available():
         return None
     try:
-        from lx_anonymizer.ollama.model_service import model_service  # type: ignore[import-untyped]
+        from lx_anonymizer.model_service import model_service  # type: ignore[import-untyped]
 
         return model_service
     except ImportError:

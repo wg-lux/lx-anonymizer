@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class BestFrameText:
             random.seed(seed)
 
         # FIX: initialize extractor instance (was empty assignment causing syntax error)
-        self.ollama_extraction = OllamaOptimizedExtractor()
+        self.llm_extraction = VLLMMetadataExtractor()
 
     # ---------- scoring ------------------------------------------------------
 
@@ -181,7 +181,7 @@ class BestFrameText:
             for c in self._reservoir:
                 text += c.meta.get("extracted_metadata", "")
             if text:
-                meta = self.ollama_extraction.extract_metadata(text)
+                meta = self.llm_extraction.extract_metadata(text)
                 if isinstance(meta, dict):
                     best = meta.get("representative_text") or meta.get("best") or ""
                 else:
@@ -194,7 +194,7 @@ class BestFrameText:
                 )[:1500]
                 return {"best": best, "average": average}
         except Exception as e:
-            logger.info(f"Ollama extraction failed: {e}, fallback to original reduce.")
+            logger.info(f"vLLM extraction failed: {e}, fallback to original reduce.")
 
         if not self._reservoir and not self._topk:
             return {"best": "", "average": ""}

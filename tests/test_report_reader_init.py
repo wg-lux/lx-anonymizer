@@ -54,16 +54,9 @@ def _build_report_reader_without_heavy_init(*args, **kwargs) -> ReportReader:
         stack.enter_context(
             patch("lx_anonymizer.report_reader.Anonymizer", return_value=MagicMock())
         )
-        # Force graceful fallback path and avoid external process/model startup.
         stack.enter_context(
             patch(
-                "lx_anonymizer.report_reader.ensure_ollama",
-                side_effect=RuntimeError("test"),
-            )
-        )
-        stack.enter_context(
-            patch(
-                "lx_anonymizer.report_reader.OllamaOptimizedExtractor",
+                "lx_anonymizer.report_reader.VLLMMetadataExtractor",
                 return_value=MagicMock(),
             )
         )

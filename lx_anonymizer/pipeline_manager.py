@@ -57,7 +57,8 @@ from lx_anonymizer.ocr.ocr import (
     tesseract_on_boxes,
     trocr_on_boxes,
 )
-from lx_anonymizer.ollama.ollama_llm_meta_extraction import OllamaOptimizedExtractor
+from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
+from lx_anonymizer.config import settings
 from lx_anonymizer.ner.spacy_NER import spacy_NER_German
 from lx_anonymizer.text_detection.tesseract_text_detection import (
     tesseract_text_detection,
@@ -137,7 +138,11 @@ def _load_device_defaults(
 
 def _run_llm_image_analysis(img_path: Path) -> Dict:
     logger.info("Skipping blur, running LLM analysis on image")
-    extractor = OllamaOptimizedExtractor()
+    extractor = VLLMMetadataExtractor(
+        base_url=settings.LLM_BASE_URL,
+        preferred_model=settings.LLM_MODEL,
+        model_timeout=settings.LLM_TIMEOUT,
+    )
 
     try:
         image = Image.open(img_path).convert("RGB")

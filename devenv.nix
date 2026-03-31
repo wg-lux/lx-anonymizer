@@ -102,27 +102,10 @@ in
     lib.optionalAttrs (inputs ? pyproject-nix) (
       let
         pythonApp = pkgs.callPackage ./package.nix { };
-        nativeDrv = config.languages.rust.import ./. { };
-        nativeLibDrv = lib.getLib nativeDrv;
-
-        nativeApp = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
-          mkdir -p "$out/${python.sitePackages}/lx_anonymizer"
-          native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
-          test -n "$native_lib"
-          cp "$native_lib" "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
-        '';
       in
       {
         python = pythonApp;
-        native = nativeApp;
-        native-raw = nativeDrv;
-        app = pkgs.symlinkJoin {
-          name = "lx-anonymizer-with-native";
-          paths = [
-            pythonApp
-            nativeApp
-          ];
-        };
+        app = pythonApp;
       }
     );
 
