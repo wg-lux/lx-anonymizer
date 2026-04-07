@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = "http://127.0.0.1:8000"
     LLM_MODEL: str = "Qwen/Qwen3.5-9B"
     LLM_TIMEOUT: int = 60
+    LLM_MAX_CALLS_PER_VIDEO: int = 2
+    LLM_MIN_TEXT_LENGTH: int = 24
+    REPORT_LLM_MIN_TEXT_LENGTH: int = 48
+    REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH: int = 80
 
     # --- Performance & Sampling ---
     MAX_FRAMES_TO_SAMPLE: int = 50

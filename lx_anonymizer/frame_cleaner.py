@@ -13,6 +13,7 @@ Uses specialized frame processing components separated from PDF logic.
 import logging
 import math
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -44,6 +45,16 @@ from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_encoder, video_processor, video_utils
 
 logger = logging.getLogger(__name__)
+
+_LLM_TITLE_TOKEN_RE = re.compile(
+    r"\b(?:herrn?|frau|fru|monsieur|madame|dr\.?|prof\.?|professor|ing\.?)\b",
+    re.IGNORECASE,
+)
+_LLM_AGE_TOKEN_RE = re.compile(r"\b\d{1,3}\s*jahre?\b", re.IGNORECASE)
+_LLM_NARRATIVE_TOKEN_RE = re.compile(
+    r"\b(?:befund|patient|screening|beschwerden|koloskopie|gastroskopie)\b",
+    re.IGNORECASE,
+)
 
 
 def _in_pytest_runtime() -> bool:
@@ -132,6 +143,8 @@ class FrameCleaner:
         self.frame_collection: List[Dict[str, Any]] = []
         self.ocr_text_collection: List[str] = []
         self.current_video_total_frames = 0
+        self._llm_calls_this_video = 0
+        self._llm_seen_texts: set[str] = set()
 
         # Hardware acceleration detection, Encoder setup
         self.video_encoder = video_encoder.VideoEncoder()
@@ -273,12 +286,24 @@ class FrameCleaner:
                 break
 
         # Batch-Metadaten-Anreicherung nach Frame-Loop
-        if self.use_llm and self.frame_collection:
+        if (
+            self.use_llm
+            and self.frame_collection
+            and not self.frame_metadata_extractor.is_complete(accumulated)
+            and (
+                int(settings.LLM_MAX_CALLS_PER_VIDEO) < 0
+                or self._llm_calls_this_video < int(settings.LLM_MAX_CALLS_PER_VIDEO)
+            )
+        ):
             batch_enriched = self._extract_enriched_metadata_batch()
             if batch_enriched:
                 accumulated = self.frame_metadata_extractor.merge_metadata(
                     accumulated, batch_enriched
                 )
+        elif self.use_llm and self.frame_collection:
+            logger.debug(
+                "Skipping batch enrichment because metadata is already complete or LLM budget is exhausted."
+            )
         elif self.frame_collection:
             logger.debug(
                 "Skipping batch enrichment because LLM is disabled (frames=%d).",
@@ -626,27 +651,9 @@ class FrameCleaner:
                     )
 
     def _unified_metadata_extract(self, text: str) -> Dict[str, Any]:
-        """Hierarchische Metadaten-Extraktion: LLM → spaCy → Regex-Fallback."""
+        """Hierarchische Metadaten-Extraktion ohne LLM für den Frame-Pfad."""
         meta: Optional[Dict[str, Any]] = {}
-        if self.use_llm and self.llm_extractor:
-            try:
-                meta_obj = self.llm_extractor.extract_metadata(text)
-                if meta_obj is not None:
-                    candidate = (
-                        meta_obj.to_dict()
-                        if isinstance(meta_obj, SensitiveMeta)
-                        else dict(meta_obj)
-                    )
-                    if self._metadata_has_signal(candidate):
-                        self.sensitive_meta.safe_update(candidate)
-                        meta = self.sensitive_meta.to_dict()
-                    else:
-                        meta = None
-                else:
-                    meta = None
-            except Exception:
-                meta = None
-        if not meta and self.patient_data_extractor:
+        if self.patient_data_extractor:
             try:
                 patient_candidate: Mapping[str, Any] = self.patient_data_extractor(text)
                 if self._metadata_has_signal(patient_candidate):
@@ -666,6 +673,129 @@ class FrameCleaner:
             return meta.to_dict()
 
         return meta or {}
+
+    @staticmethod
+    def _normalize_text_for_llm(text: str) -> str:
+        return re.sub(r"\s+", " ", text).strip().lower()
+
+    def _should_attempt_llm(self, text: str, current_meta: Dict[str, Any]) -> bool:
+        if not (self.use_llm and self.llm_extractor):
+            return False
+
+        normalized_text = self._normalize_text_for_llm(text)
+        if len(normalized_text) < max(1, int(settings.LLM_MIN_TEXT_LENGTH)):
+            return False
+
+        if normalized_text in self._llm_seen_texts:
+            return False
+
+        max_calls = int(settings.LLM_MAX_CALLS_PER_VIDEO)
+        if max_calls >= 0 and self._llm_calls_this_video >= max_calls:
+            logger.debug(
+                "Skipping LLM extraction because per-video budget was exhausted (%d).",
+                max_calls,
+            )
+            return False
+
+        if self.frame_metadata_extractor.is_complete(current_meta):
+            logger.debug(
+                "Skipping LLM extraction because local extractors already found complete metadata."
+            )
+            return False
+
+        return True
+
+    def _remaining_llm_budget(self) -> Optional[int]:
+        max_calls = int(settings.LLM_MAX_CALLS_PER_VIDEO)
+        if max_calls < 0:
+            return None
+        return max(0, max_calls - self._llm_calls_this_video)
+
+    def _select_llm_video_text_candidates(self) -> List[str]:
+        candidates: List[str] = []
+        seen: set[str] = set()
+
+        if self.enriched_extractor:
+            aggregated = self.enriched_extractor._aggregate_ocr_texts(
+                self.frame_collection, self.ocr_text_collection
+            )
+            normalized = self._normalize_text_for_llm(aggregated)
+            if normalized and len(normalized) >= max(1, int(settings.LLM_MIN_TEXT_LENGTH)):
+                candidates.append(aggregated)
+                seen.add(normalized)
+
+        ranked_frames = sorted(
+            self.frame_collection,
+            key=lambda item: (
+                float(item.get("ocr_confidence", 0.0)),
+                len(str(item.get("ocr_text") or "")),
+            ),
+            reverse=True,
+        )
+        for frame_data in ranked_frames:
+            text = str(frame_data.get("ocr_text") or "").strip()
+            normalized = self._normalize_text_for_llm(text)
+            if not normalized or normalized in seen:
+                continue
+            if len(normalized) < max(1, int(settings.LLM_MIN_TEXT_LENGTH)):
+                continue
+            candidates.append(text)
+            seen.add(normalized)
+            if len(candidates) >= 2:
+                break
+
+        return candidates
+
+    def _llm_candidate_value_is_valid(self, key: str, value: Any, source_text: str) -> bool:
+        if value is None:
+            return True
+        if not isinstance(value, str):
+            return False
+
+        cleaned = value.strip()
+        if not cleaned:
+            return False
+
+        if key in {"patient_first_name", "patient_last_name"}:
+            if _LLM_TITLE_TOKEN_RE.search(cleaned):
+                return False
+            if _LLM_AGE_TOKEN_RE.search(cleaned):
+                return False
+            if _LLM_NARRATIVE_TOKEN_RE.search(cleaned):
+                return False
+            if len(cleaned) > 40:
+                return False
+
+        if key == "casenumber":
+            compact_value = re.sub(r"[^a-z0-9]", "", cleaned.lower())
+            compact_source = re.sub(r"[^a-z0-9]", "", source_text.lower())
+            return bool(compact_value) and compact_value in compact_source
+
+        if key in {"patient_first_name", "patient_last_name"}:
+            compact_source = re.sub(r"[^a-z0-9]", " ", source_text.lower())
+            tokens = [tok for tok in re.split(r"\s+", cleaned.lower()) if tok]
+            if not tokens:
+                return False
+            return all(token in compact_source for token in tokens)
+
+        return True
+
+    def _validate_llm_metadata_candidate(
+        self, candidate: Mapping[str, Any], source_text: str
+    ) -> bool:
+        if not self._metadata_has_signal(candidate):
+            return False
+
+        for key in (
+            "patient_first_name",
+            "patient_last_name",
+            "casenumber",
+        ):
+            if not self._llm_candidate_value_is_valid(key, candidate.get(key), source_text):
+                logger.debug("Rejecting LLM candidate because %s failed validation.", key)
+                return False
+
+        return True
 
     @staticmethod
     def _metadata_has_signal(meta: Any) -> bool:
@@ -736,6 +866,7 @@ class FrameCleaner:
                 {
                     "frame_id": frame_id,
                     "ocr_text": ocr_text,
+                    "ocr_confidence": ocr_conf,
                     "meta": frame_metadata,
                     "is_sensitive": is_sensitive,
                 }
@@ -860,7 +991,7 @@ class FrameCleaner:
 
     def _extract_enriched_metadata_batch(self) -> Dict[str, Any]:
         """
-        Extrahiert erweiterte Metadaten aus gesammelten Frame-Daten.
+        Extrahiert erweiterte Metadaten mit maximal einem Primärcall und einem Fallback.
 
         Returns:
             Erweiterte Metadaten-Dictionary
@@ -877,7 +1008,6 @@ class FrameCleaner:
             f"Extracting enriched metadata from {len(self.frame_collection)} collected frames"
         )
         try:
-            # Verwende EnrichedMetadataExtractor für Multi-Frame-Analyse
             if not self.frame_sampling_optimizer:
                 self.frame_sampling_optimizer = FrameSamplingOptimizer()
             if not self.llm_extractor:
@@ -891,15 +1021,54 @@ class FrameCleaner:
                     llm_extractor=self.llm_extractor,
                     frame_optimizer=self.frame_sampling_optimizer,
                 )
-            enriched_metadata = self.enriched_extractor.extract_from_frame_sequence(
-                frames_data=self.frame_collection, ocr_texts=self.ocr_text_collection
-            )
 
-            logger.info(
-                "✅ Enriched metadata extraction successful: %d fields",
-                len(enriched_metadata),
-            )
-            return enriched_metadata
+            remaining_budget = self._remaining_llm_budget()
+            if remaining_budget is not None and remaining_budget <= 0:
+                logger.debug("Skipping batch enrichment because LLM budget is exhausted.")
+                return {}
+
+            text_candidates = self._select_llm_video_text_candidates()
+            if not text_candidates:
+                logger.debug("Skipping batch enrichment because no viable text candidate was found.")
+                return {}
+
+            validated_meta: Dict[str, Any] = {}
+            attempts_allowed = 2 if remaining_budget is None else min(remaining_budget, 2)
+
+            for idx, text in enumerate(text_candidates[:attempts_allowed], start=1):
+                normalized = self._normalize_text_for_llm(text)
+                self._llm_seen_texts.add(normalized)
+                self._llm_calls_this_video += 1
+                logger.info(
+                    "Running video-level LLM extraction attempt %d/%d on aggregated OCR text.",
+                    idx,
+                    attempts_allowed,
+                )
+                meta_obj = self.llm_extractor.extract_metadata(text)
+                if meta_obj is None:
+                    continue
+                candidate = (
+                    meta_obj.to_dict()
+                    if isinstance(meta_obj, SensitiveMeta)
+                    else dict(meta_obj)
+                )
+                if self._validate_llm_metadata_candidate(candidate, text):
+                    validated_meta = candidate
+                    break
+                logger.info(
+                    "Discarding video-level LLM result from attempt %d because validation failed.",
+                    idx,
+                )
+
+            if validated_meta:
+                logger.info(
+                    "✅ Enriched metadata extraction successful: %d fields",
+                    len(validated_meta),
+                )
+                return validated_meta
+
+            logger.info("Video-level LLM extraction produced no validated metadata.")
+            return {}
         except Exception as exc:
             logger.warning(
                 "Batch enrichment failed softly (returning empty metadata): %s",
@@ -911,6 +1080,8 @@ class FrameCleaner:
         """Setzt die Frame-Sammlung für ein neues Video zurück."""
         self.frame_collection.clear()
         self.ocr_text_collection.clear()
+        self._llm_calls_this_video = 0
+        self._llm_seen_texts.clear()
         logger.debug("Frame collection reset for new video")
 
     @staticmethod

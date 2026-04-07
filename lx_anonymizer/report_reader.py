@@ -327,8 +327,10 @@ class ReportReader:
 
                 # Apply optional OCR correction through vLLM
                 if (
-                    text and len(text.strip()) > 10
-                ):  # Only correct if OCR produced something meaningful
+                    text
+                    and len(text.strip())
+                    >= int(settings.REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH)
+                ):
                     attempted_llm_correction = False
                     if not getattr(self, "llm_available", False):
                         logger.info(
@@ -364,6 +366,11 @@ class ReportReader:
                             )
                     except Exception as e:
                         logger.warning(f"Error using vLLM for correction: {e}")
+                elif text:
+                    logger.info(
+                        "Skipping LLM OCR correction for short OCR text (%d chars).",
+                        len(text.strip()),
+                    )
 
                 if not text or len(text.strip()) < 10:
                     logger.error(
@@ -400,7 +407,20 @@ class ReportReader:
         if text and len(text.strip()) >= 10:  # Proceed only if we have some text
             if use_llm_extractor:
                 logger.info(f"Using specified LLM extractor: {use_llm_extractor}")
-                if use_llm_extractor == "deepseek":
+                report_meta = self.extract_report_meta(text, pdf_path)
+                local_meta_has_signal = self._report_metadata_has_signal(report_meta)
+                llm_allowed_for_text = self._should_attempt_report_llm(text)
+
+                if local_meta_has_signal:
+                    logger.info(
+                        "Skipping LLM report metadata extraction because local extraction already found signal."
+                    )
+                elif not llm_allowed_for_text:
+                    logger.info(
+                        "Skipping LLM report metadata extraction for short/low-signal text (%d chars).",
+                        len(text.strip()),
+                    )
+                elif use_llm_extractor == "deepseek":
                     report_meta = self.extract_report_meta_deepseek(text)
                 elif use_llm_extractor == "medllama":
                     report_meta = self.extract_report_meta_medllama(text)
@@ -410,11 +430,7 @@ class ReportReader:
                     logger.warning(
                         f"Unknown LLM extractor specified: {use_llm_extractor}. Falling back to default."
                     )
-                    report_meta = self.extract_report_meta(
-                        text, pdf_path=None
-                    )  # Default SpaCy/Regex
 
-                # FIX: Ensure report_meta is a valid dict before updating sensitive_meta
                 if report_meta:
                     self.sensitive_meta.safe_update(report_meta)
                     report_meta = self.sensitive_meta.to_dict()
@@ -504,6 +520,32 @@ class ReportReader:
             self.sensitive_meta.to_dict(),
             Path(str(anonymized_pdf_path)) if anonymized_pdf_path else None,
         )
+
+    @staticmethod
+    def _report_metadata_has_signal(meta: Mapping[str, Any]) -> bool:
+        signal_keys = (
+            "patient_first_name",
+            "patient_last_name",
+            "patient_dob",
+            "casenumber",
+            "patient_gender_name",
+            "examination_date",
+            "examination_time",
+            "examiner_first_name",
+            "examiner_last_name",
+            "center",
+        )
+        return any(
+            (
+                (value := meta.get(key)) is not None
+                and (not isinstance(value, str) or bool(value.strip()))
+            )
+            for key in signal_keys
+        )
+
+    @staticmethod
+    def _should_attempt_report_llm(text: str) -> bool:
+        return bool(text and len(text.strip()) >= int(settings.REPORT_LLM_MIN_TEXT_LENGTH))
 
     def read_pdf(self, pdf_path):
         """Read pdf file using pdfplumber and return the raw text content."""

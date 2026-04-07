@@ -101,7 +101,16 @@ in
   outputs =
     lib.optionalAttrs (inputs ? pyproject-nix) (
       let
-        pythonApp = pkgs.callPackage ./package.nix { };
+        pythonApp = config.languages.python.import ./. { };
+        nativeDrv = config.languages.rust.import ./. { };
+        nativeLibDrv = lib.getLib nativeDrv;
+
+        nativeApp = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
+          mkdir -p "$out/${python.sitePackages}/lx_anonymizer"
+          native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
+          test -n "$native_lib"
+          cp "$native_lib" "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
+        '';
       in
       {
         python = pythonApp;
@@ -154,9 +163,10 @@ in
   };
 
   enterShell = ''
-    export SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
 
     if [ ! -d ".devenv/state/venv" ]; then
+       export SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
+
        echo "Virtual environment not found. Running initial uv sync..."
        $SYNC_CMD || echo "Error: Initial uv sync failed. Please check network and pyproject.toml."
     else
