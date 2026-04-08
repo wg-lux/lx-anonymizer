@@ -56,7 +56,7 @@ def _build_report_reader_without_heavy_init(*args, **kwargs) -> ReportReader:
         )
         stack.enter_context(
             patch(
-                "lx_anonymizer.report_reader.VLLMMetadataExtractor",
+                "lx_anonymizer.report_reader.LLMFactory.create_metadata_extractor",
                 return_value=MagicMock(),
             )
         )

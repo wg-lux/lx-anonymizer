@@ -1,5 +1,5 @@
 """
-Optimierte vLLM-Metadaten-Extraktion mit leichtgewichtigen Modellen und REST API.
+Optimierte LLM-Metadaten-Extraktion mit leichtgewichtigen Modellen und REST API.
 
 Diese Implementierung basiert auf den Best Practices:
 1. Verwendung von instruction-tuned, quantisierten Modellen für bessere Performance
@@ -113,34 +113,44 @@ class MetadataCache:
         }
 
 
-class VLLMMetadataExtractor:
+class LLMMetadataExtractor:
     """
-    Optimierte vLLM-Integration für Metadaten-Extraktion.
+    Optimierte LLM-Integration fuer Metadaten-Extraktion.
 
-    Verwendet eine OpenAI-kompatible REST API direkt und implementiert ein
-    fail-safe Modell-System.
+    Verwendet entweder eine OpenAI-kompatible REST API
+    oder native Ollama-Endpunkte und implementiert ein fail-safe Modell-System.
     """
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: Optional[str] = None,
         enable_cache: bool = True,
+        provider: str = "vllm",
         preferred_model: Optional[str] = None,
         model_timeout: Optional[int] = None,
     ):
-        self.base_url = base_url
+        self.provider = (provider or "vllm").strip().lower()
+        self.base_url = (base_url or self._default_base_url()).rstrip("/")
         self.chat_endpoint = self._build_chat_endpoint()
         self.available_models = self._check_available_models()
-        self.current_model: dict[str, Any]
-        self.cache = MetadataCache()
+        self.current_model: Optional[dict[str, Any]] = None
+        self.cache = MetadataCache() if enable_cache else None
         self.sensitive_meta = SensitiveMeta()
         self.preferred_model = preferred_model
         self.preferred_timeout = model_timeout
 
         self._initialize_best_model()
 
+    def _default_base_url(self) -> str:
+        if self.provider == "ollama":
+            return "http://127.0.0.1:11434"
+        return "http://127.0.0.1:8000"
+
     def _build_chat_endpoint(self) -> str:
         base = self.base_url.rstrip("/")
+        provider = getattr(self, "provider", "ollama")
+        if provider == "ollama":
+            return f"{base}/api/chat"
         return f"{base}/v1/chat/completions"
 
     def _check_available_models(self) -> List[str]:
@@ -153,9 +163,20 @@ class VLLMMetadataExtractor:
 
         self.available_models_retry = False
         try:
-            response = requests.get(f"{self.base_url.rstrip('/')}/v1/models", timeout=5)
+            model_endpoint = (
+                f"{self.base_url.rstrip('/')}/api/tags"
+                if self.provider == "ollama"
+                else f"{self.base_url.rstrip('/')}/v1/models"
+            )
+            response = requests.get(model_endpoint, timeout=5)
             if response.status_code == 200:
                 models_data = response.json()
+                if self.provider == "ollama":
+                    return [
+                        model["name"]
+                        for model in models_data.get("models", [])
+                        if isinstance(model, dict) and model.get("name")
+                    ]
                 return [
                     model["id"]
                     for model in models_data.get("data", [])
@@ -202,14 +223,8 @@ class VLLMMetadataExtractor:
                 )
                 return
             if not self.available_models:
-                self.current_model = {
-                    "name": self.preferred_model,
-                    "priority": 0,
-                    "timeout": self.preferred_timeout or 30,
-                    "description": "Preferred model (unverified)",
-                }
                 logger.warning(
-                    "Modellliste nicht verfügbar, verwende konfiguriertes Modell direkt: %s",
+                    "Modellliste nicht verfügbar, aktiviere LLM nicht fuer konfiguriertes Modell: %s",
                     self.preferred_model,
                 )
                 return
@@ -238,7 +253,7 @@ class VLLMMetadataExtractor:
             logger.warning(f"Verwende Fallback-Modell: {fallback_model['name']}")
         else:
             logger.warning(
-                "Keine vLLM-Modelle verfügbar. LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt."
+                "Keine kompatiblen LLM-Modelle verfügbar. LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt."
             )
             self.current_model = None
 
@@ -324,7 +339,7 @@ Return ONLY JSON."""
         Macht API-Request mit Retry-Logik und robuster Fehlerbehandlung.
 
         Args:
-            payload: Request-Payload für die vLLM/OpenAI-kompatible API
+            payload: Request-Payload für die LLM/OpenAI-kompatible API
 
         Returns:
             Response-Dictionary von der API
@@ -372,8 +387,8 @@ Return ONLY JSON."""
             )
             raise
         except requests.ConnectionError as e:
-            logger.error(f"🔌 Verbindungsfehler zu vLLM: {e}")
-            raise requests.RequestException(f"vLLM nicht erreichbar: {e}")
+            logger.error("🔌 Verbindungsfehler zu %s: %s", self.provider, e)
+            raise requests.RequestException(f"{self.provider} nicht erreichbar: {e}")
         except Exception as e:
             logger.error(f"💥 Unerwarteter API-Fehler: {e}")
             raise
@@ -385,7 +400,11 @@ Return ONLY JSON."""
             if isinstance(message, dict):
                 return message.get("content", "") or ""
 
-        return result.get("message", {}).get("content", "") or result.get("content", "")
+        message = result.get("message", {})
+        if isinstance(message, dict):
+            return message.get("content", "") or ""
+
+        return result.get("content", "") or ""
 
     def _try_next_model(self) -> bool:
         """
@@ -427,7 +446,10 @@ Return ONLY JSON."""
         """
         # Early return if no models are available
         if not self.current_model and not self.available_models:
-            logger.warning("Keine vLLM-Modelle verfügbar. Überspringe LLM-Extraktion.")
+            logger.warning(
+                "Keine Modelle fuer Provider %s verfuegbar. Ueberspringe LLM-Extraktion.",
+                self.provider,
+            )
             return None
 
         # Überprüfe zuerst den Cache
@@ -442,11 +464,20 @@ Return ONLY JSON."""
             return None
 
         # Bestimme verfügbare Modelle für Fallback
-        available_model_configs = [
-            m
-            for m in ModelConfig.get_models_by_priority()
-            if m["name"] in self.available_models
-        ]
+        available_model_configs: List[Dict[str, Any]] = []
+        seen_model_names: set[str] = set()
+
+        if self.current_model and self.current_model.get("name"):
+            available_model_configs.append(dict(self.current_model))
+            seen_model_names.add(str(self.current_model["name"]))
+
+        for model_config in ModelConfig.get_models_by_priority():
+            if (
+                model_config["name"] in self.available_models
+                and model_config["name"] not in seen_model_names
+            ):
+                available_model_configs.append(dict(model_config))
+                seen_model_names.add(model_config["name"])
 
         if not available_model_configs:
             logger.error("Keine konfigurierten Modelle verfügbar")
@@ -470,7 +501,11 @@ Return ONLY JSON."""
                     ],
                     "stream": False,
                 }
-                payload["response_format"] = {"type": "json_object"}
+                if self.provider == "ollama":
+                    payload["format"] = "json"
+                    payload["options"] = {"temperature": 0}
+                else:
+                    payload["response_format"] = {"type": "json_object"}
 
                 logger.info(
                     f"Versuch {model_attempt + 1}/{len(available_model_configs)}: Extraktion mit {self.current_model['name']}"
@@ -494,7 +529,8 @@ Return ONLY JSON."""
                     metadata = self.sensitive_meta
 
                     # Speichere im Cache
-                    self.cache.put(text, metadata)
+                    if self.cache is not None:
+                        self.cache.put(text, metadata)
 
                     logger.info(
                         f"✅ Erfolgreich extrahiert mit {self.current_model['name']}: "
@@ -1009,17 +1045,17 @@ class FrameSamplingOptimizer:
 
 
 # Factory-Funktion für einfache Verwendung
-def create_vllm_extractor(
+def create_llm_extractor(
     enable_cache: bool = True, enable_smart_sampling: bool = True
-) -> VLLMMetadataExtractor:
+) -> LLMMetadataExtractor:
     """
-    Erstellt eine optimierte vLLM-Extractor-Instanz.
+    Erstellt eine optimierte LLM-Extractor-Instanz.
 
     Args:
         enable_cache: Aktiviert Metadaten-Caching
         enable_smart_sampling: Aktiviert Smart-Sampling für bessere Performance
     """
-    extractor = VLLMMetadataExtractor(enable_cache=enable_cache)
+    extractor = LLMMetadataExtractor(enable_cache=enable_cache)
 
     # Setze optimale Einstellungen für medizinische Datenextraktion
     if enable_smart_sampling:
@@ -1029,17 +1065,17 @@ def create_vllm_extractor(
 
 
 # Convenience-Funktion für maximale Performance
-def create_fast_extractor() -> VLLMMetadataExtractor:
+def create_fast_extractor() -> LLMMetadataExtractor:
     """Erstellt Extractor mit maximaler Performance-Optimierung."""
-    return create_vllm_extractor(enable_cache=True, enable_smart_sampling=True)
+    return create_llm_extractor(enable_cache=True, enable_smart_sampling=True)
 
 
 # Erweiterte Factory-Funktion
 def create_optimized_extractor_with_sampling() -> tuple[
-    VLLMMetadataExtractor, FrameSamplingOptimizer
+    LLMMetadataExtractor, FrameSamplingOptimizer
 ]:
     """Erstellt optimierte Extractor- und Sampling-Instanzen."""
-    extractor = VLLMMetadataExtractor()
+    extractor = LLMMetadataExtractor()
     optimizer = FrameSamplingOptimizer()
     return extractor, optimizer
 
@@ -1050,7 +1086,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     # Extractor erstellen
-    extractor = create_vllm_extractor()
+    extractor = create_llm_extractor()
 
     # Test-Texte
     test_texts = [
@@ -1084,13 +1120,13 @@ class EnrichedMetadataExtractor:
 
     def __init__(
         self,
-        llm_extractor: VLLMMetadataExtractor,
+        llm_extractor: LLMMetadataExtractor,
         frame_optimizer: FrameSamplingOptimizer,
     ):
         self.llm_extractor = llm_extractor
         self.frame_optimizer = frame_optimizer
         if not self.llm_extractor:
-            self.llm_extractor = create_vllm_extractor()
+            self.llm_extractor = create_llm_extractor()
         if not self.frame_optimizer:
             self.frame_optimizer = FrameSamplingOptimizer()
         self.frame_context: dict[str, Any] = {}

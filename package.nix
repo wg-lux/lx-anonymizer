@@ -1,6 +1,6 @@
 {
-  cargo,
-  rustc,
+  pkgs,
+  rustPlatform,
   pkg-config,
   lib,
   python312Packages,
@@ -109,17 +109,19 @@ let
     ++ lib.optionals withOcr ocrDeps
     ++ lib.optionals withNlu nluDeps;
 in
-py.buildPythonApplication {
+py.buildPythonPackage {
   inherit pname version src;
   pyproject = true;
-  pythonRelaxDeps = true;
   dontCheckRuntimeDeps = true;
+  cargoDeps = rustPlatform.fetchCargoVendor {
+    inherit pname version src;
+    hash = "sha256-3srOZAciN512kYJ9eQ1vzAQQu1GibxdpL3dlV6c5w3w=";
+  };
 
-  nativeBuildInputs = with py; [
-    maturin
+  nativeBuildInputs = [
+    rustPlatform.maturinBuildHook
+    rustPlatform.cargoSetupHook
   ] ++ [
-    cargo
-    rustc
     pkg-config
   ];
 
@@ -137,11 +139,32 @@ py.buildPythonApplication {
     "lx_anonymizer.settings"
   ];
 
-  makeWrapperArgs = [
-    "--prefix PATH : ${lib.makeBinPath ([ ffmpeg-headless ] ++ lib.optionals withLlm [ ollama ])}"
-    "--set-default TESSDATA_PREFIX ${tesseractWithLangs}/share/tessdata"
-    "--set-default OLLAMA_HOST 127.0.0.1:11434"
-  ];
+  installPhase = ''
+    runHook preInstall
+
+    mkdir -p "$out/$pythonSitePackages" "$out/bin"
+    python - <<'PY'
+import pathlib
+import zipfile
+
+wheel_path = next(pathlib.Path("dist").glob("*.whl"))
+with zipfile.ZipFile(wheel_path) as zf:
+    zf.extractall("wheel-unpack")
+PY
+    cp -r wheel-unpack/lx_anonymizer wheel-unpack/*.dist-info "$out/$pythonSitePackages/"
+
+    cat > "$out/bin/lx-anonymizer" <<EOF
+#!${pkgs.runtimeShell}
+export PATH="${lib.makeBinPath ([ ffmpeg-headless ] ++ lib.optionals withLlm [ ollama ])}:\$PATH"
+export PYTHONPATH="$out/$pythonSitePackages''${PYTHONPATH:+:$PYTHONPATH}"
+export TESSDATA_PREFIX="${tesseractWithLangs}/share/tessdata"
+export OLLAMA_HOST="''${OLLAMA_HOST:-127.0.0.1:11434}"
+exec ${py.python.interpreter} -m lx_anonymizer.cli "\$@"
+EOF
+    chmod +x "$out/bin/lx-anonymizer"
+
+    runHook postInstall
+  '';
 
   meta = with lib; {
     description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames";

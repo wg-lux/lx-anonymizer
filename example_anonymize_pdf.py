@@ -79,10 +79,11 @@ def example_llm_extraction():
     # Use LLM for better metadata extraction + create masked PDF
     original_text, anonymized_text, metadata, anonymized_pdf = reader.process_report(
         pdf_path="path/to/report.pdf",
-        use_llm_extractor="deepseek",  # Use LLM for metadata extraction
+        use_llm=True,  # Use provider-backed LLM metadata extraction
         create_anonymized_pdf=True,  # Create masked PDF
     )
 
+    print(f"LLM available: {reader.llm_available}")
     print(f"Ollama available: {reader.ollama_available}")
     print(f"Extracted metadata: {metadata.keys()}")
     print(f"Anonymized PDF: {anonymized_pdf}")

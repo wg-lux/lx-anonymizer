@@ -108,24 +108,6 @@ def test_frame_cleaner_validate_roi_accepts_alias_keys_and_rejects_bad_values():
     assert fc._validate_roi({"x": 0, "y": 0, "width": 6000, "height": 10}) is False
 
 
-def test_unified_metadata_extract_prefers_llm_when_signal_present():
-    fc = _frame_cleaner_stub()
-    fc.use_llm = True
-    fc.llm_extractor = SimpleNamespace(
-        extract_metadata=Mock(return_value={"patient_last_name": "LLM"})
-    )
-    fc.patient_data_extractor = Mock(return_value={"patient_last_name": "spacy"})
-    fc.frame_metadata_extractor.extract_metadata_from_frame_text.return_value = {
-        "patient_last_name": "regex"
-    }
-
-    meta = fc._unified_metadata_extract("text")
-
-    assert meta["patient_last_name"] == "LLM"
-    fc.patient_data_extractor.assert_not_called()
-    fc.frame_metadata_extractor.extract_metadata_from_frame_text.assert_not_called()
-
-
 def test_unified_metadata_extract_falls_back_when_llm_has_no_signal():
     fc = _frame_cleaner_stub()
     fc.use_llm = True

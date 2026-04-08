@@ -1,9 +1,9 @@
-from lx_anonymizer.llm.vllm_extractor import (
+from lx_anonymizer.llm.llm_extractor import (
     EnrichedMetadataExtractor,
     FrameDataProcessor,
     FrameSamplingOptimizer,
+    LLMMetadataExtractor,
     MetadataCache,
-    VLLMMetadataExtractor,
     VideoMetadataEnricher,
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
@@ -16,7 +16,7 @@ def _extractor_stub(
     preferred_model=None,
     preferred_timeout=None,
 ):
-    extractor = VLLMMetadataExtractor.__new__(VLLMMetadataExtractor)
+    extractor = LLMMetadataExtractor.__new__(LLMMetadataExtractor)
     extractor.current_model = current_model
     extractor.available_models = available_models or []
     extractor.preferred_model = preferred_model
@@ -120,6 +120,7 @@ def test_get_fastest_available_model_honors_preferred_timeout():
 def test_build_chat_endpoint_uses_openai_compatible_path_for_vllm():
     extractor = _extractor_stub()
     extractor.base_url = "http://127.0.0.1:8000/"
+    extractor.provider = "vllm"
     assert (
         extractor._build_chat_endpoint() == "http://127.0.0.1:8000/v1/chat/completions"
     )

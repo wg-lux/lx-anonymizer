@@ -42,6 +42,8 @@ dependencies = [
   "spacy==3.8.3",
   "tenacity>=9.1.2",
   "types-requests>=2.32.4.20260107",
+  "pre-commit>=4.5.1",
+  "puccinialin>=0.1.9",
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
 keywords = [

@@ -8,7 +8,7 @@ import pytesseract  # type: ignore
 from PIL import Image
 
 from lx_anonymizer.config import settings
-from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
+from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 from lx_anonymizer.pipeline_manager import process_images_with_OCR_and_NER
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -59,7 +59,7 @@ def process_image(
     if skip_blur and not disable_llm:
         logger.info("Skipping blur operations, performing analysis only")
 
-        extractor = VLLMMetadataExtractor(
+        extractor = LLMMetadataExtractor(
             base_url=settings.LLM_BASE_URL,
             preferred_model=settings.LLM_MODEL,
             model_timeout=settings.LLM_TIMEOUT,

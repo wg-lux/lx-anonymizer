@@ -30,14 +30,14 @@ def test_example_report_populates_sensitive_meta_fields() -> None:
         pytest.skip(f"Example report not found: {pdf_path}")
 
     with patch(
-        "lx_anonymizer.report_reader.VLLMMetadataExtractor",
+        "lx_anonymizer.report_reader.LLMFactory.create_metadata_extractor",
         side_effect=RuntimeError("test"),
     ):
         reader = ReportReader()
 
     original_text, anonymized_text, meta, _ = reader.process_report(
         pdf_path=pdf_path,
-        use_llm_extractor=None,  # force SpaCy/regex path for deterministic local test
+        use_llm=False,  # force SpaCy/regex path for deterministic local test
         create_anonymized_pdf=False,
     )
 

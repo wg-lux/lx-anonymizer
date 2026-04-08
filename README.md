@@ -41,7 +41,7 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 - Optional extras:
   - spaCy `de_core_news_lg` model (download after installation)
   - Torch vision/audio for video OCR workloads
-  - vLLM-hosted Qwen models for advanced metadata extraction
+  - local or remote LLM-backed metadata extraction
 
 ## Installation
 
@@ -68,7 +68,7 @@ pip install lx-anonymizer
 Install extras only when you need the corresponding feature set:
 ```bash
 pip install "lx-anonymizer[ocr]"      # TrOCR, tesserocr, CRAFT helpers
-pip install "lx-anonymizer[llm]"      # vLLM client-side helpers
+pip install "lx-anonymizer[llm]"      # LLM client-side helpers
 pip install "lx-anonymizer[nlu]"      # Flair NER
 pip install "lx-anonymizer[django]"   # Django integration
 pip install "lx-anonymizer[dev]"      # local development tooling
@@ -163,8 +163,13 @@ After installation, fetch the German spaCy model used by the report pipeline:
 python -m spacy download de_core_news_lg
 ```
 
-Start a vLLM server exposing an OpenAI-compatible API for LLM support:
-```
+Start a compatible LLM server exposing either an OpenAI-compatible API or Ollama:
+```bash
+# Default local setup used by the package examples
+ollama pull qwen2.5:7b-instruct
+ollama serve
+
+# Alternative high-throughput setup
 vllm serve Qwen/Qwen3.5-9B --port 8000
 ```
 Caution: This is only recommended on devices with sufficient gpu capabilities
@@ -206,7 +211,7 @@ reader = ReportReader(locale="de_DE")
 original, anonymized, meta, pdf_path = reader.process_report(
     pdf_path="/path/to/report.pdf",
     use_ensemble=True,
-    use_llm_extractor="deepseek",
+    use_llm=True,
 )
 
 # Create anonymized PDF with blackened sensitive regions
@@ -217,11 +222,11 @@ original, anonymized, meta, anonymized_pdf = reader.process_report(
 )
 
 # Advanced processing with region cropping
-original, anonymized, meta, cropped_regions, pdf_path = reader.process_report_with_cropping(
+original, anonymized, meta, cropped_regions, anonymized_pdf = reader.process_report_with_cropping(
     pdf_path="/path/to/report.pdf",
     crop_output_dir="/path/to/cropped_regions",
     crop_sensitive_regions=True,
-    use_llm_extractor="deepseek"
+    use_llm=True
 )
 ```
 
@@ -242,7 +247,7 @@ pre-extracted raw text.
 
 `process_report(...)` parameters:
 - `use_ensemble`: enable ensemble OCR on OCR fallback paths.
-- `use_llm_extractor`: preferred LLM extractor hint, used when vLLM-backed extraction is available.
+- `use_llm`: `True` to try provider-backed extraction, `False` to force SpaCy/regex, `None` to use the instance default.
 - `create_anonymized_pdf`: render a blackened PDF output for PDF inputs.
 - `anonymized_pdf_output_path`: optional explicit path for that anonymized PDF.
 
@@ -293,7 +298,7 @@ cleaned_path, metadata = cleaner.clean_video(
 frame-level overlays.
 
 `FrameCleaner(...)` constructor:
-- `use_llm`: enables vLLM-backed batch metadata enrichment when available.
+- `use_llm`: enables provider-backed batch metadata enrichment when available.
 - `use_minicpm` and `minicpm_config`: reserved for optional OCR backends.
 
 `clean_video(...)` parameters:

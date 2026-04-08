@@ -34,10 +34,10 @@ from lx_anonymizer.ocr.ocr_frame import FrameOCR
 #     create_minicpm_ocr,
 # )
 from lx_anonymizer.config import settings
-from lx_anonymizer.llm.vllm_extractor import (
+from lx_anonymizer.llm.factory import LLMFactory
+from lx_anonymizer.llm.llm_extractor import (
     EnrichedMetadataExtractor,
     FrameSamplingOptimizer,
-    VLLMMetadataExtractor,
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
@@ -106,17 +106,13 @@ class FrameCleaner:
         # self.minicpm_ocr = create_minicpm_ocr() if use_minicpm else None
         # self._log_hf_cache_info()
 
-        # Initialize the optimized vLLM processing pipeline (guarded)
+        # Initialize the optimized LLM processing pipeline (guarded)
         self.llm_extractor = None
         self.frame_sampling_optimizer = None
         self.enriched_extractor = None
         if self.use_llm:
             try:
-                self.llm_extractor = VLLMMetadataExtractor(
-                    base_url=settings.LLM_BASE_URL,
-                    preferred_model=settings.LLM_MODEL,
-                    model_timeout=settings.LLM_TIMEOUT,
-                )
+                self.llm_extractor = LLMFactory.create_metadata_extractor()
 
                 if self.llm_extractor and self.llm_extractor.current_model:
                     # Initialize enriched metadata extraction components
@@ -128,12 +124,19 @@ class FrameCleaner:
                         frame_optimizer=self.frame_sampling_optimizer,
                     )
                 else:
-                    logger.warning("vLLM models not available, disabling LLM features")
+                    logger.warning(
+                        "LLM provider %s has no available models, disabling LLM features",
+                        settings.LLM_PROVIDER,
+                    )
                     self.use_llm = False
                     self.llm_extractor = None
 
             except Exception as e:
-                logger.warning(f"vLLM unavailable, disabling LLM features: {e}")
+                logger.warning(
+                    "LLM provider %s unavailable, disabling LLM features: %s",
+                    settings.LLM_PROVIDER,
+                    e,
+                )
                 self.use_llm = False
                 self.llm_extractor = None
                 self.frame_sampling_optimizer = None
@@ -720,7 +723,9 @@ class FrameCleaner:
                 self.frame_collection, self.ocr_text_collection
             )
             normalized = self._normalize_text_for_llm(aggregated)
-            if normalized and len(normalized) >= max(1, int(settings.LLM_MIN_TEXT_LENGTH)):
+            if normalized and len(normalized) >= max(
+                1, int(settings.LLM_MIN_TEXT_LENGTH)
+            ):
                 candidates.append(aggregated)
                 seen.add(normalized)
 
@@ -746,7 +751,9 @@ class FrameCleaner:
 
         return candidates
 
-    def _llm_candidate_value_is_valid(self, key: str, value: Any, source_text: str) -> bool:
+    def _llm_candidate_value_is_valid(
+        self, key: str, value: Any, source_text: str
+    ) -> bool:
         if value is None:
             return True
         if not isinstance(value, str):
@@ -791,8 +798,12 @@ class FrameCleaner:
             "patient_last_name",
             "casenumber",
         ):
-            if not self._llm_candidate_value_is_valid(key, candidate.get(key), source_text):
-                logger.debug("Rejecting LLM candidate because %s failed validation.", key)
+            if not self._llm_candidate_value_is_valid(
+                key, candidate.get(key), source_text
+            ):
+                logger.debug(
+                    "Rejecting LLM candidate because %s failed validation.", key
+                )
                 return False
 
         return True
@@ -967,7 +978,7 @@ class FrameCleaner:
                 if isinstance(meta_obj, SensitiveMeta):
                     meta = meta_obj.to_dict()
             except Exception as e:
-                logger.warning(f"vLLM extraction failed: {e}")
+                logger.warning("LLM extraction failed: %s", e)
                 meta = {}
 
         # LLM fehlgeschlagen/leer oder nicht aktiv → spaCy-Extractor fallback
@@ -1011,11 +1022,7 @@ class FrameCleaner:
             if not self.frame_sampling_optimizer:
                 self.frame_sampling_optimizer = FrameSamplingOptimizer()
             if not self.llm_extractor:
-                self.llm_extractor = VLLMMetadataExtractor(
-                    base_url=settings.LLM_BASE_URL,
-                    preferred_model=settings.LLM_MODEL,
-                    model_timeout=settings.LLM_TIMEOUT,
-                )
+                self.llm_extractor = LLMFactory.create_metadata_extractor()
             if not self.enriched_extractor:
                 self.enriched_extractor = EnrichedMetadataExtractor(
                     llm_extractor=self.llm_extractor,
@@ -1024,16 +1031,22 @@ class FrameCleaner:
 
             remaining_budget = self._remaining_llm_budget()
             if remaining_budget is not None and remaining_budget <= 0:
-                logger.debug("Skipping batch enrichment because LLM budget is exhausted.")
+                logger.debug(
+                    "Skipping batch enrichment because LLM budget is exhausted."
+                )
                 return {}
 
             text_candidates = self._select_llm_video_text_candidates()
             if not text_candidates:
-                logger.debug("Skipping batch enrichment because no viable text candidate was found.")
+                logger.debug(
+                    "Skipping batch enrichment because no viable text candidate was found."
+                )
                 return {}
 
             validated_meta: Dict[str, Any] = {}
-            attempts_allowed = 2 if remaining_budget is None else min(remaining_budget, 2)
+            attempts_allowed = (
+                2 if remaining_budget is None else min(remaining_budget, 2)
+            )
 
             for idx, text in enumerate(text_candidates[:attempts_allowed], start=1):
                 normalized = self._normalize_text_for_llm(text)

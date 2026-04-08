@@ -19,6 +19,8 @@ from lx_anonymizer.anonymization.sensitive_region_cropper import (
 from lx_anonymizer.anonymization.text_anonymizer import anonymize_text
 from lx_anonymizer.config import settings
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+from lx_anonymizer.llm.factory import LLMFactory
+from lx_anonymizer.llm.llm_service import LLMService
 from lx_anonymizer.ner.spacy_extractor import (
     EndoscopeDataExtractor,
     ExaminationDataExtractor,
@@ -30,8 +32,6 @@ from lx_anonymizer.ocr.ocr import (
     tesseract_full_image_ocr,
 )  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
-from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
-from lx_anonymizer.llm.vllm_service import VLLMService
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import logger
 from lx_anonymizer.setup.private_settings import DEFAULT_SETTINGS
@@ -105,36 +105,42 @@ class ReportReader:
         # Initialize Anonymizer
         self.anonymizer = Anonymizer()
 
-        # Initialize vLLM-backed extractor
+        # Initialize provider-backed extractor
         self.llm_extractor = None
         self.llm_available = False
+        self.ollama_available = False
 
         # initialize global sensitive meta
         self.sensitive_meta = SensitiveMeta()
 
         try:
-            self.llm_extractor = VLLMMetadataExtractor(
-                base_url=settings.LLM_BASE_URL,
-                preferred_model=settings.LLM_MODEL,
-                model_timeout=settings.LLM_TIMEOUT,
-            )
+            self.llm_extractor = LLMFactory.create_metadata_extractor()
 
             # Check if models are available
             if self.llm_extractor and self.llm_extractor.current_model:
                 self.llm_available = True
-                logger.info("vLLM features enabled for ReportReader")
+                self.ollama_available = settings.LLM_PROVIDER == "ollama"
+                logger.info(
+                    "LLM features enabled for ReportReader via provider %s",
+                    settings.LLM_PROVIDER,
+                )
             else:
                 logger.warning(
-                    "vLLM models not available, LLM extraction disabled for ReportReader"
+                    "Provider %s has no available models, LLM extraction disabled for ReportReader",
+                    settings.LLM_PROVIDER,
                 )
                 self.llm_available = False
+                self.ollama_available = False
                 self.llm_extractor = None
 
         except Exception as e:
             logger.warning(
-                f"vLLM unavailable for ReportReader, will use SpaCy/regex fallback: {e}"
+                "Provider %s unavailable for ReportReader, will use SpaCy/regex fallback: %s",
+                settings.LLM_PROVIDER,
+                e,
             )
             self.llm_available = False
+            self.ollama_available = False
             self.llm_extractor = None
 
     @classmethod
@@ -193,7 +199,7 @@ class ReportReader:
         image_path=None,
         use_ensemble=False,
         verbose=True,
-        use_llm_extractor="deepseek",
+        use_llm: Optional[bool] = None,
         text=None,
         create_anonymized_pdf=False,
         anonymized_pdf_output_path=None,
@@ -325,23 +331,27 @@ class ReportReader:
                     f"OCR fallback finished. Total text length: {len(text)}. Preview: {text[:200]}..."
                 )
 
-                # Apply optional OCR correction through vLLM
-                if (
-                    text
-                    and len(text.strip())
-                    >= int(settings.REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH)
+                # Apply optional OCR correction through the configured LLM provider
+                if text and len(text.strip()) >= int(
+                    settings.REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH
                 ):
                     attempted_llm_correction = False
                     if not getattr(self, "llm_available", False):
                         logger.info(
-                            "Skipping LLM correction for OCR text: vLLM unavailable"
+                            "Skipping LLM correction for OCR text: provider unavailable"
                         )
                     else:
-                        logger.info("Applying LLM correction to OCR text via vLLM")
+                        logger.info(
+                            "Applying LLM correction to OCR text via provider %s",
+                            settings.LLM_PROVIDER,
+                        )
                         attempted_llm_correction = True
                     try:
                         llm_client = (
-                            VLLMService()
+                            LLMService(
+                                provider=settings.LLM_PROVIDER,
+                                base_url=settings.resolved_llm_base_url,
+                            )
                             if getattr(self, "llm_available", False)
                             else None
                         )
@@ -356,16 +366,16 @@ class ReportReader:
                             and corrected_text != text
                             and len(corrected_text) > 0.5 * len(text)
                         ):
-                            logger.info("OCR text successfully corrected by vLLM.")
+                            logger.info("OCR text successfully corrected by LLM.")
                             text = corrected_text
                         elif corrected_text == text:
-                            logger.info("vLLM correction resulted in the same text.")
+                            logger.info("LLM correction resulted in the same text.")
                         elif attempted_llm_correction:
                             logger.warning(
-                                "vLLM OCR correction failed or produced poor result, using original OCR text."
+                                "LLM OCR correction failed or produced poor result, using original OCR text."
                             )
                     except Exception as e:
-                        logger.warning(f"Error using vLLM for correction: {e}")
+                        logger.warning(f"Error using LLM for correction: {e}")
                 elif text:
                     logger.info(
                         "Skipping LLM OCR correction for short OCR text (%d chars).",
@@ -405,8 +415,9 @@ class ReportReader:
         # --- Metadata Extraction ---
         report_meta = {}
         if text and len(text.strip()) >= 10:  # Proceed only if we have some text
-            if use_llm_extractor:
-                logger.info(f"Using specified LLM extractor: {use_llm_extractor}")
+            use_provider_llm = self.llm_available if use_llm is None else bool(use_llm)
+            if use_provider_llm:
+                logger.info("Using provider-backed LLM metadata extraction.")
                 report_meta = self.extract_report_meta(text, pdf_path)
                 local_meta_has_signal = self._report_metadata_has_signal(report_meta)
                 llm_allowed_for_text = self._should_attempt_report_llm(text)
@@ -420,23 +431,15 @@ class ReportReader:
                         "Skipping LLM report metadata extraction for short/low-signal text (%d chars).",
                         len(text.strip()),
                     )
-                elif use_llm_extractor == "deepseek":
-                    report_meta = self.extract_report_meta_deepseek(text)
-                elif use_llm_extractor == "medllama":
-                    report_meta = self.extract_report_meta_medllama(text)
-                elif use_llm_extractor == "llama3":
-                    report_meta = self.extract_report_meta_llama3(text)
                 else:
-                    logger.warning(
-                        f"Unknown LLM extractor specified: {use_llm_extractor}. Falling back to default."
-                    )
+                    report_meta = self.extract_report_meta_with_llm(text)
 
                 if report_meta:
                     self.sensitive_meta.safe_update(report_meta)
                     report_meta = self.sensitive_meta.to_dict()
                 else:
                     logger.warning(
-                        f"LLM extractor '{use_llm_extractor}' failed. Falling back to default SpaCy/Regex extraction."
+                        "Provider-backed LLM extraction failed. Falling back to default SpaCy/Regex extraction."
                     )
                     report_meta = self.extract_report_meta(text, pdf_path)
             else:
@@ -545,7 +548,9 @@ class ReportReader:
 
     @staticmethod
     def _should_attempt_report_llm(text: str) -> bool:
-        return bool(text and len(text.strip()) >= int(settings.REPORT_LLM_MIN_TEXT_LENGTH))
+        return bool(
+            text and len(text.strip()) >= int(settings.REPORT_LLM_MIN_TEXT_LENGTH)
+        )
 
     def read_pdf(self, pdf_path):
         """Read pdf file using pdfplumber and return the raw text content."""
@@ -588,8 +593,8 @@ class ReportReader:
         patient_info = None
         # Option 1: Try on whole text with Deepseek
         if text:
-            # Note: We don't call extract_report_meta_deepseek here directly to prevent recursion if called from within process_report fallback
-            # But the logic suggests if we are here, we might have already tried LLM or opted out.
+            # We do not call the provider-backed LLM path here to avoid recursion when
+            # this function is used as the fallback inside process_report.
             # Just use patient_extractor (SpaCy)
             patient_info = self.patient_extractor(text)
             logger.debug(f"Patient extractor result on full text: {patient_info}")
@@ -698,19 +703,13 @@ class ReportReader:
 
         return report_meta
 
-    def extract_report_meta_deepseek(self, text):
-        """Extract metadata using the shared vLLM structured-output path."""
+    def extract_report_meta_with_llm(self, text):
+        """Extract metadata using the shared structured-output LLM path."""
         return self._extract_report_meta_via_llm(
             text=text,
-            extractor_name="DeepSeek",
+            extractor_name="default",
             unavailable_log_level="warning",
         )
-
-    def extract_report_meta_medllama(self, text):
-        return self._extract_report_meta_via_llm(text=text, extractor_name="MedLLaMA")
-
-    def extract_report_meta_llama3(self, text):
-        return self._extract_report_meta_via_llm(text=text, extractor_name="Llama3")
 
     def _extract_report_meta_via_llm(
         self,
@@ -718,31 +717,35 @@ class ReportReader:
         extractor_name: str,
         unavailable_log_level: str = "debug",
     ) -> Dict[str, Any]:
-        """Shared wrapper for vLLM-based metadata extraction variants."""
+        """Shared wrapper for provider-backed LLM metadata extraction variants."""
         if not self.llm_available or not self.llm_extractor:
-            msg = f"vLLM not available for {extractor_name} extraction, returning empty dict."
+            msg = (
+                f"LLM provider {settings.LLM_PROVIDER} not available for "
+                f"{extractor_name} extraction, returning empty dict."
+            )
             log_fn = getattr(logger, unavailable_log_level, logger.debug)
             log_fn(msg)
             return {}
 
         logger.info(
-            "Attempting metadata extraction with %s (vLLM Structured Output)",
+            "Attempting metadata extraction with %s via provider %s",
             extractor_name,
+            settings.LLM_PROVIDER,
         )
         try:
             meta_obj = self.llm_extractor.extract_metadata(text)
             if not meta_obj:
                 logger.warning(
-                    "%s vLLM extraction failed, returning empty dict.",
+                    "%s LLM extraction failed, returning empty dict.",
                     extractor_name,
                 )
                 return {}
 
             self.sensitive_meta.safe_update(meta_obj)
-            logger.info("%s vLLM extraction successful.", extractor_name)
+            logger.info("%s LLM extraction successful.", extractor_name)
             return self.sensitive_meta.to_dict()
         except Exception as e:
-            logger.warning(f"{extractor_name} vLLM extraction error: {e}")
+            logger.warning(f"{extractor_name} LLM extraction error: {e}")
             return {}
 
     def anonymize_report(self, text, report_meta):
@@ -792,7 +795,7 @@ class ReportReader:
         image_path=None,
         use_ensemble=False,
         verbose=True,
-        use_llm_extractor="deepseek",
+        use_llm: Optional[bool] = None,
         text=None,
         crop_output_dir=None,
         crop_sensitive_regions=True,
@@ -804,7 +807,7 @@ class ReportReader:
             image_path=image_path,
             use_ensemble=use_ensemble,
             verbose=verbose,
-            use_llm_extractor=use_llm_extractor,
+            use_llm=use_llm,
             text=text,
         )
 

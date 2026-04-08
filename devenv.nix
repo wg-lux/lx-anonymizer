@@ -98,6 +98,7 @@ in
 
   # devenv 2 outputs only become useful for Python once pyproject-nix is added
   # via `devenv inputs add pyproject-nix github:pyproject-nix/pyproject.nix --follows nixpkgs`.
+  # devenv resolves pythonApp and nativeDrv using the best practise resolve by using the config option
   outputs =
     lib.optionalAttrs (inputs ? pyproject-nix) (
       let

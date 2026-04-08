@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from lx_anonymizer.llm.vllm_extractor import VLLMMetadataExtractor
+from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class BestFrameText:
             random.seed(seed)
 
         # FIX: initialize extractor instance (was empty assignment causing syntax error)
-        self.llm_extraction = VLLMMetadataExtractor()
+        self.llm_extraction = LLMMetadataExtractor()
 
     # ---------- scoring ------------------------------------------------------
 
@@ -194,7 +194,7 @@ class BestFrameText:
                 )[:1500]
                 return {"best": best, "average": average}
         except Exception as e:
-            logger.info(f"vLLM extraction failed: {e}, fallback to original reduce.")
+            logger.info(f"LLM extraction failed: {e}, fallback to original reduce.")
 
         if not self._reservoir and not self._topk:
             return {"best": "", "average": ""}

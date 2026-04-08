@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,19 +8,21 @@ class Settings(BaseSettings):
     MODE: str = "production"
     DEBUG_SAVE_FRAMES: bool = False
 
-    # --- LLM / vLLM Configuration ---
-    LLM_ENABLED: bool = True
-    LLM_PROVIDER: str = "vllm"
-    LLM_BASE_URL: str = "http://127.0.0.1:8000"
-    LLM_MODEL: str = "Qwen/Qwen3.5-9B"
-    LLM_TIMEOUT: int = 60
-    LLM_MAX_CALLS_PER_VIDEO: int = 2
-    LLM_MIN_TEXT_LENGTH: int = 24
-    REPORT_LLM_MIN_TEXT_LENGTH: int = 48
-    REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH: int = 80
+    # --- LLM Configuration ---
+    # Conservative library default: require explicit opt-in before doing network/model work.
+    LLM_ENABLED: bool = False
+    # When enabled, prefer a laptop-friendly local backend by default.
+    LLM_PROVIDER: Literal["vllm", "ollama"] = "ollama"
+    LLM_BASE_URL: str = ""
+    LLM_MODEL: str = "qwen2.5:7b-instruct"
+    LLM_TIMEOUT: int = 45
+    LLM_MAX_CALLS_PER_VIDEO: int = 1
+    LLM_MIN_TEXT_LENGTH: int = 32
+    REPORT_LLM_MIN_TEXT_LENGTH: int = 64
+    REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH: int = 120
 
     # --- Performance & Sampling ---
-    MAX_FRAMES_TO_SAMPLE: int = 50
+    MAX_FRAMES_TO_SAMPLE: int = 24
     SMART_EARLY_STOPPING: bool = True
 
     # --- OCR / Detection ---
@@ -34,6 +38,15 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    @property
+    def resolved_llm_base_url(self) -> str:
+        base_url = self.LLM_BASE_URL.strip()
+        if base_url:
+            return base_url
+        if self.LLM_PROVIDER.lower() == "ollama":
+            return "http://127.0.0.1:11434"
+        return "http://127.0.0.1:8000"
 
 
 settings = Settings()
