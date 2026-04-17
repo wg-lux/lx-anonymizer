@@ -92,7 +92,6 @@ class SpacyModelManager:
 
     _instance: Optional[Language] = None
     DEFAULT_MODEL = "de_core_news_sm"
-    ALLOW_DOWNLOAD_ENV = "LX_ANONYMIZER_ALLOW_SPACY_DOWNLOAD"
     MODEL_ENV = "LX_ANONYMIZER_SPACY_MODEL"
 
     @classmethod
@@ -113,29 +112,17 @@ class SpacyModelManager:
             logger.info(f"Loading spacy model: {model_name}")
             cls._instance = spacy.load(model_name)
         except OSError:
-            allow_download = os.environ.get(
-                cls.ALLOW_DOWNLOAD_ENV, ""
-            ).strip().lower() in {"1", "true", "yes"}
-            if allow_download:
-                logger.warning(
-                    "Model '%s' not found. Attempting download because %s is enabled.",
-                    model_name,
-                    cls.ALLOW_DOWNLOAD_ENV,
-                )
-                try:
-                    spacy.cli.download(model_name)
-                    cls._instance = spacy.load(model_name)
-                    logger.info(f"Successfully loaded {model_name} after download.")
-                except Exception as e:
-                    logger.error(f"Critical error loading SpaCy model: {e}")
-                    raise e
-            else:
-                logger.warning(
-                    "Model '%s' not found and %s is not enabled. Falling back to spacy.blank('de').",
-                    model_name,
-                    cls.ALLOW_DOWNLOAD_ENV,
-                )
-                cls._instance = spacy.blank("de")
+            logger.warning(
+                "Model '%s' not found. Attempting download.",
+                model_name,
+            )
+            try:
+                spacy.cli.download(model_name)
+                cls._instance = spacy.load(model_name)
+                logger.info(f"Successfully loaded {model_name} after download.")
+            except Exception as e:
+                logger.error(f"Critical error loading SpaCy model: {e}")
+                raise e
 
         return cls._instance
 

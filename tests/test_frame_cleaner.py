@@ -204,6 +204,38 @@ class TestFrameCleanerRefactored:
 
                 assert stride == 60
 
+    def test_clean_video_raises_when_masking_fails(
+        self,
+        frame_cleaner: FrameCleaner,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        video_path = Path("input.mp4")
+        output_path = Path("output.mp4")
+        mock_stream_data = [(0, mock_frame, 1)]
+
+        with (
+            patch.object(frame_cleaner, "_iter_video", return_value=mock_stream_data),
+            patch.object(
+                frame_cleaner,
+                "_process_frame_single",
+                return_value=(False, {}, "Clean", 0.9),
+            ),
+            patch.object(frame_cleaner, "_mask_video_streaming", return_value=False),
+            patch("cv2.VideoCapture") as mock_cv2,
+        ):
+            mock_cv2_instance = MagicMock()
+            mock_cv2.return_value = mock_cv2_instance
+            mock_cv2_instance.get.return_value = 10.0
+
+            with pytest.raises(RuntimeError, match="Masking failed"):
+                frame_cleaner.clean_video(
+                    video_path=video_path,
+                    endoscope_image_roi=None,
+                    endoscope_data_roi_nested=None,
+                    output_path=output_path,
+                    technique="mask_overlay",
+                )
+
     def test_ffmpeg_streaming_command_construction(
         self, frame_cleaner: FrameCleaner
     ) -> None:

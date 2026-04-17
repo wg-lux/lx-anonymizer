@@ -30,6 +30,8 @@ def test_mask_video_streaming_crops_and_checks_dimensions(monkeypatch, tmp_path)
 
     def fake_detect(video_path):
         calls.append(video_path)
+        if video_path == input_video:
+            return {"width": 1920, "height": 1080}
         return {"width": 1368, "height": 1078}
 
     monkeypatch.setattr(masking_module.subprocess, "run", fake_run)
@@ -49,4 +51,48 @@ def test_mask_video_streaming_crops_and_checks_dimensions(monkeypatch, tmp_path)
     assert ok is True
     vf_idx = captured["cmd"].index("-vf") + 1
     assert captured["cmd"][vf_idx] == "crop=1368:1078:552:2"
-    assert calls == [output_video]
+    assert calls == [input_video, output_video]
+
+
+def test_mask_video_streaming_scales_mask_for_small_input(monkeypatch, tmp_path):
+    monkeypatch.setattr(VideoEncoder, "_detect_nvenc_support", lambda self: False)
+    mask_app = MaskApplication(preferred_encoder={"type": "cpu"})
+    monkeypatch.setattr(mask_app, "build_encoder_cmd", lambda *_args, **_kwargs: [])
+
+    input_video = tmp_path / "input_small.mp4"
+    output_video = tmp_path / "output_small.mp4"
+    input_video.write_bytes(b"0" * 100)
+
+    captured = {}
+
+    def fake_run(cmd, *args, **kwargs):
+        captured["cmd"] = cmd
+        Path(cmd[-1]).write_bytes(b"1" * 50)
+
+        class Result:
+            stderr = ""
+
+        return Result()
+
+    def fake_detect(video_path):
+        if video_path == input_video:
+            return {"width": 480, "height": 270}
+        return {"width": 338, "height": 270}
+
+    monkeypatch.setattr(masking_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(masking_module.video_utils, "detect_video_format", fake_detect)
+
+    mask_config = {
+        "image_width": 1920,
+        "image_height": 1080,
+        "endoscope_image_x": 550,
+        "endoscope_image_y": 0,
+        "endoscope_image_width": 1350,
+        "endoscope_image_height": 1080,
+    }
+
+    ok = mask_app.mask_video_streaming(input_video, mask_config, output_video)
+
+    assert ok is True
+    vf_idx = captured["cmd"].index("-vf") + 1
+    assert captured["cmd"][vf_idx] == "crop=338:270:138:0"

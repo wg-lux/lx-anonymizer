@@ -20,8 +20,8 @@ class MaskApplication:
 
         # Default mask configuration based on olympus_cv_1500_mask.json
         self.default_mask_config = {
-            "image_width": 1920,
-            "image_height": 1080,
+            "image_width": 0,
+            "image_height": 0,
             "endoscope_image_x": 550,
             "endoscope_image_y": 0,
             "endoscope_image_width": 1350,
@@ -102,13 +102,54 @@ class MaskApplication:
             endoscope_h = _coerce_int(
                 effective_config.get("endoscope_image_height"), 1080
             )
-            image_width = _coerce_int(effective_config.get("image_width"), 0)
-            image_height = _coerce_int(effective_config.get("image_height"), 0)
+            configured_x = endoscope_x
+            configured_y = endoscope_y
+            configured_w = endoscope_w
+            configured_h = endoscope_h
+            config_image_width = _coerce_int(effective_config.get("image_width"), 0)
+            config_image_height = _coerce_int(effective_config.get("image_height"), 0)
 
+            format_info = video_utils.detect_video_format(input_video)
+            image_width = _coerce_int(format_info.get("width"), 0)
+            image_height = _coerce_int(format_info.get("height"), 0)
             if image_width <= 0 or image_height <= 0:
-                format_info = video_utils.detect_video_format(input_video)
-                image_width = image_width or format_info.get("width", 0)
-                image_height = image_height or format_info.get("height", 0)
+                image_width = config_image_width
+                image_height = config_image_height
+
+            if (
+                config_image_width > 0
+                and config_image_height > 0
+                and image_width > 0
+                and image_height > 0
+                and (
+                    config_image_width != image_width
+                    or config_image_height != image_height
+                )
+            ):
+                x_ratio = image_width / config_image_width
+                y_ratio = image_height / config_image_height
+                scaled_x = int(round(endoscope_x * x_ratio))
+                scaled_y = int(round(endoscope_y * y_ratio))
+                scaled_w = int(round(endoscope_w * x_ratio))
+                scaled_h = int(round(endoscope_h * y_ratio))
+                logger.info(
+                    "Scaling mask ROI from configured %dx%d to actual %dx%d: "
+                    "x=%d->%d y=%d->%d w=%d->%d h=%d->%d",
+                    config_image_width,
+                    config_image_height,
+                    image_width,
+                    image_height,
+                    endoscope_x,
+                    scaled_x,
+                    endoscope_y,
+                    scaled_y,
+                    endoscope_w,
+                    scaled_w,
+                    endoscope_h,
+                    scaled_h,
+                )
+                endoscope_x, endoscope_y = scaled_x, scaled_y
+                endoscope_w, endoscope_h = scaled_w, scaled_h
 
             if endoscope_w <= 0 or endoscope_h <= 0:
                 logger.error(
@@ -223,6 +264,20 @@ class MaskApplication:
                 str(output_video),
             ]
 
+            logger.info(
+                "Mask ROI configured=(x=%d,y=%d,w=%d,h=%d) effective=(x=%d,y=%d,w=%d,h=%d) "
+                "input_dimensions=%dx%d",
+                configured_x,
+                configured_y,
+                configured_w,
+                configured_h,
+                crop_x,
+                crop_y,
+                crop_w,
+                crop_h,
+                image_width,
+                image_height,
+            )
             logger.info(
                 "Cropping to endoscope image region x=%d y=%d w=%d h=%d",
                 crop_x,
