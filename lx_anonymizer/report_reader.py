@@ -466,23 +466,18 @@ class ReportReader:
         anonymized_pdf_path = None
 
         if create_anonymized_pdf and pdf_path:
-            try:
-                logger.info(
-                    "Creating anonymized PDF with blackened sensitive regions..."
+            logger.info("Creating anonymized PDF with blackened sensitive regions...")
+            anonymized_pdf_path = self.anonymizer.create_anonymized_pdf(
+                pdf_path=str(pdf_path),
+                output_path=anonymized_pdf_output_path,
+                report_meta=report_meta,
+            )
+            if not anonymized_pdf_path:
+                raise RuntimeError(
+                    "create_anonymized_pdf=True but no anonymized PDF path was produced."
                 )
-                anonymized_pdf_path = self.anonymizer.create_anonymized_pdf(
-                    pdf_path=str(pdf_path),
-                    output_path=anonymized_pdf_output_path,
-                    report_meta=report_meta,
-                )
-                if anonymized_pdf_path:
-                    report_meta["anonymized_pdf_path"] = anonymized_pdf_path
-                    logger.info(f"Anonymized PDF created: {anonymized_pdf_path}")
-                else:
-                    logger.warning("Failed to create anonymized PDF")
-            except Exception as e:
-                logger.error(f"Error creating anonymized PDF: {e}")
-                report_meta["anonymized_pdf_error"] = str(e)
+            report_meta["anonymized_pdf_path"] = anonymized_pdf_path
+            logger.info(f"Anonymized PDF created: {anonymized_pdf_path}")
         try:
             assert isinstance(text, str)
             report_meta["text"] = text

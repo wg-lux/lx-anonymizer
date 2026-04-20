@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 
 from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
 
@@ -163,6 +164,41 @@ class Anonymizer:
 
         return sensitive_regions
 
+    def _detect_sensitive_regions_with_fallback(
+        self,
+        image: Image.Image,
+        *,
+        page_num: int | None = None,
+    ) -> list[tuple[int, int, int, int]]:
+        try:
+            return self._detect_sensitive_regions_from_image(image)
+        except Exception as exc:
+            page_label = (
+                f"page {page_num + 1}" if isinstance(page_num, int) else "image"
+            )
+            logger.warning(
+                "Primary EAST-based sensitive-region detection failed for %s: %s. "
+                "Falling back to OCR-only region detection.",
+                page_label,
+                exc,
+                exc_info=True,
+            )
+
+        _text, word_boxes = tesseract_full_image_ocr(image)
+        if not word_boxes:
+            logger.warning(
+                "OCR-only fallback found no word boxes for %s.",
+                f"page {page_num + 1}" if isinstance(page_num, int) else "image",
+            )
+            return []
+
+        logger.info(
+            "OCR-only fallback detected %d word boxes for %s.",
+            len(word_boxes),
+            f"page {page_num + 1}" if isinstance(page_num, int) else "image",
+        )
+        return self.sensitive_cropper.detect_sensitive_regions(image, word_boxes)
+
     def _draw_black_boxes_on_image(
         self,
         image: Image.Image,
@@ -258,7 +294,7 @@ class Anonymizer:
 
             for page_num, image in enumerate(images):
                 logger.debug("Processing PDF page %d", page_num + 1)
-                rois = self._detect_sensitive_regions_from_image(image)
+                rois = self._detect_sensitive_regions_with_fallback(image)
                 rois_per_page[page_num] = rois
 
             doc = pymupdf.open(pdf_path)
@@ -287,7 +323,6 @@ class Anonymizer:
         report_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         _ = report_meta
-
         try:
             if output_path is None:
                 output_path = self._default_output_path(image_path)
@@ -296,7 +331,7 @@ class Anonymizer:
             logger.info("Creating anonymized image with EAST + OCR: %s", output_path)
 
             image = Image.open(image_path).convert("RGB")
-            rois = self._detect_sensitive_regions_from_image(image)
+            rois = self._detect_sensitive_regions_with_fallback(image)
 
             anonymized = self._draw_black_boxes_on_image(image, rois, padding=2)
             anonymized.save(output_path)

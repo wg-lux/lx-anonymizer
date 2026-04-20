@@ -28,11 +28,7 @@ MODEL_URL = (
     "https://github.com/ZER-0-NE/EAST-Detector-for-text-detection-using-OpenCV/raw/master/"
     "frozen_east_text_detection.pb"
 )
-
-# Replace this with the real SHA-256 of the exact model file you trust.
-# Compute once with:
-#   sha256sum frozen_east_text_detection.pb
-EXPECTED_MODEL_SHA256 = "REPLACE_WITH_REAL_SHA256"
+EXPECTED_MODEL_SHA256 = "9b486f3c3eee77b4c8cc91a83892c37026cca7d29b79bf3b93772ccd2db58454"  # needs to be recalculated using sha256sum frozen_east_text_detection.pb
 
 # Lower bound sanity check only. Integrity must come from SHA-256.
 MIN_MODEL_SIZE_BYTES = 90_000_000
