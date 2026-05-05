@@ -8,23 +8,51 @@ New: Region-first OCR
 - German-biased decoding; optional anti-gibberish filter
 """
 
+from __future__ import annotations
+
 import glob
+import importlib
 import logging
 import os
 import re
 import threading
 import time
 import unicodedata
+from types import ModuleType
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import tesserocr  # type: ignore[import-untyped]
 from PIL import Image
 
 from lx_anonymizer._native import native as _native
 
 logger = logging.getLogger(__name__)
+
+_TESSEROCR_MODULE: ModuleType | None = None
+
+
+def _get_tesserocr_module() -> ModuleType:
+    """
+    Import tesserocr lazily.
+
+    tesserocr imports cysignals, which installs Python signal handlers at import
+    time. Python only permits that from the main interpreter thread. Keeping this
+    import lazy makes Django URL/view imports safe in ASGI worker threads; OCR
+    callers outside the main thread fall back to pytesseract through FrameOCR.
+    """
+    global _TESSEROCR_MODULE
+    if _TESSEROCR_MODULE is not None:
+        return _TESSEROCR_MODULE
+
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError(
+            "tesserocr must be imported from the main interpreter thread; "
+            "falling back to PyTesseract for this OCR worker"
+        )
+
+    _TESSEROCR_MODULE = importlib.import_module("tesserocr")
+    return _TESSEROCR_MODULE
 
 
 _EXPECTED_OCR_CHARS = set(
@@ -189,6 +217,7 @@ class TesseOCRFrameProcessor:
     def __init__(self, language: str = "deu"):
         self.language = language
         self._lock = threading.Lock()
+        self._tesserocr: ModuleType | None = None
         self.api: Any = None
         self.api_lstm: Any = None
         self._tessdata_path: Optional[str] = None
@@ -221,20 +250,21 @@ class TesseOCRFrameProcessor:
 
     # ---------------- Tesseract init ----------------
     def _initialize_api(self) -> None:
+        self._tesserocr = _get_tesserocr_module()
         tessdata_path = self._get_tessdata_path()
         self._tessdata_path = tessdata_path
-        self.api = tesserocr.PyTessBaseAPI(
+        self.api = self._tesserocr.PyTessBaseAPI(
             lang=self.language,  # German prioritized
             path=tessdata_path,
-            oem=tesserocr.OEM.DEFAULT,  # allow legacy fallback for tricky fonts
+            oem=self._tesserocr.OEM.DEFAULT,  # allow legacy fallback for tricky fonts
         )
         self._configure_api_common(self.api)
 
         try:
-            self.api_lstm = tesserocr.PyTessBaseAPI(
+            self.api_lstm = self._tesserocr.PyTessBaseAPI(
                 lang=self.language,
                 path=tessdata_path,
-                oem=tesserocr.OEM.LSTM_ONLY,
+                oem=self._tesserocr.OEM.LSTM_ONLY,
             )
             self._configure_api_common(self.api_lstm)
             logger.info(
@@ -251,9 +281,10 @@ class TesseOCRFrameProcessor:
             tessdata_path,
         )
 
-    def _configure_api_common(self, api: tesserocr.PyTessBaseAPI) -> None:
+    def _configure_api_common(self, api: Any) -> None:
         # Default PSM: single block (we switch per-ROI later)
-        api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+        assert self._tesserocr is not None
+        api.SetPageSegMode(self._tesserocr.PSM.SINGLE_BLOCK)
 
         # Performance & stability
         api.SetVariable("preserve_interword_spaces", "1")
@@ -326,22 +357,23 @@ class TesseOCRFrameProcessor:
 
     def _choose_psm_for_box(self, w, h):
         """Choose optimal PSM based on ROI dimensions and expected content"""
+        assert self._tesserocr is not None
         aspect_ratio = w / max(h, 1)
 
         # Very wide, short boxes are likely single lines (timestamps, IDs)
         if h < 50 or aspect_ratio > 8:
-            return tesserocr.PSM.SINGLE_LINE
+            return self._tesserocr.PSM.SINGLE_LINE
 
         # Tall narrow boxes might be vertical text or single words
         elif aspect_ratio < 2 and h < 100:
-            return tesserocr.PSM.SINGLE_WORD
+            return self._tesserocr.PSM.SINGLE_WORD
 
         # Medium boxes are likely single blocks of text
         elif h < 200:
-            return tesserocr.PSM.SINGLE_BLOCK
+            return self._tesserocr.PSM.SINGLE_BLOCK
 
         # Large boxes might have sparse text (device overlays)
-        return tesserocr.PSM.SPARSE_TEXT
+        return self._tesserocr.PSM.SPARSE_TEXT
 
     @staticmethod
     def _gibberish_score(text: str) -> float:
@@ -439,6 +471,7 @@ class TesseOCRFrameProcessor:
         """
         OCR a preprocessed frame/ROI image and return text, confidence, and metadata.
         """
+        assert self._tesserocr is not None
         self.api.SetVariable("user_defined_dpi", str(dpi))
 
         if not has_roi:
@@ -457,7 +490,7 @@ class TesseOCRFrameProcessor:
             self.api.SetVariable(
                 "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
             )
-            self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+            self.api.SetPageSegMode(self._tesserocr.PSM.SINGLE_BLOCK)
             self.api.SetImage(Image.fromarray(processed))
             txt = (self.api.GetUTF8Text() or "").strip()
             if txt:
@@ -536,7 +569,7 @@ class TesseOCRFrameProcessor:
 
         if text:
             if len(regions) > 1:
-                self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+                self.api.SetPageSegMode(self._tesserocr.PSM.SINGLE_BLOCK)
                 self.api.SetImage(Image.fromarray(processed))
             conf = max(self.api.MeanTextConf(), 0) / 100.0
         else:
@@ -582,7 +615,7 @@ class TesseOCRFrameProcessor:
             self.api.SetVariable(
                 "tessedit_char_whitelist", self._choose_whitelist_for_box(w, h)
             )
-            self.api.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+            self.api.SetPageSegMode(self._tesserocr.PSM.SINGLE_BLOCK)
             self.api.SetImage(Image.fromarray(sub))
 
             retry_text = (self.api.GetUTF8Text() or "").strip()
@@ -602,7 +635,7 @@ class TesseOCRFrameProcessor:
                             "tessedit_char_whitelist",
                             self._choose_whitelist_for_box(w, h),
                         )
-                        self.api_lstm.SetPageSegMode(tesserocr.PSM.SINGLE_BLOCK)
+                        self.api_lstm.SetPageSegMode(self._tesserocr.PSM.SINGLE_BLOCK)
                         self.api_lstm.SetImage(Image.fromarray(sub))
                         alt_text = self._normalize_ocr_text(
                             (self.api_lstm.GetUTF8Text() or "").strip()
