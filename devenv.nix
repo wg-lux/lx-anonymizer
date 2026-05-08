@@ -77,6 +77,7 @@ let
     maturin
     cargo
     rustc
+    libxcb
   ];
 in
 {

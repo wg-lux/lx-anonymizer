@@ -46,6 +46,7 @@ dependencies = [
   "puccinialin>=0.1.9",
   "ziglang>=0.15.2",
   "tesserocr>=2.9.1",
+  "ultralytics>=8.4.47",
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
 keywords = [
@@ -101,9 +102,13 @@ ocr = [
 nlu = [
   "flair>=0.15.1",
 ]
+training = [
+  "ultralytics>=8.3",
+]
 
 [project.scripts]
 lx-anonymizer = "lx_anonymizer.cli:main"
+lx-anonymizer-train-phi = "lx_anonymizer.text_detection.phi_region_detector_training:main"
 
 [tool.hatch.build.targets.wheel]
 include = [

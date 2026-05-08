@@ -27,6 +27,17 @@ class Settings(BaseSettings):
 
     # --- OCR / Detection ---
     OCR_CONFIDENCE_THRESHOLD: float = 0.6
+    PHI_REGION_DETECTOR_MODEL_PATH: str = ""
+    PHI_REGION_DETECTOR_MODEL_SHA256: str = ""
+    PHI_REGION_DETECTOR_REQUIRED: bool = False
+    PHI_REGION_DETECTOR_CONFIDENCE: float = 0.35
+    PHI_REGION_DETECTOR_NMS_THRESHOLD: float = 0.45
+    PHI_REGION_DETECTOR_INPUT_SIZE: int = 640
+    PHI_REGION_DETECTOR_BOX_FORMAT: Literal["yolo_xywh", "xyxy"] = "yolo_xywh"
+    PHI_REGION_DETECTOR_SCORE_FORMAT: Literal["class_scores", "objectness"] = (
+        "class_scores"
+    )
+    PHI_REGION_DETECTOR_CLASS_IDS: str = ""
 
     # --- Masking / Encoding ---
     MASKING_STRATEGY: str = "mask_overlay"

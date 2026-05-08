@@ -417,6 +417,58 @@ def test_detect_sensitive_regions_pipeline_calls_cropper_with_ocr_output(
     assert called["text_with_boxes"] == [{"text": "Max", "box": (1, 2, 3, 4)}]
 
 
+def test_detect_sensitive_regions_includes_custom_phi_detector_regions(
+    anonymizer: Anonymizer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = Image.new("RGB", (300, 200), "white")
+
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.detect_phi_regions_from_settings",
+        lambda image_arg: [(40, 50, 120, 90)],
+    )
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.east_text_detection",
+        lambda image, min_confidence, width, height: ([], "[]"),
+    )
+
+    rois = anonymizer._detect_sensitive_regions_from_image(image)
+
+    assert rois == [(40, 50, 120, 90)]
+
+
+def test_detect_sensitive_regions_merges_custom_and_ocr_regions(
+    anonymizer: Anonymizer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = Image.new("RGB", (300, 200), "white")
+
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.detect_phi_regions_from_settings",
+        lambda image_arg: [(40, 50, 120, 90)],
+    )
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.east_text_detection",
+        lambda image, min_confidence, width, height: ([(1, 2, 3, 4)], "[]"),
+    )
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer._ocr_text_on_boxes",
+        lambda image, text_boxes, language="deu+eng": (
+            [{"text": "Max", "box": (1, 2, 3, 4)}],
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        anonymizer.sensitive_cropper,
+        "detect_sensitive_regions",
+        lambda image_arg, text_with_boxes: [(10, 10, 20, 20)],
+    )
+
+    rois = anonymizer._detect_sensitive_regions_from_image(image)
+
+    assert rois == [(10, 10, 20, 20), (40, 50, 120, 90)]
+
+
 def test_create_anonymized_pdf_returns_none_on_pdf_open_failure(
     anonymizer: Anonymizer,
     tmp_path: Path,

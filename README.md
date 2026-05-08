@@ -70,6 +70,7 @@ Install extras only when you need the corresponding feature set:
 pip install "lx-anonymizer[ocr]"      # TrOCR, tesserocr, CRAFT helpers
 pip install "lx-anonymizer[llm]"      # LLM client-side helpers
 pip install "lx-anonymizer[nlu]"      # Flair NER
+pip install "lx-anonymizer[training]" # PHI-region detector training helpers
 pip install "lx-anonymizer[django]"   # Django integration
 pip install "lx-anonymizer[dev]"      # local development tooling
 ```

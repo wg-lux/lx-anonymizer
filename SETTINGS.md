@@ -32,6 +32,23 @@ if settings.LLM_ENABLED:
 - `SMART_EARLY_STOPPING` (default: `True`) - stop early when metadata is complete
   in extraction-only mode.
 - `OCR_CONFIDENCE_THRESHOLD` (default: `0.6`) - OCR confidence gate.
+- `PHI_REGION_DETECTOR_MODEL_PATH` (default: empty) - optional local ONNX model
+  path for a custom retrainable PHI-region detector. When set, its regions are
+  added to the normal EAST/OCR detections.
+- `PHI_REGION_DETECTOR_MODEL_SHA256` (default: empty) - optional SHA-256 pin for
+  the local detector artifact.
+- `PHI_REGION_DETECTOR_REQUIRED` (default: `False`) - fail the anonymization call
+  if the configured custom detector cannot run.
+- `PHI_REGION_DETECTOR_CONFIDENCE` (default: `0.35`) - minimum model confidence.
+- `PHI_REGION_DETECTOR_NMS_THRESHOLD` (default: `0.45`) - box overlap threshold
+  for non-maximum suppression.
+- `PHI_REGION_DETECTOR_INPUT_SIZE` (default: `640`) - square model input size.
+- `PHI_REGION_DETECTOR_BOX_FORMAT` (default: `yolo_xywh`) - `yolo_xywh` or `xyxy`.
+- `PHI_REGION_DETECTOR_SCORE_FORMAT` (default: `class_scores`) -
+  `class_scores` for YOLOv8-style outputs or `objectness` for YOLOv5-style
+  outputs.
+- `PHI_REGION_DETECTOR_CLASS_IDS` (default: empty) - optional comma-separated
+  class ids to keep.
 - `MASKING_STRATEGY` (default: `mask_overlay`) - `mask_overlay` or `remove_frames`.
 - `VIDEO_ENCODER` (default: `auto`) - `auto`, `h264_nvenc`, or `libx264`.
 
@@ -51,6 +68,15 @@ REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH=120
 MAX_FRAMES_TO_SAMPLE=24
 SMART_EARLY_STOPPING=True
 OCR_CONFIDENCE_THRESHOLD=0.6
+PHI_REGION_DETECTOR_MODEL_PATH=
+PHI_REGION_DETECTOR_MODEL_SHA256=
+PHI_REGION_DETECTOR_REQUIRED=False
+PHI_REGION_DETECTOR_CONFIDENCE=0.35
+PHI_REGION_DETECTOR_NMS_THRESHOLD=0.45
+PHI_REGION_DETECTOR_INPUT_SIZE=640
+PHI_REGION_DETECTOR_BOX_FORMAT=yolo_xywh
+PHI_REGION_DETECTOR_SCORE_FORMAT=class_scores
+PHI_REGION_DETECTOR_CLASS_IDS=
 MASKING_STRATEGY=mask_overlay
 VIDEO_ENCODER=auto
 ```
@@ -66,3 +92,5 @@ VIDEO_ENCODER=auto
   For server workloads, switch `LLM_PROVIDER=vllm` and increase sampling/call budgets.
 - `SMART_EARLY_STOPPING` only applies when `FrameCleaner.clean_video()` is called
   with `technique="extract_only"` so masking/removal still process the full video.
+- The custom PHI-region detector is local-only and additive. It never downloads
+  artifacts and does not replace the deterministic EAST/OCR redaction path.

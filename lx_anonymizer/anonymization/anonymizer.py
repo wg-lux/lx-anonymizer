@@ -12,6 +12,10 @@ from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
+from lx_anonymizer.text_detection.phi_region_detector import (
+    CustomPhiRegionDetectorError,
+    detect_phi_regions_from_settings,
+)
 
 logger = get_logger(__name__)
 
@@ -75,6 +79,21 @@ def _clamp_box(
     return x1, y1, x2, y2
 
 
+def _merge_region_boxes(
+    rois: list[tuple[int, int, int, int]],
+    image_size: tuple[int, int],
+) -> list[tuple[int, int, int, int]]:
+    width, height = image_size
+    merged: list[tuple[int, int, int, int]] = []
+    for roi in rois:
+        clamped = _clamp_box(*roi, width=width, height=height, padding=0)
+        if clamped is None:
+            continue
+        if clamped not in merged:
+            merged.append(clamped)
+    return merged
+
+
 def _pil_to_pdf_rect(
     box: tuple[int, int, int, int],
     page_width: float,
@@ -131,6 +150,8 @@ class Anonymizer:
         east_height: int = 640,
         language: str = "deu+eng",
     ) -> list[tuple[int, int, int, int]]:
+        custom_regions = detect_phi_regions_from_settings(image)
+
         logger.debug("Running EAST text detection")
         text_boxes, _ = _east_text_detection_on_pil_image(
             image,
@@ -139,30 +160,35 @@ class Anonymizer:
             height=east_height,
         )
 
+        sensitive_regions: list[tuple[int, int, int, int]] = []
         if not text_boxes:
             logger.info("No text regions detected")
-            return []
+        else:
+            logger.info("EAST detected %d text regions", len(text_boxes))
 
-        logger.info("EAST detected %d text regions", len(text_boxes))
+            logger.debug("Running OCR on %d boxes", len(text_boxes))
+            text_with_boxes, _ = _ocr_text_on_boxes(
+                image,
+                text_boxes,
+                language=language,
+            )
 
-        logger.debug("Running OCR on %d boxes", len(text_boxes))
-        text_with_boxes, _ = _ocr_text_on_boxes(
-            image,
-            text_boxes,
-            language=language,
+            sensitive_regions = self.sensitive_cropper.detect_sensitive_regions(
+                image,
+                text_with_boxes,
+            )
+
+        merged_regions = _merge_region_boxes(
+            [*sensitive_regions, *custom_regions],
+            image.size,
         )
 
-        sensitive_regions = self.sensitive_cropper.detect_sensitive_regions(
-            image,
-            text_with_boxes,
-        )
-
-        if sensitive_regions:
-            logger.info("Detected %d sensitive regions", len(sensitive_regions))
+        if merged_regions:
+            logger.info("Detected %d sensitive regions", len(merged_regions))
         else:
             logger.info("No sensitive regions detected after OCR/classification")
 
-        return sensitive_regions
+        return merged_regions
 
     def _detect_sensitive_regions_with_fallback(
         self,
@@ -172,6 +198,8 @@ class Anonymizer:
     ) -> list[tuple[int, int, int, int]]:
         try:
             return self._detect_sensitive_regions_from_image(image)
+        except CustomPhiRegionDetectorError:
+            raise
         except Exception as exc:
             page_label = (
                 f"page {page_num + 1}" if isinstance(page_num, int) else "image"
