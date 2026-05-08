@@ -165,10 +165,9 @@ in
   };
 
   enterShell = ''
+    SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
 
     if [ ! -d ".devenv/state/venv" ]; then
-       export SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
-
        echo "Virtual environment not found. Running initial uv sync..."
        $SYNC_CMD || echo "Error: Initial uv sync failed. Please check network and pyproject.toml."
     else
