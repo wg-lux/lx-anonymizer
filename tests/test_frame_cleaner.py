@@ -6,6 +6,19 @@ import numpy.typing as npt
 
 # Adjust import based on your actual package structure
 from lx_anonymizer.frame_cleaner import FrameCleaner
+from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+
+
+def _frame_cleaner_unit_stub() -> FrameCleaner:
+    frame_cleaner = FrameCleaner.__new__(FrameCleaner)
+    frame_cleaner.frame_ocr = MagicMock()
+    frame_cleaner.frame_metadata_extractor = FrameMetadataExtractor()
+    frame_cleaner.sensitive_meta = SensitiveMeta()
+    frame_cleaner.frame_collection = []
+    frame_cleaner.frame_observations = []
+    frame_cleaner.ocr_text_collection = []
+    return frame_cleaner
 
 
 class TestFrameCleanerRefactored:
@@ -162,6 +175,158 @@ class TestFrameCleanerRefactored:
             assert "patient_first_name" in meta
             # Fill-only semantics preserve the first nonblank value.
             assert meta["patient_last_name"] == "Smith"
+
+    def test_process_frame_marks_sensitive_after_ocr_metadata_merge(
+        self,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        frame_cleaner = _frame_cleaner_unit_stub()
+        ocr_text = "Patient: Thomas Lux geb. 15.02.2024"
+        ocr_meta = {"backend": "test", "words": 5}
+        parsed_meta = {
+            "patient_first_name": "Thomas",
+            "patient_last_name": "Lux",
+            "patient_dob": "2024-02-15",
+        }
+
+        with (
+            patch.object(
+                frame_cleaner.frame_ocr,
+                "extract_text_from_frame",
+                return_value=(ocr_text, 0.92, ocr_meta),
+            ),
+            patch.object(
+                frame_cleaner,
+                "_unified_metadata_extract",
+                return_value=parsed_meta,
+            ),
+        ):
+            is_sensitive, frame_meta, returned_text, returned_conf = (
+                frame_cleaner._process_frame_single(
+                    mock_frame,
+                    endoscope_image_roi=None,
+                    endoscope_data_roi_nested=None,
+                    frame_id=7,
+                    collect_for_batch=True,
+                )
+            )
+
+        assert is_sensitive is True
+        assert frame_meta["patient_first_name"] == "Thomas"
+        assert frame_meta["patient_last_name"] == "Lux"
+        assert frame_meta["patient_dob"] == "2024-02-15"
+        assert returned_text == ocr_text
+        assert returned_conf == 0.92
+        assert frame_cleaner.frame_collection[0]["is_sensitive"] is True
+        observation = frame_cleaner.frame_observations[0]
+        assert observation["frame_number"] == 7
+        assert observation["metadata_signal"] is True
+        assert observation["is_sensitive"] is True
+        assert "metadata_signal" in observation["source_tags"]
+
+    def test_process_frame_uses_image_roi_as_ocr_roi_when_nested_roi_missing(
+        self,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        frame_cleaner = _frame_cleaner_unit_stub()
+        image_roi = {
+            "endoscope_image_x": "10",
+            "endoscope_image_y": 20.0,
+            "endoscope_image_width": 300,
+            "endoscope_image_height": 120,
+        }
+
+        with patch.object(
+            frame_cleaner.frame_ocr,
+            "extract_text_from_frame",
+            return_value=("", 0.0, {}),
+        ) as mock_extract:
+            frame_cleaner._process_frame_single(
+                mock_frame,
+                endoscope_image_roi=image_roi,
+                endoscope_data_roi_nested=None,
+                frame_id=7,
+            )
+
+        mock_extract.assert_called_once_with(
+            mock_frame,
+            {"endoscope_image": {"x": 10, "y": 20, "width": 300, "height": 120}},
+        )
+
+    def test_process_frame_prefers_explicit_nested_ocr_roi(
+        self,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        frame_cleaner = _frame_cleaner_unit_stub()
+        image_roi = {"x": 10, "y": 20, "width": 300, "height": 120}
+        nested_roi = {"patient_info": {"x": 1, "y": 2, "width": 3, "height": 4}}
+
+        with patch.object(
+            frame_cleaner.frame_ocr,
+            "extract_text_from_frame",
+            return_value=("", 0.0, {}),
+        ) as mock_extract:
+            frame_cleaner._process_frame_single(
+                mock_frame,
+                endoscope_image_roi=image_roi,
+                endoscope_data_roi_nested=nested_roi,
+                frame_id=7,
+            )
+
+        mock_extract.assert_called_once_with(mock_frame, nested_roi)
+
+    def test_process_frame_records_phi_detector_observations_as_sensitive(
+        self,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        frame_cleaner = _frame_cleaner_unit_stub()
+        phi_regions = [
+            {
+                "source": "phi_detector",
+                "x": 30,
+                "y": 40,
+                "width": 50,
+                "height": 60,
+                "x1": 30,
+                "y1": 40,
+                "x2": 80,
+                "y2": 100,
+                "confidence": None,
+                "class_id": None,
+            }
+        ]
+
+        with (
+            patch.object(
+                frame_cleaner.frame_ocr,
+                "extract_text_from_frame",
+                return_value=("", 0.0, {}),
+            ),
+            patch.object(
+                frame_cleaner,
+                "_detect_phi_regions_for_frame",
+                return_value=phi_regions,
+            ),
+        ):
+            is_sensitive, frame_meta, returned_text, returned_conf = (
+                frame_cleaner._process_frame_single(
+                    mock_frame,
+                    endoscope_image_roi=None,
+                    endoscope_data_roi_nested=None,
+                    frame_id=11,
+                    collect_for_batch=True,
+                )
+            )
+
+        assert is_sensitive is True
+        assert frame_meta["patient_first_name"] is None
+        assert returned_text == ""
+        assert returned_conf == 0.0
+        observation = frame_cleaner.frame_observations[0]
+        assert observation["frame_number"] == 11
+        assert observation["phi_regions"] == phi_regions
+        assert "phi_detector" in observation["source_tags"]
+        assert frame_cleaner.frame_collection == []
 
     def test_sampling_logic_long_video(self, frame_cleaner: FrameCleaner) -> None:
         """

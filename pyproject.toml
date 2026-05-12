@@ -3,6 +3,11 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
+name = "lx-anonymizer"
+readme = "README.md"
+requires-python = ">=3.12"
+version = "0.9.1.4"
+
 authors = [
   {name = "Max Hild", email = "maxhild10@gmail.com"},
   {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
@@ -47,23 +52,14 @@ dependencies = [
   "ziglang>=0.15.2",
   "tesserocr>=2.9.1",
   "ultralytics>=8.4.47",
+  "rapidocr>=3.8.1",
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
-keywords = [
-  "anonymization",
-  "medical",
-  "ocr",
-  "nlp",
-  "privacy",
-]
+keywords = ["anonymization", "medical", "ocr", "nlp", "privacy"]
 license = {file = "LICENSE"}
 maintainers = [
   {name = "WG Lux", email = "lux@coloreg.de"},
 ]
-name = "lx-anonymizer"
-readme = "README.md"
-requires-python = ">=3.12"
-version = "0.9.1.3"
 
 [project.urls]
 Changelog = "https://github.com/wg-lux/lx-anonymizer/blob/main/CHANGELOG.md"
@@ -84,12 +80,8 @@ dev = [
   "twine>=6.2.0",
   "uv>=0.4.17",
 ]
-django = [
-  "django>=5.2",
-]
-llm = [
-  "tiktoken>=0.9.0",
-]
+django = ["django>=5.2"]
+llm = ["tiktoken>=0.9.0"]
 ocr = [
   "hezar>=0.42.0",
   "torch>=2.5.1",
@@ -99,44 +91,15 @@ ocr = [
   "tesserocr>=2.8.0",
   "verovio>=5.1.0",
 ]
-nlu = [
-  "flair>=0.15.1",
-]
-training = [
-  "ultralytics>=8.3",
-]
+nlu = ["flair>=0.15.1"]
+training = ["ultralytics>=8.3"]
+# Kept strictly as optional hardware paths
+cpu = ["onnxruntime>=1.25.1"]
+gpu = ["onnxruntime-gpu>=1.26.0"]
 
 [project.scripts]
 lx-anonymizer = "lx_anonymizer.cli:main"
 lx-anonymizer-train-phi = "lx_anonymizer.text_detection.phi_region_detector_training:main"
-
-[tool.hatch.build.targets.wheel]
-include = [
-  "lx_anonymizer/names_dict/**/*",
-  "lx_anonymizer/devices/**/*",
-]
-exclude = [
-  "lx_anonymizer/generated_reports/**/*",
-  "lx_anonymizer/unused_scripts/**/*",
-  "lx_anonymizer/**/*.bak",
-]
-packages = ["lx_anonymizer"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-  "lx_anonymizer",
-  "LICENSE",
-  "README.md",
-  "MANIFEST.in",
-]
-exclude = [
-  "lx_anonymizer/generated_reports/**/*",
-  "lx_anonymizer/unused_scripts/**/*",
-  "lx_anonymizer/**/*.bak",
-]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.uv.extra-build-dependencies]
 spacy = ["setuptools", "numpy", "Cython"]
@@ -146,3 +109,13 @@ python-source = "."
 module-name = "lx_anonymizer._lx_anonymizer_native"
 bindings = "pyo3"
 zig = true
+# Migrated Hatch rules here so Maturin respects them
+include = [
+  "lx_anonymizer/names_dict/**/*",
+  "lx_anonymizer/devices/**/*"
+]
+exclude = [
+  "lx_anonymizer/generated_reports/**/*",
+  "lx_anonymizer/unused_scripts/**/*",
+  "lx_anonymizer/**/*.bak"
+]

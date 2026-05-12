@@ -1,4 +1,6 @@
 import logging
+import threading
+import time
 from typing import Any, Dict, Optional, TypeAlias, Tuple, cast
 
 import cv2
@@ -8,21 +10,29 @@ from PIL import Image, ImageEnhance, ImageFilter
 
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 
-_TesseOCRFrameProcessor: Any = None
+_RapidOCR: Optional[type] = None
+RAPIDOCR_BACKEND = "rapidocr"
 
-# Import TesseOCR if available (requires tesserocr)
 try:
-    from lx_anonymizer.ocr.ocr_frame_tesserocr import (
-        TesseOCRFrameProcessor as _TesseOCRFrameProcessor,
-    )
+    from rapidocr import RapidOCR  # type: ignore[import-untyped]
 
+    _RapidOCR = RapidOCR  # Assign the class to your internal variable
+    RAPIDOCR_AVAILABLE = True
+except ImportError:
+    RAPIDOCR_AVAILABLE = False
+
+_TesseOCRFrameProcessor: Optional[type] = None
+try:
+    from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
+
+    _TesseOCRFrameProcessor = TesseOCRFrameProcessor
     TESSEROCR_AVAILABLE = True
 except ImportError:
     TESSEROCR_AVAILABLE = False
 
 FlatRoi: TypeAlias = dict[str, int | None]
 NestedRoi: TypeAlias = dict[str, FlatRoi]
-RoiInput: TypeAlias = NestedRoi | FlatRoi | None
+RoiInput: TypeAlias = NestedRoi | FlatRoi | list[Any] | None
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +40,8 @@ logger = logging.getLogger(__name__)
 class FrameOCR:
     """
     High-performance OCR interface for medical video frames.
-    - Uses tesserocr when available (10–50× faster)
+    - Uses RapidOCR when available (CPU ONNX Runtime, no GPU VRAM)
+    - Uses tesserocr when RapidOCR is unavailable
     - Falls back to pytesseract
     - Handles both ROI and full-frame OCR
     - Includes medical pattern extraction helpers
@@ -38,19 +49,17 @@ class FrameOCR:
 
     def __init__(self):
         self.frame_metadata_extractor = FrameMetadataExtractor()
-        self.tesserocr_processor: Optional[Any]
-        if TESSEROCR_AVAILABLE and _TesseOCRFrameProcessor is not None:
-            try:
-                self.tesserocr_processor = _TesseOCRFrameProcessor(language="deu")
-                logger.info("FrameOCR initialized with TesseOCR acceleration")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to initialize TesseOCR, falling back to PyTesseract: {e}"
-                )
-                self.tesserocr_processor = None
+        self.rapidocr_engine: Optional[Any] = None
+        self._rapidocr_lock = threading.Lock()
+        self.tesserocr_processor: Optional[Any] = None
+        self._rapidocr_available = RAPIDOCR_AVAILABLE and _RapidOCR is not None
+
+        if self._rapidocr_available:
+            logger.info("FrameOCR configured with lazy %s backend", RAPIDOCR_BACKEND)
+        elif TESSEROCR_AVAILABLE and _TesseOCRFrameProcessor is not None:
+            self._ensure_tesserocr_processor()
         else:
             logger.info("TesseOCR not available, using PyTesseract")
-            self.tesserocr_processor = None
 
         self.pytesseract_config = {
             "lang": "deu+eng",
@@ -70,7 +79,25 @@ class FrameOCR:
         Extract text + confidence + meta from a single frame.
         Always returns a (text, confidence, meta) tuple.
         """
-        # Prefer tesserocr for performance
+        # Prefer RapidOCR: CPU-bound ONNX Runtime avoids GPU VRAM pressure.
+        if self._rapidocr_available:
+            try:
+                self._ensure_rapidocr_engine()
+                return self._extract_text_rapidocr(frame, roi, high_quality)
+            except Exception as e:
+                logger.error(
+                    "RapidOCR failed, falling back to TesseOCR/PyTesseract: %s",
+                    e,
+                )
+                self._rapidocr_available = False
+
+        if (
+            self.tesserocr_processor is None
+            and TESSEROCR_AVAILABLE
+            and _TesseOCRFrameProcessor is not None
+        ):
+            self._ensure_tesserocr_processor()
+
         if self.tesserocr_processor:
             try:
                 return self.tesserocr_processor.extract_text_from_frame(
@@ -84,6 +111,237 @@ class FrameOCR:
         return self._extract_text_pytesseract(
             frame, cast(Optional[FlatRoi], flat_roi), high_quality
         )
+
+    def _ensure_rapidocr_engine(self) -> None:
+        if self.rapidocr_engine is not None:
+            return
+        with self._rapidocr_lock:
+            if self.rapidocr_engine is not None:
+                return
+            if not RAPIDOCR_AVAILABLE or _RapidOCR is None:
+                raise RuntimeError("RapidOCR is not available")
+            self.rapidocr_engine = _RapidOCR()
+            logger.info("FrameOCR initialized with %s backend", RAPIDOCR_BACKEND)
+
+    def _ensure_tesserocr_processor(self) -> None:
+        if self.tesserocr_processor is not None:
+            return
+        try:
+            if not _TesseOCRFrameProcessor:
+                raise ImportError
+            self.tesserocr_processor = _TesseOCRFrameProcessor(language="deu")
+            logger.info("FrameOCR initialized with TesseOCR acceleration")
+        except Exception as e:
+            logger.warning(
+                "Failed to initialize TesseOCR, falling back to PyTesseract: %s",
+                e,
+            )
+            self.tesserocr_processor = None
+
+    # ---------------- RapidOCR backend ----------------
+    def _extract_text_rapidocr(
+        self,
+        frame: np.ndarray,
+        roi: RoiInput = None,
+        high_quality: bool = True,
+    ) -> Tuple[str, float, Dict[str, Any]]:
+        """Run RapidOCR and normalize output to the FrameOCR API."""
+        if self.rapidocr_engine is None:
+            return "", 0.0, {}
+
+        _ = high_quality
+        t0 = time.time()
+        roi_entries = self._normalize_roi_input(roi)
+
+        if roi_entries:
+            all_texts: list[str] = []
+            all_confs: list[float] = []
+            all_regions: list[dict[str, Any]] = []
+            metadata: Dict[str, Any] = {
+                "backend": RAPIDOCR_BACKEND,
+                "method": "rapidocr+roi",
+                "roi_count": len(roi_entries),
+            }
+
+            for idx, (_name, flat_roi) in enumerate(roi_entries):
+                roi_text, roi_conf, roi_regions, roi_elapsed = self._run_rapidocr(
+                    frame, flat_roi
+                )
+                metadata[f"roi_{idx}"] = roi_text
+                if roi_elapsed is not None:
+                    metadata[f"roi_{idx}_elapse"] = roi_elapsed
+
+                if roi_text:
+                    all_texts.append(roi_text)
+                if roi_conf > 0:
+                    all_confs.append(roi_conf)
+                all_regions.extend(roi_regions)
+
+            text = "\n".join(all_texts)
+            avg_conf = sum(all_confs) / len(all_confs) if all_confs else 0.0
+            metadata.update(self._rapidocr_metadata(text, avg_conf, all_regions, t0))
+            return text, avg_conf, metadata
+
+        text, avg_conf, regions, elapsed = self._run_rapidocr(frame, None)
+        metadata = {
+            "backend": RAPIDOCR_BACKEND,
+            "method": "rapidocr",
+            "elapse": elapsed,
+        }
+        metadata.update(self._rapidocr_metadata(text, avg_conf, regions, t0))
+        return text, avg_conf, metadata
+
+    def _run_rapidocr(
+        self, frame: np.ndarray, roi: Optional[FlatRoi]
+    ) -> tuple[str, float, list[dict[str, Any]], Optional[float]]:
+        img, x_offset, y_offset = self._crop_frame(frame, roi)
+        engine = self.rapidocr_engine
+        if engine is None:
+            raise RuntimeError("RapidOCR engine is not initialized")
+        with self._rapidocr_lock:
+            result = engine(img)
+        entries, elapsed = self._parse_rapidocr_result(result, x_offset, y_offset)
+
+        entries.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
+        texts = [entry["text"] for entry in entries if entry["text"]]
+        confs = [entry["confidence"] for entry in entries if entry["confidence"] > 0]
+        text = " ".join(texts)
+        avg_conf = sum(confs) / len(confs) if confs else 0.0
+        return text, avg_conf, entries, elapsed
+
+    def _parse_rapidocr_result(
+        self, result: Any, x_offset: int, y_offset: int
+    ) -> tuple[list[dict[str, Any]], Optional[float]]:
+        elapsed: Optional[float] = None
+
+        if hasattr(result, "elapse"):
+            elapsed = self._float_or_none(getattr(result, "elapse"))
+
+        entries: list[dict[str, Any]] = []
+
+        if hasattr(result, "boxes") and hasattr(result, "txts"):
+            boxes = getattr(result, "boxes")
+            if boxes is None:
+                return entries, elapsed
+
+            txts = getattr(result, "txts")
+            if txts is None:
+                txts = []
+
+            scores = getattr(result, "scores", None)
+            if scores is None:
+                scores = [0.0] * len(txts)
+
+            for box, text, score in zip(boxes, txts, scores, strict=False):
+                entry = self._rapidocr_entry(box, text, score, x_offset, y_offset)
+                if entry:
+                    entries.append(entry)
+            return entries, elapsed
+
+        return entries, elapsed
+
+    def _rapidocr_entry(
+        self, box: Any, text: Any, score: Any, x_offset: int, y_offset: int
+    ) -> Optional[dict[str, Any]]:
+        cleaned_text = str(text or "").strip()
+        if not cleaned_text:
+            return None
+
+        points = np.asarray(box, dtype=float).reshape(-1, 2)
+        if points.size == 0:
+            return None
+
+        points[:, 0] += x_offset
+        points[:, 1] += y_offset
+        xs = points[:, 0]
+        ys = points[:, 1]
+        bbox = [
+            int(round(float(xs.min()))),
+            int(round(float(ys.min()))),
+            int(round(float(xs.max()))),
+            int(round(float(ys.max()))),
+        ]
+        return {
+            "text": cleaned_text,
+            "confidence": self._normalize_confidence(score),
+            "box": [
+                [int(round(float(x))), int(round(float(y)))] for x, y in points.tolist()
+            ],
+            "bbox": bbox,
+        }
+
+    @staticmethod
+    def _normalize_confidence(score: Any) -> float:
+        try:
+            confidence = float(score)
+        except (TypeError, ValueError):
+            return 0.0
+        if confidence > 1.0:
+            confidence /= 100.0
+        return max(0.0, min(confidence, 1.0))
+
+    @staticmethod
+    def _float_or_none(value: Any) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _rapidocr_metadata(
+        self,
+        text: str,
+        avg_conf: float,
+        regions: list[dict[str, Any]],
+        started_at: float,
+    ) -> Dict[str, Any]:
+        return {
+            "words": len(text.split()),
+            "avg_conf": avg_conf,
+            "confidence": avg_conf,
+            "regions": len(regions),
+            "text_regions": regions,
+            "processing_time": time.time() - started_at,
+        }
+
+    def _normalize_roi_input(self, roi: RoiInput) -> list[tuple[str, FlatRoi]]:
+        rois: list[tuple[str, FlatRoi]] = []
+
+        def collect(value: Any, name: str = "") -> None:
+            if not value:
+                return
+            if isinstance(value, dict) and "x" in value:
+                flat_roi = cast(FlatRoi, value)
+                if self._validate_roi(flat_roi):
+                    rois.append((name, flat_roi))
+                return
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    collect(nested, str(key))
+                return
+            if isinstance(value, list):
+                for idx, nested in enumerate(value):
+                    collect(nested, str(idx))
+
+        collect(roi)
+        return rois
+
+    def _crop_frame(
+        self, frame: np.ndarray, roi: Optional[FlatRoi]
+    ) -> tuple[np.ndarray, int, int]:
+        if not roi or not self._validate_roi(roi):
+            return frame, 0, 0
+
+        frame_height, frame_width = frame.shape[:2]
+        x = max(0, int(cast(int, roi["x"])))
+        y = max(0, int(cast(int, roi["y"])))
+        width = int(cast(int, roi["width"]))
+        height = int(cast(int, roi["height"]))
+        x2 = min(frame_width, x + width)
+        y2 = min(frame_height, y + height)
+
+        if x >= frame_width or y >= frame_height or x2 <= x or y2 <= y:
+            return frame, 0, 0
+        return frame[y:y2, x:x2], x, y
 
     # ---------------- PyTesseract fallback ----------------
     def _extract_text_pytesseract(

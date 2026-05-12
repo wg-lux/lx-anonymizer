@@ -1,4 +1,8 @@
+import threading
+import time
+
 from lx_anonymizer.llm.llm_extractor import (
+    AsyncMetadataWorker,
     EnrichedMetadataExtractor,
     FrameDataProcessor,
     FrameSamplingOptimizer,
@@ -15,13 +19,17 @@ def _extractor_stub(
     available_models=None,
     preferred_model=None,
     preferred_timeout=None,
+    provider="ollama",
 ):
     extractor = LLMMetadataExtractor.__new__(LLMMetadataExtractor)
+    extractor.provider = provider
     extractor.current_model = current_model
     extractor.available_models = available_models or []
     extractor.preferred_model = preferred_model
     extractor.preferred_timeout = preferred_timeout
-    extractor.base_url = "http://127.0.0.1:8000"
+    extractor.base_url = (
+        "http://127.0.0.1:11434" if provider == "ollama" else "http://127.0.0.1:8000"
+    )
     extractor.chat_endpoint = extractor._build_chat_endpoint()
     extractor.cache = MetadataCache()
     extractor.sensitive_meta = SensitiveMeta()
@@ -34,6 +42,84 @@ class _DummyLLM:
 
     def _calculate_confidence(self, metadata):
         return 0.8 if metadata else 0.0
+
+
+class _ThreadRecordingExtractor:
+    def __init__(self, delay=0.0):
+        self.delay = delay
+        self.called_thread = None
+
+    def extract_metadata(self, text):
+        self.called_thread = threading.get_ident()
+        if self.delay:
+            time.sleep(self.delay)
+        return SensitiveMeta(patient_first_name=text)
+
+
+def test_model_priority_prefers_custom_gemma_profile():
+    extractor = _extractor_stub(available_models=["gemma4:e2b", "lx-gemma4-e2b-json"])
+    extractor._initialize_best_model()
+
+    assert extractor.current_model is not None
+    assert extractor.current_model["name"] == "lx-gemma4-e2b-json"
+
+
+def test_model_initialization_does_not_pick_non_allowlisted_fallback():
+    extractor = _extractor_stub(available_models=["deepseek-r1:1.5b"])
+    extractor._initialize_best_model()
+
+    assert extractor.current_model is None
+
+
+def test_extraction_prompt_uses_sensitive_meta_subset_only():
+    extractor = _extractor_stub(
+        current_model={"name": "lx-gemma4-e2b-json", "timeout": 120}
+    )
+
+    prompt = extractor._create_extraction_prompt("Patient Max")
+    fast_prompt = extractor._create_fast_extraction_prompt("Patient Max")
+
+    for key in (
+        "patient_first_name",
+        "patient_last_name",
+        "patient_dob",
+        "casenumber",
+        "examination_date",
+    ):
+        assert key in prompt
+        assert key in fast_prompt
+
+    for excluded in (
+        "patient_gender_name",
+        "examiner_first_name",
+        "examiner_last_name",
+        "examination_time",
+    ):
+        assert excluded not in prompt
+        assert excluded not in fast_prompt
+
+
+def test_async_metadata_worker_submit_runs_on_worker_thread():
+    caller_thread = threading.get_ident()
+    extractor = _ThreadRecordingExtractor()
+
+    with AsyncMetadataWorker(extractor=extractor) as worker:
+        future = worker.submit("Max")
+        metadata = future.result(timeout=2)
+
+    assert metadata is not None
+    assert metadata.patient_first_name == "Max"
+    assert extractor.called_thread is not None
+    assert extractor.called_thread != caller_thread
+
+
+def test_async_metadata_worker_timeout_returns_none():
+    extractor = _ThreadRecordingExtractor(delay=0.2)
+
+    with AsyncMetadataWorker(extractor=extractor) as worker:
+        metadata = worker.extract_metadata("Max", timeout=0.01)
+
+    assert metadata is None
 
 
 def test_metadata_cache_fifo_and_stats():
@@ -73,10 +159,69 @@ def test_clean_json_response_strips_think_and_markdown():
     )
 
 
+def test_clean_json_response_strips_case_insensitive_unclosed_think():
+    extractor = _extractor_stub()
+    raw = '<THINK>hidden chain of thought {"patient_first_name":"Max"}'
+
+    assert extractor._clean_json_response(raw) == '{"patient_first_name":"Max"}'
+
+
 def test_clean_json_response_extracts_inline_json():
     extractor = _extractor_stub()
     raw = 'prefix text {"patient_last_name":"Muster"} trailing text'
     assert extractor._clean_json_response(raw) == '{"patient_last_name":"Muster"}'
+
+
+def test_extract_metadata_ollama_payload_uses_json_format_and_8k_context(monkeypatch):
+    extractor = _extractor_stub(
+        current_model={"name": "lx-gemma4-e2b-json", "timeout": 120},
+        available_models=["lx-gemma4-e2b-json"],
+    )
+    captured = {}
+
+    def fake_request(payload):
+        captured["payload"] = payload
+        return {"message": {"content": '{"patient_first_name":"Max"}'}}
+
+    monkeypatch.setattr(extractor, "_make_api_request", fake_request)
+
+    metadata = extractor.extract_metadata("Patient Max")
+
+    assert metadata is not None
+    assert captured["payload"]["format"] == "json"
+    assert captured["payload"]["options"]["temperature"] == 0
+    assert captured["payload"]["options"]["num_ctx"] == 8192
+
+
+def test_smart_sampling_ollama_payload_uses_json_format_and_8k_context(monkeypatch):
+    extractor = _extractor_stub(
+        current_model={"name": "gemma4:e2b", "timeout": 120},
+        available_models=["lx-gemma4-e2b-json"],
+    )
+    captured = {}
+
+    def fake_request(payload):
+        captured["payload"] = payload
+        return {
+            "message": {
+                "content": (
+                    '{"patient_first_name":"Max","patient_last_name":"Muster",'
+                    '"patient_dob":"1980-01-01","casenumber":"E123",'
+                    '"examination_date":"2024-01-01"}'
+                )
+            }
+        }
+
+    monkeypatch.setattr(extractor, "_make_api_request", fake_request)
+
+    metadata = extractor.extract_metadata_smart_sampling(
+        "Patient Max Muster geboren 01.01.1980 Untersuchung 01.01.2024 Fall E123"
+    )
+
+    assert metadata is not None
+    assert captured["payload"]["format"] == "json"
+    assert captured["payload"]["options"]["temperature"] == 0
+    assert captured["payload"]["options"]["num_ctx"] == 8192
 
 
 def test_contains_patient_data_uses_threshold():

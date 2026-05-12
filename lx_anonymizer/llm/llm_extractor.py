@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -23,35 +24,44 @@ from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 # Konfiguriere Logging
 logger = logging.getLogger(__name__)
 
+OLLAMA_GENERATION_OPTIONS = {"temperature": 0, "num_ctx": 8192}
+
+STRICT_METADATA_KEYS = (
+    "patient_first_name",
+    "patient_last_name",
+    "patient_dob",
+    "casenumber",
+    "examination_date",
+)
+
+STRICT_METADATA_TEMPLATE = (
+    '{"patient_first_name":null,"patient_last_name":null,'
+    '"patient_dob":null,"casenumber":null,"examination_date":null}'
+)
+
 
 class ModelConfig:
     """Konfiguration für verfügbare Modelle mit Prioritäten."""
 
-    # Priorisierte Modelliste: leichte, instruction-tuned Modelle zuerst
+    # Prioritized for local RTX 3050 / 4 GB VRAM usage via Ollama.
     MODELS = [
         {
-            "name": "llama3.2:1b",
+            "name": "lx-gemma4-e2b-json",
             "priority": 1,
-            "timeout": 20,
-            "description": "Llama 3.2 1B (Ultra Fast)",
+            "timeout": 120,
+            "description": "Gemma 4 E2B JSON profile",
         },
         {
-            "name": "qwen2.5:1.5b-instruct",
+            "name": "gemma4:e2b",
             "priority": 2,
-            "timeout": 12,
-            "description": "Qwen 2.5 1.5B",
+            "timeout": 120,
+            "description": "Gemma 4 E2B base Ollama model",
         },
         {
-            "name": "phi3.5:3.8b-mini-instruct-q4_K_M",
-            "priority": 3,
-            "timeout": 20,
-            "description": "Phi 3.5 Mini quantisiert",
-        },
-        {
-            "name": "deepseek-r1:1.5b",
+            "name": "llama3.2:1b",
             "priority": 10,
-            "timeout": 60,
-            "description": "Deepseek R1",
+            "timeout": 45,
+            "description": "Tiny fallback model",
         },
     ]
 
@@ -125,11 +135,17 @@ class LLMMetadataExtractor:
         self,
         base_url: Optional[str] = None,
         enable_cache: bool = True,
-        provider: str = "vllm",
+        provider: str = "ollama",
         preferred_model: Optional[str] = None,
         model_timeout: Optional[int] = None,
     ):
-        self.provider = (provider or "vllm").strip().lower()
+        self.provider = (provider or "ollama").strip().lower()
+        if self.provider not in {"ollama", "vllm"}:
+            logger.warning(
+                "Unknown LLM provider %s, falling back to ollama.",
+                self.provider,
+            )
+            self.provider = "ollama"
         self.base_url = (base_url or self._default_base_url()).rstrip("/")
         self.chat_endpoint = self._build_chat_endpoint()
         self.available_models = self._check_available_models()
@@ -241,21 +257,10 @@ class LLMMetadataExtractor:
                 )
                 return
 
-        # Fallback falls kein konfiguriertes Modell verfügbar ist
-        if self.available_models:
-            fallback_model = {
-                "name": self.available_models[0],
-                "priority": 999,
-                "timeout": 30,
-                "description": "Fallback-Modell",
-            }
-            self.current_model = fallback_model
-            logger.warning(f"Verwende Fallback-Modell: {fallback_model['name']}")
-        else:
-            logger.warning(
-                "Keine kompatiblen LLM-Modelle verfügbar. LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt."
-            )
-            self.current_model = None
+        logger.warning(
+            "Keine kompatiblen LLM-Modelle verfügbar. LLM-Features werden deaktiviert, OCR-basierte Verarbeitung wird fortgesetzt."
+        )
+        self.current_model = None
 
     def _create_extraction_prompt(self, text: str) -> str:
         """
@@ -267,46 +272,22 @@ class LLMMetadataExtractor:
         Returns:
             Optimierter Prompt-String für medizinische Dokumente
         """
-        model_name = (self.current_model or {}).get("name", "").lower()
-        text_window = text[:1200] if self._is_small_model(model_name) else text[:1500]
-
-        if self._is_small_model(model_name):
-            return f"""Return exactly one JSON object. No prose. No markdown. No comments.
-
-Task: Extract patient metadata from OCR text.
-If unknown, use null.
-
-Rules:
-- patient_dob = birth date (keywords like geboren, geb., born)
-- examination_date = exam/report date (not birth date)
-- Normalize dates to YYYY-MM-DD
-- Keep casenumber as seen (examples: "E 2001951", "EM 2001951")
-- OCR may contain noise/spelling errors (e.g. "Pat.ID", "P.ID", "TP. P.ID")
-- Do not invent values
-
-Required keys only:
-{{"patient_first_name":null,"patient_last_name":null,"patient_dob":null,"casenumber":null,"examination_date":null}}
-
+        text_window = text[:6000]
+        return f"""OUTPUT_JSON_ONLY
+NO_MARKDOWN
+NO_PROSE
+NO_COMMENTS
+NO_THINK
+UNKNOWN_IS_NULL
+DO_NOT_INVENT_VALUES
+DATE_FORMAT=YYYY-MM-DD
+PATIENT_DOB_IS_BIRTH_DATE_ONLY
+EXAMINATION_DATE_IS_REPORT_OR_EXAM_DATE_ONLY
+KEEP_CASENUMBER_AS_SEEN
+REQUIRED_JSON={STRICT_METADATA_TEMPLATE}
 OCR_TEXT_BEGIN
 {text_window}
 OCR_TEXT_END"""
-
-        return f"""Extract patient metadata from this OCR text into JSON.
-If a field is missing, use null.
-
-TEXT:
-{text_window}
-
-REQUIRED JSON FORMAT:
-{{
-    "patient_first_name": string or null,
-    "patient_last_name": string or null,
-    "patient_dob": "YYYY-MM-DD" or null,
-    "casenumber": string or null,
-    "examination_date": "YYYY-MM-DD" or null
-}}
-
-Return ONLY JSON."""
 
     def _create_json_schema(self) -> Dict[str, Any]:
         """Erstellt das erweiterte JSON-Schema für medizinische Metadaten-Extraktion."""
@@ -503,7 +484,7 @@ Return ONLY JSON."""
                 }
                 if self.provider == "ollama":
                     payload["format"] = "json"
-                    payload["options"] = {"temperature": 0}
+                    payload["options"] = dict(OLLAMA_GENERATION_OPTIONS)
                 else:
                     payload["response_format"] = {"type": "json_object"}
 
@@ -591,27 +572,58 @@ Return ONLY JSON."""
         Returns:
             Bereinigter JSON-String
         """
-        # Entferne DeepSeek <think>...</think> Blöcke
-        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        # Entferne reasoning blocks, including malformed/unclosed variants.
+        content = re.sub(
+            r"<think\b[^>]*>.*?</think\s*>",
+            "",
+            content,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        unclosed_think = re.search(r"<think\b[^>]*>", content, flags=re.IGNORECASE)
+        if unclosed_think:
+            prefix = content[: unclosed_think.start()]
+            tail = content[unclosed_think.end() :]
+            json_start = tail.find("{")
+            content = prefix + (tail[json_start:] if json_start != -1 else "")
 
         # Entferne Markdown-Code-Blöcke falls vorhanden
         content = content.strip()
         if "```" in content:
-            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+            match = re.search(
+                r"```(?:json)?\s*(.*?)\s*```",
+                content,
+                re.DOTALL | re.IGNORECASE,
+            )
             if match:
                 content = match.group(1)
-            else:
-                start = content.find("{")
-                end = content.rfind("}")
-                if start != -1 and end != -1 and end > start:
-                    content = content[start : end + 1]
-        else:
-            start = content.find("{")
-            end = content.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                content = content[start : end + 1]
 
-        return content.strip()
+        start = content.find("{")
+        if start == -1:
+            return content.strip()
+
+        depth = 0
+        in_string = False
+        escaped = False
+        for idx, char in enumerate(content[start:], start=start):
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return content[start : idx + 1].strip()
+
+        return content[start:].strip()
 
     def get_model_info(self) -> Dict[str, Any]:
         """Gibt Informationen über das aktuelle Modell und Cache-Statistiken zurück."""
@@ -681,10 +693,14 @@ Return ONLY JSON."""
                 ],
                 "stream": False,
             }
-            payload["response_format"] = {"type": "json_object"}
-            payload["temperature"] = 0.1
-            payload["top_p"] = 0.9
-            payload["max_tokens"] = 150
+            if self.provider == "ollama":
+                payload["format"] = "json"
+                payload["options"] = dict(OLLAMA_GENERATION_OPTIONS)
+            else:
+                payload["response_format"] = {"type": "json_object"}
+                payload["temperature"] = 0
+                payload["top_p"] = 0.9
+                payload["max_tokens"] = 150
 
             logger.info(f"Smart-Sampling mit {self.current_model['name']}")
             response = self._make_api_request(payload)
@@ -836,36 +852,14 @@ Return ONLY JSON."""
 
     def _create_fast_extraction_prompt(self, text: str) -> str:
         """Erstellt einen optimierten Fast-Prompt für Smart-Sampling."""
-        model_name = (self.current_model or {}).get("name", "").lower()
-        if self._is_small_model(model_name):
-            return f"""Return JSON only. No text before or after JSON.
-Extract these keys from OCR text and use null when missing:
-{{"patient_first_name":null,"patient_last_name":null,"examination_date":null,"casenumber":null,"patient_dob":null,"patient_gender_name":"unknown"}}
-
-Rules:
-- Normalize dates to YYYY-MM-DD
-- patient_dob is birth date only
-- examination_date is report/exam date only
-- Keep case number exactly as text
-- Ignore OCR noise
-
-OCR_TEXT: {text}"""
-
-        return f"""Schnelle Extraktion von Patientendaten aus medizinischem Text:
-
-TEXT: {text}
-
-Suche nach:
-- Name (Herr/Frau + Nachname)
-- Alter (Jahre)
-- Datum (DD.MM.YYYY)
-- Fallnummer/Case-ID
-- Geburtsdatum
-
-JSON Format:
-{{"patient_first_name": "...", "patient_last_name": "...", "examination_date": "...", "casenumber": "...", "patient_dob": "...", "patient_gender_name": "unknown"}}
-
-JSON:"""
+        return f"""OUTPUT_JSON_ONLY
+NO_MARKDOWN
+NO_PROSE
+NO_THINK
+UNKNOWN_IS_NULL
+DATE_FORMAT=YYYY-MM-DD
+REQUIRED_JSON={STRICT_METADATA_TEMPLATE}
+OCR_TEXT={text}"""
 
     def _is_small_model(self, model_name: str) -> bool:
         """Heuristik für kleine Modelle, die stärker von knappen Prompts profitieren."""
@@ -876,12 +870,11 @@ JSON:"""
             for token in (
                 "1b",
                 "1.5b",
+                "2b",
                 "3b",
-                "mini",
-                "phi3.5",
-                "qwen2.5:1.5b",
-                "qwen2.5-1.5b",
-                "qwen2.5-3b",
+                "e2b",
+                "lx-gemma4-e2b-json",
+                "gemma4:e2b",
             )
         )
 
@@ -1623,3 +1616,54 @@ class VideoMetadataEnricher:
         stats["data_completeness"] = filled_fields / len(required_fields)
 
         return stats
+
+
+class AsyncMetadataWorker:
+    """Single-threaded wrapper for isolating blocking Ollama metadata calls."""
+
+    def __init__(
+        self,
+        extractor: Optional[LLMMetadataExtractor] = None,
+        **extractor_kwargs: Any,
+    ) -> None:
+        self.extractor = extractor or LLMMetadataExtractor(**extractor_kwargs)
+        self._executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="lx-llm-metadata",
+        )
+
+    def submit(self, text: str) -> Future[Optional[SensitiveMeta]]:
+        """Submit metadata extraction without blocking the caller."""
+        return self._executor.submit(self._safe_extract_metadata, text)
+
+    def extract_metadata(
+        self,
+        text: str,
+        timeout: Optional[float] = None,
+    ) -> Optional[SensitiveMeta]:
+        """Blocking convenience wrapper that returns None on timeout/failure."""
+        future = self.submit(text)
+        try:
+            return future.result(timeout=timeout)
+        except TimeoutError:
+            logger.warning(
+                "Async metadata extraction timed out after %s seconds",
+                timeout,
+            )
+            return None
+
+    def shutdown(self, wait: bool = True) -> None:
+        self._executor.shutdown(wait=wait)
+
+    def __enter__(self) -> "AsyncMetadataWorker":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self.shutdown()
+
+    def _safe_extract_metadata(self, text: str) -> Optional[SensitiveMeta]:
+        try:
+            return self.extractor.extract_metadata(text)
+        except Exception as exc:
+            logger.warning("Async metadata extraction failed: %s", exc)
+            return None

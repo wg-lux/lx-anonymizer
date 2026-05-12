@@ -21,8 +21,11 @@ from lx_anonymizer.llm.llm_extractor import (
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
-from lx_anonymizer.ocr.ocr_frame import FrameOCR
+from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, NestedRoi, RoiInput
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.text_detection.phi_region_detector import (
+    detect_phi_regions_from_settings,
+)
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_encoder, video_processor, video_utils
@@ -150,6 +153,7 @@ class FrameCleaner:
 
     def _reset_run_state(self) -> None:
         self.frame_collection: List[Dict[str, Any]] = []
+        self.frame_observations: List[Dict[str, Any]] = []
         self.ocr_text_collection: List[str] = []
         self._llm_calls_this_video = 0
         self._llm_seen_texts: set[str] = set()
@@ -241,7 +245,9 @@ class FrameCleaner:
             best_ocr_text=best_ocr_text,
         )
 
-        return output_video, self.sensitive_meta.to_dict()
+        final_meta = self.sensitive_meta.to_dict()
+        final_meta["frame_observations"] = list(self.frame_observations)
+        return output_video, final_meta
 
     def _prepare_clean_video_run(
         self,
@@ -985,6 +991,109 @@ class FrameCleaner:
             for key in signal_keys
         )
 
+    @staticmethod
+    def _resolve_ocr_roi(
+        endoscope_image_roi: Optional[dict | None],
+        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+    ) -> RoiInput:
+        if endoscope_data_roi_nested:
+            return cast(NestedRoi, endoscope_data_roi_nested)
+
+        if not endoscope_image_roi:
+            return None
+
+        normalized_image_roi = normalize_roi_keys(endoscope_image_roi)
+        if not normalized_image_roi:
+            return None
+
+        return {"endoscope_image": cast(FlatRoi, normalized_image_roi)}
+
+    @staticmethod
+    def _frame_image_for_phi_detection(gray_frame: np.ndarray) -> Image.Image:
+        if gray_frame.ndim == 2:
+            return Image.fromarray(gray_frame).convert("RGB")
+        return Image.fromarray(gray_frame)
+
+    def _detect_phi_regions_for_frame(
+        self, gray_frame: np.ndarray
+    ) -> list[dict[str, Any]]:
+        image = self._frame_image_for_phi_detection(gray_frame)
+        regions = detect_phi_regions_from_settings(image)
+        phi_regions: list[dict[str, Any]] = []
+        for x1, y1, x2, y2 in regions:
+            width = max(0, int(x2) - int(x1))
+            height = max(0, int(y2) - int(y1))
+            if width <= 0 or height <= 0:
+                continue
+            phi_regions.append(
+                {
+                    "source": "phi_detector",
+                    "x": int(x1),
+                    "y": int(y1),
+                    "width": width,
+                    "height": height,
+                    "x1": int(x1),
+                    "y1": int(y1),
+                    "x2": int(x2),
+                    "y2": int(y2),
+                    "confidence": None,
+                    "class_id": None,
+                }
+            )
+        return phi_regions
+
+    @staticmethod
+    def _observation_source_tags(
+        *,
+        ocr_roi: Any,
+        ocr_text: str,
+        metadata_signal: bool,
+        phi_regions: list[dict[str, Any]],
+    ) -> list[str]:
+        tags: list[str] = []
+        if ocr_roi:
+            tags.append("ocr_roi")
+        if ocr_text and ocr_text.strip():
+            tags.append("east_ocr")
+        if metadata_signal:
+            tags.append("metadata_signal")
+        if phi_regions:
+            tags.append("phi_detector")
+        return tags
+
+    def _build_frame_observation(
+        self,
+        *,
+        frame_id: int | None,
+        gray_frame: np.ndarray,
+        ocr_roi: Any,
+        ocr_text: str,
+        ocr_conf: float,
+        frame_metadata: dict[str, Any],
+        is_sensitive: bool,
+        phi_regions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        image_height, image_width = gray_frame.shape[:2]
+        metadata_signal = self._metadata_has_signal(frame_metadata)
+        return {
+            "frame_number": frame_id,
+            "frame_id": frame_id,
+            "image_width": int(image_width),
+            "image_height": int(image_height),
+            "ocr_roi": ocr_roi,
+            "ocr_text": ocr_text,
+            "ocr_confidence": float(ocr_conf),
+            "metadata_signal": metadata_signal,
+            "is_sensitive": bool(is_sensitive),
+            "phi_regions": phi_regions,
+            "source_tags": self._observation_source_tags(
+                ocr_roi=ocr_roi,
+                ocr_text=ocr_text,
+                metadata_signal=metadata_signal,
+                phi_regions=phi_regions,
+            ),
+        }
+
     def _process_frame_single(
         self,
         gray_frame: np.ndarray,
@@ -999,15 +1108,15 @@ class FrameCleaner:
         frame_metadata: dict[str, Any] = self.sensitive_meta.to_dict()
         is_sensitive = False
 
-        _ = endoscope_image_roi
+        ocr_roi = self._resolve_ocr_roi(
+            endoscope_image_roi,
+            endoscope_data_roi_nested,
+        )
 
         ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
-            gray_frame, endoscope_data_roi_nested
+            gray_frame, ocr_roi
         )
-
-        is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
-            frame_metadata
-        )
+        phi_regions = self._detect_phi_regions_for_frame(gray_frame)
 
         if ocr_text:
             meta_unified = self._unified_metadata_extract(ocr_text)
@@ -1016,15 +1125,33 @@ class FrameCleaner:
             )
         self.sensitive_meta.safe_update(frame_metadata)
         frame_metadata = self.sensitive_meta.to_dict()
+        is_sensitive = self.frame_metadata_extractor.is_sensitive_content(
+            frame_metadata
+        ) or bool(phi_regions)
+
+        if collect_for_batch:
+            observation = self._build_frame_observation(
+                frame_id=frame_id,
+                gray_frame=gray_frame,
+                ocr_roi=ocr_roi,
+                ocr_text=ocr_text,
+                ocr_conf=ocr_conf,
+                frame_metadata=frame_metadata,
+                is_sensitive=is_sensitive,
+                phi_regions=phi_regions,
+            )
+            self.frame_observations.append(observation)
 
         if collect_for_batch and ocr_text:
             self.frame_collection.append(
                 {
                     "frame_id": frame_id,
+                    "frame_number": frame_id,
                     "ocr_text": ocr_text,
                     "ocr_confidence": ocr_conf,
                     "meta": frame_metadata,
                     "is_sensitive": is_sensitive,
+                    "phi_regions": phi_regions,
                 }
             )
             self.ocr_text_collection.append(ocr_text)

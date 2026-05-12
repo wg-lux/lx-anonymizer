@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     # When enabled, prefer a laptop-friendly local backend by default.
     LLM_PROVIDER: Literal["vllm", "ollama"] = "ollama"
     LLM_BASE_URL: str = ""
-    LLM_MODEL: str = "qwen2.5:7b-instruct"
-    LLM_TIMEOUT: int = 45
+    LLM_MODEL: str = "lx-gemma4-e2b-json"
+    LLM_TIMEOUT: int = 120
     LLM_MAX_CALLS_PER_VIDEO: int = 1
     LLM_MIN_TEXT_LENGTH: int = 32
     REPORT_LLM_MIN_TEXT_LENGTH: int = 64
