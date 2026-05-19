@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 
 from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+from lx_anonymizer.metrics_provenance import summarize_pdf_redactions
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
@@ -134,6 +135,7 @@ def _pil_to_pdf_rect(
 class Anonymizer:
     def __init__(self) -> None:
         self.sensitive_cropper = SensitiveRegionCropper()
+        self.last_redaction_summary: dict[str, Any] | None = None
 
     def _default_output_path(self, input_path: str, suffix: str = "_anonymized") -> str:
         path = Path(input_path)
@@ -307,6 +309,7 @@ class Anonymizer:
         report_meta: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         _ = report_meta
+        self.last_redaction_summary = None
 
         try:
             if output_path is None:
@@ -324,6 +327,11 @@ class Anonymizer:
                 logger.debug("Processing PDF page %d", page_num + 1)
                 rois = self._detect_sensitive_regions_with_fallback(image)
                 rois_per_page[page_num] = rois
+
+            self.last_redaction_summary = summarize_pdf_redactions(
+                rois_per_page,
+                detector_sources=["east_ocr", "phi_detector"],
+            ).model_dump()
 
             doc = pymupdf.open(pdf_path)
             try:

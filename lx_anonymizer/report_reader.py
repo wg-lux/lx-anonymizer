@@ -21,6 +21,7 @@ from lx_anonymizer.config import settings
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.llm.factory import LLMFactory
 from lx_anonymizer.llm.llm_service import LLMService
+from lx_anonymizer.metrics_provenance import build_anonymizer_provenance
 from lx_anonymizer.ner.spacy_extractor import (
     EndoscopeDataExtractor,
     ExaminationDataExtractor,
@@ -413,6 +414,7 @@ class ReportReader:
             )
 
         # --- Metadata Extraction ---
+        use_provider_llm = False
         report_meta = {}
         if text and len(text.strip()) >= 10:  # Proceed only if we have some text
             use_provider_llm = self.llm_available if use_llm is None else bool(use_llm)
@@ -477,6 +479,9 @@ class ReportReader:
                     "create_anonymized_pdf=True but no anonymized PDF path was produced."
                 )
             report_meta["anonymized_pdf_path"] = anonymized_pdf_path
+            redaction_summary = getattr(self.anonymizer, "last_redaction_summary", None)
+            if isinstance(redaction_summary, dict):
+                report_meta["redaction_summary"] = redaction_summary
             logger.info(f"Anonymized PDF created: {anonymized_pdf_path}")
         try:
             assert isinstance(text, str)
@@ -488,6 +493,39 @@ class ReportReader:
             report_meta["anonymized_text"] = anonymized_text
         except AssertionError:
             report_meta["anonymized_text"] = "Unknown"
+        detector_sources = ["regex", "spacy"]
+        if use_provider_llm:
+            detector_sources.append("llm")
+        redaction_summary_meta = report_meta.get("redaction_summary")
+        redaction_region_count = (
+            int(redaction_summary_meta.get("redaction_region_count", 0))
+            if isinstance(redaction_summary_meta, dict)
+            else 0
+        )
+        if redaction_summary_meta:
+            detector_sources.append("pdf_redaction")
+        report_meta["anonymizer_provenance"] = build_anonymizer_provenance(
+            detector_sources=detector_sources,
+            proposal_counts={
+                "report_metadata_fields": sum(
+                    1
+                    for key in (
+                        "patient_first_name",
+                        "patient_last_name",
+                        "patient_dob",
+                        "casenumber",
+                        "patient_gender_name",
+                        "examination_date",
+                        "examination_time",
+                        "examiner_first_name",
+                        "examiner_last_name",
+                        "center",
+                    )
+                    if report_meta.get(key)
+                ),
+                "redaction_regions": redaction_region_count,
+            },
+        ).model_dump()
 
         sensitive_meta = dict(
             file_path=str(pdf_path) if pdf_path else None,

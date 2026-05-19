@@ -19,6 +19,10 @@ from lx_anonymizer.llm.llm_extractor import (
     EnrichedMetadataExtractor,
     FrameSamplingOptimizer,
 )
+from lx_anonymizer.metrics_provenance import (
+    build_anonymizer_provenance,
+    summarize_frame_observations,
+)
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
 from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, NestedRoi, RoiInput
@@ -247,6 +251,13 @@ class FrameCleaner:
 
         final_meta = self.sensitive_meta.to_dict()
         final_meta["frame_observations"] = list(self.frame_observations)
+        detector_sources, proposal_counts = summarize_frame_observations(
+            final_meta["frame_observations"]
+        )
+        final_meta["anonymizer_provenance"] = build_anonymizer_provenance(
+            detector_sources=detector_sources,
+            proposal_counts=proposal_counts,
+        ).model_dump()
         return output_video, final_meta
 
     def _prepare_clean_video_run(
