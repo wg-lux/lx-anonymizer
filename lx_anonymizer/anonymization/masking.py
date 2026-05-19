@@ -41,23 +41,22 @@ class DimensionBackfillResult:
 
 
 class MaskApplication:
-    def __init__(
-        self, preferred_encoder: Dict[str, Any], device_name: str = "olympus_cv_1500"
-    ):
+    def __init__(self, preferred_encoder: Dict[str, Any], device_name: str = "olympus_cv_1500"):
         self.preferred_encoder = preferred_encoder
         self.video_encoder = VideoEncoder()
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
+        self.device_name = device_name
 
         # Default mask configuration based on olympus_cv_1500_mask.json
         self.default_mask_config = {
             "image_width": 0,
             "image_height": 0,
-            "endoscope_image_x": 550,
-            "endoscope_image_y": 0,
-            "endoscope_image_width": 1350,
-            "endoscope_image_height": 1080,
+            "x": 550,
+            "y": 0,
+            "width": 1350,
+            "height": 1080,
         }
-        self.device_name = device_name
+        self.default_mask_config = self._canonicalize_mask_config(self._load_mask())
 
     def mask_video_streaming(
         self,
@@ -117,8 +116,7 @@ class MaskApplication:
             ]
 
             logger.info(
-                "Mask ROI configured=(x=%d,y=%d,w=%d,h=%d) effective=(x=%d,y=%d,w=%d,h=%d) "
-                "input_dimensions=%dx%d mode=%s",
+                "Mask ROI configured=(x=%d,y=%d,w=%d,h=%d) effective=(x=%d,y=%d,w=%d,h=%d) input_dimensions=%dx%d mode=%s",
                 region.configured_x,
                 region.configured_y,
                 region.configured_width,
@@ -175,6 +173,23 @@ class MaskApplication:
             return fallback
 
     @staticmethod
+    def _canonicalize_mask_config(mask_config: Dict[str, Any] | None) -> Dict[str, Any]:
+        canonical = dict(mask_config or {})
+        for canonical_key, legacy_key in (
+            ("x", "endoscope_image_x"),
+            ("y", "endoscope_image_y"),
+            ("width", "endoscope_image_width"),
+            ("height", "endoscope_image_height"),
+        ):
+            value = canonical.get(canonical_key)
+            if value is None:
+                value = canonical.get(legacy_key)
+            if value is not None:
+                canonical[canonical_key] = value
+            canonical.pop(legacy_key, None)
+        return canonical
+
+    @staticmethod
     def _coerce_mask_mode(mode: MaskMode | str) -> MaskMode:
         if isinstance(mode, MaskMode):
             return mode
@@ -185,41 +200,16 @@ class MaskApplication:
         input_video: Path,
         mask_config: Dict[str, Any] | None,
     ) -> MaskRegion | None:
-        normalized_config = dict(mask_config or {})
-        if (
-            normalized_config.get("endoscope_image_x") is None
-            and normalized_config.get("x") is not None
-        ):
-            normalized_config["endoscope_image_x"] = normalized_config["x"]
-        if (
-            normalized_config.get("endoscope_image_y") is None
-            and normalized_config.get("y") is not None
-        ):
-            normalized_config["endoscope_image_y"] = normalized_config["y"]
-        if (
-            normalized_config.get("endoscope_image_width") is None
-            and normalized_config.get("width") is not None
-        ):
-            normalized_config["endoscope_image_width"] = normalized_config["width"]
-        if (
-            normalized_config.get("endoscope_image_height") is None
-            and normalized_config.get("height") is not None
-        ):
-            normalized_config["endoscope_image_height"] = normalized_config["height"]
-
-        effective_config = self.default_mask_config.copy()
+        normalized_config = self._canonicalize_mask_config(mask_config)
+        effective_config = self._canonicalize_mask_config(self.default_mask_config)
         for key, value in normalized_config.items():
             if value is not None:
                 effective_config[key] = value
 
-        endoscope_x = self._coerce_int(effective_config.get("endoscope_image_x"), 550)
-        endoscope_y = self._coerce_int(effective_config.get("endoscope_image_y"), 0)
-        endoscope_w = self._coerce_int(
-            effective_config.get("endoscope_image_width"), 1350
-        )
-        endoscope_h = self._coerce_int(
-            effective_config.get("endoscope_image_height"), 1080
-        )
+        endoscope_x = self._coerce_int(effective_config.get("x"), 550)
+        endoscope_y = self._coerce_int(effective_config.get("y"), 0)
+        endoscope_w = self._coerce_int(effective_config.get("width"), 1350)
+        endoscope_h = self._coerce_int(effective_config.get("height"), 1080)
         configured_x = endoscope_x
         configured_y = endoscope_y
         configured_w = endoscope_w
@@ -238,13 +228,7 @@ class MaskApplication:
             logger.error("Input video dimensions could not be determined")
             return None
 
-        if (
-            config_image_width > 0
-            and config_image_height > 0
-            and (
-                config_image_width != image_width or config_image_height != image_height
-            )
-        ):
+        if config_image_width > 0 and config_image_height > 0 and (config_image_width != image_width or config_image_height != image_height):
             x_ratio = image_width / config_image_width
             y_ratio = image_height / config_image_height
             scaled_x = int(round(endoscope_x * x_ratio))
@@ -252,8 +236,7 @@ class MaskApplication:
             scaled_w = int(round(endoscope_w * x_ratio))
             scaled_h = int(round(endoscope_h * y_ratio))
             logger.info(
-                "Scaling mask ROI from configured %dx%d to actual %dx%d: "
-                "x=%d->%d y=%d->%d w=%d->%d h=%d->%d",
+                "Scaling mask ROI from configured %dx%d to actual %dx%d: x=%d->%d y=%d->%d w=%d->%d h=%d->%d",
                 config_image_width,
                 config_image_height,
                 image_width,
@@ -271,9 +254,7 @@ class MaskApplication:
             endoscope_w, endoscope_h = scaled_w, scaled_h
 
         if endoscope_w <= 0 or endoscope_h <= 0:
-            logger.error(
-                "Invalid mask size: width=%d height=%d", endoscope_w, endoscope_h
-            )
+            logger.error("Invalid mask size: width=%d height=%d", endoscope_w, endoscope_h)
             return None
 
         mask_x = max(0, endoscope_x)
@@ -367,18 +348,10 @@ class MaskApplication:
             crop_region = self._align_region_for_crop(region)
             if crop_region is None:
                 return ""
-            if (
-                crop_region.x == 0
-                and crop_region.y == 0
-                and crop_region.width == region.image_width
-                and crop_region.height == region.image_height
-            ):
+            if crop_region.x == 0 and crop_region.y == 0 and crop_region.width == region.image_width and crop_region.height == region.image_height:
                 logger.warning("No cropping needed - endoscope covers entire frame")
                 return ""
-            return (
-                f"crop={crop_region.width}:{crop_region.height}:"
-                f"{crop_region.x}:{crop_region.y}"
-            )
+            return f"crop={crop_region.width}:{crop_region.height}:{crop_region.x}:{crop_region.y}"
 
         filters = []
         if region.x > 0:
@@ -390,9 +363,7 @@ class MaskApplication:
             filters.append(f"drawbox=0:0:iw:{region.y}:color=black@1:t=fill")
         bottom_y = region.y + region.height
         if bottom_y < region.image_height:
-            filters.append(
-                f"drawbox=0:{bottom_y}:iw:ih-{bottom_y}:color=black@1:t=fill"
-            )
+            filters.append(f"drawbox=0:{bottom_y}:iw:ih-{bottom_y}:color=black@1:t=fill")
 
         if not filters:
             logger.warning("No masking needed - endoscope ROI covers entire frame")
@@ -501,10 +472,7 @@ class MaskApplication:
                 anonymized_dimensions=anonymized_dimensions,
             )
 
-        temp_output = anonymized_video.with_name(
-            f"{anonymized_video.stem}.dimension-backfill.{os.getpid()}"
-            f"{anonymized_video.suffix}"
-        )
+        temp_output = anonymized_video.with_name(f"{anonymized_video.stem}.dimension-backfill.{os.getpid()}{anonymized_video.suffix}")
         try:
             ok = self.mask_video_streaming(
                 input_video=source_video,
@@ -542,9 +510,7 @@ class MaskApplication:
         finally:
             temp_output.unlink(missing_ok=True)
 
-    def create_mask_config_from_roi(
-        self, endoscope_image_roi: dict[str, int]
-    ) -> Dict[str, Any]:
+    def create_mask_config_from_roi(self, endoscope_image_roi: dict[str, int]) -> Dict[str, Any]:
         """
         Create mask config dictionary from ROI.
         Args:
@@ -552,14 +518,16 @@ class MaskApplication:
         Returns:
             Mask config dictionary
         """
-        # Beispiel: Übernehme die Werte direkt
+        default_image_width = self.default_mask_config.get("image_width")
+        default_image_height = self.default_mask_config.get("image_height")
+
         return {
-            "endoscope_image_x": endoscope_image_roi.get("x"),
-            "endoscope_image_y": endoscope_image_roi.get("y"),
-            "endoscope_image_width": endoscope_image_roi.get("width"),
-            "endoscope_image_height": endoscope_image_roi.get("height"),
-            "image_width": endoscope_image_roi.get("image_width"),
-            "image_height": endoscope_image_roi.get("image_height"),
+            "x": endoscope_image_roi.get("x"),
+            "y": endoscope_image_roi.get("y"),
+            "width": endoscope_image_roi.get("width"),
+            "height": endoscope_image_roi.get("height"),
+            "image_width": endoscope_image_roi.get("image_width") or default_image_width,
+            "image_height": endoscope_image_roi.get("image_height") or default_image_height,
         }
 
     def _load_mask(self) -> Dict[str, Any]:
@@ -589,9 +557,5 @@ class MaskApplication:
             return stub
 
         except (json.JSONDecodeError, IOError) as e:
-            logger.error(
-                f"Failed to load/create mask configuration for {self.device_name}: {e}"
-            )
-            raise FileNotFoundError(
-                f"Could not load or create mask configuration for {self.device_name}: {e}"
-            )
+            logger.error(f"Failed to load/create mask configuration for {self.device_name}: {e}")
+            raise FileNotFoundError(f"Could not load or create mask configuration for {self.device_name}: {e}")
