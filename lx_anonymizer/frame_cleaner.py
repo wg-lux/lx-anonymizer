@@ -145,7 +145,7 @@ class FrameCleaner:
 
     def _init_masking(self) -> None:
         self.mask_application = MaskApplication(self.preferred_encoder)
-        self.default_mask_config = self.mask_application._load_mask()
+        self.default_mask_config = self.mask_application.default_mask_config
         self._mask_video_streaming = self.mask_application.mask_video_streaming
         self._create_mask_config_from_roi = (
             self.mask_application.create_mask_config_from_roi

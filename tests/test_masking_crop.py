@@ -5,6 +5,42 @@ from lx_anonymizer.anonymization.masking import MaskApplication, MaskMode
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 
 
+def test_create_mask_config_from_roi_falls_back_to_loaded_dimensions(monkeypatch):
+    monkeypatch.setattr(VideoEncoder, "_detect_nvenc_support", lambda self: False)
+
+    mask_app = MaskApplication(preferred_encoder={"type": "cpu"})
+    mask_app.default_mask_config = {"image_width": 2048, "image_height": 1152}
+
+    mask_config = mask_app.create_mask_config_from_roi(
+        {"x": 550, "y": 0, "width": 1350, "height": 1080}
+    )
+
+    assert mask_config["image_width"] == 2048
+    assert mask_config["image_height"] == 1152
+    assert mask_config["x"] == 550
+    assert mask_config["y"] == 0
+    assert mask_config["width"] == 1350
+    assert mask_config["height"] == 1080
+    assert "endoscope_image_x" not in mask_config
+    assert "endoscope_image_y" not in mask_config
+    assert "endoscope_image_width" not in mask_config
+    assert "endoscope_image_height" not in mask_config
+
+    explicit_mask_config = mask_app.create_mask_config_from_roi(
+        {
+            "x": 550,
+            "y": 0,
+            "width": 1350,
+            "height": 1080,
+            "image_width": 1920,
+            "image_height": 1080,
+        }
+    )
+
+    assert explicit_mask_config["image_width"] == 1920
+    assert explicit_mask_config["image_height"] == 1080
+
+
 def test_mask_video_streaming_preserves_dimensions_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(VideoEncoder, "_detect_nvenc_support", lambda self: False)
 

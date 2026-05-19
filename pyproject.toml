@@ -53,6 +53,7 @@ dependencies = [
   "tesserocr>=2.9.1",
   "ultralytics>=8.4.47",
   "rapidocr>=3.8.1",
+  "onnxruntime>=1.25.1"
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
 keywords = ["anonymization", "medical", "ocr", "nlp", "privacy"]
@@ -94,7 +95,6 @@ ocr = [
 nlu = ["flair>=0.15.1"]
 training = ["ultralytics>=8.3"]
 # Kept strictly as optional hardware paths
-cpu = ["onnxruntime>=1.25.1"]
 gpu = ["onnxruntime-gpu>=1.26.0"]
 
 [project.scripts]
