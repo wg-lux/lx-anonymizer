@@ -9,6 +9,16 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+UNKNOWN_VIDEO_FORMAT: Dict[str, Any] = {
+    "video_codec": "unknown",
+    "pixel_format": "unknown",
+    "width": 0,
+    "height": 0,
+    "has_audio": True,
+    "container": "unknown",
+    "can_stream_copy": False,
+}
+
 
 def can_use_stream_copy(
     video_stream: Dict[str, Any], audio_streams: List[Dict[str, Any]]
@@ -76,7 +86,7 @@ def detect_video_format(video_path: Path) -> Dict[str, Any]:
         subprocess.CalledProcessError,
     ) as e:
         logger.warning(f"Metadata probe failed for {video_path}: {e}")
-        return {"can_stream_copy": False, "has_audio": True}
+        return UNKNOWN_VIDEO_FORMAT.copy()
 
 
 @contextmanager

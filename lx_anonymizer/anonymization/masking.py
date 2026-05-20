@@ -41,7 +41,9 @@ class DimensionBackfillResult:
 
 
 class MaskApplication:
-    def __init__(self, preferred_encoder: Dict[str, Any], device_name: str = "olympus_cv_1500"):
+    def __init__(
+        self, preferred_encoder: Dict[str, Any], device_name: str = "olympus_cv_1500"
+    ):
         self.preferred_encoder = preferred_encoder
         self.video_encoder = VideoEncoder()
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
@@ -228,7 +230,13 @@ class MaskApplication:
             logger.error("Input video dimensions could not be determined")
             return None
 
-        if config_image_width > 0 and config_image_height > 0 and (config_image_width != image_width or config_image_height != image_height):
+        if (
+            config_image_width > 0
+            and config_image_height > 0
+            and (
+                config_image_width != image_width or config_image_height != image_height
+            )
+        ):
             x_ratio = image_width / config_image_width
             y_ratio = image_height / config_image_height
             scaled_x = int(round(endoscope_x * x_ratio))
@@ -254,7 +262,9 @@ class MaskApplication:
             endoscope_w, endoscope_h = scaled_w, scaled_h
 
         if endoscope_w <= 0 or endoscope_h <= 0:
-            logger.error("Invalid mask size: width=%d height=%d", endoscope_w, endoscope_h)
+            logger.error(
+                "Invalid mask size: width=%d height=%d", endoscope_w, endoscope_h
+            )
             return None
 
         mask_x = max(0, endoscope_x)
@@ -348,7 +358,12 @@ class MaskApplication:
             crop_region = self._align_region_for_crop(region)
             if crop_region is None:
                 return ""
-            if crop_region.x == 0 and crop_region.y == 0 and crop_region.width == region.image_width and crop_region.height == region.image_height:
+            if (
+                crop_region.x == 0
+                and crop_region.y == 0
+                and crop_region.width == region.image_width
+                and crop_region.height == region.image_height
+            ):
                 logger.warning("No cropping needed - endoscope covers entire frame")
                 return ""
             return f"crop={crop_region.width}:{crop_region.height}:{crop_region.x}:{crop_region.y}"
@@ -363,7 +378,9 @@ class MaskApplication:
             filters.append(f"drawbox=0:0:iw:{region.y}:color=black@1:t=fill")
         bottom_y = region.y + region.height
         if bottom_y < region.image_height:
-            filters.append(f"drawbox=0:{bottom_y}:iw:ih-{bottom_y}:color=black@1:t=fill")
+            filters.append(
+                f"drawbox=0:{bottom_y}:iw:ih-{bottom_y}:color=black@1:t=fill"
+            )
 
         if not filters:
             logger.warning("No masking needed - endoscope ROI covers entire frame")
@@ -472,7 +489,9 @@ class MaskApplication:
                 anonymized_dimensions=anonymized_dimensions,
             )
 
-        temp_output = anonymized_video.with_name(f"{anonymized_video.stem}.dimension-backfill.{os.getpid()}{anonymized_video.suffix}")
+        temp_output = anonymized_video.with_name(
+            f"{anonymized_video.stem}.dimension-backfill.{os.getpid()}{anonymized_video.suffix}"
+        )
         try:
             ok = self.mask_video_streaming(
                 input_video=source_video,
@@ -510,7 +529,9 @@ class MaskApplication:
         finally:
             temp_output.unlink(missing_ok=True)
 
-    def create_mask_config_from_roi(self, endoscope_image_roi: dict[str, int]) -> Dict[str, Any]:
+    def create_mask_config_from_roi(
+        self, endoscope_image_roi: dict[str, int]
+    ) -> Dict[str, Any]:
         """
         Create mask config dictionary from ROI.
         Args:
@@ -526,8 +547,10 @@ class MaskApplication:
             "y": endoscope_image_roi.get("y"),
             "width": endoscope_image_roi.get("width"),
             "height": endoscope_image_roi.get("height"),
-            "image_width": endoscope_image_roi.get("image_width") or default_image_width,
-            "image_height": endoscope_image_roi.get("image_height") or default_image_height,
+            "image_width": endoscope_image_roi.get("image_width")
+            or default_image_width,
+            "image_height": endoscope_image_roi.get("image_height")
+            or default_image_height,
         }
 
     def _load_mask(self) -> Dict[str, Any]:
@@ -557,5 +580,9 @@ class MaskApplication:
             return stub
 
         except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Failed to load/create mask configuration for {self.device_name}: {e}")
-            raise FileNotFoundError(f"Could not load or create mask configuration for {self.device_name}: {e}")
+            logger.error(
+                f"Failed to load/create mask configuration for {self.device_name}: {e}"
+            )
+            raise FileNotFoundError(
+                f"Could not load or create mask configuration for {self.device_name}: {e}"
+            )

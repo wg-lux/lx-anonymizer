@@ -200,6 +200,11 @@ class FrameCleaner:
             video_path=video_path,
             output_path=output_path,
         )
+        format_info = video_utils.detect_video_format(video_path)
+        if format_info["width"] == 0 or format_info["height"] == 0:
+            raise ValueError(
+                f"Cannot process video {video_path}: corrupt or unreadable structural dimensions."
+            )
 
         total_frames = self._get_total_frames(video_path)
         self.current_video_total_frames = total_frames

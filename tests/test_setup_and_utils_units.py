@@ -11,6 +11,15 @@ from lx_anonymizer.setup import directory_setup
 from lx_anonymizer.video_processing import video_utils
 
 
+@pytest.fixture(autouse=True)
+def mock_central_video_format():
+    """
+    Override the central autouse mock with a no-op fixture.
+    This allows the real detect_video_format to execute so we can unit-test it.
+    """
+    yield
+
+
 def test_str_to_path_and_create_directories(tmp_path: Path) -> None:
     a = tmp_path / "a"
     b = tmp_path / "b"
@@ -96,11 +105,15 @@ def test_detect_video_format_success_and_failure(
         ],
     }
 
+    captured_cmd: list[str] = []
+
     def fake_run(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured_cmd.extend(args[0])
         return SimpleNamespace(stdout=json.dumps(payload))
 
     monkeypatch.setattr(video_utils.subprocess, "run", fake_run)
     info = video_utils.detect_video_format(Path("x.mp4"))
+    assert "-nostdin" in captured_cmd
     assert info == {
         "video_codec": "h264",
         "pixel_format": "yuv420p",
@@ -116,7 +129,15 @@ def test_detect_video_format_success_and_failure(
 
     monkeypatch.setattr(video_utils.subprocess, "run", fake_run_fail)
     fallback = video_utils.detect_video_format(Path("x.mp4"))
-    assert fallback == {"can_stream_copy": False, "has_audio": True}
+    assert fallback == {
+        "video_codec": "unknown",
+        "pixel_format": "unknown",
+        "width": 0,
+        "height": 0,
+        "has_audio": True,
+        "container": "unknown",
+        "can_stream_copy": False,
+    }
 
 
 def test_named_pipe_context_cleans_up(
