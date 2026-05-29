@@ -9,6 +9,8 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_FFPROBE_TIMEOUT_SECONDS = 10.0
+
 UNKNOWN_VIDEO_FORMAT: Dict[str, Any] = {
     "video_codec": "unknown",
     "pixel_format": "unknown",
@@ -43,7 +45,11 @@ def can_use_stream_copy(
     return True
 
 
-def detect_video_format(video_path: Path) -> Dict[str, Any]:
+def detect_video_format(
+    video_path: Path,
+    *,
+    timeout_seconds: float = DEFAULT_FFPROBE_TIMEOUT_SECONDS,
+) -> Dict[str, Any]:
     """Analyze video format using ffprobe."""
     try:
         cmd = [
@@ -57,16 +63,30 @@ def detect_video_format(video_path: Path) -> Dict[str, Any]:
             "-show_streams",
             str(video_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout_seconds,
+        )
         info = json.loads(result.stdout)
 
-        streams: List[Dict[str, Any]] = info["streams"]
+        raw_streams = info.get("streams", [])
+        streams: List[Dict[str, Any]] = (
+            [s for s in raw_streams if isinstance(s, dict)]
+            if isinstance(raw_streams, list)
+            else []
+        )
         v_stream: Dict[str, Any] = next(
             (s for s in streams if s.get("codec_type") == "video"), {}
         )
         a_streams: List[Dict[str, Any]] = [
             s for s in streams if s.get("codec_type") == "audio"
         ]
+        format_info = info.get("format", {})
+        if not isinstance(format_info, dict):
+            format_info = {}
 
         return {
             "video_codec": v_stream.get("codec_name", "unknown"),
@@ -74,7 +94,7 @@ def detect_video_format(video_path: Path) -> Dict[str, Any]:
             "width": int(v_stream.get("width", 0)),
             "height": int(v_stream.get("height", 0)),
             "has_audio": len(a_streams) > 0,
-            "container": info["format"].get("format_name", "unknown"),
+            "container": format_info.get("format_name", "unknown"),
             "can_stream_copy": can_use_stream_copy(v_stream, a_streams),
         }
     except (
@@ -84,6 +104,7 @@ def detect_video_format(video_path: Path) -> Dict[str, Any]:
         TypeError,
         ValueError,
         subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
     ) as e:
         logger.warning(f"Metadata probe failed for {video_path}: {e}")
         return UNKNOWN_VIDEO_FORMAT.copy()

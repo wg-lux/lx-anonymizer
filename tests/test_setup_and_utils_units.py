@@ -106,14 +106,17 @@ def test_detect_video_format_success_and_failure(
     }
 
     captured_cmd: list[str] = []
+    captured_kwargs: dict[str, object] = {}
 
     def fake_run(*args: object, **kwargs: object) -> SimpleNamespace:
         captured_cmd.extend(args[0])
+        captured_kwargs.update(kwargs)
         return SimpleNamespace(stdout=json.dumps(payload))
 
     monkeypatch.setattr(video_utils.subprocess, "run", fake_run)
     info = video_utils.detect_video_format(Path("x.mp4"))
     assert "-nostdin" in captured_cmd
+    assert captured_kwargs["timeout"] == video_utils.DEFAULT_FFPROBE_TIMEOUT_SECONDS
     assert info == {
         "video_codec": "h264",
         "pixel_format": "yuv420p",
@@ -138,6 +141,23 @@ def test_detect_video_format_success_and_failure(
         "container": "unknown",
         "can_stream_copy": False,
     }
+
+    def fake_run_timeout(*args: object, **kwargs: object) -> SimpleNamespace:
+        raise subprocess.TimeoutExpired(cmd="ffprobe", timeout=10.0)
+
+    monkeypatch.setattr(video_utils.subprocess, "run", fake_run_timeout)
+    timed_out = video_utils.detect_video_format(Path("x.mp4"))
+    assert timed_out == video_utils.UNKNOWN_VIDEO_FORMAT
+
+    def fake_run_missing_keys(*args: object, **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(stdout=json.dumps({}))
+
+    monkeypatch.setattr(video_utils.subprocess, "run", fake_run_missing_keys)
+    missing_keys = video_utils.detect_video_format(Path("x.mp4"))
+    assert missing_keys["width"] == 0
+    assert missing_keys["height"] == 0
+    assert missing_keys["container"] == "unknown"
+    assert missing_keys["can_stream_copy"] is False
 
 
 def test_named_pipe_context_cleans_up(
