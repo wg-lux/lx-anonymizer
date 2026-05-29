@@ -68,6 +68,9 @@ jobs:
           command: build
           args: --release --out dist --interpreter 3.12
 
+      - name: Audit wheel contents
+        run: python scripts/audit_distribution.py dist/*.whl
+
       - name: Smoke test built wheel
         shell: bash
         run: |
@@ -126,6 +129,7 @@ jobs:
         run: |
           uv build --sdist
           uvx twine check dist/*
+          uv run python scripts/audit_distribution.py dist/*.tar.gz
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
         with:

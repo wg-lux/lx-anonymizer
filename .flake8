@@ -1,5 +1,5 @@
 [flake8]
-exclude = .git,__pycache__,.nox,.tox,build,dist,.venv,venv,env
+exclude = .git,__pycache__,.nox,.tox,build,dist,.venv,venv,env,libs,target,.devenv,.direnv,.mypy_cache,.pytest_cache,.ruff_cache
 max-line-length = 127
 max-complexity = 10
 select = E9,F63,F7,F82

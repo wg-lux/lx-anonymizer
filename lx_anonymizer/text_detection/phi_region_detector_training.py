@@ -75,7 +75,8 @@ def train_phi_region_detector(
     except ImportError as exc:
         raise PhiRegionDetectorTrainingError(
             "PHI detector training requires the optional dependency `ultralytics`. "
-            "Install the package with the training extra before starting this run."
+            "Install it with `pip install lx-anonymizer[training]` before "
+            "starting this run."
         ) from exc
 
     run_name = config.run_name or _default_run_name()

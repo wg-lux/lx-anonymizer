@@ -65,9 +65,11 @@ flake outputs. You do not need to commit or publish local `result` or
 pip install lx-anonymizer
 ```
 
-Install extras only when you need the corresponding feature set:
+The base package installs the public API, CLI, PDF/image processing, spaCy-based
+metadata extraction, and PyTesseract fallback OCR. Install extras only when you
+need the corresponding feature set:
 ```bash
-pip install "lx-anonymizer[ocr]"      # TrOCR, tesserocr, CRAFT helpers
+pip install "lx-anonymizer[ocr]"      # RapidOCR, TesserOCR, TrOCR, CRAFT helpers
 pip install "lx-anonymizer[llm]"      # LLM client-side helpers
 pip install "lx-anonymizer[nlu]"      # Flair NER
 pip install "lx-anonymizer[training]" # PHI-region detector training helpers
@@ -101,11 +103,14 @@ PyPI releases now use a split artifact strategy:
 For a local source-package sanity check:
 
 ```bash
-uv run python -m build --sdist
+uv build --sdist
+uv run python scripts/audit_distribution.py dist/*.tar.gz
 ```
 
 The published Python package remains the baseline install path, with optional
-feature sets enabled through extras such as `[ocr]`, `[llm]`, and `[nlu]`.
+feature sets enabled through extras such as `[ocr]`, `[llm]`, `[nlu]`, and
+`[training]`. Development and build tools such as `pre-commit`, `ziglang`, and
+type stub packages are intentionally kept out of the runtime dependency set.
 
 ### Native extension
 
@@ -117,6 +122,9 @@ native module is unavailable or only partially implemented.
 PyPI wheels built by CI now include this extension. Pure-Python fallback still
 exists for environments that install from source without a compiled native
 module.
+
+Local prebuilt extension files, generated reports, study data, and cache files
+are excluded from PyPI artifacts. CI audits each wheel and sdist before upload.
 
 ### Nix packages
 
@@ -133,7 +141,7 @@ They are build outputs, not repository contents, and should remain uncommitted.
 
 ### Release guidance
 
-- Use `uv run python -m build --sdist` to validate the source distribution locally.
+- Use `uv build --sdist` and `uv run python scripts/audit_distribution.py dist/*.tar.gz` to validate the source distribution locally.
 - Use GitHub Actions to build release wheels with `maturin`.
 - Use `nix build .#lx-anonymizer` or `nix build .#lx-anonymizer-with-native` to validate flake packaging.
 - Do not commit `result` or `result-app`.
