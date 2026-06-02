@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 import numpy as np
 import numpy.typing as npt
+from lx_dtypes.models.meta.VideoMeta import FrameProcessResult, VideoMeta
 
 # Adjust import based on your actual package structure
 from lx_anonymizer.frame_cleaner import FrameCleaner
@@ -128,18 +129,32 @@ class TestFrameCleanerRefactored:
             patch.object(
                 frame_cleaner, "_iter_video", return_value=mock_stream_data
             ) as mock_iter,
-            patch.object(frame_cleaner, "_process_frame_single") as mock_process,
+            patch.object(frame_cleaner, "_process_frame_result") as mock_process,
             patch.object(
                 frame_cleaner, "remove_frames_from_video_streaming"
             ) as mock_remove,
             patch("cv2.VideoCapture") as mock_cv2,
         ):  # Mock cap just for frame count check
             # Setup Metadata extraction simulation
-            # _process_frame_single returns: (is_sensitive, frame_meta, ocr_text, ocr_conf)
             mock_process.side_effect = [
-                (True, {"patient_last_name": "Smith"}, "Smith", 0.9),
-                (False, {}, "Clean", 0.9),
-                (True, {"patient_last_name": "Doe"}, "Doe", 0.9),
+                FrameProcessResult(
+                    is_sensitive=True,
+                    metadata={"last_name": "Smith"},
+                    ocr_text="Smith",
+                    ocr_confidence=0.9,
+                ),
+                FrameProcessResult(
+                    is_sensitive=False,
+                    metadata={},
+                    ocr_text="Clean",
+                    ocr_confidence=0.9,
+                ),
+                FrameProcessResult(
+                    is_sensitive=True,
+                    metadata={"last_name": "Doe"},
+                    ocr_text="Doe",
+                    ocr_confidence=0.9,
+                ),
             ]
 
             # Mock the total frame count check at start of clean_video
@@ -172,9 +187,59 @@ class TestFrameCleanerRefactored:
             assert args[1] == [0, 2]
 
             # 4. Verify Metadata Persistence
-            assert "patient_first_name" in meta
+            video_meta = VideoMeta.model_validate(meta)
+            assert video_meta.first_name is not None
             # Fill-only semantics preserve the first nonblank value.
-            assert meta["patient_last_name"] == "Smith"
+            assert video_meta.last_name == "Smith"
+
+    def test_clean_video_continues_when_probe_reports_zero_dimensions(
+        self,
+        frame_cleaner: FrameCleaner,
+        mock_frame: npt.NDArray[np.uint8],
+        mock_central_video_format: MagicMock,
+    ) -> None:
+        mock_central_video_format.return_value = {
+            "video_codec": "unknown",
+            "pixel_format": "unknown",
+            "width": 0,
+            "height": 0,
+            "has_audio": True,
+            "container": "unknown",
+            "can_stream_copy": False,
+        }
+
+        video_path = Path("input.mp4")
+        output_path = Path("output.mp4")
+        mock_stream_data = [(0, mock_frame, 1)]
+
+        with (
+            patch.object(frame_cleaner, "_iter_video", return_value=mock_stream_data),
+            patch.object(
+                frame_cleaner,
+                "_process_frame_result",
+                return_value=FrameProcessResult(
+                    is_sensitive=False,
+                    metadata={},
+                    ocr_text="",
+                    ocr_confidence=0.0,
+                ),
+            ),
+            patch("cv2.VideoCapture") as mock_cv2,
+        ):
+            mock_cv2_instance = MagicMock()
+            mock_cv2.return_value = mock_cv2_instance
+            mock_cv2_instance.get.return_value = 1.0
+
+            result_path, meta = frame_cleaner.clean_video(
+                video_path=video_path,
+                endoscope_image_roi=None,
+                endoscope_data_roi_nested=None,
+                output_path=output_path,
+                technique="extract_only",
+            )
+
+        assert result_path == video_path
+        assert VideoMeta.model_validate(meta).file_path == str(video_path)
 
     def test_process_frame_marks_sensitive_after_ocr_metadata_merge(
         self,
@@ -184,9 +249,9 @@ class TestFrameCleanerRefactored:
         ocr_text = "Patient: Thomas Lux geb. 15.02.2024"
         ocr_meta = {"backend": "test", "words": 5}
         parsed_meta = {
-            "patient_first_name": "Thomas",
-            "patient_last_name": "Lux",
-            "patient_dob": "2024-02-15",
+            "first_name": "Thomas",
+            "last_name": "Lux",
+            "dob": "2024-02-15",
         }
 
         with (
@@ -201,28 +266,26 @@ class TestFrameCleanerRefactored:
                 return_value=parsed_meta,
             ),
         ):
-            is_sensitive, frame_meta, returned_text, returned_conf = (
-                frame_cleaner._process_frame_single(
-                    mock_frame,
-                    endoscope_image_roi=None,
-                    endoscope_data_roi_nested=None,
-                    frame_id=7,
-                    collect_for_batch=True,
-                )
+            frame_result = frame_cleaner._process_frame_result(
+                mock_frame,
+                endoscope_image_roi=None,
+                endoscope_data_roi_nested=None,
+                frame_id=7,
+                collect_for_batch=True,
             )
 
-        assert is_sensitive is True
-        assert frame_meta["patient_first_name"] == "Thomas"
-        assert frame_meta["patient_last_name"] == "Lux"
-        assert frame_meta["patient_dob"] == "2024-02-15"
-        assert returned_text == ocr_text
-        assert returned_conf == 0.92
-        assert frame_cleaner.frame_collection[0]["is_sensitive"] is True
+        assert frame_result.is_sensitive is True
+        assert frame_result.metadata["first_name"] == "Thomas"
+        assert frame_result.metadata["last_name"] == "Lux"
+        assert frame_result.metadata["dob"] == "2024-02-15"
+        assert frame_result.ocr_text == ocr_text
+        assert frame_result.ocr_confidence == 0.92
+        assert frame_cleaner.frame_collection[0].is_sensitive is True
         observation = frame_cleaner.frame_observations[0]
-        assert observation["frame_number"] == 7
-        assert observation["metadata_signal"] is True
-        assert observation["is_sensitive"] is True
-        assert "metadata_signal" in observation["source_tags"]
+        assert observation.frame_number == 7
+        assert observation.metadata_signal is True
+        assert observation.is_sensitive is True
+        assert "metadata_signal" in observation.source_tags
 
     def test_process_frame_uses_image_roi_as_ocr_roi_when_nested_roi_missing(
         self,
@@ -308,24 +371,24 @@ class TestFrameCleanerRefactored:
                 return_value=phi_regions,
             ),
         ):
-            is_sensitive, frame_meta, returned_text, returned_conf = (
-                frame_cleaner._process_frame_single(
-                    mock_frame,
-                    endoscope_image_roi=None,
-                    endoscope_data_roi_nested=None,
-                    frame_id=11,
-                    collect_for_batch=True,
-                )
+            frame_result = frame_cleaner._process_frame_result(
+                mock_frame,
+                endoscope_image_roi=None,
+                endoscope_data_roi_nested=None,
+                frame_id=11,
+                collect_for_batch=True,
             )
 
-        assert is_sensitive is True
-        assert frame_meta["patient_first_name"] is None
-        assert returned_text == ""
-        assert returned_conf == 0.0
+        assert frame_result.is_sensitive is True
+        assert frame_result.metadata["first_name"] == "unknown"
+        assert frame_result.ocr_text == ""
+        assert frame_result.ocr_confidence == 0.0
         observation = frame_cleaner.frame_observations[0]
-        assert observation["frame_number"] == 11
-        assert observation["phi_regions"] == phi_regions
-        assert "phi_detector" in observation["source_tags"]
+        assert observation.frame_number == 11
+        assert [
+            region.model_dump(mode="json") for region in observation.phi_regions
+        ] == phi_regions
+        assert "phi_detector" in observation.source_tags
         assert frame_cleaner.frame_collection == []
 
     def test_sampling_logic_long_video(self, frame_cleaner: FrameCleaner) -> None:

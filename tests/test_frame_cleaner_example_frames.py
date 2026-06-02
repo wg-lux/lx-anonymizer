@@ -78,9 +78,9 @@ def test_example_frames_populate_sensitive_meta_text_fields() -> None:
 
     populated = {k: v for k, v in meta.items() if isinstance(v, str) and v.strip()}
     high_signal_fields = [
-        "patient_first_name",
-        "patient_last_name",
-        "patient_dob",
+        "first_name",
+        "last_name",
+        "dob",
         "casenumber",
         "examination_date",
         "examination_time",

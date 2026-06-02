@@ -7,7 +7,7 @@ from unittest.mock import patch
 def mock_central_video_format():
     """
     Centrally mocks detect_video_format to always return a valid 1080p canvas.
-    Bypasses structural guards for tests running on dummy/fake video file names.
+    Keeps tests running on dummy/fake video file names independent from ffprobe.
     """
     target = "lx_anonymizer.video_processing.video_utils.detect_video_format"
     with patch(target) as mock_probe:
