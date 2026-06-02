@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__)
 OLLAMA_GENERATION_OPTIONS = {"temperature": 0, "num_ctx": 8192}
 
 STRICT_METADATA_KEYS = (
-    "patient_first_name",
-    "patient_last_name",
-    "patient_dob",
+    "first_name",
+    "last_name",
+    "dob",
     "casenumber",
     "examination_date",
 )
 
 STRICT_METADATA_TEMPLATE = (
-    '{"patient_first_name":null,"patient_last_name":null,'
-    '"patient_dob":null,"casenumber":null,"examination_date":null}'
+    '{"first_name":null,"last_name":null,'
+    '"dob":null,"casenumber":null,"examination_date":null}'
 )
 
 
@@ -295,10 +295,10 @@ OCR_TEXT_END"""
             "type": "object",
             "properties": {
                 # Patientendaten
-                "patient_first_name": {"type": ["string", "null"]},
-                "patient_last_name": {"type": ["string", "null"]},
-                "patient_dob": {"type": ["string", "null"]},
-                "patient_gender_name": {
+                "first_name": {"type": ["string", "null"]},
+                "last_name": {"type": ["string", "null"]},
+                "dob": {"type": ["string", "null"]},
+                "gender": {
                     "type": ["string", "null"],
                     "enum": ["male", "female", "unknown", None],
                 },
@@ -329,6 +329,7 @@ OCR_TEXT_END"""
             requests.RequestException: Bei API-Fehlern
             requests.Timeout: Bei Timeouts
         """
+        timeout = 10
         try:
             assert self.current_model is not None
             timeout = self.current_model.get("timeout", 10)
@@ -721,7 +722,7 @@ OCR_TEXT_END"""
                     self.sensitive_meta.safe_update(metadata_dict)
                     metadata = self.sensitive_meta
                     logger.info(
-                        f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.patient_first_name} {metadata.patient_last_name}, DOB: {metadata.patient_dob}"
+                        f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.first_name} {metadata.last_name}, DOB: {metadata.dob}"
                     )
                     return metadata
                 else:
@@ -888,8 +889,8 @@ OCR_TEXT={text}"""
         score = 0.0
 
         # Patient Name (höchste Priorität)
-        first_name = metadata_dict.get("patient_first_name", "") or ""
-        last_name = metadata_dict.get("patient_last_name", "") or ""
+        first_name = metadata_dict.get("first_name", "") or ""
+        last_name = metadata_dict.get("last_name", "") or ""
 
         if (
             first_name
@@ -914,12 +915,12 @@ OCR_TEXT={text}"""
             score += 0.20
 
         # Geburtsdatum (wichtig für Patientenidentifikation)
-        dob = metadata_dict.get("patient_dob", "") or ""
+        dob = metadata_dict.get("dob", "") or ""
         if dob and dob.lower() not in ["unknown", "", "null"]:
             score += 0.15
 
         # Gender (weniger wichtig, aber hilfreich)
-        gender = metadata_dict.get("patient_gender_name", "") or ""
+        gender = metadata_dict.get("gender", "") or ""
         if gender and gender.lower() in ["male", "female"]:
             score += 0.05
 
@@ -1560,11 +1561,11 @@ class VideoMetadataEnricher:
         llm_data = enriched_metadata.get("enriched_data", {}).get("llm_extracted", {})
 
         for key in [
-            "patient_first_name",
-            "patient_last_name",
+            "first_name",
+            "last_name",
             "examination_date",
-            "patient_gender_name",
-            "patient_dob",
+            "gender",
+            "dob",
         ]:
             if key in existing_metadata and (
                 not llm_data.get(key) or llm_data.get(key) in ["unknown", "", None]
@@ -1595,11 +1596,11 @@ class VideoMetadataEnricher:
 
         # Daten-Vollständigkeit berechnen
         required_fields = [
-            "patient_first_name",
-            "patient_last_name",
-            "patient_dob",
+            "first_name",
+            "last_name",
+            "dob",
             "examination_date",
-            "patient_gender_name",
+            "gender",
         ]
         filled_fields = 0
 

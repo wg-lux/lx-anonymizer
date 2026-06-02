@@ -53,7 +53,7 @@ class _ThreadRecordingExtractor:
         self.called_thread = threading.get_ident()
         if self.delay:
             time.sleep(self.delay)
-        return SensitiveMeta(patient_first_name=text)
+        return SensitiveMeta(first_name=text)
 
 
 def test_model_priority_prefers_custom_gemma_profile():
@@ -80,9 +80,9 @@ def test_extraction_prompt_uses_sensitive_meta_subset_only():
     fast_prompt = extractor._create_fast_extraction_prompt("Patient Max")
 
     for key in (
-        "patient_first_name",
-        "patient_last_name",
-        "patient_dob",
+        "first_name",
+        "last_name",
+        "dob",
         "casenumber",
         "examination_date",
     ):
@@ -90,7 +90,7 @@ def test_extraction_prompt_uses_sensitive_meta_subset_only():
         assert key in fast_prompt
 
     for excluded in (
-        "patient_gender_name",
+        "gender",
         "examiner_first_name",
         "examiner_last_name",
         "examination_time",
@@ -108,7 +108,7 @@ def test_async_metadata_worker_submit_runs_on_worker_thread():
         metadata = future.result(timeout=2)
 
     assert metadata is not None
-    assert metadata.patient_first_name == "Max"
+    assert metadata.first_name == "Max"
     assert extractor.called_thread is not None
     assert extractor.called_thread != caller_thread
 
@@ -124,9 +124,9 @@ def test_async_metadata_worker_timeout_returns_none():
 
 def test_metadata_cache_fifo_and_stats():
     cache = MetadataCache(max_size=2)
-    m1 = SensitiveMeta(patient_first_name="A")
-    m2 = SensitiveMeta(patient_first_name="B")
-    m3 = SensitiveMeta(patient_first_name="C")
+    m1 = SensitiveMeta(first_name="A")
+    m2 = SensitiveMeta(first_name="B")
+    m3 = SensitiveMeta(first_name="C")
 
     cache.put("one", m1)
     cache.put("two", m2)
@@ -150,26 +150,26 @@ def test_clean_json_response_strips_think_and_markdown():
     raw = """
     <think>hidden chain of thought</think>
     ```json
-    {"patient_first_name":"Max","casenumber":"E123"}
+    {"first_name":"Max","casenumber":"E123"}
     ```
     """
     assert (
         extractor._clean_json_response(raw)
-        == '{"patient_first_name":"Max","casenumber":"E123"}'
+        == '{"first_name":"Max","casenumber":"E123"}'
     )
 
 
 def test_clean_json_response_strips_case_insensitive_unclosed_think():
     extractor = _extractor_stub()
-    raw = '<THINK>hidden chain of thought {"patient_first_name":"Max"}'
+    raw = '<THINK>hidden chain of thought {"first_name":"Max"}'
 
-    assert extractor._clean_json_response(raw) == '{"patient_first_name":"Max"}'
+    assert extractor._clean_json_response(raw) == '{"first_name":"Max"}'
 
 
 def test_clean_json_response_extracts_inline_json():
     extractor = _extractor_stub()
-    raw = 'prefix text {"patient_last_name":"Muster"} trailing text'
-    assert extractor._clean_json_response(raw) == '{"patient_last_name":"Muster"}'
+    raw = 'prefix text {"last_name":"Muster"} trailing text'
+    assert extractor._clean_json_response(raw) == '{"last_name":"Muster"}'
 
 
 def test_extract_metadata_ollama_payload_uses_json_format_and_8k_context(monkeypatch):
@@ -181,7 +181,7 @@ def test_extract_metadata_ollama_payload_uses_json_format_and_8k_context(monkeyp
 
     def fake_request(payload):
         captured["payload"] = payload
-        return {"message": {"content": '{"patient_first_name":"Max"}'}}
+        return {"message": {"content": '{"first_name":"Max"}'}}
 
     monkeypatch.setattr(extractor, "_make_api_request", fake_request)
 
@@ -205,8 +205,8 @@ def test_smart_sampling_ollama_payload_uses_json_format_and_8k_context(monkeypat
         return {
             "message": {
                 "content": (
-                    '{"patient_first_name":"Max","patient_last_name":"Muster",'
-                    '"patient_dob":"1980-01-01","casenumber":"E123",'
+                    '{"first_name":"Max","last_name":"Muster",'
+                    '"dob":"1980-01-01","casenumber":"E123",'
                     '"examination_date":"2024-01-01"}'
                 )
             }
@@ -235,17 +235,17 @@ def test_calculate_confidence_scores_and_caps():
     extractor = _extractor_stub()
     high = extractor._calculate_confidence(
         {
-            "patient_first_name": "Max",
-            "patient_last_name": "Mustermann",
+            "first_name": "Max",
+            "last_name": "Mustermann",
             "examination_date": "2024-01-01",
             "casenumber": "E 123",
-            "patient_dob": "1990-01-01",
-            "patient_gender_name": "male",
+            "dob": "1990-01-01",
+            "gender": "male",
             "examiner_first_name": "A",
             "examiner_last_name": "B",
         }
     )
-    low = extractor._calculate_confidence({"patient_first_name": "unknown"})
+    low = extractor._calculate_confidence({"first_name": "unknown"})
     assert high == 1.0
     assert low == 0.0
 
@@ -274,9 +274,9 @@ def test_build_chat_endpoint_uses_openai_compatible_path_for_vllm():
 def test_extract_response_content_supports_vllm_choices_shape():
     extractor = _extractor_stub()
     content = extractor._extract_response_content(
-        {"choices": [{"message": {"content": '{"patient_first_name":"Max"}'}}]}
+        {"choices": [{"message": {"content": '{"first_name":"Max"}'}}]}
     )
-    assert content == '{"patient_first_name":"Max"}'
+    assert content == '{"first_name":"Max"}'
 
 
 def test_get_fastest_available_model_uses_preferred_even_without_listing():
@@ -349,7 +349,7 @@ def test_enriched_confidence_combines_sources():
     ext = EnrichedMetadataExtractor(_DummyLLM(), FrameSamplingOptimizer())
     scores = ext._calculate_enriched_confidence(
         {
-            "llm_extracted": {"patient_first_name": "Max", "patient_last_name": "M"},
+            "llm_extracted": {"first_name": "Max", "last_name": "M"},
             "frame_context": {"quality_scores": [0.6, 0.8]},
             "temporal_analysis": {
                 "text_appearance_timeline": [{"confidence": 0.4}, {"confidence": 0.8}]
@@ -391,7 +391,7 @@ def test_frame_data_processor_accepts_generators():
 def test_video_metadata_enricher_keeps_existing_fallback_data():
     enricher = VideoMetadataEnricher()
     enricher.enriched_extractor.extract_from_frame_sequence = lambda *args, **kwargs: {
-        "llm_extracted": {"patient_first_name": "LLM_Name"}
+        "llm_extracted": {"first_name": "LLM_Name"}
     }
     enricher.frame_processor.process_coroutine_output = lambda x: x
 
@@ -400,10 +400,10 @@ def test_video_metadata_enricher_keeps_existing_fallback_data():
         frame_samples=[{"dummy": "data"}],
         ocr_texts=[],
         existing_metadata={
-            "patient_first_name": "OCR_Name_Typos",
-            "patient_dob": "01.01.1990",
+            "first_name": "OCR_Name_Typos",
+            "dob": "01.01.1990",
         },
     )
 
-    assert result["enriched_data"]["llm_extracted"]["patient_first_name"] == "LLM_Name"
-    assert result["fallback_data"]["patient_dob"] == "01.01.1990"
+    assert result["enriched_data"]["llm_extracted"]["first_name"] == "LLM_Name"
+    assert result["fallback_data"]["dob"] == "01.01.1990"
