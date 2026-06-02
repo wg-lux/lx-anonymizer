@@ -54,8 +54,8 @@ class SensitiveRegionCropper:
 
         # Definiere sensitive Datentypen und ihre Regex-Patterns
         self.sensitive_patterns = {
-            "patient_first_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
-            "patient_last_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
+            "first_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
+            "last_name": r"[A-ZÄÖÜ][a-zäöüß]+\s*,\s*[A-ZÄÖÜ][a-zäöüß]+",
             "birth_date": r"\b\d{1,2}\.\d{1,2}\.\d{4}\b",
             "casenumber": r"(?:Fallnummer|Fallnr|Fall\.Nr)[:\s]*(\d+)",
             "social_security": r"\b\d{2}\s?\d{2}\s?\d{2}\s?\d{4}\b",
@@ -321,10 +321,10 @@ class SensitiveRegionCropper:
         """
         regions = []
 
-        if patient_info.get("patient_first_name") and patient_info.get(
-            "patient_last_name"
+        if patient_info.get("first_name") and patient_info.get(
+            "last_name"
         ):
-            full_name = f"{patient_info['patient_first_name']} {patient_info['patient_last_name']}"
+            full_name = f"{patient_info['first_name']} {patient_info['last_name']}"
             name_boxes = self._find_word_boxes_for_text_span(full_name, word_boxes)
             if name_boxes:
                 # ALT:
@@ -334,8 +334,8 @@ class SensitiveRegionCropper:
                 )
 
         # Geburtsdatum
-        if patient_info.get("patient_dob"):
-            dob_str = str(patient_info["patient_dob"])
+        if patient_info.get("dob"):
+            dob_str = str(patient_info["dob"])
             dob_boxes = self._find_word_boxes_for_text_span(dob_str, word_boxes)
             if dob_boxes:
                 regions.extend(
@@ -433,6 +433,8 @@ class SensitiveRegionCropper:
         Returns:
             Dictionary mit Seite -> Liste von Crop-Bild-Pfaden
         """
+        results: dict[str, list[str]] = {}
+        page_num = 0
         try:
             output_dir_path = Path(output_dir)
             output_dir_path.mkdir(parents=True, exist_ok=True)

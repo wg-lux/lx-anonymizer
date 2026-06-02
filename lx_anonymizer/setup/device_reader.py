@@ -67,14 +67,14 @@ def read_device(device: str):
             "font",
             "font_size",
             "text_formatting",
-            "patient_first_name_x",
-            "patient_first_name_y",
-            "patient_first_name_width",
-            "patient_first_name_height",
-            "patient_last_name_x",
-            "patient_last_name_y",
-            "patient_last_name_width",
-            "patient_last_name_height",
+            "first_name_x",
+            "first_name_y",
+            "first_name_width",
+            "first_name_height",
+            "last_name_x",
+            "last_name_y",
+            "last_name_width",
+            "last_name_height",
         ]
         for key in data["fields"]:
             if key in keys_to_check:
@@ -97,21 +97,21 @@ def read_device(device: str):
                     font_thickness = 2
                 elif key == "text_formatting":
                     text_formatting = data["fields"][key]
-                elif key == "patient_first_name_x":
+                elif key == "first_name_x":
                     first_name_x = data["fields"][key]
-                elif key == "patient_first_name_y":
+                elif key == "first_name_y":
                     first_name_y = data["fields"][key]
-                elif key == "patient_first_name_width":
+                elif key == "first_name_width":
                     first_name_width = data["fields"][key]
-                elif key == "patient_first_name_height":
+                elif key == "first_name_height":
                     first_name_height = data["fields"][key]
-                elif key == "patient_last_name_x":
+                elif key == "last_name_x":
                     last_name_x = data["fields"][key]
-                elif key == "patient_last_name_y":
+                elif key == "last_name_y":
                     last_name_y = data["fields"][key]
-                elif key == "patient_last_name_width":
+                elif key == "last_name_width":
                     last_name_width = data["fields"][key]
-                elif key == "patient_last_name_height":
+                elif key == "last_name_height":
                     last_name_height = data["fields"][key]
 
         return (
@@ -155,32 +155,32 @@ def read_name_boxes(
         data = json.load(json_parameters)
 
         keys_to_check = [
-            "patient_first_name_x",
-            "patient_first_name_y",
-            "patient_first_name_width",
-            "patient_first_name_height",
-            "patient_last_name_x",
-            "patient_last_name_y",
-            "patient_last_name_width",
-            "patient_last_name_height",
+            "first_name_x",
+            "first_name_y",
+            "first_name_width",
+            "first_name_height",
+            "last_name_x",
+            "last_name_y",
+            "last_name_width",
+            "last_name_height",
         ]
         for key in data["fields"]:
             if key in keys_to_check:
-                if key == "patient_first_name_x":
+                if key == "first_name_x":
                     first_name_x = data["fields"][key]
-                elif key == "patient_first_name_y":
+                elif key == "first_name_y":
                     first_name_y = data["fields"][key]
-                elif key == "patient_first_name_width":
+                elif key == "first_name_width":
                     first_name_width = data["fields"][key]
-                elif key == "patient_first_name_height":
+                elif key == "first_name_height":
                     first_name_height = data["fields"][key]
-                elif key == "patient_last_name_x":
+                elif key == "last_name_x":
                     last_name_x = data["fields"][key]
-                elif key == "patient_last_name_y":
+                elif key == "last_name_y":
                     last_name_y = data["fields"][key]
-                elif key == "patient_last_name_width":
+                elif key == "last_name_width":
                     last_name_width = data["fields"][key]
-                elif key == "patient_last_name_height":
+                elif key == "last_name_height":
                     last_name_height = data["fields"][key]
 
         if (

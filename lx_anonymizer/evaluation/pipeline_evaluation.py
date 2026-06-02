@@ -36,8 +36,8 @@ TITLE_WORDS = {
 NAME_FIELDS = {
     "first_name",
     "last_name",
-    "patient_first_name",
-    "patient_last_name",
+    "first_name",
+    "last_name",
     "examiner_first_name",
     "examiner_last_name",
 }

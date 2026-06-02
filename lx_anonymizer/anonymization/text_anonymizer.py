@@ -6,6 +6,7 @@ from typing import Dict, Iterable, Optional, Tuple
 
 from faker import Faker
 
+from lx_anonymizer.regex_patterns import ISO_DATE_RE, LONG_NUMBER_RE
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +29,7 @@ def replace_large_numbers(text):
     def random_number(n):
         return "".join([str(random.randint(0, 9)) for _ in range(n)])
 
-    numbers_to_replace = re.findall(r"\b\d{5,}\b", text)
+    numbers_to_replace = LONG_NUMBER_RE.findall(text)
 
     for number in numbers_to_replace:
         length = len(number)
@@ -207,11 +208,11 @@ def anonymize_text(
             for k in (
                 "pdf_hash",
                 "file_path",
-                "patient_first_name",
-                "patient_last_name",
+                "first_name",
+                "last_name",
                 "casenumber",
                 "examination_date",
-                "patient_dob",
+                "dob",
             )
         )
         or text[:256]
@@ -219,8 +220,8 @@ def anonymize_text(
     fake = _seeded_faker(seed_material, locale)
 
     # 2) Patient names (robust, handles presence of only one of them)
-    pf = (report_meta.get("patient_first_name") or "").strip()
-    pl = (report_meta.get("patient_last_name") or "").strip()
+    pf = (report_meta.get("first_name") or "").strip()
+    pl = (report_meta.get("last_name") or "").strip()
 
     # Generate deterministic pseudonyms
     pseudo_pf = fake.first_name() if pf else None
@@ -288,10 +289,10 @@ def anonymize_text(
     if anonymize_dates:
         # Patient DOB
         dob_iso = None
-        dob_val = report_meta.get("patient_dob")
+        dob_val = report_meta.get("dob")
         if isinstance(dob_val, str):
             # Assume ISO or already formatted; try normalize to ISO
-            m = re.match(r"^\d{4}-\d{2}-\d{2}$", dob_val)
+            m = ISO_DATE_RE.match(dob_val)
             dob_iso = dob_val if m else None
         elif isinstance(dob_val, (datetime,)):
             dob_iso = dob_val.strftime("%Y-%m-%d")
@@ -320,7 +321,7 @@ def anonymize_text(
         ex_iso = None
         ex_val = report_meta.get("examination_date")
         if isinstance(ex_val, str):
-            m = re.match(r"^\d{4}-\d{2}-\d{2}$", ex_val)
+            m = ISO_DATE_RE.match(ex_val)
             ex_iso = ex_val if m else None
         elif isinstance(ex_val, (datetime,)):
             ex_iso = ex_val.strftime("%Y-%m-%d")

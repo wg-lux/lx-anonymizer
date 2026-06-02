@@ -69,11 +69,11 @@ def normalize_roi_keys(roi: Mapping[str, Any] | None) -> NormalizedRoi | None:
     payload = {
         "x": _first_present(
             roi,
-            ("x", "endoscope_image_x", "endoscope_type_x", "patient_first_name_x"),
+            ("x", "endoscope_image_x", "endoscope_type_x", "first_name_x"),
         ),
         "y": _first_present(
             roi,
-            ("y", "endoscope_image_y", "endoscope_type_y", "patient_first_name_y"),
+            ("y", "endoscope_image_y", "endoscope_type_y", "first_name_y"),
         ),
         "width": _first_present(
             roi,
@@ -81,7 +81,7 @@ def normalize_roi_keys(roi: Mapping[str, Any] | None) -> NormalizedRoi | None:
                 "width",
                 "endoscope_image_width",
                 "endoscope_type_width",
-                "patient_first_name_width",
+                "first_name_width",
             ),
         ),
         "height": _first_present(
@@ -90,7 +90,7 @@ def normalize_roi_keys(roi: Mapping[str, Any] | None) -> NormalizedRoi | None:
                 "height",
                 "endoscope_image_height",
                 "endoscope_type_height",
-                "patient_first_name_height",
+                "first_name_height",
             ),
         ),
     }

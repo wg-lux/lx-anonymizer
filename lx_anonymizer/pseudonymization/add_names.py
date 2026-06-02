@@ -13,13 +13,13 @@ import difflib
 STANDARD_FIELDS = {
     "id",
     "casenumber",
-    "patient_first_name",
-    "patient_last_name",
-    "patient_dob",
+    "first_name",
+    "last_name",
+    "dob",
     "examination_date",
     "examination_time",
     "center_name",
-    "patient_gender_name",
+    "gender",
     "endoscope_type",
     "endoscope_sn",
     "examiner_first_name",
@@ -65,16 +65,16 @@ def normalize_code_line(line: str, field: str, normalized_field: str) -> str:
 
 def add_missing_name_counterparts(line: str) -> str:
     """Add missing first or last name counterpart if one is found."""
-    first_name_pattern = r"\bpatient_first_name\b"
-    last_name_pattern = r"\bpatient_last_name\b"
+    first_name_pattern = r"\bfirst_name\b"
+    last_name_pattern = r"\blast_name\b"
 
     # Check if first name is present but last name is missing
     if re.search(first_name_pattern, line) and not re.search(last_name_pattern, line):
-        line = re.sub(first_name_pattern, "patient_first_name, patient_last_name", line)
+        line = re.sub(first_name_pattern, "first_name, last_name", line)
 
     # Check if last name is present but first name is missing
     if re.search(last_name_pattern, line) and not re.search(first_name_pattern, line):
-        line = re.sub(last_name_pattern, "patient_first_name, patient_last_name", line)
+        line = re.sub(last_name_pattern, "first_name, last_name", line)
 
     return line
 
