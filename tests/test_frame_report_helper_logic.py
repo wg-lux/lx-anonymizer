@@ -1,9 +1,6 @@
-from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-
 import pytest
-
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
@@ -50,23 +47,22 @@ class PatientExtractorStub:
     @staticmethod
     def blank():
         return {
-            "patient_first_name": None,
-            "patient_last_name": None,
-            "patient_dob": None,
+            "first_name": None,
+            "last_name": None,
+            "dob": None,
             "casenumber": None,
-            "patient_gender_name": None,
+            "gender": None,
         }
 
 
 def test_frame_cleaner_build_representative_text_from_meta_compacts_fields():
-    meta = {
-        "patient_first_name": " Max ",
-        "patient_last_name": "Muster",
-        "casenumber": "E 123",
-        "patient_dob": "1990-01-02",
-        "endoscope_sn": "SN-9",
-        "empty": None,
-    }
+    meta = SensitiveMeta(
+        first_name=" Max ",
+        last_name="Muster",
+        casenumber="E 123",
+        dob="1990-01-02",
+        endoscope_sn="SN-9",
+    )
     text = FrameCleaner._build_representative_text_from_meta(meta)
     assert text.startswith("Max Muster")
     assert "Case: E 123" in text
@@ -78,9 +74,9 @@ def test_frame_cleaner_build_representative_text_from_meta_compacts_fields():
     ("meta", "expected"),
     [
         ({}, False),
-        ({"patient_first_name": " "}, False),
+        ({"first_name": " "}, False),
         ({"casenumber": "E1"}, True),
-        ({"patient_dob": None, "examiner_last_name": "DrX"}, True),
+        ({"dob": None, "examiner_last_name": "DrX"}, True),
         ("not-a-dict", False),
     ],
 )
@@ -112,14 +108,14 @@ def test_unified_metadata_extract_falls_back_when_llm_has_no_signal():
     fc = _frame_cleaner_stub()
     fc.use_llm = True
     fc.llm_extractor = SimpleNamespace(extract_metadata=Mock(return_value={}))
-    fc.patient_data_extractor = Mock(return_value={"patient_first_name": "SpaCy"})
+    fc.patient_data_extractor = Mock(return_value={"first_name": "SpaCy"})
     fc.frame_metadata_extractor.extract_metadata_from_frame_text.return_value = {
-        "patient_first_name": "Regex"
+        "first_name": "Regex"
     }
 
     meta = fc._unified_metadata_extract("text")
 
-    assert meta["patient_first_name"] == "SpaCy"
+    assert meta["first_name"] == "SpaCy"
     fc.patient_data_extractor.assert_called_once()
     fc.frame_metadata_extractor.extract_metadata_from_frame_text.assert_not_called()
 
@@ -129,12 +125,12 @@ def test_unified_metadata_extract_reaches_regex_fallback_when_extractors_fail():
     fc.use_llm = False
     fc.patient_data_extractor = Mock(return_value={})
     fc.frame_metadata_extractor.extract_metadata_from_frame_text.return_value = {
-        "patient_last_name": "Regex"
+        "last_name": "Regex"
     }
 
     meta = fc._unified_metadata_extract("text")
 
-    assert meta["patient_last_name"] == "Regex"
+    assert meta["last_name"] == "Regex"
     fc.frame_metadata_extractor.extract_metadata_from_frame_text.assert_called_once_with(
         "text"
     )
@@ -155,14 +151,15 @@ def test_report_reader_pdf_hash_is_deterministic():
 def test_report_reader_anonymize_report_passes_config():
     rr = _report_reader_stub()
     with patch(
-        "lx_anonymizer.report_reader.anonymize_text", return_value="anon"
+        "lx_anonymizer.anonymization.text_anonymizer.anonymize_text", return_value="anon"
     ) as mock_anon:
-        result = rr.anonymize_report("raw text", {"patient_first_name": "Max"})
+        result = rr.anonymize_report("raw text", {"first_name": "Max"})
 
     assert result == "anon"
     kwargs = mock_anon.call_args.kwargs
     assert kwargs["text"] == "raw text"
-    assert kwargs["report_meta"]["patient_first_name"] == "Max"
+    assert kwargs["report_meta"]["first_name"] == "Max"
+    assert kwargs["text_date_format"] == "%d.%m.%Y"
     assert kwargs["lower_cut_off_flags"] == []
     assert kwargs["upper_cut_off_flags"] == []
 
@@ -171,11 +168,11 @@ def test_report_reader_shared_llm_wrapper_success_and_failure_paths():
     rr = _report_reader_stub()
     rr.llm_available = True
     rr.llm_extractor = SimpleNamespace(
-        extract_metadata=Mock(return_value={"patient_first_name": "LLM"})
+        extract_metadata=Mock(return_value={"first_name": "LLM"})
     )
 
     ok = rr._extract_report_meta_via_llm("txt", "DeepSeek")
-    assert ok["patient_first_name"] == "LLM"
+    assert ok["first_name"] == "LLM"
 
     rr.llm_extractor.extract_metadata.return_value = None
     fail = rr._extract_report_meta_via_llm("txt", "DeepSeek")
@@ -187,11 +184,11 @@ def test_extract_report_meta_uses_line_fallback_parses_dob_and_enriches_fields()
     rr.patient_extractor.side_effect = [
         PatientExtractorStub.blank(),  # full-text attempt fails
         {
-            "patient_first_name": "Max",
-            "patient_last_name": "Muster",
-            "patient_dob": "02.01.1990",
+            "first_name": "Max",
+            "last_name": "Muster",
+            "dob": "02.01.1990",
             "casenumber": "E 123",
-            "patient_gender_name": "male",
+            "gender": "male",
         },
     ]
     rr.examiner_extractor.extract_examiner_info.return_value = {
@@ -212,18 +209,12 @@ def test_extract_report_meta_uses_line_fallback_parses_dob_and_enriches_fields()
         ]
     )
 
-    with (
-        patch("lx_anonymizer.report_reader.PatientDataExtractor", PatientExtractorStub),
-        patch(
-            "lx_anonymizer.report_reader.dateparser.parse",
-            return_value=datetime(1990, 1, 2),
-        ),
-    ):
+    with patch("lx_anonymizer.report_reader.PatientDataExtractor", PatientExtractorStub):
         meta = rr.extract_report_meta(text, pdf_path=None)
 
-    assert meta["patient_first_name"] == "Max"
-    assert meta["patient_last_name"] == "Muster"
-    assert str(meta["patient_dob"]) == "1990-01-02"
+    assert meta["first_name"] == "Max"
+    assert meta["last_name"] == "Muster"
+    assert str(meta["dob"]) == "1990-01-02"
     assert meta["casenumber"] == "E 123"
     assert meta["examiner_last_name"] == "Arzt"
     assert meta["examination_date"] == "2024-01-01"

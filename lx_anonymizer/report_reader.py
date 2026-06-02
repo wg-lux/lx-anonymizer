@@ -1,22 +1,22 @@
-import hashlib
 import logging
-import os
-import re
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
-
-import dateparser  # type: ignore[import-untyped]
+import os
 import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
-import pdfplumber
 from faker import Faker
 from PIL import Image
+from lx_dtypes.models.meta.ReportMeta import (
+    ReportAnonymizerProvenance,
+    ReportMeta,
+    ReportProcessRequest,
+    ReportProcessResult,
+    ReportReaderFlags,
+)
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
 from lx_anonymizer.anonymization.sensitive_region_cropper import (
     SensitiveRegionCropper,
-)  # Import the new cropper
-from lx_anonymizer.anonymization.text_anonymizer import anonymize_text
+)
 from lx_anonymizer.config import settings
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.llm.factory import LLMFactory
@@ -28,17 +28,17 @@ from lx_anonymizer.ner.spacy_extractor import (
     ExaminerDataExtractor,
     PatientDataExtractor,
 )
-from lx_anonymizer.ner.spacy_ner_fallback import extract_patient_info_from_text
 from lx_anonymizer.ocr.ocr import (
     tesseract_full_image_ocr,
 )  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
+from lx_anonymizer.report_reader_extraction import ReportReaderExtractionMixin
+from lx_anonymizer.report_reader_settings import get_report_reader_settings
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import logger
-from lx_anonymizer.setup.private_settings import DEFAULT_SETTINGS
 
 
-class ReportReader:
+class ReportReader(ReportReaderExtractionMixin):
     _SUPPORTED_FLAG_KEYS = {
         "patient_info_line",
         "endoscope_info_line",
@@ -50,11 +50,11 @@ class ReportReader:
     def __init__(
         self,
         report_root_path: Optional[str] = None,
-        locale: str = cast(str, DEFAULT_SETTINGS["locale"]),
+        locale: Optional[str] = None,
         employee_first_names: Optional[List[str]] = None,
         employee_last_names: Optional[List[str]] = None,
         flags: Optional[Dict[Any, Any]] = None,
-        text_date_format: str = cast(str, DEFAULT_SETTINGS["text_date_format"]),
+        text_date_format: Optional[str] = None,
     ):
         """
         Initialize the report reader.
@@ -72,26 +72,31 @@ class ReportReader:
                 - ``cut_off_below``: list[str] (or str) markers for lower text cut-off
                 - ``cut_off_above``: list[str] (or str) markers for upper text cut-off
                 Behavior:
-                - If ``flags`` is passed, it is merged with ``DEFAULT_SETTINGS["flags"]``.
+                - If ``flags`` is passed, it is merged with report-reader settings.
                 - Unknown keys are preserved for compatibility, but logged.
             text_date_format: Date format string used during text anonymization.
         """
         self.report_root_path = report_root_path
+        report_settings = get_report_reader_settings()
 
-        self.locale = locale
-        self.text_date_format = text_date_format
+        self.locale = locale if locale is not None else report_settings.locale
+        self.text_date_format = (
+            text_date_format
+            if text_date_format is not None
+            else report_settings.text_date_format
+        )
         self.employee_first_names = (
             employee_first_names
             if employee_first_names is not None
-            else DEFAULT_SETTINGS["first_names"]
+            else list(report_settings.first_names)
         )
         self.employee_last_names = (
             employee_last_names
             if employee_last_names is not None
-            else DEFAULT_SETTINGS["last_names"]
+            else list(report_settings.last_names)
         )
         self.flags = self._resolve_flags(flags)
-        self.fake = Faker(locale=locale)
+        self.fake = Faker(locale=self.locale)
         self.gender_detector = gender_detector.Detector(case_sensitive=True)
 
         # Initialize extractors
@@ -152,18 +157,15 @@ class ReportReader:
         This keeps initialization robust when callers provide only a subset of flags.
         """
         default_flags: Dict[str, Any] = dict(
-            cast(Mapping[str, Any], DEFAULT_SETTINGS.get("flags", {}))
+            cast(Mapping[str, Any], get_report_reader_settings().flags.model_dump())
         )
-        if flags is None:
-            return default_flags
-
-        if not isinstance(flags, Mapping):
+        if flags is not None and not isinstance(flags, Mapping):
             raise TypeError(
                 f"flags must be a mapping/dict or None, got {type(flags)!r}"
             )
 
         merged: Dict[str, Any] = dict(default_flags)
-        provided = dict(flags)
+        provided = dict(flags or {})
 
         unknown_keys = [k for k in provided.keys() if k not in cls._SUPPORTED_FLAG_KEYS]
         if unknown_keys:
@@ -173,398 +175,414 @@ class ReportReader:
             )
 
         merged.update(provided)
+        resolved = ReportReaderFlags.model_validate(merged).model_dump()
+        if resolved.get("endoscope_info_line") is None:
+            resolved["endoscope_info_line"] = ""
+        return resolved
 
-        for key in ("patient_info_line", "endoscope_info_line", "examiner_info_line"):
-            value = merged.get(key)
-            if value is None:
-                continue
-            if not isinstance(value, str):
-                merged[key] = str(value)
+    @staticmethod
+    def _validated_report_meta(data: Mapping[str, Any]) -> Dict[str, Any]:
+        """Validate ReportReader-owned keys while ignoring SensitiveMeta extras."""
+        aliases = getattr(ReportMeta, "_LEGACY_FIELD_ALIASES", {})
+        report_meta_keys = set(ReportMeta.model_fields) | set(aliases)
+        payload = {
+            str(key): value
+            for key, value in data.items()
+            if str(key) in report_meta_keys
+        }
+        return ReportMeta.model_validate(payload).to_report_reader_dict()
 
-        for key in ("cut_off_below", "cut_off_above"):
-            value = merged.get(key)
-            if value is None:
-                merged[key] = []
-            elif isinstance(value, str):
-                merged[key] = [value]
-            elif isinstance(value, (list, tuple, set)):
-                merged[key] = [str(v) for v in value if v is not None]
-            else:
-                merged[key] = [str(value)]
-
-        return merged
+    @classmethod
+    def _merge_report_meta(
+        cls, report_meta: Mapping[str, Any], update: ReportMeta
+    ) -> Dict[str, Any]:
+        """Merge a typed report metadata update into an existing metadata dict."""
+        merged = dict(report_meta)
+        merged.update(update.to_report_reader_dict())
+        return cls._validated_report_meta(merged)
 
     def process_report(
         self,
-        pdf_path=None,
-        image_path=None,
-        use_ensemble=False,
-        verbose=True,
+        pdf_path: str | os.PathLike[str] | Path | None = None,
+        image_path: str | os.PathLike[str] | Path | None = None,
+        use_ensemble: bool = False,
+        verbose: bool = True,
         use_llm: Optional[bool] = None,
-        text=None,
-        create_anonymized_pdf=False,
-        anonymized_pdf_output_path=None,
+        text: str | None = None,
+        create_anonymized_pdf: bool = False,
+        anonymized_pdf_output_path: str | os.PathLike[str] | Path | None = None,
     ) -> Tuple[str, str, dict[Any, Any], Optional[Path]]:
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         """
-        # Ensure no metadata leakage across independent report calls.
-        self.sensitive_meta = SensitiveMeta()
-        text_input_provided = text is not None
-
-        if text is None:
-            if not pdf_path and not image_path:
-                raise ValueError(
-                    "Either 'pdf_path' 'image_path' or 'text' must be provided."
-                )
-            if isinstance(pdf_path, str):
-                pdf_path = Path(pdf_path)
-
-            if pdf_path:
-                if not os.path.exists(pdf_path):
-                    logger.error(f"PDF file not found: {pdf_path}")
-                    return "", "", {}, Path("")
-                text = self.read_pdf(pdf_path)
-            elif image_path:
-                if not isinstance(image_path, (str, os.PathLike)):
-                    logger.error(
-                        f"Image path must be a string or PathLike object, got {type(image_path)}: {image_path}"
-                    )
-                    return "", "", {}, Path("")
-                if not os.path.exists(image_path):
-                    logger.error(f"Image file not found: {image_path}")
-                    return "", "", {}, Path(image_path)
-                # If image_path is provided, we assume it's a single image file
-                logger.info(f"Reading text from image file: {image_path}")
-                try:
-                    pil_image = Image.open(image_path)
-                    text, _ = tesseract_full_image_ocr(
-                        pil_image
-                    )  # Use Tesseract OCR on the image
-                except Exception as e:
-                    logger.error(f"Error reading image {image_path}: {e}")
-                    return "", "", {}, Path(image_path)
-
-        # --- OCR Fallback ---
-        skip_ocr_fallback_for_text_only = (
-            text_input_provided and not pdf_path and not image_path
+        pdf_path = Path(pdf_path) if pdf_path is not None else None
+        image_path = Path(image_path) if image_path is not None else None
+        anonymized_pdf_output_path = (
+            Path(anonymized_pdf_output_path)
+            if anonymized_pdf_output_path is not None
+            else None
         )
-        text_for_eval = text if isinstance(text, str) else ""
-        if (
-            (not text_for_eval or len(text_for_eval.strip()) < 50)
-            and not skip_ocr_fallback_for_text_only
-        ):  # Trigger OCR if text is empty or very short and file-based input exists
-            try:
-                assert isinstance(text, str)
-                logger.info(
-                    f"Short/No text detected by pdfplumber ({len(text.strip())} chars), applying OCR fallback."
-                )
+        request = ReportProcessRequest(
+            pdf_path=pdf_path,
+            image_path=image_path,
+            use_ensemble=use_ensemble,
+            verbose=verbose,
+            use_llm=use_llm,
+            text=text,
+            create_anonymized_pdf=create_anonymized_pdf,
+            anonymized_pdf_output_path=anonymized_pdf_output_path,
+        )
+        return self._process_report_request(request).as_tuple()
 
-                if pdf_path:
-                    if not isinstance(pdf_path, (str, os.PathLike, Path)):
-                        logger.error(
-                            f"Cannot apply OCR: PDF path is not valid: {pdf_path}"
-                        )
-                        return "", "", {}, Path(str(pdf_path or ""))
+    def _process_report_request(
+        self, request: ReportProcessRequest
+    ) -> ReportProcessResult:
+        self.sensitive_meta = SensitiveMeta()
+        source_text = self._load_report_text(request)
+        if source_text is None:
+            return self._empty_process_result(request)
 
-                    logger.info(f"Converting PDF to images for OCR: {pdf_path}")
-                    try:
-                        images_from_pdf = convert_pdf_to_images(Path(pdf_path))
-                    except Exception as e:
-                        logger.error(f"Failed to convert PDF to images: {e}")
-                        return "", "", {}, Path(pdf_path)
-                elif image_path:
-                    if not isinstance(image_path, (str, os.PathLike, Path)):
-                        logger.error(
-                            f"Cannot apply OCR: Image path is not valid: {image_path}"
-                        )
-                        return "", "", {}, Path(image_path)
-                    try:
-                        images_from_pdf = [Image.open(str(image_path))]
-                    except Exception as e:
-                        logger.error(f"Failed to open image file: {e}")
-                        return "", "", {}, Path(image_path)
-                else:
-                    logger.error("No valid path provided for OCR processing")
-                    return "", "", {}, Path("")
-
-                ocr_text = ""
-
-                for idx, pil_image in enumerate(images_from_pdf):
-                    if pil_image is None:
-                        logger.error(f"Page {idx + 1} image is None, skipping OCR")
-                        continue
-
-                    logger.info(f"Processing page {idx + 1} with OCR...")
-                    ocr_part = ""
-                    if use_ensemble:
-                        logger.info("Using ensemble OCR approach")
-                        try:
-                            ocr_part = ensemble_ocr(pil_image)
-                        except Exception as e:
-                            logger.error(f"Ensemble OCR failed on page {idx + 1}: {e}")
-                            try:
-                                logger.info(
-                                    "Falling back to Tesseract OCR after ensemble failure."
-                                )
-                                text_part, _ = tesseract_full_image_ocr(pil_image)
-                                ocr_part = text_part
-                            except Exception as te:
-                                logger.error(
-                                    f"Tesseract fallback also failed on page {idx + 1}: {te}"
-                                )
-                                ocr_part = ""
-                    else:
-                        try:
-                            text_part, _ = tesseract_full_image_ocr(pil_image)
-                            ocr_part = text_part
-                            logger.info(f"Tesseract OCR successful for page {idx + 1}")
-                        except Exception as e:
-                            logger.error(f"Tesseract OCR failed on page {idx + 1}: {e}")
-                            ocr_part = ""
-
-                    ocr_text += (
-                        " " + ocr_part if ocr_part else ""
-                    )  # Append only if OCR succeeded
-
-                text = ocr_text.strip()
-                logger.info(
-                    f"OCR fallback finished. Total text length: {len(text)}. Preview: {text[:200]}..."
-                )
-
-                # Apply optional OCR correction through the configured LLM provider
-                if text and len(text.strip()) >= int(
-                    settings.REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH
-                ):
-                    attempted_llm_correction = False
-                    if not getattr(self, "llm_available", False):
-                        logger.info(
-                            "Skipping LLM correction for OCR text: provider unavailable"
-                        )
-                    else:
-                        logger.info(
-                            "Applying LLM correction to OCR text via provider %s",
-                            settings.LLM_PROVIDER,
-                        )
-                        attempted_llm_correction = True
-                    try:
-                        llm_client = (
-                            LLMService(
-                                provider=settings.LLM_PROVIDER,
-                                base_url=settings.resolved_llm_base_url,
-                            )
-                            if getattr(self, "llm_available", False)
-                            else None
-                        )
-                        corrected_text = (
-                            llm_client.correct_ocr_text_in_chunks(text)
-                            if llm_client is not None
-                            else None
-                        )
-
-                        if (
-                            corrected_text
-                            and corrected_text != text
-                            and len(corrected_text) > 0.5 * len(text)
-                        ):
-                            logger.info("OCR text successfully corrected by LLM.")
-                            text = corrected_text
-                        elif corrected_text == text:
-                            logger.info("LLM correction resulted in the same text.")
-                        elif attempted_llm_correction:
-                            logger.warning(
-                                "LLM OCR correction failed or produced poor result, using original OCR text."
-                            )
-                    except Exception as e:
-                        logger.warning(f"Error using LLM for correction: {e}")
-                elif text:
-                    logger.info(
-                        "Skipping LLM OCR correction for short OCR text (%d chars).",
-                        len(text.strip()),
-                    )
-
-                if not text or len(text.strip()) < 10:
-                    logger.error(
-                        "OCR fallback produced very short/no text, cannot proceed with metadata extraction."
-                    )
-                    original_text_from_pdf = self.read_pdf(
-                        pdf_path
-                    )  # Re-read original for context
-                    return (
-                        original_text_from_pdf,
-                        original_text_from_pdf,
-                        {},
-                        Path(str(pdf_path or "")),
-                    )
-
-            except Exception as e:
-                logger.error(f"OCR fallback process failed entirely: {e}")
-                original_text_from_pdf = self.read_pdf(
-                    pdf_path
-                )  # Re-read original for context
-                return (
-                    original_text_from_pdf,
-                    original_text_from_pdf,
-                    {},
-                    Path(str(pdf_path or "")),
-                )
-        elif skip_ocr_fallback_for_text_only:
-            logger.debug(
-                "Skipping OCR fallback for text-only input (no pdf_path/image_path provided)."
+        text = self._apply_ocr_fallback_if_needed(source_text, request)
+        if len(text.strip()) < 10 and not self._is_text_only_request(request):
+            logger.error(
+                "OCR fallback produced very short/no text, cannot proceed with "
+                "metadata extraction."
+            )
+            original = self.read_pdf(request.pdf_path) if request.pdf_path else text
+            return ReportProcessResult(
+                text=original,
+                anonymized_text=original,
+                report_meta={},
+                anonymized_pdf_path=request.pdf_path,
             )
 
-        # --- Metadata Extraction ---
-        use_provider_llm = False
-        report_meta = {}
-        if text and len(text.strip()) >= 10:  # Proceed only if we have some text
-            use_provider_llm = self.llm_available if use_llm is None else bool(use_llm)
-            if use_provider_llm:
-                logger.info("Using provider-backed LLM metadata extraction.")
-                report_meta = self.extract_report_meta(text, pdf_path)
-                local_meta_has_signal = self._report_metadata_has_signal(report_meta)
-                llm_allowed_for_text = self._should_attempt_report_llm(text)
+        use_provider_llm = self._should_use_provider_llm(request)
+        report_meta = self._extract_or_default_report_meta(
+            text=text,
+            pdf_path=request.pdf_path,
+            use_provider_llm=use_provider_llm,
+        )
+        self.sensitive_meta.safe_update(report_meta)
 
-                if local_meta_has_signal:
-                    logger.info(
-                        "Skipping LLM report metadata extraction because local extraction already found signal."
-                    )
-                elif not llm_allowed_for_text:
-                    logger.info(
-                        "Skipping LLM report metadata extraction for short/low-signal text (%d chars).",
-                        len(text.strip()),
-                    )
-                else:
-                    report_meta = self.extract_report_meta_with_llm(text)
+        anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
+        anonymized_pdf_path, report_meta = self._maybe_create_anonymized_pdf(
+            request=request,
+            report_meta=report_meta,
+        )
+        report_meta = self._finalize_report_meta(
+            report_meta=report_meta,
+            text=text,
+            anonymized_text=anonymized_text,
+            pdf_path=request.pdf_path,
+            use_provider_llm=use_provider_llm,
+        )
 
-                if report_meta:
-                    self.sensitive_meta.safe_update(report_meta)
-                    report_meta = self.sensitive_meta.to_dict()
-                else:
-                    logger.warning(
-                        "Provider-backed LLM extraction failed. Falling back to default SpaCy/Regex extraction."
-                    )
-                    report_meta = self.extract_report_meta(text, pdf_path)
-            else:
-                logger.info("Using default SpaCy/Regex metadata extraction.")
-                report_meta = self.extract_report_meta(text, pdf_path)
-                self.sensitive_meta.safe_update(report_meta)
-                report_meta = self.sensitive_meta.to_dict()
+        self.sensitive_meta.safe_update(report_meta)
+        return ReportProcessResult(
+            text=text,
+            anonymized_text=anonymized_text,
+            report_meta=self.sensitive_meta.to_dict(),
+            anonymized_pdf_path=anonymized_pdf_path,
+        )
+
+    @staticmethod
+    def _is_text_only_request(request: ReportProcessRequest) -> bool:
+        return (
+            request.text is not None
+            and not request.pdf_path
+            and not request.image_path
+        )
+
+    @staticmethod
+    def _empty_process_result(
+        request: ReportProcessRequest,
+    ) -> ReportProcessResult:
+        fallback_path = request.pdf_path or request.image_path or Path("")
+        return ReportProcessResult(
+            text="",
+            anonymized_text="",
+            report_meta={},
+            anonymized_pdf_path=fallback_path,
+        )
+
+    def _load_report_text(self, request: ReportProcessRequest) -> str | None:
+        if request.text is not None:
+            return request.text
+        if request.pdf_path:
+            if not request.pdf_path.exists():
+                logger.error("PDF file not found: %s", request.pdf_path)
+                return None
+            return self.read_pdf(request.pdf_path)
+        if request.image_path:
+            if not request.image_path.exists():
+                logger.error("Image file not found: %s", request.image_path)
+                return None
+            logger.info("Reading text from image file: %s", request.image_path)
+            return self._ocr_single_image(request.image_path)
+        return None
+
+    def _ocr_single_image(self, image_path: Path) -> str | None:
+        try:
+            pil_image = Image.open(image_path)
+        except OSError as exc:
+            logger.error("Error reading image %s: %s", image_path, exc)
+            return None
+        text, _ = tesseract_full_image_ocr(pil_image)
+        return text
+
+    def _apply_ocr_fallback_if_needed(
+        self, text: str, request: ReportProcessRequest
+    ) -> str:
+        if self._is_text_only_request(request):
+            logger.debug(
+                "Skipping OCR fallback for text-only input "
+                "(no pdf_path/image_path provided)."
+            )
+            return text
+        if len(text.strip()) >= 50:
+            return text
+
+        logger.info(
+            "Short/No text detected by pdfplumber (%d chars), applying OCR fallback.",
+            len(text.strip()),
+        )
+        images = self._load_images_for_ocr(request)
+        if not images:
+            return text
+
+        ocr_text = self._ocr_images(images, use_ensemble=request.use_ensemble)
+        logger.info(
+            "OCR fallback finished. Total text length: %d. Preview: %s...",
+            len(ocr_text),
+            ocr_text[:200],
+        )
+        return self._correct_ocr_text_if_enabled(ocr_text)
+
+    def _load_images_for_ocr(self, request: ReportProcessRequest) -> list[Image.Image]:
+        if request.pdf_path:
+            logger.info("Converting PDF to images for OCR: %s", request.pdf_path)
+            return convert_pdf_to_images(request.pdf_path)
+        if request.image_path:
+            try:
+                return [Image.open(request.image_path)]
+            except OSError as exc:
+                logger.error("Failed to open image file: %s", exc)
+        return []
+
+    def _ocr_images(self, images: list[Image.Image], *, use_ensemble: bool) -> str:
+        parts: list[str] = []
+        for idx, pil_image in enumerate(images, start=1):
+            logger.info("Processing page %d with OCR...", idx)
+            ocr_part = self._ocr_image(
+                pil_image, page_num=idx, use_ensemble=use_ensemble
+            )
+            if ocr_part:
+                parts.append(ocr_part)
+        return " ".join(parts).strip()
+
+    def _ocr_image(
+        self, pil_image: Image.Image, *, page_num: int, use_ensemble: bool
+    ) -> str:
+        if use_ensemble:
+            try:
+                return ensemble_ocr(pil_image)
+            except Exception as exc:
+                logger.error("Ensemble OCR failed on page %d: %s", page_num, exc)
+        try:
+            text_part, _ = tesseract_full_image_ocr(pil_image)
+            logger.info("Tesseract OCR successful for page %d", page_num)
+            return text_part
+        except Exception as exc:
+            logger.error("Tesseract OCR failed on page %d: %s", page_num, exc)
+            return ""
+
+    def _correct_ocr_text_if_enabled(self, text: str) -> str:
+        if not text:
+            return text
+        if len(text.strip()) < int(settings.REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH):
+            logger.info(
+                "Skipping LLM OCR correction for short OCR text (%d chars).",
+                len(text.strip()),
+            )
+            return text
+        if not getattr(self, "llm_available", False):
+            logger.info("Skipping LLM correction for OCR text: provider unavailable")
+            return text
+
+        logger.info(
+            "Applying LLM correction to OCR text via provider %s",
+            settings.LLM_PROVIDER,
+        )
+        try:
+            llm_client = LLMService(
+                provider=settings.LLM_PROVIDER,
+                base_url=settings.resolved_llm_base_url,
+            )
+            corrected = llm_client.correct_ocr_text_in_chunks(text)
+        except Exception as exc:
+            logger.warning("Error using LLM for correction: %s", exc)
+            return text
+
+        if corrected and corrected != text and len(corrected) > 0.5 * len(text):
+            logger.info("OCR text successfully corrected by LLM.")
+            return corrected
+        if corrected == text:
+            logger.info("LLM correction resulted in the same text.")
         else:
+            logger.warning(
+                "LLM OCR correction failed or produced poor result, "
+                "using original OCR text."
+            )
+        return text
+
+    def _should_use_provider_llm(self, request: ReportProcessRequest) -> bool:
+        return self.llm_available if request.use_llm is None else request.use_llm
+
+    def _extract_or_default_report_meta(
+        self, *, text: str, pdf_path: Path | None, use_provider_llm: bool
+    ) -> dict[str, Any]:
+        if len(text.strip()) < 10:
             logger.warning(
                 "Skipping metadata extraction due to insufficient text content."
             )
-            report_meta = {
-                "pdf_hash": self.pdf_hash_file(pdf_path)
-                if pdf_path and os.path.exists(str(pdf_path))
+            return ReportMeta(
+                pdf_hash=self.pdf_hash_file(pdf_path)
+                if pdf_path and pdf_path.exists()
                 else None
-            }
+            ).to_report_reader_dict()
 
-        self.sensitive_meta.safe_update(report_meta)
+        if not use_provider_llm:
+            logger.info("Using default SpaCy/Regex metadata extraction.")
+            report_meta = self.extract_report_meta(text, pdf_path)
+            self.sensitive_meta.safe_update(report_meta)
+            return self.sensitive_meta.to_dict()
 
-        # --- Anonymization ---
-        anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
-
-        # --- Create Anonymized PDF (if requested) ---
-        anonymized_pdf_path = None
-
-        if create_anonymized_pdf and pdf_path:
-            logger.info("Creating anonymized PDF with blackened sensitive regions...")
-            anonymized_pdf_path = self.anonymizer.create_anonymized_pdf(
-                pdf_path=str(pdf_path),
-                output_path=anonymized_pdf_output_path,
-                report_meta=report_meta,
+        logger.info("Using provider-backed LLM metadata extraction.")
+        report_meta = self.extract_report_meta(text, pdf_path)
+        if self._report_metadata_has_signal(report_meta):
+            logger.info(
+                "Skipping LLM report metadata extraction because local extraction "
+                "already found signal."
             )
-            if not anonymized_pdf_path:
-                raise RuntimeError(
-                    "create_anonymized_pdf=True but no anonymized PDF path was produced."
-                )
-            report_meta["anonymized_pdf_path"] = anonymized_pdf_path
-            redaction_summary = getattr(self.anonymizer, "last_redaction_summary", None)
-            if isinstance(redaction_summary, dict):
-                report_meta["redaction_summary"] = redaction_summary
-            logger.info(f"Anonymized PDF created: {anonymized_pdf_path}")
-        try:
-            assert isinstance(text, str)
-            report_meta["text"] = text
-        except AssertionError:
-            report_meta["text"] = "Unknown"
-        try:
-            assert isinstance(anonymized_text, str)
-            report_meta["anonymized_text"] = anonymized_text
-        except AssertionError:
-            report_meta["anonymized_text"] = "Unknown"
+            self.sensitive_meta.safe_update(report_meta)
+            return self.sensitive_meta.to_dict()
+        if not self._should_attempt_report_llm(text):
+            logger.info(
+                "Skipping LLM report metadata extraction for short/low-signal text "
+                "(%d chars).",
+                len(text.strip()),
+            )
+            self.sensitive_meta.safe_update(report_meta)
+            return self.sensitive_meta.to_dict()
+
+        llm_meta = self.extract_report_meta_with_llm(text)
+        if llm_meta:
+            self.sensitive_meta.safe_update(llm_meta)
+            return self.sensitive_meta.to_dict()
+        logger.warning(
+            "Provider-backed LLM extraction failed. Falling back to default "
+            "SpaCy/Regex extraction."
+        )
+        return self.extract_report_meta(text, pdf_path)
+
+    def _maybe_create_anonymized_pdf(
+        self, *, request: ReportProcessRequest, report_meta: Mapping[str, Any]
+    ) -> tuple[Path | None, dict[str, Any]]:
+        if not request.create_anonymized_pdf or not request.pdf_path:
+            return None, dict(report_meta)
+
+        logger.info("Creating anonymized PDF with blackened sensitive regions...")
+        output_path = self.anonymizer.create_anonymized_pdf(
+            pdf_path=str(request.pdf_path),
+            output_path=(
+                str(request.anonymized_pdf_output_path)
+                if request.anonymized_pdf_output_path is not None
+                else None
+            ),
+            report_meta=dict(report_meta),
+        )
+        if not output_path:
+            raise RuntimeError(
+                "create_anonymized_pdf=True but no anonymized PDF path was produced."
+            )
+
+        update = ReportMeta(anonymized_pdf_path=output_path)
+        redaction_summary = getattr(self.anonymizer, "last_redaction_summary", None)
+        if isinstance(redaction_summary, dict):
+            update = ReportMeta(
+                **update.to_report_reader_dict(),
+                redaction_summary=cast(Any, redaction_summary),
+            )
+        logger.info("Anonymized PDF created: %s", output_path)
+        return Path(str(output_path)), self._merge_report_meta(report_meta, update)
+
+    def _finalize_report_meta(
+        self,
+        *,
+        report_meta: Mapping[str, Any],
+        text: str,
+        anonymized_text: str,
+        pdf_path: Path | None,
+        use_provider_llm: bool,
+    ) -> dict[str, Any]:
+        meta = self._merge_report_meta(
+            report_meta,
+            ReportMeta(
+                file_path=str(pdf_path) if pdf_path else None,
+                text=text,
+                anonymized_text=anonymized_text,
+            ),
+        )
         detector_sources = ["regex", "spacy"]
         if use_provider_llm:
             detector_sources.append("llm")
-        redaction_summary_meta = report_meta.get("redaction_summary")
-        redaction_region_count = (
-            int(redaction_summary_meta.get("redaction_region_count", 0))
-            if isinstance(redaction_summary_meta, dict)
+        redaction_summary = meta.get("redaction_summary")
+        redaction_count = (
+            int(redaction_summary.get("redaction_region_count", 0))
+            if isinstance(redaction_summary, dict)
             else 0
         )
-        if redaction_summary_meta:
+        if redaction_summary:
             detector_sources.append("pdf_redaction")
-        report_meta["anonymizer_provenance"] = build_anonymizer_provenance(
-            detector_sources=detector_sources,
-            proposal_counts={
-                "report_metadata_fields": sum(
-                    1
-                    for key in (
-                        "patient_first_name",
-                        "patient_last_name",
-                        "patient_dob",
-                        "casenumber",
-                        "patient_gender_name",
-                        "examination_date",
-                        "examination_time",
-                        "examiner_first_name",
-                        "examiner_last_name",
-                        "center",
-                    )
-                    if report_meta.get(key)
-                ),
-                "redaction_regions": redaction_region_count,
-            },
-        ).model_dump()
-
-        sensitive_meta = dict(
-            file_path=str(pdf_path) if pdf_path else None,
-            patient_first_name=report_meta.get("patient_first_name")
-            or report_meta.get("first_name"),
-            patient_last_name=report_meta.get("patient_last_name")
-            or report_meta.get("last_name"),
-            patient_dob=report_meta.get("patient_dob") or report_meta.get("birth_date"),
-            casenumber=report_meta.get("casenumber") or report_meta.get("casenumber"),
-            patient_gender_name=report_meta.get("patient_gender_name")
-            or report_meta.get("gender"),
-            examination_date=report_meta.get("examination_date"),
-            examination_time=report_meta.get("examination_time"),
-            examiner_first_name=report_meta.get("examiner_first_name")
-            or report_meta.get("doctor_first_name"),
-            examiner_last_name=report_meta.get("examiner_last_name")
-            or report_meta.get("doctor_last_name"),
-            center=report_meta.get("center") or report_meta.get("hospital"),
-            text=text,
-            anonymized_text=anonymized_text,
+        return self._merge_report_meta(
+            meta,
+            ReportMeta(
+                anonymizer_provenance=ReportAnonymizerProvenance.model_validate(
+                    build_anonymizer_provenance(
+                        detector_sources=detector_sources,
+                        proposal_counts={
+                            "report_metadata_fields": self._metadata_field_count(meta),
+                            "redaction_regions": redaction_count,
+                        },
+                    ).model_dump()
+                )
+            ),
         )
-        self.sensitive_meta.safe_update(sensitive_meta)
 
-        # Ensure return tuple size is 4
-        return (
-            text,
-            anonymized_text,
-            self.sensitive_meta.to_dict(),
-            Path(str(anonymized_pdf_path)) if anonymized_pdf_path else None,
+    @staticmethod
+    def _metadata_field_count(meta: Mapping[str, Any]) -> int:
+        keys = (
+            "first_name",
+            "last_name",
+            "dob",
+            "casenumber",
+            "gender",
+            "examination_date",
+            "examination_time",
+            "examiner_first_name",
+            "examiner_last_name",
+            "center",
         )
+        return sum(1 for key in keys if meta.get(key))
 
     @staticmethod
     def _report_metadata_has_signal(meta: Mapping[str, Any]) -> bool:
         signal_keys = (
-            "patient_first_name",
-            "patient_last_name",
-            "patient_dob",
+            "first_name",
+            "last_name",
+            "dob",
             "casenumber",
-            "patient_gender_name",
+            "gender",
             "examination_date",
             "examination_time",
             "examiner_first_name",
@@ -584,353 +602,3 @@ class ReportReader:
         return bool(
             text and len(text.strip()) >= int(settings.REPORT_LLM_MIN_TEXT_LENGTH)
         )
-
-    def read_pdf(self, pdf_path):
-        """Read pdf file using pdfplumber and return the raw text content."""
-        if pdf_path is None:
-            logger.error("PDF path is None, cannot read PDF")
-            return ""
-
-        try:
-            pdf_path = str(pdf_path)
-        except Exception:
-            logger.error(f"Cannot convert pdf_path to string: {pdf_path}")
-            return ""
-
-        # Disable verbose pdfminer logging
-        logging.getLogger("pdfminer").setLevel(logging.WARNING)
-        logging.getLogger("pdfminer.psparser").setLevel(logging.WARNING)
-        logging.getLogger("pdfminer.pdfdocument").setLevel(logging.WARNING)
-        logging.getLogger("pdfminer.pdfinterp").setLevel(logging.WARNING)
-        logging.getLogger("pdfminer.pdfpage").setLevel(logging.WARNING)
-
-        try:
-            with pdfplumber.open(str(pdf_path)) as pdf:
-                text = ""
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
-                return text
-        except Exception as e:
-            logger.error(f"Error reading PDF {pdf_path}: {str(e)}")
-            return ""
-
-    def extract_report_meta(self, text, pdf_path) -> Dict[str, Any]:
-        """Extract metadata from report text using the spacy extractor classes."""
-        report_meta = {}
-
-        logger.debug(f"Full text extracted from PDF: {text[:500]}...")
-        lines = text.split("\n") if text else []
-
-        patient_info = None
-        # Option 1: Try on whole text with Deepseek
-        if text:
-            # We do not call the provider-backed LLM path here to avoid recursion when
-            # this function is used as the fallback inside process_report.
-            # Just use patient_extractor (SpaCy)
-            patient_info = self.patient_extractor(text)
-            logger.debug(f"Patient extractor result on full text: {patient_info}")
-        else:
-            logger.debug("Skipping extraction on empty text.")
-
-        is_valid_info = patient_info and (
-            patient_info.get("patient_first_name") is not None
-            or patient_info.get("patient_last_name") is not None
-        )
-
-        # Option 2: If full text failed, try line by line with SpaCy
-        if not is_valid_info and lines:
-            logger.debug("Extractor failed on full text, trying line by line.")
-            for line in lines:
-                if re.search(r"pat(?:ient|ientin|\.|iont|bien)", line, re.IGNORECASE):
-                    patient_info_line = self.patient_extractor(line)
-                    is_valid_line_info = patient_info_line and (
-                        patient_info_line.get("patient_first_name") is not None
-                        or patient_info_line.get("patient_last_name") is not None
-                    )
-                    if is_valid_line_info:
-                        patient_info = patient_info_line
-                        is_valid_info = True
-                        break
-
-        if not is_valid_info and text:
-            logger.debug("SpaCy extractor failed, using regex fallback extraction")
-            fallback_info = extract_patient_info_from_text(text)
-            if (
-                fallback_info.get("patient_first_name") != "Unknown"
-                or fallback_info.get("patient_last_name") != "Unknown"
-            ):
-                # Clean up "Unknown" strings
-                for k, v in fallback_info.items():
-                    if v == "Unknown":
-                        fallback_info[k] = None
-                patient_info = fallback_info
-                is_valid_info = True
-            else:
-                if not patient_info:
-                    patient_info = PatientDataExtractor._blank()
-
-        if not patient_info:
-            patient_info = PatientDataExtractor._blank()
-
-        # Date Parsing
-        dob_value = patient_info.get("patient_dob")
-        parsed_dob = None
-        if isinstance(dob_value, str):
-            parsed_dob = dateparser.parse(
-                dob_value, languages=["de"], settings={"DATE_ORDER": "DMY"}
-            )
-            if parsed_dob:
-                parsed_dob = parsed_dob.date()
-        elif isinstance(dob_value, (datetime, date)):
-            parsed_dob = dob_value if isinstance(dob_value, date) else dob_value.date()
-
-        final_patient_info = {
-            "patient_first_name": patient_info.get("patient_first_name"),
-            "patient_last_name": patient_info.get("patient_last_name"),
-            "patient_dob": parsed_dob.isoformat()
-            if isinstance(parsed_dob, date)
-            else parsed_dob,
-            "casenumber": patient_info.get("casenumber"),
-            "patient_gender_name": patient_info.get("patient_gender_name"),
-        }
-        self.sensitive_meta.safe_update(final_patient_info)
-        report_meta = self.sensitive_meta.to_dict()
-
-        # Extract other information
-        if lines:
-            for line in lines:
-                if re.search(r"unters\W*arzt", line, re.IGNORECASE):
-                    examiner_info = self.examiner_extractor.extract_examiner_info(line)
-                    if examiner_info:
-                        report_meta.update(examiner_info)
-
-                if re.search(r"unters\.:|u-datum:|eingang\s*am:", line, re.IGNORECASE):
-                    examination_info = (
-                        self.examination_extractor.extract_examination_info(line)
-                    )
-                    if examination_info and examination_info.get("examination_date"):
-                        report_meta.update(examination_info)
-                        # Break not strict here, assuming multiple lines
-
-                if self.flags.get("endoscope_info_line", "").lower() in line.lower():
-                    endoscope_info = self.endoscope_extractor.extract_endoscope_info(
-                        line
-                    )
-                    if endoscope_info:
-                        report_meta.update(endoscope_info)
-
-        self.sensitive_meta.safe_update(report_meta)
-        report_meta = self.sensitive_meta.to_dict()
-
-        # PDF Hash
-        try:
-            if pdf_path and os.path.exists(str(pdf_path)):
-                report_meta["pdf_hash"] = self.pdf_hash_file(pdf_path)
-            else:
-                report_meta["pdf_hash"] = None
-        except Exception as e:
-            logger.error(f"Could not calculate PDF hash: {e}")
-            report_meta["pdf_hash"] = None
-
-        return report_meta
-
-    def extract_report_meta_with_llm(self, text):
-        """Extract metadata using the shared structured-output LLM path."""
-        return self._extract_report_meta_via_llm(
-            text=text,
-            extractor_name="default",
-            unavailable_log_level="warning",
-        )
-
-    def _extract_report_meta_via_llm(
-        self,
-        text: str,
-        extractor_name: str,
-        unavailable_log_level: str = "debug",
-    ) -> Dict[str, Any]:
-        """Shared wrapper for provider-backed LLM metadata extraction variants."""
-        if not self.llm_available or not self.llm_extractor:
-            msg = (
-                f"LLM provider {settings.LLM_PROVIDER} not available for "
-                f"{extractor_name} extraction, returning empty dict."
-            )
-            log_fn = getattr(logger, unavailable_log_level, logger.debug)
-            log_fn(msg)
-            return {}
-
-        logger.info(
-            "Attempting metadata extraction with %s via provider %s",
-            extractor_name,
-            settings.LLM_PROVIDER,
-        )
-        try:
-            meta_obj = self.llm_extractor.extract_metadata(text)
-            if not meta_obj:
-                logger.warning(
-                    "%s LLM extraction failed, returning empty dict.",
-                    extractor_name,
-                )
-                return {}
-
-            self.sensitive_meta.safe_update(meta_obj)
-            logger.info("%s LLM extraction successful.", extractor_name)
-            return self.sensitive_meta.to_dict()
-        except Exception as e:
-            logger.warning(f"{extractor_name} LLM extraction error: {e}")
-            return {}
-
-    def anonymize_report(self, text, report_meta):
-        """Anonymize the report text using the extracted metadata."""
-        anonymized_text = anonymize_text(
-            text=text,
-            report_meta=report_meta,
-            text_date_format=self.text_date_format,
-            lower_cut_off_flags=self.flags["cut_off_below"],
-            upper_cut_off_flags=self.flags["cut_off_above"],
-            locale=self.locale,
-            first_names=self.employee_first_names,
-            last_names=self.employee_last_names,
-            apply_cutoffs=True,
-        )
-        return anonymized_text
-
-    def pdf_hash(self, pdf_binary):
-        return hashlib.sha256(pdf_binary).hexdigest()
-
-    def pdf_hash_file(self, pdf_path, chunk_size: int = 1024 * 1024) -> Optional[str]:
-        """Calculate PDF SHA-256 hash with chunked IO to avoid loading full files into memory."""
-        if not pdf_path:
-            return None
-        try:
-            pdf_file = Path(pdf_path)
-        except Exception:
-            logger.error(f"Invalid PDF path for hashing: {pdf_path}")
-            return None
-
-        if not pdf_file.exists():
-            return None
-
-        try:
-            hasher = hashlib.sha256()
-            with open(pdf_file, "rb") as handle:
-                for chunk in iter(lambda: handle.read(chunk_size), b""):
-                    hasher.update(chunk)
-            return hasher.hexdigest()
-        except Exception as e:
-            logger.error(f"Could not stream-hash PDF {pdf_file}: {e}")
-            return None
-
-    def process_report_with_cropping(
-        self,
-        pdf_path=None,
-        image_path=None,
-        use_ensemble=False,
-        verbose=True,
-        use_llm: Optional[bool] = None,
-        text=None,
-        crop_output_dir=None,
-        crop_sensitive_regions=True,
-        anonymization_output_dir=None,
-    ):
-        """Extended version of process_report with optional cropping."""
-        original_text, anonymized_text, report_meta, _ = self.process_report(
-            pdf_path=pdf_path,
-            image_path=image_path,
-            use_ensemble=use_ensemble,
-            verbose=verbose,
-            use_llm=use_llm,
-            text=text,
-        )
-
-        cropped_regions_info = {}
-        anonymized_pdf_path = None
-
-        if not crop_output_dir:
-            crop_output_dir = Path(os.getcwd()).parent / "pdfs" / "cropped_regions"
-
-        if not anonymization_output_dir:
-            anonymization_output_dir = Path(os.getcwd()).parent / "pdfs" / "anonymized"
-
-        if crop_sensitive_regions and crop_output_dir and pdf_path:
-            try:
-                logger.info("Beginne Cropping sensitiver Regionen...")
-                cropped_regions_info = self.sensitive_cropper.crop_sensitive_regions(
-                    pdf_path=pdf_path, output_dir=str(crop_output_dir)
-                )
-            except Exception as e:
-                logger.error(
-                    f"Fehler beim initialien Aufruf der Funktion zum Cropping: {e}"
-                )
-                cropped_regions_info = {}
-
-            if cropped_regions_info:
-                out_dir = (
-                    Path(anonymization_output_dir)
-                    if anonymization_output_dir
-                    else Path(pdf_path).parent
-                )
-                out_dir.mkdir(parents=True, exist_ok=True)
-                anonymized_pdf_path = out_dir / (Path(pdf_path).stem + ".pdf")
-                try:
-                    self.sensitive_cropper.create_anonymized_pdf_with_crops(
-                        pdf_path=pdf_path,
-                        crop_output_dir=str(crop_output_dir),
-                        anonymized_pdf_path=str(anonymized_pdf_path),
-                    )
-                    report_meta["anonymized_pdf_path"] = str(anonymized_pdf_path)
-                except Exception as pdf_error:
-                    logger.warning(
-                        f"Konnte anonymisiertes PDF nicht erstellen: {pdf_error}"
-                    )
-                    report_meta["anonymized_pdf_error"] = str(pdf_error)
-                    anonymized_pdf_path = None
-
-            report_meta["cropped_regions"] = cropped_regions_info
-            report_meta["cropping_enabled"] = True
-            report_meta["total_cropped_regions"] = sum(
-                len(crops) for crops in cropped_regions_info.values()
-            )
-        else:
-            report_meta["cropping_enabled"] = False
-
-        return (
-            original_text,
-            anonymized_text,
-            report_meta,
-            cropped_regions_info,
-            anonymized_pdf_path,
-        )
-
-    def create_visualization_report(
-        self, pdf_path, output_dir, visualize_all_pages=False
-    ):
-        """Create visualization report for sensitive regions."""
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        pdf_name = Path(pdf_path).stem
-        images = convert_pdf_to_images(pdf_path)
-        visualization_files = []
-
-        pages_to_process = range(len(images)) if visualize_all_pages else [0]
-
-        for page_num in pages_to_process:
-            if page_num >= len(images):
-                continue
-
-            image = images[page_num]
-            full_text, word_boxes = tesseract_full_image_ocr(image)
-
-            vis_filename = f"{pdf_name}_page_{page_num + 1}_analysis.png"
-            vis_path = output_dir / vis_filename
-
-            self.sensitive_cropper.visualize_sensitive_regions(
-                image, word_boxes, str(vis_path)
-            )
-            visualization_files.append(str(vis_path))
-
-        return visualization_files
-
-        return visualization_files
