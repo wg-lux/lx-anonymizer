@@ -9,6 +9,7 @@ import pytesseract  # type: ignore[import-untyped]
 from PIL import Image, ImageEnhance, ImageFilter
 
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
+from lx_anonymizer.regex_patterns import STRUCTURED_OVERLAY_RE
 
 _RapidOCR: Optional[type] = None
 RAPIDOCR_BACKEND = "rapidocr"
@@ -539,23 +540,7 @@ class FrameOCR:
 
         # Special case: Allow date/time patterns (have few letters but are valid)
         # Examples: "09:53:32", "2024-01-15", "15702/2024", "E 15702/2024809:53:32"
-        import re
-
-        # Time patterns: HH:MM:SS or HH:MM
-        time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
-        # Date patterns: YYYY-MM-DD, DD.MM.YYYY, YYYY/MM/DD
-        date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
-        # Case number patterns: E 12345/2024 or similar
-        case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
-        # Device ID patterns: long numbers with optional separators
-        device_pattern = r"\d{8,}"
-
-        if (
-            re.search(time_pattern, text)
-            or re.search(date_pattern, text)
-            or re.search(case_pattern, text)
-            or re.search(device_pattern, text)
-        ):
+        if STRUCTURED_OVERLAY_RE.search(text):
             # Contains structured data patterns - likely valid
             return True
 

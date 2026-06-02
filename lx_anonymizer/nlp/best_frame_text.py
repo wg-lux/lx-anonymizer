@@ -4,22 +4,14 @@ import logging
 import math
 import os
 import random
-import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
+from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, MEDICAL_QUALITY_PATTERNS
 
 logger = logging.getLogger(__name__)
-
-_WORD_RX = re.compile(r"[A-Za-zÄÖÜäöüß]{2,}")
-_MEDICAL_RXS = [
-    re.compile(r"(Patient|Untersuchung|Diagnose|Befund|Behandlung)", re.I),
-    re.compile(r"\b(mm|cm|grad|°|%)\b", re.I),
-    re.compile(r"(links|rechts|lateral|medial|anterior|posterior)", re.I),
-    re.compile(r"(Jahr|Jahre|Tag|Tage|Monat|Monate)", re.I),
-]
 
 
 def _is_punct_or_symbol(ch: str) -> bool:
@@ -82,10 +74,10 @@ class BestFrameText:
         conf = 0.0 if math.isnan(conf) else max(0.0, min(1.0, conf))
         score = conf * 0.4
 
-        words = _WORD_RX.findall(text)
+        words = GERMAN_WORD_RE.findall(text)
         if words:
             # medical pattern bonus (capped)
-            med_bonus = sum(0.1 for rx in _MEDICAL_RXS if rx.search(text))
+            med_bonus = sum(0.1 for rx in MEDICAL_QUALITY_PATTERNS if rx.search(text))
             score += min(med_bonus, 0.3)
 
             # average word length bonus

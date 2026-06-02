@@ -104,7 +104,7 @@ def process_image(
     # Normal processing path with OCR, NER, and optional blurring
     modified_images_map, result = process_images_with_OCR_and_NER(
         Path(img_path),
-        east_path=east_path,
+        east_path=str(east_path),
         device=device,
         min_confidence=min_confidence,
         width=width,

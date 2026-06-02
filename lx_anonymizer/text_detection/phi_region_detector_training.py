@@ -71,7 +71,7 @@ def train_phi_region_detector(
     """
 
     try:
-        from ultralytics import YOLO
+        from ultralytics import YOLO  # type: ignore[import-not-found]
     except ImportError as exc:
         raise PhiRegionDetectorTrainingError(
             "PHI detector training requires the optional dependency `ultralytics`. "

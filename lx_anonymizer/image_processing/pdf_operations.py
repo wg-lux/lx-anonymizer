@@ -64,9 +64,10 @@ def merge_pdfs(pdf_paths, output_path):
 
 def convert_image_to_pdf(image_path, pdf_path):
     """Converts an image to a PDF using PyMuPDF."""
-    img = pymupdf.Pixmap(str(image_path))  # Convert to string if needed
     doc = pymupdf.open()
-    rect = img.rect
+    with Image.open(image_path) as image:
+        width, height = image.size
+    rect = pymupdf.Rect(0, 0, width, height)
     page = doc.new_page(width=rect.width, height=rect.height)
     page.insert_image(rect, filename=str(image_path))  # Convert to string if needed
     doc.save(str(pdf_path))  # Save as string if required by pymupdf

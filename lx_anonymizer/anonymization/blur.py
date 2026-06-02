@@ -1,7 +1,10 @@
 import uuid
 from pathlib import Path
+from typing import cast
 
 import cv2
+import numpy as np
+import numpy.typing as npt
 
 from lx_anonymizer.region_processing.box_operations import get_dominant_color
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -14,7 +17,7 @@ from lx_anonymizer.region_processing.region_detector import expand_roi
 logger = get_logger(__name__)
 
 
-temp_dir, base_dir, csv_dir = create_temp_directory()
+temp_dir, base_dir, csv_dir = create_temp_directory(Path.cwd())
 
 
 def blur_function(
@@ -47,11 +50,15 @@ def blur_function(
         The path to the saved output image.
     """
     logger.info("Applying blur to the specified region")
-    blur_dir = create_blur_directory()
+    blur_dir = create_blur_directory(base_dir)
     if blur_dir is None:
         raise ValueError("Blur directory could not be created or accessed")
     image_path = Path(image_path)
     image = cv2.imread(str(image_path))
+    if image is None:
+        raise ValueError(f"Could not load image: {image_path}")
+    image = image.astype(np.uint8, copy=False)
+    typed_image = cast(npt.NDArray[np.uint8], image)
     (startX, startY, endX, endY) = box
 
     # Expand the ROI to include a border around the detected region
@@ -66,7 +73,7 @@ def blur_function(
     if background_color is not None:
         dominant_color = background_color
     else:
-        dominant_color = get_dominant_color(image, box)
+        dominant_color = get_dominant_color(typed_image, box)
 
     # Calculate the dimensions for the smaller rectangle
     rect_width = int((endX - startX) * rectangle_scale)

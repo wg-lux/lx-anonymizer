@@ -13,6 +13,7 @@ import numpy as np
 import pytesseract  # type: ignore[import-untyped]
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
+from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, REPEATED_CHAR_RE
 
 logger = logging.getLogger(__name__)
 
@@ -100,14 +101,14 @@ class DiagnosticFrameOCR:
         whitespace = sum(1 for ch in text if ch.isspace())
 
         # Word analysis
-        words = re.findall(r"[A-Za-zÄÖÜäöüß]{2,}", text)
+        words = GERMAN_WORD_RE.findall(text)
         readable_words = [
             w for w in words if len(w) >= 3 and not all(c == w[0] for c in w)
         ]
 
         # Gibberish detection
         punct_ratio = punct / max(1, len(text))
-        repeated_chars = len(re.findall(r"(.)\1{3,}", text))
+        repeated_chars = len(REPEATED_CHAR_RE.findall(text))
         special_symbols = sum(1 for ch in text if ord(ch) > 127 and not ch.isalpha())
 
         # Calculate gibberish score

@@ -3,8 +3,13 @@ LX Anonymizer package for anonymizing medical reports and images.
 """
 
 import importlib.metadata
+from typing import TYPE_CHECKING
 
 __all__ = ["ReportReader", "FrameCleaner", "__version__"]
+
+if TYPE_CHECKING:
+    from lx_anonymizer.frame_cleaner import FrameCleaner
+    from lx_anonymizer.report_reader import ReportReader
 
 try:
     __version__ = importlib.metadata.version("lx-anonymizer")

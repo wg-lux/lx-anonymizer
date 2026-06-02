@@ -87,6 +87,11 @@ def main(
 ):
     logger = get_logger(__name__)  # Use global logger
     try:
+        east_model_path = (
+            Path(east_path)
+            if east_path is not None
+            else Path("frozen_east_text_detection.pb")
+        )
         clear_gpu_memory()
         with temp_directory_manager() as (temp_dir, base_dir, csv_dir):
             results_dir = create_results_directory()
@@ -106,7 +111,7 @@ def main(
 
                     processed_image_path, result = process_image(
                         img_path,
-                        east_path,
+                        east_model_path,
                         device,
                         min_confidence,
                         width,
@@ -132,7 +137,7 @@ def main(
 
                         processed_image_path, anonymization_data = process_image(
                             local_img_path,
-                            east_path,
+                            east_model_path,
                             device,
                             min_confidence,
                             width,

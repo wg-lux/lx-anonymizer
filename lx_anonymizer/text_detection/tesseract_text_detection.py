@@ -1,6 +1,9 @@
 import json
+from typing import cast
 
 import cv2
+import numpy as np
+import numpy.typing as npt
 import pytesseract  # type: ignore[import-untyped]
 from pytesseract import Output
 
@@ -95,7 +98,9 @@ def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=3
     output_boxes = sort_boxes(output_boxes, vertical_threshold=5)
 
     # Extend boxes with minimal margins
-    output_boxes = extend_boxes_if_needed(orig, output_boxes, extension_margin=2)
+    output_boxes = extend_boxes_if_needed(
+        cast(npt.NDArray[np.uint8], orig), output_boxes, extension_margin=2
+    )
 
     logger.info(f"Tesseract text detection complete. Found {len(output_boxes)} words.")
     return output_boxes, json.dumps(output_confidences)

@@ -14,7 +14,6 @@ import glob
 import importlib
 import logging
 import os
-import re
 import threading
 import time
 import unicodedata
@@ -26,6 +25,14 @@ import numpy as np
 from PIL import Image
 
 from lx_anonymizer._native import native as _native
+from lx_anonymizer.regex_patterns import (
+    MULTISPACE_2PLUS_RE,
+    OCR_ALLOWED_TEXT_RE,
+    PUNCT_RUN_RE,
+    STRUCTURED_OVERLAY_LOOSE_RE,
+    REPEATED_PUNCT_RE,
+    STRUCTURED_OVERLAY_RE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,21 +73,7 @@ def _py_is_gibberish(text: str) -> bool:
     if not text or len(text) < 3:
         return True
 
-    time_pattern = r"\d{1,2}:\d{2}(?::\d{2})?"
-    date_pattern = r"\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{4}"
-    case_pattern = r"[A-Z]\s*\d{4,}/\d{4}"
-    compact_code_pattern = r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b"
-    device_pattern = r"\d{8,}"
-    ratio_pattern = r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b"
-
-    if (
-        re.search(time_pattern, text)
-        or re.search(date_pattern, text)
-        or re.search(case_pattern, text)
-        or re.search(compact_code_pattern, text)
-        or re.search(device_pattern, text)
-        or re.search(ratio_pattern, text)
-    ):
+    if STRUCTURED_OVERLAY_RE.search(text):
         return False
 
     alpha = sum(c.isalpha() for c in text)
@@ -146,23 +139,17 @@ def _py_gibberish_score(text: str) -> float:
 def _py_looks_structured_overlay_text(text: str) -> bool:
     if not text:
         return False
-    patterns = [
-        r"\d{1,2}:\d{2}(?::\d{2})?",
-        r"\b[A-Z]\s*\d{5,}\b|\b[A-Z]\d{5,}\b",
-        r"\b\d+(?:[.,]\d+)?/\d+(?:[.,]\d+)?\b",
-        r"\b\d{4,}\b",
-    ]
-    return any(re.search(p, text) for p in patterns)
+    return STRUCTURED_OVERLAY_LOOSE_RE.search(text) is not None
 
 
 def _py_normalize_ocr_text(text: str) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFC", text)
-    text = re.sub(r"[^\w\s.,:;/-ÄÖÜäöüß]", "", text)
-    text = re.sub(r"([.,:;])\1{1,}", r"\1", text)
-    text = re.sub(r"[.,:;]{2,}", lambda m: m.group(0)[0], text)
-    text = re.sub(r"\s{2,}", " ", text).strip()
+    text = OCR_ALLOWED_TEXT_RE.sub("", text)
+    text = REPEATED_PUNCT_RE.sub(r"\1", text)
+    text = PUNCT_RUN_RE.sub(lambda m: m.group(0)[0], text)
+    text = MULTISPACE_2PLUS_RE.sub(" ", text).strip()
     return text
 
 

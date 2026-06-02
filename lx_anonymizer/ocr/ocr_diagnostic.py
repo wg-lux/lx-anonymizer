@@ -15,12 +15,12 @@ import subprocess
 import argparse
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import re
 import unicodedata
 import cv2
 import numpy as np
 import pandas as pd  # type: ignore[import-untyped]
 import pytesseract  # type: ignore[import-untyped]
+from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, REPEATED_CHAR_RE
 
 
 # Setup logging
@@ -107,15 +107,13 @@ class OCRDiagnostic:
         whitespace = sum(1 for ch in text if ch.isspace())
 
         # Wörter analysieren
-        words = re.findall(r"[A-Za-zÄÖÜäöüß]{2,}", text)
+        words = GERMAN_WORD_RE.findall(text)
         readable_words = [
             w for w in words if len(w) >= 3 and not all(c == words[0][0] for c in w)
         ]
 
         # Gibberish-Indikatoren
-        repeated_chars = len(
-            re.findall(r"(.)\1{3,}", text)
-        )  # 4+ gleiche Zeichen hintereinander
+        repeated_chars = len(REPEATED_CHAR_RE.findall(text))
         special_symbols = sum(1 for ch in text if ord(ch) > 127 and not ch.isalpha())
 
         return {

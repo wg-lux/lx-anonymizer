@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, cast
 
 import numpy as np
 import pytesseract  # type: ignore[import-untyped]
@@ -91,8 +91,10 @@ def preload_models():
         logger.warning("CUDA not available, using CPU")
 
     # Load models with CUDA memory optimization
-    processor = TrOCRProcessor.from_pretrained("microsoft/trocr-base-str")
-    model = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-base-str")
+    processor_cls = cast(Any, TrOCRProcessor)
+    model_cls = cast(Any, VisionEncoderDecoderModel)
+    processor = processor_cls.from_pretrained("microsoft/trocr-base-str")
+    model = model_cls.from_pretrained("microsoft/trocr-base-str")
 
     # Move model to GPU and enable CUDA optimizations
     if torch.cuda.is_available():
@@ -166,7 +168,7 @@ def trocr_full_image_ocr(image_input):
         if isinstance(image_input, np.ndarray):
             # np.ndarray -> PIL
             pil_img = Image.fromarray(image_input).convert("RGB")
-        elif hasattr(image_input, "convert"):
+        elif isinstance(image_input, Image.Image):
             # PIL.Image
             pil_img = image_input.convert("RGB")
         else:
@@ -177,10 +179,10 @@ def trocr_full_image_ocr(image_input):
             f"Failed to prepare image for TrOCR: {e}. Falling back to Tesseract."
         )
         try:
-            if hasattr(image_input, "convert"):
-                fb_img = image_input.convert("RGB")
-            elif isinstance(image_input, np.ndarray):
+            if isinstance(image_input, np.ndarray):
                 fb_img = Image.fromarray(image_input).convert("RGB")
+            elif isinstance(image_input, Image.Image):
+                fb_img = image_input.convert("RGB")
             else:
                 fb_img = Image.open(image_input).convert("RGB")
             return pytesseract.image_to_string(fb_img, config="--psm 6").strip()

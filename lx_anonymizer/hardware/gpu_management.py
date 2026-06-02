@@ -1,4 +1,4 @@
-import torch
+import torch  # type: ignore[import-not-found]
 
 from lx_anonymizer.setup.custom_logger import get_logger
 

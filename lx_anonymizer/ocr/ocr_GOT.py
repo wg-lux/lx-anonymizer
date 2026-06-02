@@ -1,6 +1,6 @@
 import io
 
-import torch
+import torch  # type: ignore[import-not-found]
 from PIL import Image
 from transformers import AutoModel, AutoTokenizer  # type: ignore[import-untyped]
 

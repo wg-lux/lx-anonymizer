@@ -31,6 +31,8 @@ def reassemble_image(
 
     # Convert paths to Path objects if they aren't already
     output_dir = Path(output_dir)
+    if original_image_path is None:
+        raise ValueError("original_image_path is required")
     original_image_path = Path(original_image_path)
 
     # Load the original image only once

@@ -2,9 +2,11 @@ import csv
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import cv2
+import numpy as np
+import numpy.typing as npt
 import pymupdf  # type: ignore[import-untyped]
 import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
@@ -102,7 +104,7 @@ def _prepare_image_paths(
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text()
-            if text:
+            if isinstance(text, str) and text:
                 extracted_text += text
             pix = page.get_pixmap()
             image_path = temp_dir / f"{uuid.uuid4()}_page_{page_num}.png"
@@ -128,11 +130,15 @@ def _load_device_defaults(
 ]:
     try:
         first_name_box, last_name_box = read_name_boxes(device)
-        background_color = read_background_color(device)
+        background_color = cast(Tuple[int, int, int], read_background_color(device))
     except Exception:
         logger.warning("Using default values for name replacement.")
         first_name_box, last_name_box = None, None
-        background_color = get_dominant_color(cv2.imread(str(img_path)))
+        image = cv2.imread(str(img_path))
+        if image is None:
+            raise ValueError(f"Could not load image: {img_path}")
+        image = image.astype(np.uint8, copy=False)
+        background_color = get_dominant_color(cast(npt.NDArray[np.uint8], image))
     return first_name_box, last_name_box, background_color
 
 
@@ -377,7 +383,7 @@ def process_images_with_OCR_and_NER(
 
         # If not skipping blur and we have a blurred image path
         if not skip_blur and blurred_image_path is not None:
-            _save_final_blurred_image(blurred_image_path)
+            _save_final_blurred_image(Path(blurred_image_path))
 
         # Always run LLM analysis and add results
         result["llm_results"] = llm_results
@@ -425,7 +431,7 @@ def process_ocr_results(
     logger.info(f"Entities detected: {entities}")
 
     box_to_image_map = {}
-    gender_pars = []  # Changed from {} to []
+    gender_pars: List[str] = []  # Changed from {} to []
     new_image_path = (
         image_path  # Keep track of the current image path being manipulated
     )
@@ -455,13 +461,13 @@ def process_ocr_results(
             )
 
         names_detected.append(name)
-        gender_pars.append(gender_par)  # Now valid since gender_pars is a list
+        gender_pars.append(str(gender_par))  # Now valid since gender_pars is a list
         for box_key, modified_image_path in box_to_image_map.items():
-            modified_images_map[(box_key, new_image_path)] = modified_image_path
+            modified_images_map[(box_key, str(new_image_path))] = modified_image_path
 
     combined_results.append((phrase, phrase_box, ocr_confidence, entities))
     return (
-        new_image_path,
+        str(new_image_path),
         modified_images_map,
         combined_results,
         gender_pars,

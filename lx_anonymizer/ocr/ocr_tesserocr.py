@@ -111,7 +111,7 @@ class TesseOCROptimized:
             return [], []
 
         # Load image
-        if hasattr(image_path, "convert"):
+        if isinstance(image_path, Image.Image):
             image = image_path.convert("RGB")
         else:
             image = Image.open(image_path).convert("RGB")

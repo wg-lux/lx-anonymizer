@@ -2,7 +2,7 @@ import os
 import re
 from typing import List, Tuple
 
-import torch
+import torch  # type: ignore[import-not-found]
 from PIL import Image
 from transformers import DonutProcessor, VisionEncoderDecoderModel  # type: ignore[import-untyped]
 

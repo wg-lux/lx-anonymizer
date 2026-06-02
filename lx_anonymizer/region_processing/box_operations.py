@@ -5,7 +5,7 @@ The functions in this script define operations on coordinate
 bounding boxes in images.
 """
 
-from typing import List, Optional, Protocol, Tuple, cast
+from typing import Any, List, Optional, Protocol, Tuple, cast
 
 import cv2
 import numpy as np
@@ -106,7 +106,9 @@ def get_dominant_color(
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)  # type: ignore
     flags = cv2.KMEANS_RANDOM_CENTERS  # type: ignore
 
-    _, labels, palette = cv2.kmeans(pixels, n_colors, None, criteria, 10, flags)
+    _, labels, palette = cv2.kmeans(
+        cast(Any, pixels), n_colors, cast(Any, None), criteria, 10, flags
+    )
     _, counts = np.unique(labels, return_counts=True)
 
     dominant = palette[np.argmax(counts)]

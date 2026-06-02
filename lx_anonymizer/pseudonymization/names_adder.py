@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 logger = get_logger(__name__)
 
 # Create or read temporary directory
-temp_dir, base_dir, csv_dir = create_temp_directory()
+temp_dir, base_dir, csv_dir = create_temp_directory(Path.cwd())
 
 
 def numpy_to_pil(np_img_bgr):
@@ -32,6 +32,12 @@ def pil_to_numpy(pil_img):
     Convert a Pillow (RGB) Image to an OpenCV-style (BGR) NumPy array.
     """
     return np.array(pil_img)[:, :, ::-1]  # flip RGB -> BGR
+
+
+def _parse_rgb_color(value: Any) -> Tuple[int, int, int]:
+    parsed = ast.literal_eval(value) if isinstance(value, str) else value
+    red, green, blue = parsed
+    return (int(red), int(green), int(blue))
 
 
 def load_font(font_or_path, font_size=40):
@@ -297,20 +303,16 @@ def add_device_name_to_image(
             last_name_height,
         ) = device_config
 
-        background_color = (
-            ast.literal_eval(background_color_str)
-            if isinstance(background_color_str, str)
-            else background_color_str
-        )
-        font_color = (
-            ast.literal_eval(font_color_str)
-            if isinstance(font_color_str, str)
-            else font_color_str
-        )
+        background_color = _parse_rgb_color(background_color_str)
+        font_color = _parse_rgb_color(font_color_str)
         font_scale = font_scale_cfg
         font_thickness = 1  # forced for readability
-        text_formatting = text_formatting_cfg
-        if font_path_str:
+        text_formatting = (
+            text_formatting_cfg
+            if isinstance(text_formatting_cfg, str)
+            else text_formatting
+        )
+        if isinstance(font_path_str, str) and font_path_str:
             font = font_path_str  # override
 
         first_name_coords = (
@@ -592,7 +594,8 @@ def add_name_to_image(
     logger.info(f"Adding name to image: {first_name} {last_name}")
 
     try:
-        config = read_text_formatting(device)
+        device_name = device if device is not None else "default"
+        config = read_text_formatting(device_name)
         if config is None:
             raise ValueError(
                 f"No text formatting configuration found for device: {device}"
@@ -716,7 +719,7 @@ def add_full_name_to_image(
     pil_font = load_font(font, 30)  # approximate
     w, h = measure_text_size_pil(name, pil_font)
     if w > box_width:
-        new_width = w + 20
+        new_width = int(w) + 20
         bigger = np.full(
             (text_img.shape[0], new_width, 3), background_color, dtype=np.uint8
         )

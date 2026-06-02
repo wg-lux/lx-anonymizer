@@ -1,9 +1,9 @@
 import os
-import re
 import logging
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, MEDICAL_QUALITY_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -31,19 +31,11 @@ class EnhancedBestFrameText:
         score = confidence * 0.4
 
         # Word quality analysis
-        words = re.findall(r"[A-Za-zÄÖÜäöüß]{2,}", text)
+        words = GERMAN_WORD_RE.findall(text)
         if words:
-            # Medical text patterns
-            medical_patterns = [
-                r"Patient|Untersuchung|Diagnose|Befund|Behandlung",
-                r"mm|cm|Grad|°|%",
-                r"links|rechts|lateral|medial|anterior|posterior",
-                r"Jahr|Jahre|Tag|Tage|Monat|Monate",
-            ]
-
             medical_score = 0.0
-            for pattern in medical_patterns:
-                if re.search(pattern, text, re.IGNORECASE):
+            for pattern in MEDICAL_QUALITY_PATTERNS:
+                if pattern.search(text):
                     medical_score += 0.1
 
             score += min(medical_score, 0.3)  # Cap medical bonus
@@ -84,7 +76,7 @@ class EnhancedBestFrameText:
             return False
 
         # Check for readable words
-        words = re.findall(r"[A-Za-zÄÖÜäöüß]{2,}", text)
+        words = GERMAN_WORD_RE.findall(text)
         readable_words = [
             w for w in words if len(w) >= 3 and not all(c == w[0] for c in w)
         ]

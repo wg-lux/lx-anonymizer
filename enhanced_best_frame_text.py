@@ -173,7 +173,7 @@ class EnhancedBestFrameText:
         self,
         text: str,
         ocr_conf: float,
-        is_sensitive: bool = None,
+        is_sensitive: bool = True,
     ) -> None:
         """
         Add OCR text sample with enhanced quality filtering.

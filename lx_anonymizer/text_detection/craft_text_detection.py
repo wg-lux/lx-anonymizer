@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
+from typing import cast
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import torch  # type: ignore[import-untyped]
 from hezar.models import Model  # type: ignore[import-untyped]
 from hezar.utils import load_image  # type: ignore[import-untyped]
@@ -138,7 +140,7 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
             output_boxes = sort_boxes(output_boxes, vertical_threshold=5)
             # Optionally, extend boxes with minimal margins.
             output_boxes = extend_boxes_if_needed(
-                orig, output_boxes, extension_margin=2
+                cast(npt.NDArray[np.uint8], orig), output_boxes, extension_margin=2
             )
 
         return output_boxes, json.dumps(output_confidences)
