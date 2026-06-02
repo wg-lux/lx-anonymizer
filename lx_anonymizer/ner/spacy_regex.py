@@ -4,25 +4,27 @@ import warnings
 from typing import Any, Literal, Optional, cast
 
 from spacy.matcher import Matcher
+from spacy.pipeline import EntityRuler
 from spacy.tokens import Doc
 
 from lx_anonymizer.ner.determine_gender import determine_gender
 from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
 from lx_anonymizer.ner.spacy_extractor import PatientInfo
 from lx_anonymizer.ner.spacy_extractor import _clean_date
+from lx_anonymizer.regex_patterns import DATE_DOT_FULL_RE
 
 # Compile heavy regexes once at module level
-DATE_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
+DATE_RE = DATE_DOT_FULL_RE
 NUMBER_RE = re.compile(r"^\d+$")
 
 
 class PatientDataExtractorLg:
     FieldName = Literal[
-        "patient_first_name",
-        "patient_last_name",
-        "patient_dob",
+        "first_name",
+        "last_name",
+        "dob",
         "casenumber",
-        "patient_gender_name",
+        "gender",
     ]
 
     def __init__(self):
@@ -33,12 +35,12 @@ class PatientDataExtractorLg:
             add_pipe_kwargs: dict[str, Any] = {"config": {"overwrite_ents": True}}
             if "ner" in self.nlp.pipe_names:
                 add_pipe_kwargs["before"] = "ner"
-            self.ruler = self.nlp.add_pipe("entity_ruler", **add_pipe_kwargs)
+            self.ruler = cast(EntityRuler, self.nlp.add_pipe("entity_ruler", **add_pipe_kwargs))
         else:
-            self.ruler = self.nlp.get_pipe("entity_ruler")
+            self.ruler = cast(EntityRuler, self.nlp.get_pipe("entity_ruler"))
 
         # FIX: Actually register the regex patterns
-        self.ruler.add_patterns(self._build_regex_patterns())
+        self.ruler.add_patterns(cast(Any, self._build_regex_patterns()))
 
         self.matcher = Matcher(self.nlp.vocab)  # Initialize matcher here
         self.setup_matcher()
@@ -48,11 +50,11 @@ class PatientDataExtractorLg:
         self._examiner_ruler = None
 
     _FIELDS = {
-        "patient_first_name": r"patient_first_name",
-        "patient_last_name": r"patient_last_name",
-        "patient_dob": r"(?:patient_)?(?:dob|geb(?:urtsdatum)?)",
+        "first_name": r"first_name",
+        "last_name": r"last_name",
+        "dob": r"(?:patient_)?(?:dob|geb(?:urtsdatum)?)",
         "casenumber": r"(?:case)?number",
-        "patient_gender_name": r"(?:patient_)?gender",
+        "gender": r"(?:patient_)?gender",
     }
     # Improved VALUE pattern to handle UTF-8 names with accents
     _VALUE = r'["\']?(?P<val>[\w\.\-\/ äöüßÄÖÜéèêç]+?)["\']?$'
@@ -79,11 +81,11 @@ class PatientDataExtractorLg:
         """
         doc = self.nlp(text)
         meta: PatientInfo = {
-            "patient_first_name": None,
-            "patient_last_name": None,
-            "patient_dob": None,
+            "first_name": None,
+            "last_name": None,
+            "dob": None,
             "casenumber": None,
-            "patient_gender_name": None,
+            "gender": None,
         }
 
         for ent in doc.ents:  # RegexRuler creates ents
@@ -94,13 +96,13 @@ class PatientDataExtractorLg:
                 continue
             val: Optional[str] = m.group("val").strip()
             # basic normalisation
-            if key == "patient_dob" and val is not None:
+            if key == "dob" and val is not None:
                 # try to normalise dd.mm.yyyy → yyyy-mm-dd (reuse your _clean_date)
                 val = self.clean_date(val) or val
             meta[key] = val
 
         # sanity: if either name field still None but the other has value "Unknown"
-        for k in ("patient_first_name", "patient_last_name"):
+        for k in ("first_name", "last_name"):
             value = meta[k]
             if value and value.lower() in ("unknown", "unbekannt"):
                 meta[k] = None
@@ -290,20 +292,20 @@ class PatientDataExtractorLg:
             gender = determine_gender(first_name) if first_name else None
 
             return {
-                "patient_first_name": first_name,
-                "patient_last_name": last_name,
-                "patient_dob": birthdate,
+                "first_name": first_name,
+                "last_name": last_name,
+                "dob": birthdate,
                 "casenumber": casenumber,
-                "patient_gender_name": gender,
+                "gender": gender,
             }
 
         # Fallback if no match found by the matcher - FIX: Return None values
         return {
-            "patient_first_name": None,
-            "patient_last_name": None,
-            "patient_dob": None,
+            "first_name": None,
+            "last_name": None,
+            "dob": None,
             "casenumber": None,
-            "patient_gender_name": None,
+            "gender": None,
         }
 
     def _extract_using_entity_ruler(self, text: str) -> dict[str, Any]:
@@ -330,11 +332,11 @@ class PatientDataExtractorLg:
 
         return {
             "status": "No relevant entities found by ruler",
-            "patient_first_name": None,
-            "patient_last_name": None,
+            "first_name": None,
+            "last_name": None,
             "birthdate": None,
             "casenumber": None,
-            "patient_gender_name": None,
+            "gender": None,
         }
 
     def examiner_data_extractor(self, text: str) -> Optional[str]:
@@ -371,10 +373,11 @@ class PatientDataExtractorLg:
                     "pattern": r"Dr\.med\.\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+\s[A-Z][a-z]+",
                 },
             ]
-            self._examiner_ruler = self.nlp.add_pipe(
-                "entity_ruler", name="examiner_ruler", last=True
+            self._examiner_ruler = cast(
+                EntityRuler,
+                self.nlp.add_pipe("entity_ruler", name="examiner_ruler", last=True),
             )
-            self._examiner_ruler.add_patterns(patterns)
+            self._examiner_ruler.add_patterns(cast(Any, patterns))
 
         doc = self.nlp(text)
 

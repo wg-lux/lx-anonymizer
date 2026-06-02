@@ -14,13 +14,18 @@ from typing import (
 )
 
 import spacy
-import spacy.cli
 from spacy.language import Language
 from spacy.matcher import Matcher
 from spacy.tokens import Span, Token
 
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ner.determine_gender import determine_gender
+from lx_anonymizer.regex_patterns import (
+    DATE_8_DIGIT_RE,
+    DATE_TEXT_RE,
+    MULTISPACE_RE,
+    REPORT_ENTRY_DATE_RE,
+)
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 logger = get_logger(__name__)
@@ -53,15 +58,15 @@ TITLE_WORDS: Final[set[str]] = {
     "baron",
 }
 
-DATE_RE: Pattern[str] = re.compile(r"(\d{1,2}[.\s]?\d{1,2}[.\s]?\d{2,4})|(\d{8})")
+DATE_RE: Pattern[str] = DATE_TEXT_RE
 
 
 class PatientInfo(TypedDict):
-    patient_first_name: Optional[str]
-    patient_last_name: Optional[str]
-    patient_dob: Optional[str]
+    first_name: Optional[str]
+    last_name: Optional[str]
+    dob: Optional[str]
     casenumber: Optional[str]
-    patient_gender_name: Optional[str]
+    gender: Optional[str]
 
 
 class ExaminerInfo(TypedDict):
@@ -93,6 +98,9 @@ class SpacyModelManager:
     _instance: Optional[Language] = None
     DEFAULT_MODEL = "de_core_news_sm"
     MODEL_ENV = "LX_ANONYMIZER_SPACY_MODEL"
+    AUTO_DOWNLOAD_ENV = "LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD"
+    STRICT_MODEL_ENV = "LX_ANONYMIZER_SPACY_STRICT"
+    _TRUE_VALUES = {"1", "true", "yes", "on"}
 
     @classmethod
     def configured_model_name(cls) -> str:
@@ -100,6 +108,10 @@ class SpacyModelManager:
             os.environ.get(cls.MODEL_ENV, cls.DEFAULT_MODEL).strip()
             or cls.DEFAULT_MODEL
         )
+
+    @classmethod
+    def _env_flag_enabled(cls, env_name: str) -> bool:
+        return os.environ.get(env_name, "").strip().casefold() in cls._TRUE_VALUES
 
     @classmethod
     def get_model(cls, model_name: Optional[str] = None) -> Language:
@@ -111,20 +123,69 @@ class SpacyModelManager:
         try:
             logger.info(f"Loading spacy model: {model_name}")
             cls._instance = spacy.load(model_name)
-        except OSError:
-            logger.warning(
-                "Model '%s' not found. Attempting download.",
-                model_name,
-            )
-            try:
-                spacy.cli.download(model_name)
+        except OSError as exc:
+            if cls._env_flag_enabled(cls.AUTO_DOWNLOAD_ENV):
+                logger.warning(
+                    "Model '%s' not found. Attempting download because %s is enabled.",
+                    model_name,
+                    cls.AUTO_DOWNLOAD_ENV,
+                )
+                cls._download_model(model_name)
                 cls._instance = spacy.load(model_name)
                 logger.info(f"Successfully loaded {model_name} after download.")
-            except Exception as e:
-                logger.error(f"Critical error loading SpaCy model: {e}")
-                raise e
+            elif cls._env_flag_enabled(cls.STRICT_MODEL_ENV):
+                message = cls._missing_model_message(model_name)
+                logger.error(message)
+                raise RuntimeError(message) from exc
+            else:
+                cls._instance = cls._fallback_model(model_name)
 
         return cls._instance
+
+    @classmethod
+    def _download_model(cls, model_name: str) -> None:
+        try:
+            from spacy.cli.download import download as download_model
+
+            download_model(model_name)
+        except SystemExit as exc:
+            raise RuntimeError(
+                "spaCy model download failed with exit code "
+                f"{exc.code!r}. Install '{model_name}' in the runtime environment "
+                f"or disable {cls.AUTO_DOWNLOAD_ENV}."
+            ) from exc
+
+    @classmethod
+    def _fallback_model(cls, model_name: str) -> Language:
+        lang = cls._language_code_for_model(model_name)
+        logger.warning(
+            "spaCy model '%s' is not installed. Falling back to a blank '%s' "
+            "pipeline; NER and POS-based extraction are degraded. Install the "
+            "model or set %s=1 to allow an explicit runtime download.",
+            model_name,
+            lang,
+            cls.AUTO_DOWNLOAD_ENV,
+        )
+        nlp = spacy.blank(lang)
+        if "sentencizer" not in nlp.pipe_names:
+            nlp.add_pipe("sentencizer")
+        return nlp
+
+    @staticmethod
+    def _language_code_for_model(model_name: str) -> str:
+        prefix = model_name.split("_", maxsplit=1)[0].strip().lower()
+        if prefix.isalpha() and 2 <= len(prefix) <= 3:
+            return prefix
+        return "de"
+
+    @classmethod
+    def _missing_model_message(cls, model_name: str) -> str:
+        return (
+            f"spaCy model '{model_name}' is not installed. Install it in the "
+            "runtime environment, set "
+            f"{cls.AUTO_DOWNLOAD_ENV}=1 to allow an explicit runtime download, "
+            f"or unset {cls.STRICT_MODEL_ENV} to use the degraded blank fallback."
+        )
 
 
 def _clean_date(date_str: str) -> Optional[str]:
@@ -137,10 +198,10 @@ def _clean_date(date_str: str) -> Optional[str]:
 
     date_str = date_str.strip()
     # Normalize separators
-    normalized = re.sub(r"\s+", ".", date_str)
+    normalized = MULTISPACE_RE.sub(".", date_str)
 
     # 1. Try 8-digit format (DDMMYYYY) explicitly first
-    if re.fullmatch(r"\d{8}", date_str):
+    if DATE_8_DIGIT_RE.fullmatch(date_str):
         try:
             return datetime.strptime(date_str, "%d%m%Y").strftime("%Y-%m-%d")
         except ValueError:
@@ -204,11 +265,27 @@ class PatientDataExtractor(BaseExtractor):
             {"TEXT": ":", "OP": "?"},
         ]
 
-        name_part = {"POS": {"IN": ["PROPN", "NOUN"]}, "IS_TITLE": True, "OP": "+"}
+        name_stop_words = sorted(
+            TITLE_WORDS
+            | {
+                "geb",
+                "geb.",
+                "geboren",
+                "fallnr",
+                "fallnr.",
+                "fallnummer",
+            }
+        )
+        name_part = {
+            "IS_ALPHA": True,
+            "LOWER": {"NOT_IN": name_stop_words},
+            "OP": "+",
+        }
         space = {"IS_SPACE": True, "OP": "*"}
 
         geb_block = [
             {"LOWER": {"IN": ["geb", "geb.", "geboren"]}},
+            {"TEXT": ".", "OP": "?"},
             {"LOWER": "am", "OP": "?"},
             {"TEXT": ":", "OP": "?"},
             {"TEXT": {"REGEX": DATE_RE.pattern}},
@@ -216,12 +293,13 @@ class PatientDataExtractor(BaseExtractor):
 
         fall_block = [
             {"LOWER": {"REGEX": r"^fall(?:nr\.?|nummer)$"}},
+            {"TEXT": ".", "OP": "?"},
             {"TEXT": ":", "OP": "?"},
             {"TEXT": {"REGEX": r"[\w/-]+"}},
         ]
 
         # Consolidated pattern
-        pattern = cast(
+        patient_with_dob = cast(
             list[dict[str, Any]],
             pat_header
             + [space]
@@ -230,13 +308,17 @@ class PatientDataExtractor(BaseExtractor):
             + [name_part]  # First name (rough approx)
             + [space]
             + [{"OP": "?"}]  # Optional token between name and DOB
-            + geb_block
+            + geb_block,
+        )
+        patient_with_case = cast(
+            list[dict[str, Any]],
+            patient_with_dob
             + [space]
             + [{"OP": "?"}]
             + fall_block,
         )
 
-        self.matcher.add("PATIENT_LINE", [pattern])
+        self.matcher.add("PATIENT_LINE", [patient_with_case, patient_with_dob])
 
     def __call__(self, text: str) -> PatientInfo:
         doc = self.nlp(text)
@@ -244,11 +326,11 @@ class PatientDataExtractor(BaseExtractor):
 
         if not matches:
             return PatientInfo(
-                patient_first_name=self.meta.patient_first_name,
-                patient_last_name=self.meta.patient_last_name,
-                patient_dob=self.meta.patient_dob,
+                first_name=self.meta.first_name,
+                last_name=self.meta.last_name,
+                dob=self.meta.dob.isoformat() if self.meta.dob else None,
                 casenumber=self.meta.casenumber,
-                patient_gender_name=self.meta.patient_gender_name,
+                gender=self.meta.gender,
             )
 
         # Get longest match
@@ -264,20 +346,20 @@ class PatientDataExtractor(BaseExtractor):
 
         self.safe_update_meta(
             {
-                "patient_first_name": first_name,
-                "patient_last_name": last_name,
-                "patient_dob": birthdate,
+                "first_name": first_name,
+                "last_name": last_name,
+                "dob": birthdate,
                 "casenumber": case_num,
-                "patient_gender_name": gender,
+                "gender": gender,
             }
         )
 
         return PatientInfo(
-            patient_first_name=self.meta.patient_first_name,
-            patient_last_name=self.meta.patient_last_name,
-            patient_dob=self.meta.patient_dob,
+            first_name=self.meta.first_name,
+            last_name=self.meta.last_name,
+            dob=self.meta.dob.isoformat() if self.meta.dob else None,
             casenumber=self.meta.casenumber,
-            patient_gender_name=self.meta.patient_gender_name,
+            gender=self.meta.gender,
         )
 
     def _extract_names(
@@ -286,10 +368,22 @@ class PatientDataExtractor(BaseExtractor):
         """Heuristics to split names based on commas or position."""
         header_end_idx = 0
         # Find where "Patient:" ends
+        patient_header_words = {
+            "patient",
+            "patientin",
+            "pat",
+            "pat.",
+            "patbien",
+            "pationt",
+        }
         for i, token in enumerate(tokens):
-            if token.lower_ in ["patient", "patientin", "pat.", "pationt", ":"]:
+            if token.lower_ in patient_header_words:
                 header_end_idx = i + 1
-            elif header_end_idx > 0 and tokens[header_end_idx - 1].text != ":":
+                continue
+            if header_end_idx > 0 and token.text in {":", "."}:
+                header_end_idx = i + 1
+                continue
+            if header_end_idx > 0:
                 break
 
         comma_idx = next((i for i, t in enumerate(tokens) if t.text == ","), None)
@@ -298,7 +392,8 @@ class PatientDataExtractor(BaseExtractor):
         stop_indices = [
             i
             for i, t in enumerate(tokens)
-            if t.lower_ in ["geb", "geb.", "geboren", "fallnr", "fallnummer"]
+            if t.lower_
+            in ["geb", "geb.", "geboren", "fallnr", "fallnr.", "fallnummer"]
         ]
         end_name_idx = min(stop_indices) if stop_indices else len(tokens)
 
@@ -342,9 +437,11 @@ class PatientDataExtractor(BaseExtractor):
         for i, t in enumerate(tokens):
             if t.lower_ in ["fallnr", "fallnr.", "fallnummer"]:
                 # Check neighbors
-                candidates = tokens[i + 1 : i + 3]
+                candidates = tokens[i + 1 : i + 5]
                 for cand in candidates:
-                    if cand.text != ":" and re.fullmatch(r"[\w/-]+", cand.text):
+                    if cand.text not in {":", "."} and re.fullmatch(
+                        r"[\w/-]+", cand.text
+                    ):
                         return cand.text
 
         # Fallback: Find alphanumeric token at end of string that isn't the DOB
@@ -354,11 +451,11 @@ class PatientDataExtractor(BaseExtractor):
     @staticmethod
     def _blank() -> PatientInfo:
         return PatientInfo(
-            patient_first_name=None,
-            patient_last_name=None,
-            patient_dob=None,
+            first_name=None,
+            last_name=None,
+            dob=None,
             casenumber=None,
-            patient_gender_name=None,
+            gender=None,
         )
 
 
@@ -371,9 +468,10 @@ class ExaminerDataExtractor(BaseExtractor):
                     {"LOWER": "untersuchender"},
                     {"LOWER": "arzt"},
                     {"TEXT": ":"},
-                    {"TEXT": "dr."},
-                    {"POS": "PROPN"},
-                    {"POS": "PROPN"},
+                    {"LOWER": {"IN": ["dr", "dr."]}},
+                    {"TEXT": ".", "OP": "?"},
+                    {"IS_ALPHA": True},
+                    {"IS_ALPHA": True},
                 ]
             ],
         )
@@ -384,8 +482,8 @@ class ExaminerDataExtractor(BaseExtractor):
                     {"LOWER": "untersuchender"},
                     {"LOWER": "arzt"},
                     {"TEXT": ":"},
-                    {"POS": "PROPN"},
-                    {"POS": "PROPN"},
+                    {"IS_ALPHA": True},
+                    {"IS_ALPHA": True},
                 ]
             ],
         )
@@ -407,10 +505,17 @@ class ExaminerDataExtractor(BaseExtractor):
         first: Optional[str] = None
         last: Optional[str] = None
 
-        if pattern_name == "EXAMINER_WITH_TITLE" and len(tokens) >= 6:
-            title, first, last = tokens[3].text, tokens[4].text, tokens[5].text
-        elif pattern_name == "EXAMINER_NO_TITLE" and len(tokens) >= 5:
-            first, last = tokens[3].text, tokens[4].text
+        content_tokens = [
+            token for token in tokens[3:] if not token.is_space and token.text != "."
+        ]
+
+        if pattern_name == "EXAMINER_WITH_TITLE" and len(content_tokens) >= 3:
+            title = content_tokens[0].text
+            first = content_tokens[1].text
+            last = content_tokens[2].text
+        elif pattern_name == "EXAMINER_NO_TITLE" and len(content_tokens) >= 2:
+            first = content_tokens[0].text
+            last = content_tokens[1].text
         else:
             logger.debug(
                 "Unexpected examiner token layout for pattern %s", pattern_name
@@ -436,7 +541,11 @@ class EndoscopeDataExtractor(BaseExtractor):
                 [
                     {"LOWER": "endoskop"},
                     {"TEXT": ":"},
-                    {"POS": "PROPN", "OP": "+"},  # Model Name parts
+                    {
+                        "TEXT": {"NOT_IN": [":"]},
+                        "LOWER": {"NOT_IN": ["seriennummer"]},
+                        "OP": "+",
+                    },
                     {"LOWER": "seriennummer"},
                     {"TEXT": ":"},
                     {"SHAPE": "dddddddd"},  # Serial number format
@@ -539,12 +648,20 @@ class ExaminationDataExtractor(BaseExtractor):
         return ExaminationInfo(
             examiner_last_name=last_name,
             examiner_first_name=first_name,
-            examination_date=self.meta.examination_date,
-            examination_time=self.meta.examination_time,
+            examination_date=(
+                self.meta.examination_date.isoformat()
+                if self.meta.examination_date
+                else None
+            ),
+            examination_time=(
+                self.meta.examination_time.isoformat()
+                if self.meta.examination_time
+                else None
+            ),
         )
 
     def _extract_format_2(self, line: str) -> Optional[ExaminationInfo]:
-        match = re.search(r"Eingang am:\s*(\d{2}\.\d{2}\.\d{4})", line)
+        match = REPORT_ENTRY_DATE_RE.search(line)
         if match:
             ex_date = _clean_date(match.group(1))
             self.safe_update_meta({"examination_date": ex_date, "examination_time": ""})

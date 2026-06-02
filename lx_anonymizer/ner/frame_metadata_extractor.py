@@ -18,6 +18,19 @@ from typing import Any, Dict, Optional, Tuple
 
 import dateparser  # type: ignore[import-untyped]
 
+from lx_anonymizer.regex_patterns import (
+    FRAME_CASE_PATTERNS,
+    FRAME_DATE_PATTERNS,
+    FRAME_DOB_PATTERNS,
+    FRAME_EXAMINER_PATTERNS,
+    FRAME_GENDER_PATTERNS,
+    FRAME_PATIENT_PATTERNS,
+    FRAME_TIME_PATTERNS,
+    DATE_DOT_FLEX_RE,
+    MULTISPACE_RE,
+    NON_DIGIT_RE,
+    TIME_HH_MM_RE,
+)
 from lx_anonymizer.sensitive_meta_interface import (
     SensitiveMeta,
 )  # <<< integrate SensitiveMeta
@@ -43,55 +56,13 @@ class FrameMetadataExtractor:
         self.meta = SensitiveMeta()
 
         # Frame-specific patterns optimized for overlay text
-        self.patient_patterns = [
-            r"Patient[:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
-            r"Pat[\.:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
-            r"Name[:\s]*([A-Za-zäöüÄÖÜß]+)[\s,]*([A-Za-zäöüÄÖÜß]+)",
-            r"([A-Za-zäöüÄÖÜß]{2,})\s*,\s*([A-Za-zäöüÄÖÜß]{2,})",  # Last, First
-            r"\b([A-Z][a-zäöüß]{2,})\b",  # capitalized standalone
-        ]
-
-        self.dob_patterns = [
-            r"geb[\.:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"geboren[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"Geb\.Dat[\.:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"DOB[:\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-            r"(\d{10})",  # compact
-            r"(\d{8})",
-            r"(\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{2,4})",
-        ]
-
-        self.case_patterns = [
-            r"Fall[nr]*[\.:\s]*(\d+)",
-            r"Case[:\s]*(\d+)",
-            r"Fallnummer[:\s]*(\d+)",
-            r"ID[:\s]*(\d+)",
-            r"\b([A-Z]\s*\d{2,})\b",
-        ]
-
-        self.date_patterns = [
-            r"Datum[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
-            r"Date[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
-            r"Untersuchung[:\s]*(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
-            r"(\d{1,2}[\.\-/\s]+\d{1,2}[\.\-/\s]+\d{2,4})",
-        ]
-
-        self.time_patterns = [
-            r"Zeit[:\s]*(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
-            r"Time[:\s]*(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
-            r"(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)",
-        ]
-
-        self.examiner_patterns = [
-            r"Arzt[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
-            r"Dr[\.:\s]+([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
-            r"Untersucher[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
-            r"Examiner[:\s]*([A-Za-zäöüÄÖÜß\s\-\.]{3,50})(?:\s|$)",
-        ]
-
-        self.gender_patterns = [
-            r"(männlich|weiblich|male|female|m|f|w)",
-        ]
+        self.patient_patterns = list(FRAME_PATIENT_PATTERNS)
+        self.dob_patterns = list(FRAME_DOB_PATTERNS)
+        self.case_patterns = list(FRAME_CASE_PATTERNS)
+        self.date_patterns = list(FRAME_DATE_PATTERNS)
+        self.time_patterns = list(FRAME_TIME_PATTERNS)
+        self.examiner_patterns = list(FRAME_EXAMINER_PATTERNS)
+        self.gender_patterns = list(FRAME_GENDER_PATTERNS)
 
     # ---------- public API ----------
 
@@ -108,15 +79,15 @@ class FrameMetadataExtractor:
             first_name, last_name = self._extract_patient_names(text)
             self.meta.safe_update(
                 {
-                    "patient_first_name": first_name,
-                    "patient_last_name": last_name,
+                    "first_name": first_name,
+                    "last_name": last_name,
                 }
             )
 
             # dob
             dob = self._extract_date_of_birth(text)
             self.meta.safe_update(
-                {"patient_dob": dob.isoformat() if isinstance(dob, date) else dob}
+                {"dob": dob.isoformat() if isinstance(dob, date) else dob}
             )
 
             # case number
@@ -146,7 +117,7 @@ class FrameMetadataExtractor:
 
             # gender
             gender = self._extract_gender(text)
-            self.meta.safe_update({"patient_gender_name": gender})
+            self.meta.safe_update({"gender": gender})
 
             # mark source (won’t overwrite an existing non-blank)
             self.meta.safe_update({"center": None})  # no-op but illustrates safety
@@ -159,16 +130,16 @@ class FrameMetadataExtractor:
     def is_sensitive_content(self, metadata: Dict[str, Any]) -> bool:
         """Basic sensitive presence check (uses dict for call-site compatibility)."""
         sensitive_fields = (
-            "patient_first_name",
-            "patient_last_name",
+            "first_name",
+            "last_name",
             "casenumber",
-            "patient_dob",
+            "dob",
         )
         for f in sensitive_fields:
             v = metadata.get(f)
             if self._is_nonblank(v):
                 return True
-        if self._is_nonblank(metadata.get("patient_gender_name")):
+        if self._is_nonblank(metadata.get("gender")):
             return True
         return False
 
@@ -180,9 +151,9 @@ class FrameMetadataExtractor:
         if not metadata:
             return False
 
-        has_first = self._is_nonblank(metadata.get("patient_first_name"))
-        has_last = self._is_nonblank(metadata.get("patient_last_name"))
-        has_dob = self._is_nonblank(metadata.get("patient_dob"))
+        has_first = self._is_nonblank(metadata.get("first_name"))
+        has_last = self._is_nonblank(metadata.get("last_name"))
+        has_dob = self._is_nonblank(metadata.get("dob"))
         has_case = self._is_nonblank(metadata.get("casenumber"))
         has_exam_date = self._is_nonblank(metadata.get("examination_date"))
 
@@ -209,7 +180,7 @@ class FrameMetadataExtractor:
         - dicts/lists are kept as-is (SensitiveMeta is flat)
         - If both a DOB and an exam date are present but ambiguous:
           * newer date → examination_date
-          * older date → patient_dob
+          * older date → dob
         """
         # Start from existing, then apply new safely
         result_meta = SensitiveMeta.from_dict(existing or {})
@@ -218,7 +189,7 @@ class FrameMetadataExtractor:
         merged = result_meta.to_dict()
 
         # Enforce DOB vs exam-date rule if both (or ambiguous) are present anywhere
-        dob_raw = (new or {}).get("patient_dob") or (existing or {}).get("patient_dob")
+        dob_raw = (new or {}).get("dob") or (existing or {}).get("dob")
         exam_raw = (new or {}).get("examination_date") or (existing or {}).get(
             "examination_date"
         )
@@ -242,7 +213,7 @@ class FrameMetadataExtractor:
             if exam_dt:
                 inferred["examination_date"] = exam_dt.isoformat()
             if dob_dt:
-                inferred["patient_dob"] = dob_dt.isoformat()
+                inferred["dob"] = dob_dt.isoformat()
             result_meta.safe_update(inferred)
             merged = result_meta.to_dict()
 
@@ -328,7 +299,7 @@ class FrameMetadataExtractor:
 
     def _parse_compact_date(self, date_str: str) -> Optional[date]:
         try:
-            digits = re.sub(r"\D", "", date_str)
+            digits = NON_DIGIT_RE.sub("", date_str)
             if len(digits) == 8:
                 day = int(digits[0:2])
                 month = int(digits[2:4])
@@ -351,7 +322,7 @@ class FrameMetadataExtractor:
             for pattern in self.case_patterns:
                 m = re.findall(pattern, text, re.IGNORECASE)
                 if m:
-                    case = re.sub(r"\s+", " ", m[0].strip())
+                    case = MULTISPACE_RE.sub(" ", m[0].strip())
                     return case
             return None
         except Exception as e:
@@ -377,7 +348,7 @@ class FrameMetadataExtractor:
                 m = re.findall(pattern, text, re.IGNORECASE)
                 if m:
                     t = m[0].strip()
-                    if re.match(r"^\d{1,2}:\d{2}$", t):
+                    if TIME_HH_MM_RE.match(t):
                         return t
             return None
         except Exception as e:
@@ -390,7 +361,7 @@ class FrameMetadataExtractor:
                 m = re.findall(pattern, text, re.IGNORECASE)
                 if not m:
                     continue
-                examiner = re.sub(r"\s+", " ", m[0].strip())
+                examiner = MULTISPACE_RE.sub(" ", m[0].strip())
                 parts = examiner.split()
                 if len(parts) >= 2:
                     first_name, last_name = parts[0], " ".join(parts[1:])
@@ -443,14 +414,14 @@ class FrameMetadataExtractor:
     def _parse_german_date(self, date_str: str) -> Optional[date]:
         try:
             normalized = (
-                re.sub(r"\s+", "", date_str).replace("/", ".").replace("-", ".")
+                MULTISPACE_RE.sub("", date_str).replace("/", ".").replace("-", ".")
             )
             parsed = dateparser.parse(
                 normalized, languages=["de"], settings={"DATE_ORDER": "DMY"}
             )
             if parsed:
                 return parsed.date()
-            if re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", normalized):
+            if DATE_DOT_FLEX_RE.match(normalized):
                 d, m, y = map(int, normalized.split("."))
                 if y < 100:
                     y += 2000 if y < 50 else 1900
