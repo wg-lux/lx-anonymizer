@@ -1,3 +1,4 @@
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -9,7 +10,6 @@ FORBIDDEN_BASE_REQUIREMENTS = {
     "protobuf",
     "puccinialin",
     "rapidocr",
-    "tesserocr",
     "types-requests",
     "ultralytics",
     "ziglang",
@@ -77,3 +77,26 @@ def test_maturin_excludes_local_artifacts() -> None:
     }
 
     assert expected_patterns <= exclude
+
+
+def test_frame_cleaner_keeps_video_mixin_wired() -> None:
+    source = Path("lx_anonymizer/frame_cleaner.py").read_text()
+    tree = ast.parse(source)
+
+    imports_video_mixin = any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "lx_anonymizer.frame_cleaner_video"
+        and any(alias.name == "FrameCleanerVideoMixin" for alias in node.names)
+        for node in tree.body
+    )
+    assert imports_video_mixin
+
+    frame_cleaner_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "FrameCleaner"
+    )
+    assert any(
+        isinstance(base, ast.Name) and base.id == "FrameCleanerVideoMixin"
+        for base in frame_cleaner_class.bases
+    )

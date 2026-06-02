@@ -18,7 +18,6 @@ FORBIDDEN_BASE_REQUIREMENTS = {
     "protobuf",
     "puccinialin",
     "rapidocr",
-    "tesserocr",
     "types-requests",
     "ultralytics",
     "ziglang",
@@ -73,6 +72,29 @@ def _iter_tar_members(path: Path) -> tuple[list[str], dict[str, str]]:
     return names, metadata
 
 
+def _read_artifact_member_by_suffix(path: Path, suffix: str) -> str | None:
+    normalized_suffix = suffix.strip("/")
+
+    if _is_wheel(path):
+        with zipfile.ZipFile(path) as archive:
+            for name in archive.namelist():
+                if name.endswith(normalized_suffix):
+                    return archive.read(name).decode("utf-8")
+        return None
+
+    if _is_sdist(path):
+        with tarfile.open(path) as archive:
+            for member in archive.getmembers():
+                if not (member.isfile() and member.name.endswith(normalized_suffix)):
+                    continue
+                file_obj = archive.extractfile(member)
+                if file_obj is None:
+                    return None
+                return file_obj.read().decode("utf-8")
+
+    return None
+
+
 def _forbidden_member_reason(name: str, *, wheel: bool) -> str | None:
     normalized = name.replace("\\", "/")
 
@@ -104,6 +126,44 @@ def _forbidden_member_reason(name: str, *, wheel: bool) -> str | None:
         return "wheel contains tests"
 
     return None
+
+
+def _frame_cleaner_consistency_errors(path: Path) -> list[str]:
+    frame_cleaner = _read_artifact_member_by_suffix(
+        path,
+        "lx_anonymizer/frame_cleaner.py",
+    )
+    if frame_cleaner is None:
+        return [f"{path}: missing lx_anonymizer/frame_cleaner.py"]
+
+    if "self._iter_video(" not in frame_cleaner:
+        return []
+
+    if re.search(r"^\s+def _iter_video\(", frame_cleaner, re.MULTILINE):
+        return []
+
+    inherits_video_mixin = "class FrameCleaner(FrameCleanerVideoMixin)" in frame_cleaner
+    if not inherits_video_mixin:
+        return [
+            f"{path}: FrameCleaner calls _iter_video but neither defines it nor "
+            "inherits FrameCleanerVideoMixin"
+        ]
+
+    frame_cleaner_video = _read_artifact_member_by_suffix(
+        path,
+        "lx_anonymizer/frame_cleaner_video.py",
+    )
+    if frame_cleaner_video is None:
+        return [
+            f"{path}: FrameCleaner inherits FrameCleanerVideoMixin but "
+            "lx_anonymizer/frame_cleaner_video.py is missing"
+        ]
+    if "def _iter_video(" not in frame_cleaner_video:
+        return [
+            f"{path}: FrameCleanerVideoMixin is packaged without _iter_video"
+        ]
+
+    return []
 
 
 def _metadata_errors(metadata_text: str, metadata_name: str) -> list[str]:
@@ -138,6 +198,8 @@ def audit_artifact(path: Path) -> list[str]:
         reason = _forbidden_member_reason(name, wheel=wheel)
         if reason is not None:
             errors.append(f"{path}: {name}: {reason}")
+
+    errors.extend(_frame_cleaner_consistency_errors(path))
 
     if wheel and not any(_NATIVE_EXTENSION_RE.search(name) for name in names):
         errors.append(f"{path}: wheel is missing the maturin native extension")

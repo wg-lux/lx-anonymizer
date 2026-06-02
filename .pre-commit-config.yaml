@@ -10,9 +10,9 @@ repos:
         pass_filenames: false
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy type check
-        entry: mypy lx_anonymizer
+      - id: pyright
+        name: pyright type check
+        entry: pyright lx_anonymizer
         language: system
         pass_filenames: false
       - id: repo-state-and-tests
