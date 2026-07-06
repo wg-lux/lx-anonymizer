@@ -1,6 +1,6 @@
-import logging
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
+from typing import Optional, cast
 import os
 import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
 from faker import Faker
@@ -11,6 +11,7 @@ from lx_dtypes.models.meta.ReportMeta import (
     ReportProcessRequest,
     ReportProcessResult,
     ReportReaderFlags,
+    ReportRedactionSummary,
 )
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
@@ -32,7 +33,10 @@ from lx_anonymizer.ocr.ocr import (
     tesseract_full_image_ocr,
 )  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
-from lx_anonymizer.report_reader_extraction import ReportReaderExtractionMixin
+from lx_anonymizer.report_reader_extraction import (
+    LLMExtractorProtocol,
+    ReportReaderExtractionMixin,
+)
 from lx_anonymizer.report_reader_settings import get_report_reader_settings
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import logger
@@ -51,9 +55,9 @@ class ReportReader(ReportReaderExtractionMixin):
         self,
         report_root_path: Optional[str] = None,
         locale: Optional[str] = None,
-        employee_first_names: Optional[List[str]] = None,
-        employee_last_names: Optional[List[str]] = None,
-        flags: Optional[Dict[Any, Any]] = None,
+        employee_first_names: Sequence[str] | None = None,
+        employee_last_names: Sequence[str] | None = None,
+        flags: Mapping[str, object] | None = None,
         text_date_format: Optional[str] = None,
     ):
         """
@@ -88,12 +92,12 @@ class ReportReader(ReportReaderExtractionMixin):
         self.employee_first_names = (
             employee_first_names
             if employee_first_names is not None
-            else list(report_settings.first_names)
+            else tuple(report_settings.first_names)
         )
         self.employee_last_names = (
             employee_last_names
             if employee_last_names is not None
-            else list(report_settings.last_names)
+            else tuple(report_settings.last_names)
         )
         self.flags = self._resolve_flags(flags)
         self.fake = Faker(locale=self.locale)
@@ -112,7 +116,7 @@ class ReportReader(ReportReaderExtractionMixin):
         self.anonymizer = Anonymizer()
 
         # Initialize provider-backed extractor
-        self.llm_extractor = None
+        self.llm_extractor: LLMExtractorProtocol | None = None
         self.llm_available = False
         self.ollama_available = False
 
@@ -150,22 +154,23 @@ class ReportReader(ReportReaderExtractionMixin):
             self.llm_extractor = None
 
     @classmethod
-    def _resolve_flags(cls, flags: Optional[Mapping[Any, Any]]) -> Dict[str, Any]:
+    def _resolve_flags(cls, flags: object | None) -> ReportReaderFlags:
         """
         Merge caller-provided flags with defaults and normalize expected types.
 
         This keeps initialization robust when callers provide only a subset of flags.
         """
-        default_flags: Dict[str, Any] = dict(
-            cast(Mapping[str, Any], get_report_reader_settings().flags.model_dump())
-        )
         if flags is not None and not isinstance(flags, Mapping):
-            raise TypeError(
-                f"flags must be a mapping/dict or None, got {type(flags)!r}"
-            )
+            raise TypeError("flags must be a mapping")
 
-        merged: Dict[str, Any] = dict(default_flags)
-        provided = dict(flags or {})
+        typed_flags = cast(Mapping[object, object], flags)
+        default_flags = get_report_reader_settings().flags
+        merged: dict[str, object] = default_flags.model_dump()
+        provided = (
+            {str(key): value for key, value in typed_flags.items()}
+            if flags is not None
+            else {}
+        )
 
         unknown_keys = [k for k in provided.keys() if k not in cls._SUPPORTED_FLAG_KEYS]
         if unknown_keys:
@@ -175,30 +180,54 @@ class ReportReader(ReportReaderExtractionMixin):
             )
 
         merged.update(provided)
-        resolved = ReportReaderFlags.model_validate(merged).model_dump()
-        if resolved.get("endoscope_info_line") is None:
-            resolved["endoscope_info_line"] = ""
+        resolved = ReportReaderFlags.model_validate(merged)
         return resolved
 
     @staticmethod
-    def _validated_report_meta(data: Mapping[str, Any]) -> Dict[str, Any]:
+    def _partial_report_meta(data: Mapping[str, object]) -> dict[str, object]:
+        """Build a ReportMeta update from fields already validated at the boundary."""
+        return dict(data)
+
+    @staticmethod
+    def _validated_report_meta(data: Mapping[str, object]) -> dict[str, object]:
         """Validate ReportReader-owned keys while ignoring SensitiveMeta extras."""
         aliases = getattr(ReportMeta, "_LEGACY_FIELD_ALIASES", {})
         report_meta_keys = set(ReportMeta.model_fields) | set(aliases)
+        crop_default_marker = "__report_reader_default__"
         payload = {
             str(key): value
             for key, value in data.items()
             if str(key) in report_meta_keys
+            and not (str(key) == "cropped_regions" and value is None)
+            and str(key) != "sensitive_meta_state"
         }
-        return ReportMeta.model_validate(payload).to_report_reader_dict()
+        if not payload.get("cropped_regions"):
+            payload["cropped_regions"] = {crop_default_marker: []}
+        report_meta = ReportMeta.model_validate(payload).to_report_reader_dict()
+        if report_meta.get("cropped_regions") == {crop_default_marker: []}:
+            report_meta["cropped_regions"] = {}
+        return report_meta
 
     @classmethod
     def _merge_report_meta(
-        cls, report_meta: Mapping[str, Any], update: ReportMeta
-    ) -> Dict[str, Any]:
+        cls,
+        report_meta: Mapping[str, object],
+        update: ReportMeta | Mapping[str, object],
+    ) -> dict[str, object]:
         """Merge a typed report metadata update into an existing metadata dict."""
         merged = dict(report_meta)
-        merged.update(update.to_report_reader_dict())
+        if isinstance(update, ReportMeta):
+            update_payload: dict[str, object] = update.model_dump(
+                mode="json", exclude_none=True, exclude_unset=True
+            )
+            explicit_nulls = {
+                field_name: None
+                for field_name in update.__pydantic_fields_set__
+                if getattr(update, field_name) is None
+            }
+            merged.update(update_payload | explicit_nulls)
+        else:
+            merged.update(update)
         return cls._validated_report_meta(merged)
 
     def process_report(
@@ -207,11 +236,11 @@ class ReportReader(ReportReaderExtractionMixin):
         image_path: str | os.PathLike[str] | Path | None = None,
         use_ensemble: bool = False,
         verbose: bool = True,
-        use_llm: Optional[bool] = None,
+        use_llm: bool | None = None,
         text: str | None = None,
         create_anonymized_pdf: bool = False,
         anonymized_pdf_output_path: str | os.PathLike[str] | Path | None = None,
-    ) -> Tuple[str, str, dict[Any, Any], Optional[Path]]:
+    ) -> tuple[str, str, dict[str, object], Path | None]:
         """
         Process a report by extracting text, metadata, and creating an anonymized version.
         """
@@ -288,9 +317,7 @@ class ReportReader(ReportReaderExtractionMixin):
     @staticmethod
     def _is_text_only_request(request: ReportProcessRequest) -> bool:
         return (
-            request.text is not None
-            and not request.pdf_path
-            and not request.image_path
+            request.text is not None and not request.pdf_path and not request.image_path
         )
 
     @staticmethod
@@ -440,16 +467,20 @@ class ReportReader(ReportReaderExtractionMixin):
 
     def _extract_or_default_report_meta(
         self, *, text: str, pdf_path: Path | None, use_provider_llm: bool
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         if len(text.strip()) < 10:
             logger.warning(
                 "Skipping metadata extraction due to insufficient text content."
             )
-            return ReportMeta(
-                pdf_hash=self.pdf_hash_file(pdf_path)
-                if pdf_path and pdf_path.exists()
-                else None
-            ).to_report_reader_dict()
+            return self._validated_report_meta(
+                self._partial_report_meta(
+                    {
+                        "pdf_hash": self.pdf_hash_file(pdf_path)
+                        if pdf_path and pdf_path.exists()
+                        else None
+                    }
+                )
+            )
 
         if not use_provider_llm:
             logger.info("Using default SpaCy/Regex metadata extraction.")
@@ -486,8 +517,8 @@ class ReportReader(ReportReaderExtractionMixin):
         return self.extract_report_meta(text, pdf_path)
 
     def _maybe_create_anonymized_pdf(
-        self, *, request: ReportProcessRequest, report_meta: Mapping[str, Any]
-    ) -> tuple[Path | None, dict[str, Any]]:
+        self, *, request: ReportProcessRequest, report_meta: Mapping[str, object]
+    ) -> tuple[Path | None, dict[str, object]]:
         if not request.create_anonymized_pdf or not request.pdf_path:
             return None, dict(report_meta)
 
@@ -506,12 +537,16 @@ class ReportReader(ReportReaderExtractionMixin):
                 "create_anonymized_pdf=True but no anonymized PDF path was produced."
             )
 
-        update = ReportMeta(anonymized_pdf_path=output_path)
-        redaction_summary = getattr(self.anonymizer, "last_redaction_summary", None)
+        update = self._partial_report_meta({"anonymized_pdf_path": output_path})
+        redaction_summary = self.anonymizer.last_redaction_summary
         if isinstance(redaction_summary, dict):
-            update = ReportMeta(
-                **update.to_report_reader_dict(),
-                redaction_summary=cast(Any, redaction_summary),
+            update = self._partial_report_meta(
+                update
+                | {
+                    "redaction_summary": ReportRedactionSummary.model_validate(
+                        redaction_summary
+                    )
+                }
             )
         logger.info("Anonymized PDF created: %s", output_path)
         return Path(str(output_path)), self._merge_report_meta(report_meta, update)
@@ -519,48 +554,54 @@ class ReportReader(ReportReaderExtractionMixin):
     def _finalize_report_meta(
         self,
         *,
-        report_meta: Mapping[str, Any],
+        report_meta: Mapping[str, object],
         text: str,
         anonymized_text: str,
         pdf_path: Path | None,
         use_provider_llm: bool,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         meta = self._merge_report_meta(
             report_meta,
-            ReportMeta(
-                file_path=str(pdf_path) if pdf_path else None,
-                text=text,
-                anonymized_text=anonymized_text,
+            self._partial_report_meta(
+                {
+                    "file_path": str(pdf_path) if pdf_path else None,
+                    "text": text,
+                    "anonymized_text": anonymized_text,
+                }
             ),
         )
         detector_sources = ["regex", "spacy"]
         if use_provider_llm:
             detector_sources.append("llm")
-        redaction_summary = meta.get("redaction_summary")
-        redaction_count = (
-            int(redaction_summary.get("redaction_region_count", 0))
-            if isinstance(redaction_summary, dict)
-            else 0
-        )
-        if redaction_summary:
+        redaction_summary_value = meta.get("redaction_summary")
+        redaction_count = 0
+        if isinstance(redaction_summary_value, dict):
+            redaction_summary = ReportRedactionSummary.model_validate(
+                redaction_summary_value
+            )
+            redaction_count = redaction_summary.redaction_region_count
             detector_sources.append("pdf_redaction")
         return self._merge_report_meta(
             meta,
-            ReportMeta(
-                anonymizer_provenance=ReportAnonymizerProvenance.model_validate(
-                    build_anonymizer_provenance(
-                        detector_sources=detector_sources,
-                        proposal_counts={
-                            "report_metadata_fields": self._metadata_field_count(meta),
-                            "redaction_regions": redaction_count,
-                        },
-                    ).model_dump()
-                )
+            self._partial_report_meta(
+                {
+                    "anonymizer_provenance": ReportAnonymizerProvenance.model_validate(
+                        build_anonymizer_provenance(
+                            detector_sources=detector_sources,
+                            proposal_counts={
+                                "report_metadata_fields": self._metadata_field_count(
+                                    meta
+                                ),
+                                "redaction_regions": redaction_count,
+                            },
+                        ).model_dump()
+                    )
+                }
             ),
         )
 
     @staticmethod
-    def _metadata_field_count(meta: Mapping[str, Any]) -> int:
+    def _metadata_field_count(meta: Mapping[str, object]) -> int:
         keys = (
             "first_name",
             "last_name",
@@ -576,7 +617,7 @@ class ReportReader(ReportReaderExtractionMixin):
         return sum(1 for key in keys if meta.get(key))
 
     @staticmethod
-    def _report_metadata_has_signal(meta: Mapping[str, Any]) -> bool:
+    def _report_metadata_has_signal(meta: Mapping[str, object]) -> bool:
         signal_keys = (
             "first_name",
             "last_name",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TypedDict, cast
 
 import pytest
 
@@ -11,6 +12,25 @@ from lx_anonymizer.text_detection.phi_region_detector_training import (
     PhiRegionDetectorTrainingError,
     train_phi_region_detector,
 )
+
+
+class _TrainKwargs(TypedDict):
+    project: str
+    name: str
+
+
+class _TrainingResult:
+    save_dir: Path
+
+    def __init__(self, save_dir: Path) -> None:
+        self.save_dir = save_dir
+
+
+class _Trainer:
+    save_dir: Path | None
+
+    def __init__(self) -> None:
+        self.save_dir = None
 
 
 def test_phi_region_detector_training_rejects_missing_dataset_yaml(
@@ -25,7 +45,7 @@ def test_phi_region_detector_training_rejects_missing_dataset_yaml(
 
 def test_phi_region_detector_training_exports_onnx_with_settings(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dataset_yaml = tmp_path / "dataset.yaml"
     dataset_yaml.write_text(
@@ -33,19 +53,23 @@ def test_phi_region_detector_training_exports_onnx_with_settings(
     )
 
     class FakeYOLO:
+        model: str
+        trainer: _Trainer
+
         def __init__(self, model: str):
             self.model = model
-            self.trainer = SimpleNamespace(save_dir=None)
+            self.trainer = _Trainer()
 
-        def train(self, **kwargs):
-            run_dir = Path(kwargs["project"]) / kwargs["name"]
+        def train(self, **kwargs: object) -> _TrainingResult:
+            train_kwargs = cast(_TrainKwargs, kwargs)
+            run_dir = Path(train_kwargs["project"]) / train_kwargs["name"]
             weights_dir = run_dir / "weights"
             weights_dir.mkdir(parents=True)
             (weights_dir / "best.pt").write_bytes(b"checkpoint")
             self.trainer.save_dir = run_dir
-            return SimpleNamespace(save_dir=run_dir)
+            return _TrainingResult(run_dir)
 
-        def export(self, **kwargs):
+        def export(self, **kwargs: object) -> str:
             onnx_path = Path(self.model).with_suffix(".onnx")
             onnx_path.write_bytes(b"onnx")
             return str(onnx_path)

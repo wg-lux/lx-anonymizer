@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
-import fitz  # PyMuPDF
+import fitz  # type: ignore[import-untyped, reportMissingTypeStubs]  # PyMuPDF
 import pytest
 from PIL import Image
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
 
+Roi = tuple[int, int, int, int]
+TextWithBox = dict[str, str | Roi]
+
 
 def create_test_image(
-    path: Path, size: tuple[int, int] = (200, 100), color="white"
+    path: Path, size: tuple[int, int] = (200, 100), color: str = "white"
 ) -> None:
     image = Image.new("RGB", size, color=color)
     image.save(path)
@@ -21,8 +26,8 @@ def create_test_pdf_with_text(
 ) -> None:
     doc = fitz.open()
     page = doc.new_page(width=300, height=200)
-    page.insert_text((50, 100), text, fontsize=12)
-    doc.save(path)
+    page.insert_text((50, 100), text, fontsize=12)  # pyright: ignore[reportUnknownMemberType]
+    doc.save(path)  # pyright: ignore[reportUnknownMemberType]
     doc.close()
 
 
@@ -30,13 +35,75 @@ def create_test_pdf_with_multiple_pages(path: Path) -> None:
     doc = fitz.open()
 
     page1 = doc.new_page(width=300, height=200)
-    page1.insert_text((50, 100), "Patient: Alice Example", fontsize=12)
+    page1.insert_text((50, 100), "Patient: Alice Example", fontsize=12)  # pyright: ignore[reportUnknownMemberType]
 
     page2 = doc.new_page(width=300, height=200)
-    page2.insert_text((50, 100), "Patient: Bob Example", fontsize=12)
+    page2.insert_text((50, 100), "Patient: Bob Example", fontsize=12)  # pyright: ignore[reportUnknownMemberType]
 
-    doc.save(path)
+    doc.save(path)  # pyright: ignore[reportUnknownMemberType]
     doc.close()
+
+
+def _blank_pdf_page(_pdf_path: object) -> list[Image.Image]:
+    return [Image.new("RGB", (300, 200), "white")]
+
+
+def _blank_pdf_pages(_pdf_path: object) -> list[Image.Image]:
+    return [
+        Image.new("RGB", (300, 200), "white"),
+        Image.new("RGB", (300, 200), "white"),
+    ]
+
+
+def _no_sensitive_regions(
+    _self: Anonymizer, _image: Image.Image, **_kwargs: object
+) -> list[Roi]:
+    return []
+
+
+def _sample_sensitive_region(
+    _self: Anonymizer, _image: Image.Image, **_kwargs: object
+) -> list[Roi]:
+    return [(10, 10, 40, 30)]
+
+
+def _pdf_text_region(
+    _self: Anonymizer, _image: Image.Image, **_kwargs: object
+) -> list[Roi]:
+    return [(40, 80, 220, 110)]
+
+
+def _east_one_box(
+    _image: Image.Image, _min_confidence: float, _width: int, _height: int
+) -> tuple[list[Roi], str]:
+    return ([(1, 2, 3, 4)], "[]")
+
+
+def _east_no_boxes(
+    _image: Image.Image, _min_confidence: float, _width: int, _height: int
+) -> tuple[list[Roi], str]:
+    return ([], "[]")
+
+
+def _ocr_one_box(
+    _image: Image.Image, _text_boxes: Sequence[Roi], language: str = "deu+eng"
+) -> tuple[list[TextWithBox], list[Roi]]:
+    _ = language
+    return ([{"text": "Max", "box": (1, 2, 3, 4)}], [])
+
+
+def _phi_region(_image: Image.Image) -> list[Roi]:
+    return [(40, 50, 120, 90)]
+
+
+def _cropper_region(
+    _image: Image.Image, _text_with_boxes: Sequence[TextWithBox]
+) -> list[Roi]:
+    return [(10, 10, 20, 20)]
+
+
+def _raise_pdf_open(_path: object) -> object:
+    raise RuntimeError("cannot open pdf")
 
 
 @pytest.fixture
@@ -76,7 +143,7 @@ def test_create_anonymized_image_saves_output_even_when_no_text_detected(
     monkeypatch.setattr(
         Anonymizer,
         "_detect_sensitive_regions_from_image",
-        lambda self, image, **kwargs: [],
+        _no_sensitive_regions,
     )
 
     result = anonymizer.create_anonymized_image(
@@ -89,7 +156,7 @@ def test_create_anonymized_image_saves_output_even_when_no_text_detected(
 
     original = Image.open(sample_image_path).convert("RGB")
     anonymized = Image.open(output_path).convert("RGB")
-    assert list(original.getdata()) == list(anonymized.getdata())
+    assert original.tobytes() == anonymized.tobytes()
 
 
 def test_create_anonymized_image_blackens_sensitive_regions(
@@ -103,7 +170,7 @@ def test_create_anonymized_image_blackens_sensitive_regions(
     monkeypatch.setattr(
         Anonymizer,
         "_detect_sensitive_regions_from_image",
-        lambda self, image, **kwargs: [(10, 10, 40, 30)],
+        _sample_sensitive_region,
     )
 
     result = anonymizer.create_anonymized_image(
@@ -162,7 +229,7 @@ def test_create_anonymized_image_from_rois_with_empty_rois_still_saves(
 
     original = Image.open(sample_image_path).convert("RGB")
     anonymized = Image.open(output_path).convert("RGB")
-    assert list(original.getdata()) == list(anonymized.getdata())
+    assert original.tobytes() == anonymized.tobytes()
 
 
 def test_create_anonymized_image_from_rois_clamps_out_of_bounds_boxes(
@@ -201,13 +268,13 @@ def test_create_anonymized_pdf_saves_output_even_when_no_sensitive_regions_found
     # Return one synthetic raster page so the pipeline has something to iterate over.
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images",
-        lambda pdf_path: [Image.new("RGB", (300, 200), "white")],
+        _blank_pdf_page,
     )
 
     monkeypatch.setattr(
         Anonymizer,
         "_detect_sensitive_regions_from_image",
-        lambda self, image, **kwargs: [],
+        _no_sensitive_regions,
     )
 
     result = anonymizer.create_anonymized_pdf(
@@ -220,7 +287,7 @@ def test_create_anonymized_pdf_saves_output_even_when_no_sensitive_regions_found
 
     doc = fitz.open(output_path)
     try:
-        text = doc[0].get_text()
+        text = cast(str, doc[0].get_text())  # pyright: ignore[reportUnknownMemberType]
     finally:
         doc.close()
 
@@ -238,7 +305,7 @@ def test_create_anonymized_pdf_from_rois_removes_text_in_redacted_region(
     # Match the PDF page size exactly to keep coordinate mapping simple.
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images",
-        lambda pdf_path: [Image.new("RGB", (300, 200), "white")],
+        _blank_pdf_page,
     )
 
     # The text is inserted around (50, 100), so redact that region.
@@ -257,7 +324,7 @@ def test_create_anonymized_pdf_from_rois_removes_text_in_redacted_region(
 
     doc = fitz.open(output_path)
     try:
-        text = doc[0].get_text()
+        text = cast(str, doc[0].get_text())  # pyright: ignore[reportUnknownMemberType]
     finally:
         doc.close()
 
@@ -277,10 +344,7 @@ def test_create_anonymized_pdf_from_rois_only_redacts_target_page(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images",
-        lambda pdf_path: [
-            Image.new("RGB", (300, 200), "white"),
-            Image.new("RGB", (300, 200), "white"),
-        ],
+        _blank_pdf_pages,
     )
 
     rois_per_page = {
@@ -298,8 +362,8 @@ def test_create_anonymized_pdf_from_rois_only_redacts_target_page(
 
     doc = fitz.open(output_path)
     try:
-        page0_text = doc[0].get_text()
-        page1_text = doc[1].get_text()
+        page0_text = cast(str, doc[0].get_text())  # pyright: ignore[reportUnknownMemberType]
+        page1_text = cast(str, doc[1].get_text())  # pyright: ignore[reportUnknownMemberType]
     finally:
         doc.close()
 
@@ -320,13 +384,13 @@ def test_create_anonymized_pdf_uses_detected_sensitive_regions(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images",
-        lambda pdf_path: [Image.new("RGB", (300, 200), "white")],
+        _blank_pdf_page,
     )
 
     monkeypatch.setattr(
         Anonymizer,
         "_detect_sensitive_regions_from_image",
-        lambda self, image, **kwargs: [(40, 80, 220, 110)],
+        _pdf_text_region,
     )
 
     result = anonymizer.create_anonymized_pdf(
@@ -339,7 +403,7 @@ def test_create_anonymized_pdf_uses_detected_sensitive_regions(
 
     doc = fitz.open(output_path)
     try:
-        text = doc[0].get_text()
+        text = cast(str, doc[0].get_text())  # pyright: ignore[reportUnknownMemberType]
     finally:
         doc.close()
 
@@ -357,7 +421,7 @@ def test_create_anonymized_pdf_from_rois_with_empty_mapping_preserves_text(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images",
-        lambda pdf_path: [Image.new("RGB", (300, 200), "white")],
+        _blank_pdf_page,
     )
 
     result = anonymizer.create_anonymized_pdf_from_rois(
@@ -371,7 +435,7 @@ def test_create_anonymized_pdf_from_rois_with_empty_mapping_preserves_text(
 
     doc = fitz.open(output_path)
     try:
-        text = doc[0].get_text()
+        text = cast(str, doc[0].get_text())  # pyright: ignore[reportUnknownMemberType]
     finally:
         doc.close()
 
@@ -386,20 +450,19 @@ def test_detect_sensitive_regions_pipeline_calls_cropper_with_ocr_output(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.east_text_detection",
-        lambda image, min_confidence, width, height: ([(1, 2, 3, 4)], "[]"),
+        _east_one_box,
     )
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer._ocr_text_on_boxes",
-        lambda image, text_boxes, language="deu+eng": (
-            [{"text": "Max", "box": (1, 2, 3, 4)}],
-            [],
-        ),
+        _ocr_one_box,
     )
 
-    called = {}
+    called: dict[str, object] = {}
 
-    def fake_detect_sensitive_regions(image_arg, text_with_boxes):
+    def fake_detect_sensitive_regions(
+        image_arg: Image.Image, text_with_boxes: Sequence[TextWithBox]
+    ) -> list[Roi]:
         called["image"] = image_arg
         called["text_with_boxes"] = text_with_boxes
         return [(10, 10, 20, 20)]
@@ -410,7 +473,7 @@ def test_detect_sensitive_regions_pipeline_calls_cropper_with_ocr_output(
         fake_detect_sensitive_regions,
     )
 
-    rois = anonymizer._detect_sensitive_regions_from_image(image)
+    rois = anonymizer._detect_sensitive_regions_from_image(image)  # pyright: ignore[reportPrivateUsage]
 
     assert rois == [(10, 10, 20, 20)]
     assert called["image"] is image
@@ -425,14 +488,14 @@ def test_detect_sensitive_regions_includes_custom_phi_detector_regions(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.detect_phi_regions_from_settings",
-        lambda image_arg: [(40, 50, 120, 90)],
+        _phi_region,
     )
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.east_text_detection",
-        lambda image, min_confidence, width, height: ([], "[]"),
+        _east_no_boxes,
     )
 
-    rois = anonymizer._detect_sensitive_regions_from_image(image)
+    rois = anonymizer._detect_sensitive_regions_from_image(image)  # pyright: ignore[reportPrivateUsage]
 
     assert rois == [(40, 50, 120, 90)]
 
@@ -445,26 +508,23 @@ def test_detect_sensitive_regions_merges_custom_and_ocr_regions(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.detect_phi_regions_from_settings",
-        lambda image_arg: [(40, 50, 120, 90)],
+        _phi_region,
     )
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.east_text_detection",
-        lambda image, min_confidence, width, height: ([(1, 2, 3, 4)], "[]"),
+        _east_one_box,
     )
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer._ocr_text_on_boxes",
-        lambda image, text_boxes, language="deu+eng": (
-            [{"text": "Max", "box": (1, 2, 3, 4)}],
-            [],
-        ),
+        _ocr_one_box,
     )
     monkeypatch.setattr(
         anonymizer.sensitive_cropper,
         "detect_sensitive_regions",
-        lambda image_arg, text_with_boxes: [(10, 10, 20, 20)],
+        _cropper_region,
     )
 
-    rois = anonymizer._detect_sensitive_regions_from_image(image)
+    rois = anonymizer._detect_sensitive_regions_from_image(image)  # pyright: ignore[reportPrivateUsage]
 
     assert rois == [(10, 10, 20, 20), (40, 50, 120, 90)]
 
@@ -479,14 +539,11 @@ def test_create_anonymized_pdf_returns_none_on_pdf_open_failure(
 
     monkeypatch.setattr(
         "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images",
-        lambda pdf_path: [Image.new("RGB", (300, 200), "white")],
+        _blank_pdf_page,
     )
 
-    def fake_open(path):
-        raise RuntimeError("cannot open pdf")
-
     monkeypatch.setattr(
-        "lx_anonymizer.anonymization.anonymizer.pymupdf.open", fake_open
+        "lx_anonymizer.anonymization.anonymizer.pymupdf.open", _raise_pdf_open
     )
 
     result = anonymizer.create_anonymized_pdf(

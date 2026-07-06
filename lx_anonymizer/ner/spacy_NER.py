@@ -1,13 +1,19 @@
+from typing import Optional
+
+from spacy.language import Language
+
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
 
 
-nlp = None
+EntityTuple = tuple[str, int, int, str]
+
+nlp: Optional[Language] = None
 
 logger = get_logger(__name__)
 
 
-def spacy_NER_German(text):
+def spacy_NER_German(text: object) -> Optional[list[EntityTuple]]:
     global nlp
 
     if not isinstance(text, str):
@@ -56,7 +62,7 @@ def spacy_NER_German(text):
         return None
 
 
-def model_load():
+def model_load() -> Optional[Language]:
     global nlp
     try:
         logger.info("Loading spaCy German NER model...")

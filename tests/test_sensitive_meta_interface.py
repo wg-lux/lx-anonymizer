@@ -1,4 +1,6 @@
 import math
+from datetime import date
+from typing import Mapping, cast
 
 import pytest
 from pydantic import BaseModel
@@ -73,7 +75,7 @@ def test_safe_update_accepts_base_model() -> None:
 
 def test_safe_update_rejects_unsupported_type() -> None:
     meta = SensitiveMeta(first_name="Alice")
-    meta.safe_update(123)
+    meta.safe_update(cast(Mapping[str, object] | None, 123))
     assert meta.first_name == "Alice"
 
 
@@ -95,22 +97,22 @@ def test_dict_access_and_conversion() -> None:
 
 
 def test_from_dict_and_extra_input() -> None:
-    meta = SensitiveMeta.from_dict(
-        {"first_name": "Bob", "extra_field": "ignored"}
-    )
+    meta = SensitiveMeta.from_dict({"first_name": "Bob", "extra_field": "ignored"})
     assert meta.first_name == "Bob"
     assert not hasattr(meta, "extra_field")
 
 
 def test_nan_handling_on_init() -> None:
-    meta = SensitiveMeta(examination_time=math.nan)
+    meta = SensitiveMeta.model_validate({"examination_time": math.nan})
     assert meta.examination_time is None
 
 
 def test_swaps_exam_and_birth_dates_when_order_is_invalid_on_init() -> None:
-    meta = SensitiveMeta(
-        dob="2024-02-15",
-        examination_date="1994-03-21",
+    meta = SensitiveMeta.model_validate(
+        {
+            "dob": "2024-02-15",
+            "examination_date": "1994-03-21",
+        }
     )
     assert meta.dob is not None
     assert meta.examination_date is not None
@@ -165,33 +167,41 @@ def test_normalize_and_clean_handles_null_equivalents(
 def test_parse_date_like_supports_all_configured_formats(
     raw: str, expected: str
 ) -> None:
-    parsed = SensitiveMeta._parse_date_like(raw)
+    parsed = SensitiveMeta._parse_date_like(raw)  # pyright: ignore[reportPrivateUsage]
     assert parsed is not None
     assert parsed.isoformat() == expected
 
 
 def test_parse_date_like_rejects_unrecognized_format() -> None:
-    assert SensitiveMeta._parse_date_like("01-31-2024") is None
+    assert (
+        SensitiveMeta._parse_date_like(  # pyright: ignore[reportPrivateUsage]
+            "01-31-2024"
+        )
+        is None
+    )
 
 
 def test_parse_date_like_uses_cached_results_for_repeated_inputs() -> None:
-    SensitiveMeta._parse_date_like_cached.cache_clear()
-    first = SensitiveMeta._parse_date_like("2024-01-31")
-    second = SensitiveMeta._parse_date_like("2024-01-31")
+    SensitiveMeta._parse_date_like_cached.cache_clear()  # pyright: ignore[reportPrivateUsage]
+    first = SensitiveMeta._parse_date_like("2024-01-31")  # pyright: ignore[reportPrivateUsage]
+    second = SensitiveMeta._parse_date_like("2024-01-31")  # pyright: ignore[reportPrivateUsage]
     assert first is second
 
-    cache_info = SensitiveMeta._parse_date_like_cached.cache_info()
+    cache_info = SensitiveMeta._parse_date_like_cached.cache_info()  # pyright: ignore[reportPrivateUsage]
     assert cache_info.hits >= 1
 
 
 def test_date_order_rejects_unparseable_dates() -> None:
     with pytest.raises(ValidationError):
-        SensitiveMeta(dob="2024-01-31", examination_date="not-a-date")
+        SensitiveMeta(
+            dob=cast(date | None, "2024-01-31"),
+            examination_date=cast(date | None, "not-a-date"),
+        )
 
 
 def test_type_validation_rejects_non_string_scalars_after_preprocessing() -> None:
     with pytest.raises(ValidationError):
-        SensitiveMeta(first_name=["Alice"])
+        SensitiveMeta(first_name=cast(str, ["Alice"]))
 
 
 def test_safe_update_is_validation_gated_and_prevents_partial_mutation() -> None:
@@ -204,7 +214,9 @@ def test_safe_update_is_validation_gated_and_prevents_partial_mutation() -> None
 
 
 def test_safe_update_fill_only_keeps_existing_nonblank_values() -> None:
-    meta = SensitiveMeta(dob="2000-01-01", examination_date="2020-01-01")
+    meta = SensitiveMeta.model_validate(
+        {"dob": "2000-01-01", "examination_date": "2020-01-01"}
+    )
     meta.safe_update({"dob": "2024-01-01"})
     assert meta.dob is not None
     assert meta.examination_date is not None

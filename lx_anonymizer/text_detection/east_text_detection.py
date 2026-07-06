@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import ssl
 import tempfile
@@ -9,19 +10,49 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Protocol, cast
 
 import certifi
 import cv2
 import numpy as np
-from typing import cast
+from lx_dtypes.models.contracts.text_detection import EastDetectionConfidenceCore
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.setup.directory_setup import create_model_directory
 from lx_anonymizer.text_detection.np_wrapper import load_image_into_np
 
 logger = get_logger(__name__)
-cv2_dnn = cast(Any, cv2.dnn)  # type: ignore[attr-defined]
+
+
+class _DnnNet(Protocol):
+    def setInput(self, blob: np.ndarray) -> None: ...
+
+    def forward(self, outNames: list[str]) -> tuple[np.ndarray, np.ndarray]: ...
+
+
+class _Cv2DnnModule(Protocol):
+    def readNet(self, model_path: str) -> _DnnNet: ...
+
+    def blobFromImage(
+        self,
+        image: np.ndarray,
+        scalefactor: float,
+        size: tuple[int, int],
+        mean: tuple[float, float, float],
+        swapRB: bool,
+        crop: bool,
+    ) -> np.ndarray: ...
+
+    def NMSBoxes(
+        self,
+        bboxes: list[list[int]],
+        scores: list[float],
+        score_threshold: float,
+        nms_threshold: float,
+    ) -> np.ndarray: ...
+
+
+cv2_dnn = cast(_Cv2DnnModule, cv2.dnn)  # type: ignore[attr-defined]
 
 # Official model source you currently use.
 MODEL_URL = (
@@ -45,6 +76,10 @@ ALLOWED_IMAGE_SUFFIXES = {
 }
 
 
+def _expected_model_sha256() -> str:
+    return os.environ.get("LX_EAST_MODEL_SHA256", EXPECTED_MODEL_SHA256)
+
+
 @dataclass(frozen=True)
 class Detection:
     start_x: int
@@ -64,14 +99,14 @@ class Detection:
     def to_box(self) -> tuple[int, int, int, int]:
         return (self.start_x, self.start_y, self.end_x, self.end_y)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "startX": self.start_x,
-            "startY": self.start_y,
-            "endX": self.end_x,
-            "endY": self.end_y,
-            "confidence": self.confidence,
-        }
+    def to_confidence(self) -> EastDetectionConfidenceCore:
+        return EastDetectionConfidenceCore(
+            startX=self.start_x,
+            startY=self.start_y,
+            endX=self.end_x,
+            endY=self.end_y,
+            confidence=self.confidence,
+        )
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -120,16 +155,17 @@ def atomic_download(url: str, destination: Path, timeout: int) -> None:
                 f"Downloaded model too small ({tmp_size} bytes); refusing to use it."
             )
 
-        if EXPECTED_MODEL_SHA256 == "REPLACE_WITH_REAL_SHA256":
+        expected_sha256 = _expected_model_sha256()
+        if expected_sha256 == "REPLACE_WITH_REAL_SHA256":
             raise RuntimeError(
                 "EXPECTED_MODEL_SHA256 is not configured. Refusing insecure model download."
             )
 
         actual_sha256 = sha256_file(tmp_path)
-        if actual_sha256.lower() != EXPECTED_MODEL_SHA256.lower():
+        if actual_sha256.lower() != expected_sha256.lower():
             raise RuntimeError(
                 "Downloaded model SHA-256 mismatch. "
-                f"Expected {EXPECTED_MODEL_SHA256}, got {actual_sha256}."
+                f"Expected {expected_sha256}, got {actual_sha256}."
             )
 
         tmp_path.replace(destination)
@@ -158,14 +194,15 @@ def _validate_model_file(path: Path) -> bool:
             )
             return False
 
-        if EXPECTED_MODEL_SHA256 == "REPLACE_WITH_REAL_SHA256":
+        expected_sha256 = _expected_model_sha256()
+        if expected_sha256 == "REPLACE_WITH_REAL_SHA256":
             logger.warning(
                 "Skipping existing model integrity check because SHA-256 is not configured."
             )
             return False
 
         actual_sha256 = sha256_file(path)
-        if actual_sha256.lower() != EXPECTED_MODEL_SHA256.lower():
+        if actual_sha256.lower() != expected_sha256.lower():
             logger.warning("Model SHA-256 mismatch for existing file at %s", path)
             return False
 
@@ -348,8 +385,6 @@ def east_text_detection(
     )
 
     orig = load_image_into_np(str(validated_image_path))
-    if orig is None:
-        raise RuntimeError(f"OpenCV failed to read image: {validated_image_path}")
 
     orig_h, orig_w = orig.shape[:2]
     new_w, new_h = width, height
@@ -502,6 +537,8 @@ def east_text_detection(
         )
 
     output_boxes = [d.to_box() for d in final_detections]
-    output_confidences = [d.to_dict() for d in final_detections]
+    output_confidences = [d.to_confidence() for d in final_detections]
 
-    return output_boxes, json.dumps(output_confidences)
+    return output_boxes, json.dumps(
+        [confidence.model_dump(by_alias=True) for confidence in output_confidences]
+    )

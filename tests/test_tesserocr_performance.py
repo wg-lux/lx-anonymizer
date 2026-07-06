@@ -8,6 +8,7 @@ TesseOCR instead of pytesseract for video frame text extraction.
 
 import sys
 import time
+from typing import TypeAlias
 
 import cv2
 import numpy as np
@@ -19,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 try:
-    from lx_anonymizer.ocr.ocr_frame import FrameOCR
+    from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR
     from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
 
     print("✅ Successfully imported OCR modules")
@@ -27,8 +28,10 @@ except ImportError as e:
     print(f"❌ Failed to import OCR modules: {e}")
     sys.exit(1)
 
+OcrResult: TypeAlias = tuple[str, float]
 
-def create_test_frame_with_text():
+
+def create_test_frame_with_text() -> np.ndarray:
     """Create a synthetic video frame with medical text overlay."""
     # Create a frame similar to endoscopy video
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -85,7 +88,7 @@ def benchmark_ocr_performance():
 
     # Define test parameters
     num_frames = 10  # Process 10 frames to measure average performance
-    roi = {"x": 10, "y": 10, "width": 400, "height": 150}  # Focus on text area
+    roi: FlatRoi = {"x": 10, "y": 10, "width": 400, "height": 150}
 
     print(f"Test setup: {num_frames} frames, ROI: {roi}")
     print()
@@ -95,10 +98,10 @@ def benchmark_ocr_performance():
     frame_ocr_pytesseract = FrameOCR()
 
     start_time = time.time()
-    pytesseract_results = []
+    pytesseract_results: list[OcrResult] = []
 
     for i in range(num_frames):
-        text, confidence, metadata = frame_ocr_pytesseract.extract_text_from_frame(
+        text, confidence, _metadata = frame_ocr_pytesseract.extract_text_from_frame(
             test_frame, roi, high_quality=True
         )
         pytesseract_results.append((text, confidence))
@@ -114,10 +117,10 @@ def benchmark_ocr_performance():
     frame_ocr_tesserocr = FrameOCR()
 
     start_time = time.time()
-    tesserocr_results = []
+    tesserocr_results: list[OcrResult] = []
 
     for i in range(num_frames):
-        text, confidence, metadata = frame_ocr_tesserocr.extract_text_from_frame(
+        text, confidence, _metadata = frame_ocr_tesserocr.extract_text_from_frame(
             test_frame, roi, high_quality=True
         )
         tesserocr_results.append((text, confidence))
@@ -168,7 +171,7 @@ def benchmark_ocr_performance():
 
     start_time = time.time()
     for i in range(num_frames):
-        text, confidence, metadata = direct_processor.extract_text_from_frame(
+        text, confidence, _metadata = direct_processor.extract_text_from_frame(
             test_frame, roi, high_quality=True
         )
     direct_time = time.time() - start_time

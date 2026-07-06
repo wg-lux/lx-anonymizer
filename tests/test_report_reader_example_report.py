@@ -13,9 +13,7 @@ def _example_report_path() -> Path:
 
 def _sensitive_meta_fields() -> list[str]:
     return [
-        name
-        for name, field in SensitiveMeta.model_fields.items()
-        if not field.exclude
+        name for name, field in SensitiveMeta.model_fields.items() if not field.exclude
     ]
 
 

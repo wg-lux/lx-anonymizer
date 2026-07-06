@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
-
-import pytest
 
 from lx_anonymizer.evaluation.pipeline_evaluation import (
     evaluate_feedback_alignment,
@@ -67,16 +66,16 @@ def test_evaluate_records_returns_expected_core_metrics() -> None:
     last_name = result.field_metrics["last_name"]
 
     assert first_name.support == 2
-    assert first_name.exact_match_rate == pytest.approx(0.5)
-    assert first_name.presence_precision == pytest.approx(1.0)
-    assert first_name.presence_recall == pytest.approx(0.5)
+    assert math.isclose(first_name.exact_match_rate, 0.5)
+    assert math.isclose(first_name.presence_precision, 1.0)
+    assert math.isclose(first_name.presence_recall, 0.5)
 
     assert last_name.support == 2
-    assert last_name.exact_match_rate == pytest.approx(0.5)
+    assert math.isclose(last_name.exact_match_rate, 0.5)
     assert last_name.mean_similarity > 0.5
-    assert last_name.presence_f1 == pytest.approx(1.0)
+    assert math.isclose(last_name.presence_f1, 1.0)
 
-    assert result.macro_exact_match_rate == pytest.approx(0.5)
+    assert math.isclose(result.macro_exact_match_rate, 0.5)
 
 
 def test_evaluate_feedback_alignment_uses_text_change_when_no_explicit_prediction() -> (
@@ -114,7 +113,7 @@ def test_evaluate_feedback_alignment_uses_text_change_when_no_explicit_predictio
     assert agreement.tn == 1
     assert agreement.fp == 1
     assert agreement.fn == 0
-    assert agreement.accuracy == pytest.approx(2 / 3)
-    assert agreement.precision == pytest.approx(0.5)
-    assert agreement.recall == pytest.approx(1.0)
-    assert agreement.f1 == pytest.approx(2 / 3)
+    assert math.isclose(agreement.accuracy, 2 / 3)
+    assert math.isclose(agreement.precision, 0.5)
+    assert math.isclose(agreement.recall, 1.0)
+    assert math.isclose(agreement.f1, 2 / 3)

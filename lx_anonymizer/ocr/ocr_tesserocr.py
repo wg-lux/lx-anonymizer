@@ -21,12 +21,15 @@ Usage:
 import logging
 import threading
 import time
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple, TypeAlias, Union
 
 import tesserocr  # type: ignore[import-untyped]
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+Box: TypeAlias = Tuple[int, int, int, int]
+TextBox: TypeAlias = Tuple[str, Box]
 
 
 class TesseOCROptimized:
@@ -116,8 +119,8 @@ class TesseOCROptimized:
         else:
             image = Image.open(image_path).convert("RGB")
 
-        extracted_text_with_boxes = []
-        confidences = []
+        extracted_text_with_boxes: List[Tuple[str, Tuple[int, int, int, int]]] = []
+        confidences: List[float] = []
 
         start_time = time.time()
         logger.debug(f"Processing {len(boxes)} boxes with TesseOCR")
@@ -134,10 +137,10 @@ class TesseOCROptimized:
                     self.api.SetImage(cropped_image)
 
                     # Extract text directly from C++ API
-                    ocr_result = self.api.GetUTF8Text().strip()
+                    ocr_result = str(self.api.GetUTF8Text()).strip()
 
                     # Get confidence score directly
-                    confidence_score = self.api.MeanTextConf()
+                    confidence_score = float(self.api.MeanTextConf())
                     confidence_normalized = (
                         confidence_score if confidence_score > 0 else 0.0
                     )
@@ -168,7 +171,7 @@ class TesseOCROptimized:
 
         return extracted_text_with_boxes, confidences
 
-    def get_performance_stats(self) -> dict:
+    def get_performance_stats(self) -> dict[str, float | int]:
         """Get performance statistics."""
         if self.processed_boxes == 0:
             return {"avg_processing_time": 0.0, "total_boxes": 0}
@@ -296,5 +299,4 @@ def compare_ocr_performance(
             f"Performance comparison: TesseOCR is {comparison['speedup']:.1f}x faster than pytesseract"
         )
 
-    return comparison
     return comparison

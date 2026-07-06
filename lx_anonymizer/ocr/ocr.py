@@ -1,16 +1,73 @@
-from typing import Any, List, Tuple, cast
+from pathlib import Path
+from typing import Any, Protocol, TypeAlias, TypedDict, cast
 
 import numpy as np
+import numpy.typing as npt
 import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
+
+from lx_anonymizer.region_processing.box_operations import Box, OcrResult
+from lx_anonymizer.region_processing.region_detector import (
+    expand_roi,
+)  # Ensure this module is correctly referenced
+from lx_anonymizer.setup.custom_logger import get_logger
+
+ImageInput: TypeAlias = str | Path | Image.Image
+ArrayImageInput: TypeAlias = npt.NDArray[np.uint8] | npt.NDArray[np.integer[Any]]
+TrocrImageInput: TypeAlias = ImageInput | ArrayImageInput
+
+
+class _TesseractData(TypedDict):
+    text: list[str]
+    left: list[int | str]
+    top: list[int | str]
+    width: list[int | str]
+    height: list[int | str]
+    conf: list[int | str]
+
+
+class _TensorLike(Protocol):
+    def to(self, device: object) -> object: ...
+
+
+class _ProcessorOutput(Protocol):
+    pixel_values: _TensorLike
+
+
+class _GenerateOutput(Protocol):
+    sequences: object
+    scores: list[object]
+
+
+class _TrocrProcessorRuntime(Protocol):
+    def __call__(self, *args: object, **kwargs: object) -> _ProcessorOutput: ...
+
+    def batch_decode(
+        self, sequences: object, *, skip_special_tokens: bool = False
+    ) -> list[str]: ...
+
+
+class _TrocrTokenizerRuntime(Protocol):
+    def batch_decode(
+        self, sequences: object, *, skip_special_tokens: bool = False
+    ) -> list[str]: ...
+
+
+class _TrocrModelRuntime(Protocol):
+    def cuda(self) -> "_TrocrModelRuntime": ...
+
+    def to(self, device: object) -> "_TrocrModelRuntime": ...
+
+    def generate(self, pixel_values: object, **kwargs: object) -> _GenerateOutput: ...
+
 
 # Import CRAFT text detection if available (requires hezar)
 try:
     from lx_anonymizer.text_detection.craft_text_detection import craft_text_detection
 
-    CRAFT_AVAILABLE = True
+    _craft_available = True
 except ImportError:
-    CRAFT_AVAILABLE = False
+    _craft_available = False
 
     def craft_text_detection(
         image_input: Any,
@@ -23,10 +80,8 @@ except ImportError:
         )
 
 
-from lx_anonymizer.region_processing.region_detector import (
-    expand_roi,
-)  # Ensure this module is correctly referenced
-from lx_anonymizer.setup.custom_logger import get_logger
+CRAFT_AVAILABLE: bool = _craft_available
+
 
 logger = get_logger(__name__)
 torch: Any
@@ -35,32 +90,83 @@ try:
     import torch as torch_mod  # type: ignore[import-untyped]
 
     torch = torch_mod
-    TORCH_AVAILABLE = True
+    _torch_available = True
 except ImportError:
     torch = None
-    TORCH_AVAILABLE = False
+    _torch_available = False
+
+TORCH_AVAILABLE: bool = _torch_available
 
 try:
     from transformers import TrOCRProcessor, VisionEncoderDecoderModel  # type: ignore[import-untyped]
 
-    TRANSFORMERS_AVAILABLE = True
+    _transformers_available = True
 except ImportError:
     TrOCRProcessor = VisionEncoderDecoderModel = None  # type: ignore[assignment]
-    TRANSFORMERS_AVAILABLE = False
+    _transformers_available = False
+
+TRANSFORMERS_AVAILABLE: bool = _transformers_available
 
 try:
     import tesserocr  # type: ignore[import-untyped]  # noqa: F401
 
-    TESSEROCR_AVAILABLE = True
+    _tesserocr_available = True
 except ImportError:
-    TESSEROCR_AVAILABLE = False
+    _tesserocr_available = False
+
+TESSEROCR_AVAILABLE: bool = _tesserocr_available
+
+
+def _load_rgb_image(image_input: ImageInput) -> Image.Image:
+    if isinstance(image_input, Image.Image):
+        return image_input.convert("RGB")
+    return Image.open(image_input).convert("RGB")
+
+
+def _load_rgb_trocr_image(image_input: TrocrImageInput) -> Image.Image:
+    if isinstance(image_input, np.ndarray):
+        return Image.fromarray(image_input).convert("RGB")
+    return _load_rgb_image(image_input)
+
+
+def _pytesseract_image_to_string(image: Image.Image, config: str = "") -> str:
+    raw_output = cast(
+        object,
+        pytesseract.image_to_string(image, config=config),  # pyright: ignore[reportUnknownMemberType]
+    )
+    if isinstance(raw_output, bytes):
+        return raw_output.decode(errors="replace")
+    if isinstance(raw_output, str):
+        return raw_output
+    return str(raw_output)
+
+
+def _pytesseract_image_to_data(image: Image.Image) -> _TesseractData:
+    return cast(
+        _TesseractData,
+        pytesseract.image_to_data(  # pyright: ignore[reportUnknownMemberType]
+            image, output_type=pytesseract.Output.DICT
+        ),
+    )
+
+
+def _as_trocr_processor(processor: object) -> _TrocrProcessorRuntime:
+    return cast(_TrocrProcessorRuntime, processor)
+
+
+def _as_trocr_model(model: object) -> _TrocrModelRuntime:
+    return cast(_TrocrModelRuntime, model)
+
+
+def _as_trocr_tokenizer(tokenizer: object) -> _TrocrTokenizerRuntime:
+    return cast(_TrocrTokenizerRuntime, tokenizer)
 
 
 def _trocr_dependencies_available() -> bool:
     return TORCH_AVAILABLE and TRANSFORMERS_AVAILABLE
 
 
-def _get_model_service():
+def _get_model_service() -> object | None:
     if not _trocr_dependencies_available():
         return None
     try:
@@ -71,7 +177,7 @@ def _get_model_service():
         return None
 
 
-def preload_models():
+def preload_models() -> tuple[_TrocrProcessorRuntime, _TrocrModelRuntime, object]:
     global processor, model, device
 
     if not _trocr_dependencies_available():
@@ -93,8 +199,10 @@ def preload_models():
     # Load models with CUDA memory optimization
     processor_cls = cast(Any, TrOCRProcessor)
     model_cls = cast(Any, VisionEncoderDecoderModel)
-    processor = processor_cls.from_pretrained("microsoft/trocr-base-str")
-    model = model_cls.from_pretrained("microsoft/trocr-base-str")
+    processor = _as_trocr_processor(
+        processor_cls.from_pretrained("microsoft/trocr-base-str")
+    )
+    model = _as_trocr_model(model_cls.from_pretrained("microsoft/trocr-base-str"))
 
     # Move model to GPU and enable CUDA optimizations
     if torch.cuda.is_available():
@@ -106,14 +214,14 @@ def preload_models():
     return processor, model, device
 
 
-def cleanup_gpu():
+def cleanup_gpu() -> None:
     """Clean up GPU memory"""
     if TORCH_AVAILABLE and torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
 
 
-def print_gpu_info():
+def print_gpu_info() -> bool:
     if TORCH_AVAILABLE and torch.cuda.is_available():
         logger.info(f"GPU Memory used: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
         logger.info(f"GPU Memory cached: {torch.cuda.memory_reserved() / 1e9:.2f} GB")
@@ -124,37 +232,34 @@ def print_gpu_info():
         return cudasupport
 
 
-def tesseract_full_image_ocr(image_path):
+def tesseract_full_image_ocr(
+    image_path: ImageInput,
+) -> tuple[str, list[OcrResult]]:
     """
     Perform OCR on the entire image using Tesseract.
     Returns:
       - A single string with all recognized text.
       - A list of (word, (left, top, width, height)) for each recognized word.
     """
-    if hasattr(image_path, "convert"):
-        image = image_path.convert("RGB")
-    else:
-        image = Image.open(image_path).convert("RGB")  # 1. Full text in a single chunk
-    full_text = pytesseract.image_to_string(image, config="--psm 6")
+    image = _load_rgb_image(image_path)
+    full_text = _pytesseract_image_to_string(image, config="--psm 6")
 
     # 2. Word-level bounding boxes
-    data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-    word_boxes = []
+    data = _pytesseract_image_to_data(image)
+    word_boxes: list[OcrResult] = []
     for i in range(len(data["text"])):
-        word = data["text"][i].strip()
+        word = str(data["text"][i]).strip()
         if word != "":
-            x, y, w, h = (
-                data["left"][i],
-                data["top"][i],
-                data["width"][i],
-                data["height"][i],
-            )
-            word_boxes.append((word, (x, y, w, h)))
+            x = int(data["left"][i])
+            y = int(data["top"][i])
+            w = int(data["width"][i])
+            h = int(data["height"][i])
+            word_boxes.append((word, (x, y, x + w, y + h)))
 
     return full_text.strip(), word_boxes
 
 
-def trocr_full_image_ocr(image_input):
+def trocr_full_image_ocr(image_input: TrocrImageInput) -> str:
     """
     Perform OCR on the entire image using TrOCR.
     Accepts:
@@ -165,27 +270,14 @@ def trocr_full_image_ocr(image_input):
     """
     # 1) In PIL.Image umwandeln
     try:
-        if isinstance(image_input, np.ndarray):
-            # np.ndarray -> PIL
-            pil_img = Image.fromarray(image_input).convert("RGB")
-        elif isinstance(image_input, Image.Image):
-            # PIL.Image
-            pil_img = image_input.convert("RGB")
-        else:
-            # Pfad oder Dateiobjekt
-            pil_img = Image.open(image_input).convert("RGB")
+        pil_img = _load_rgb_trocr_image(image_input)
     except Exception as e:
         logger.warning(
             f"Failed to prepare image for TrOCR: {e}. Falling back to Tesseract."
         )
         try:
-            if isinstance(image_input, np.ndarray):
-                fb_img = Image.fromarray(image_input).convert("RGB")
-            elif isinstance(image_input, Image.Image):
-                fb_img = image_input.convert("RGB")
-            else:
-                fb_img = Image.open(image_input).convert("RGB")
-            return pytesseract.image_to_string(fb_img, config="--psm 6").strip()
+            fb_img = _load_rgb_trocr_image(image_input)
+            return _pytesseract_image_to_string(fb_img, config="--psm 6").strip()
         except Exception:
             return ""
 
@@ -193,12 +285,15 @@ def trocr_full_image_ocr(image_input):
     service = _get_model_service()
     if service is None:
         logger.info("TrOCR dependencies unavailable, falling back to Tesseract")
-        return pytesseract.image_to_string(pil_img, config="--psm 6").strip()
+        return _pytesseract_image_to_string(pil_img, config="--psm 6").strip()
 
-    processor, model, tokenizer, device = service.load_trocr_model()
-    if processor is None or model is None:
+    load_trocr_model = cast(Any, service).load_trocr_model
+    processor_raw, model_raw, _tokenizer, device = load_trocr_model()
+    if processor_raw is None or model_raw is None:
         logger.warning("TrOCR model not available, falling back to Tesseract")
-        return pytesseract.image_to_string(pil_img, config="--psm 6").strip()
+        return _pytesseract_image_to_string(pil_img, config="--psm 6").strip()
+    processor = _as_trocr_processor(processor_raw)
+    model = _as_trocr_model(model_raw)
 
     # 3) Inferenz
     pixel_values = processor(images=pil_img, return_tensors="pt").pixel_values.to(
@@ -217,7 +312,7 @@ def trocr_full_image_ocr(image_input):
     ].strip()
 
 
-def trocr_full_image_ocr_on_boxes(image_path):
+def trocr_full_image_ocr_on_boxes(image_path: ImageInput) -> str:
     """
     Perform OCR on the entire image using TrOCR.
     """
@@ -225,29 +320,30 @@ def trocr_full_image_ocr_on_boxes(image_path):
     service = _get_model_service()
     if service is None:
         logger.info("TrOCR dependencies unavailable, falling back to tesseract")
-        image = Image.open(image_path).convert("RGB")
-        full_text = pytesseract.image_to_string(image, config="--psm 6")
+        image = _load_rgb_image(image_path)
+        full_text = _pytesseract_image_to_string(image, config="--psm 6")
         return full_text.strip()
 
-    processor, model, tokenizer, device = service.load_trocr_model()
+    load_trocr_model = cast(Any, service).load_trocr_model
+    processor_raw, model_raw, tokenizer_raw, device = load_trocr_model()
 
     # Behandle Fehler, wenn Modelle nicht geladen werden konnten
-    if processor is None or model is None or tokenizer is None:
+    if processor_raw is None or model_raw is None or tokenizer_raw is None:
         logger.warning("TrOCR model not available, falling back to tesseract")
         # Fallback zu Tesseract implementieren
-        image = Image.open(image_path).convert("RGB")
-        full_text = pytesseract.image_to_string(image, config="--psm 6")
+        image = _load_rgb_image(image_path)
+        full_text = _pytesseract_image_to_string(image, config="--psm 6")
         return full_text.strip()
+    processor = _as_trocr_processor(processor_raw)
+    model = _as_trocr_model(model_raw)
+    tokenizer = _as_trocr_tokenizer(tokenizer_raw)
 
-    if hasattr(image_path, "convert"):
-        image = image_path.convert("RGB")
-    else:
-        image = Image.open(image_path).convert("RGB")  # 1. Full text in a single chunk
+    image = _load_rgb_image(image_path)
 
     # Detect text regions using CRAFT
-    boxes, _ = craft_text_detection(image_path)
+    boxes, _ = cast(tuple[list[Box], object], craft_text_detection(image_path))
 
-    ocr_results = []
+    ocr_results: list[str] = []
 
     if boxes:
         logger.info(
@@ -287,23 +383,17 @@ def trocr_full_image_ocr_on_boxes(image_path):
 
 
 def trocr_on_boxes(
-    image_path, boxes
-) -> Tuple[
-    List[Tuple[str, Tuple[int, int, int, int]]], List[float]
-]:  # Corrected return type hint
+    image_path: ImageInput,
+    boxes: list[Box],
+) -> tuple[list[OcrResult], list[float]]:
     try:
         if not _trocr_dependencies_available():
             logger.info("TrOCR dependencies unavailable, falling back to pytesseract")
             return tesseract_on_boxes_pytesseract(image_path, boxes)
 
-        if hasattr(image_path, "convert"):
-            image = image_path.convert("RGB")
-        else:
-            image = Image.open(image_path).convert(
-                "RGB"
-            )  # 1. Full text in a single chunk
-        extracted_text_with_boxes = []
-        confidences = []
+        image = _load_rgb_image(image_path)
+        extracted_text_with_boxes: list[OcrResult] = []
+        confidences: list[float] = []
         # Ensure models are loaded
         processor, model, device = preload_models()
 
@@ -362,8 +452,9 @@ def trocr_on_boxes(
                 if scores:
                     # Take the scores from the last generation step
                     last_scores = scores[-1]
-                    confidence_score = (
-                        torch.nn.functional.softmax(last_scores, dim=-1).max().item()
+                    confidence_score = cast(
+                        float,
+                        torch.nn.functional.softmax(last_scores, dim=-1).max().item(),
                     )
                 else:
                     confidence_score = (
@@ -393,14 +484,16 @@ def trocr_on_boxes(
         cleanup_gpu()
 
 
-def fallback_full_ocr(image, processor, model, device):
+def fallback_full_ocr(
+    image: ImageInput,
+    processor: _TrocrProcessorRuntime,
+    model: _TrocrModelRuntime,
+    device: object,
+) -> str:
     """
     Fallback OCR on the entire image when region detection fails
     """
-    if hasattr(image, "convert"):
-        image = image.convert("RGB")
-    else:
-        image = Image.open(image).convert("RGB")
+    image = _load_rgb_image(image)
     try:
         pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(
             device
@@ -412,7 +505,11 @@ def fallback_full_ocr(image, processor, model, device):
         return ""
 
 
-def tesseract_on_boxes(image_path, boxes, use_fast_ocr=True):
+def tesseract_on_boxes(
+    image_path: ImageInput,
+    boxes: list[Box],
+    use_fast_ocr: bool = True,
+) -> tuple[list[OcrResult], list[float]]:
     """
     Enhanced tesseract_on_boxes with automatic optimization.
 
@@ -437,43 +534,34 @@ def tesseract_on_boxes(image_path, boxes, use_fast_ocr=True):
     return tesseract_on_boxes_pytesseract(image_path, boxes)
 
 
-def tesseract_on_boxes_pytesseract(image_path, boxes):
+def tesseract_on_boxes_pytesseract(
+    image_path: ImageInput,
+    boxes: list[Box],
+) -> tuple[list[OcrResult], list[float]]:
     """
     Original pytesseract implementation (renamed for clarity).
 
     This is the original function that uses subprocess calls to tesseract CLI.
     Kept for compatibility and as a fallback when TesseOCR is not available.
     """
-    if hasattr(image_path, "convert"):
-        image = image_path.convert("RGB")
-    else:
-        image = Image.open(image_path).convert(
-            "RGB"
-        )  # 1. Full text in a single chunk    extracted_text_with_boxes = []
-    confidences = []
-    extracted_text_with_boxes = []
+    image = _load_rgb_image(image_path)
+
+    extracted_text_with_boxes: list[OcrResult] = []
+    confidences: list[float] = []
 
     logger.debug("Processing image with Tesseract OCR")
 
     for idx, box in enumerate(boxes):
         try:
-            (startX, startY, endX, endY) = box
-
-            # Crop the image to the expanded box
-            (startX_exp, startY_exp, endX_exp, endY_exp) = box
-            cropped_image = image.crop((startX_exp, startY_exp, endX_exp, endY_exp))
+            cropped_image = image.crop(box)
 
             # Use pytesseract to perform OCR on the cropped image
-            ocr_result = pytesseract.image_to_string(cropped_image, config="--psm 6")
+            ocr_result = _pytesseract_image_to_string(cropped_image, config="--psm 6")
 
             # Get confidence scores from pytesseract
-            details = pytesseract.image_to_data(
-                cropped_image, output_type=pytesseract.Output.DICT
-            )
+            details = _pytesseract_image_to_data(cropped_image)
             text_confidences = [
-                int(conf)
-                for conf in details["conf"]
-                if isinstance(conf, (int, str)) and str(conf).isdigit()
+                int(conf) for conf in details["conf"] if str(conf).isdigit()
             ]
 
             # Calculate the average confidence score

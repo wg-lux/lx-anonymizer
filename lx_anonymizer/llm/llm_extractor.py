@@ -8,17 +8,44 @@ Diese Implementierung basiert auf den Best Practices:
 4. Strukturierte Ausgabe mit JSON Schema Validation
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
 import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterable, Mapping
+from types import TracebackType
+from typing import Optional, Sequence, cast
 
 import requests
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from tenacity import retry, stop_after_attempt, wait_fixed
+from lx_dtypes.models.contracts.llm_service import (
+    LLMChatMessagePayload,
+    LLMChatOllamaPayload,
+    LLMChatOllamaOptionsPayload,
+    LLMChatOpenAIPayload,
+    LLMChatResponsePayload,
+)
+from lx_dtypes.models.contracts.llm_extractor import (
+    LLMEnrichedMetadataPayload,
+    LLMFrameContextPayload,
+    LLMFrameDataPayload,
+    LLMMetadataCacheStatsPayload,
+    LLMModelInfoPayload,
+    LLMOllamaModelsPayload,
+    LLMTextTimelineEntryPayload,
+    LLMTemporalAnalysisPayload,
+    LLMEvaluationResultPayload,
+    LLMVllmModelsPayload,
+)
+from lx_dtypes.models.contracts.text_anonymization import (
+    LLMMetadataPayload,
+)
+from lx_dtypes.models.meta.VideoMeta import FrameCollectionItem
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 # Konfiguriere Logging
@@ -39,36 +66,67 @@ STRICT_METADATA_TEMPLATE = (
     '"dob":null,"casenumber":null,"examination_date":null}'
 )
 
+LLMChatRequestPayload = LLMChatOllamaPayload | LLMChatOpenAIPayload
+
+
+def _coerce_str_object_map(value: object) -> dict[str, object] | None:
+    """Konvertiert Mapping-ähnliche Objekte in str->object-Maps."""
+    if not isinstance(value, Mapping):
+        return None
+
+    mapped = cast(Mapping[str, object], value)
+    casted: dict[str, object] = {}
+    for key in mapped:
+        casted[key] = mapped[key]
+    return casted
+
+
+LLMFrameProcessorInput = (
+    Mapping[str, object] | FrameCollectionItem | tuple[object, ...] | list[object]
+)
+
+
+class _LLMModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    name: str
+    priority: int = 0
+    timeout: int
+    description: str = "Runtime model"
+
+    def with_timeout(self, timeout: int) -> "_LLMModelConfig":
+        return self.model_copy(update={"timeout": timeout})
+
 
 class ModelConfig:
     """Konfiguration für verfügbare Modelle mit Prioritäten."""
 
     # Prioritized for local RTX 3050 / 4 GB VRAM usage via Ollama.
-    MODELS = [
-        {
-            "name": "lx-gemma4-e2b-json",
-            "priority": 1,
-            "timeout": 120,
-            "description": "Gemma 4 E2B JSON profile",
-        },
-        {
-            "name": "gemma4:e2b",
-            "priority": 2,
-            "timeout": 120,
-            "description": "Gemma 4 E2B base Ollama model",
-        },
-        {
-            "name": "llama3.2:1b",
-            "priority": 10,
-            "timeout": 45,
-            "description": "Tiny fallback model",
-        },
+    MODELS: list[_LLMModelConfig] = [
+        _LLMModelConfig(
+            name="lx-gemma4-e2b-json",
+            priority=1,
+            timeout=120,
+            description="Gemma 4 E2B JSON profile",
+        ),
+        _LLMModelConfig(
+            name="gemma4:e2b",
+            priority=2,
+            timeout=120,
+            description="Gemma 4 E2B base Ollama model",
+        ),
+        _LLMModelConfig(
+            name="llama3.2:1b",
+            priority=10,
+            timeout=45,
+            description="Tiny fallback model",
+        ),
     ]
 
     @classmethod
-    def get_models_by_priority(cls) -> List[Dict[str, Any]]:
+    def get_models_by_priority(cls) -> list[_LLMModelConfig]:
         """Gibt Modelle sortiert nach Priorität zurück."""
-        return sorted(cls.MODELS, key=lambda x: x["priority"])
+        return sorted(cls.MODELS, key=lambda model: model.priority)
 
 
 class MetadataCache:
@@ -109,18 +167,18 @@ class MetadataCache:
         self.cache[key] = metadata
         logger.debug(f"Cache PUT für Key {key}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> LLMMetadataCacheStatsPayload:
         """Gibt Cache-Statistiken zurück."""
         total_requests = self.hit_count + self.miss_count
         hit_rate = self.hit_count / total_requests if total_requests > 0 else 0
 
-        return {
-            "hit_count": self.hit_count,
-            "miss_count": self.miss_count,
-            "hit_rate": hit_rate,
-            "cache_size": len(self.cache),
-            "max_size": self.max_size,
-        }
+        return LLMMetadataCacheStatsPayload(
+            hit_count=self.hit_count,
+            miss_count=self.miss_count,
+            hit_rate=hit_rate,
+            cache_size=len(self.cache),
+            max_size=self.max_size,
+        )
 
 
 class LLMMetadataExtractor:
@@ -148,14 +206,21 @@ class LLMMetadataExtractor:
             self.provider = "ollama"
         self.base_url = (base_url or self._default_base_url()).rstrip("/")
         self.chat_endpoint = self._build_chat_endpoint()
+        self.available_models_retry = False
         self.available_models = self._check_available_models()
-        self.current_model: Optional[dict[str, Any]] = None
+        self.current_model: _LLMModelConfig | None = None
         self.cache = MetadataCache() if enable_cache else None
         self.sensitive_meta = SensitiveMeta()
         self.preferred_model = preferred_model
         self.preferred_timeout = model_timeout
 
         self._initialize_best_model()
+
+    def _require_current_model(self) -> _LLMModelConfig:
+        current_model = self.current_model
+        if current_model is None:
+            raise RuntimeError("Kein aktives LLM-Modell verfügbar.")
+        return current_model
 
     def _default_base_url(self) -> str:
         if self.provider == "ollama":
@@ -169,11 +234,8 @@ class LLMMetadataExtractor:
             return f"{base}/api/chat"
         return f"{base}/v1/chat/completions"
 
-    def _check_available_models(self) -> List[str]:
+    def _check_available_models(self) -> list[str]:
         """Überprüft, welche Modelle verfügbar sind."""
-        if not hasattr(self, "available_models_retry"):
-            self.available_models_retry = False
-
         if self.available_models_retry:
             return []
 
@@ -186,18 +248,17 @@ class LLMMetadataExtractor:
             )
             response = requests.get(model_endpoint, timeout=5)
             if response.status_code == 200:
-                models_data = response.json()
+                raw_models_json = response.json()
+
                 if self.provider == "ollama":
-                    return [
-                        model["name"]
-                        for model in models_data.get("models", [])
-                        if isinstance(model, dict) and model.get("name")
-                    ]
-                return [
-                    model["id"]
-                    for model in models_data.get("data", [])
-                    if isinstance(model, dict) and model.get("id")
-                ]
+                    models_payload = LLMOllamaModelsPayload.model_validate(
+                        raw_models_json
+                    )
+                    return [model.name for model in models_payload.models]
+
+                models_payload = LLMVllmModelsPayload.model_validate(raw_models_json)
+                return [model.id for model in models_payload.data]
+
             return []
         except Exception as e:
             logger.warning(f"could not check available models: {e}")
@@ -217,25 +278,25 @@ class LLMMetadataExtractor:
                     (
                         m
                         for m in ModelConfig.get_models_by_priority()
-                        if m["name"] == self.preferred_model
+                        if m.name == self.preferred_model
                     ),
                     None,
                 )
                 if model_config:
-                    model_config = dict(model_config)
+                    pass
                 else:
-                    model_config = {
-                        "name": self.preferred_model,
-                        "priority": 0,
-                        "timeout": self.preferred_timeout or 30,
-                        "description": "Preferred model",
-                    }
+                    model_config = _LLMModelConfig(
+                        name=self.preferred_model,
+                        priority=0,
+                        timeout=self.preferred_timeout or 30,
+                        description="Preferred model",
+                    )
                 if self.preferred_timeout:
-                    model_config["timeout"] = self.preferred_timeout
+                    model_config = model_config.with_timeout(self.preferred_timeout)
                 self.current_model = model_config
                 logger.info(
                     "Verwende bevorzugtes Modell: %s",
-                    model_config["name"],
+                    model_config.name,
                 )
                 return
             if not self.available_models:
@@ -250,10 +311,10 @@ class LLMMetadataExtractor:
             )
 
         for model_config in ModelConfig.get_models_by_priority():
-            if model_config["name"] in self.available_models:
+            if model_config.name in self.available_models:
                 self.current_model = model_config
                 logger.info(
-                    f"Verwende Modell: {model_config['name']} - {model_config['description']}"
+                    f"Verwende Modell: {model_config.name} - {model_config.description}"
                 )
                 return
 
@@ -289,7 +350,7 @@ OCR_TEXT_BEGIN
 {text_window}
 OCR_TEXT_END"""
 
-    def _create_json_schema(self) -> Dict[str, Any]:
+    def _create_json_schema(self) -> dict[str, object]:
         """Erstellt das erweiterte JSON-Schema für medizinische Metadaten-Extraktion."""
         return {
             "type": "object",
@@ -315,7 +376,9 @@ OCR_TEXT_END"""
         }
 
     @retry(stop=stop_after_attempt(2), wait=wait_fixed(1))
-    def _make_api_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_api_request(
+        self, payload: LLMChatRequestPayload
+    ) -> LLMChatResponsePayload:
         """
         Macht API-Request mit Retry-Logik und robuster Fehlerbehandlung.
 
@@ -332,21 +395,23 @@ OCR_TEXT_END"""
         timeout = 10
         try:
             assert self.current_model is not None
-            timeout = self.current_model.get("timeout", 10)
+            timeout = self.current_model.timeout
 
+            model_name = payload.model
             logger.debug(
-                f"🔗 API-Request an {self.chat_endpoint} mit Modell {payload['model']}"
+                f"🔗 API-Request an {self.chat_endpoint} mit Modell {model_name}"
             )
 
             response = requests.post(
                 self.chat_endpoint,
-                json=payload,
+                json=payload.model_dump(),
                 headers={"Content-Type": "application/json"},
                 timeout=timeout,
             )
 
             if response.status_code == 200:
-                result = response.json()
+                raw_response = response.json()
+                result = LLMChatResponsePayload.model_validate(raw_response)
                 content = self._extract_response_content(result)
 
                 # Validiere Antwort
@@ -365,7 +430,7 @@ OCR_TEXT_END"""
         except requests.Timeout:
             assert self.current_model is not None
             logger.error(
-                f"⏰ Timeout ({timeout}s) bei Modell {self.current_model['name']}"
+                f"⏰ Timeout ({timeout}s) bei Modell {self.current_model.name}"
             )
             raise
         except requests.ConnectionError as e:
@@ -375,18 +440,65 @@ OCR_TEXT_END"""
             logger.error(f"💥 Unerwarteter API-Fehler: {e}")
             raise
 
-    def _extract_response_content(self, result: Dict[str, Any]) -> str:
-        choices = result.get("choices", [])
-        if choices and isinstance(choices[0], dict):
-            message = choices[0].get("message", {})
-            if isinstance(message, dict):
-                return message.get("content", "") or ""
+    def _extract_response_content(self, result: LLMChatResponsePayload) -> str:
+        for choice in result.choices:
+            content = choice.message.content
+            if content:
+                return content
 
-        message = result.get("message", {})
-        if isinstance(message, dict):
-            return message.get("content", "") or ""
+        if result.message and result.message.content:
+            return result.message.content
 
-        return result.get("content", "") or ""
+        return ""
+
+    def _build_chat_payload(
+        self,
+        text: str,
+        fast_mode: bool = False,
+        prompt_type: str = "full",
+    ) -> LLMChatRequestPayload:
+        messages = [
+            LLMChatMessagePayload(
+                role="user",
+                content=(
+                    self._create_fast_extraction_prompt(text)
+                    if prompt_type == "fast"
+                    else self._create_extraction_prompt(text)
+                ),
+            )
+        ]
+
+        model_name = self._require_current_model().name
+
+        if self.provider == "ollama":
+            return LLMChatOllamaPayload(
+                model=model_name,
+                messages=messages,
+                stream=False,
+                format="json",
+                options=LLMChatOllamaOptionsPayload.model_validate(
+                    OLLAMA_GENERATION_OPTIONS
+                ),
+            )
+
+        if fast_mode or prompt_type == "fast":
+            return LLMChatOpenAIPayload(
+                model=model_name,
+                messages=messages,
+                max_tokens=150,
+                response_format={"type": "json_object"},
+                top_p=0.9,
+                temperature=0.0,
+            )
+
+        return LLMChatOpenAIPayload(
+            model=model_name,
+            messages=messages,
+            response_format={"type": "json_object"},
+            top_p=1.0,
+            stream=False,
+            temperature=0.0,
+        )
 
     def _try_next_model(self) -> bool:
         """
@@ -398,18 +510,18 @@ OCR_TEXT_END"""
         if not self.current_model:
             return False
 
-        current_priority = self.current_model.get("priority", 0)
+        current_priority = self.current_model.priority
 
         # Finde nächstes Modell mit höherer Priorität
         for model_config in ModelConfig.get_models_by_priority():
             if (
-                model_config["priority"] > current_priority
-                and model_config["name"] in self.available_models
+                model_config.priority > current_priority
+                and model_config.name in self.available_models
             ):
-                old_model = self.current_model["name"]
+                old_model = self.current_model.name
                 self.current_model = model_config
                 logger.info(
-                    f"🔄 Modell-Wechsel: {old_model} → {model_config['name']} (Priorität {current_priority} → {model_config['priority']})"
+                    f"🔄 Modell-Wechsel: {old_model} → {model_config.name} (Priorität {current_priority} → {model_config.priority})"
                 )
                 return True
 
@@ -446,20 +558,20 @@ OCR_TEXT_END"""
             return None
 
         # Bestimme verfügbare Modelle für Fallback
-        available_model_configs: List[Dict[str, Any]] = []
+        available_model_configs: list[_LLMModelConfig] = []
         seen_model_names: set[str] = set()
 
-        if self.current_model and self.current_model.get("name"):
-            available_model_configs.append(dict(self.current_model))
-            seen_model_names.add(str(self.current_model["name"]))
+        if self.current_model:
+            available_model_configs.append(self.current_model)
+            seen_model_names.add(self.current_model.name)
 
         for model_config in ModelConfig.get_models_by_priority():
             if (
-                model_config["name"] in self.available_models
-                and model_config["name"] not in seen_model_names
+                model_config.name in self.available_models
+                and model_config.name not in seen_model_names
             ):
-                available_model_configs.append(dict(model_config))
-                seen_model_names.add(model_config["name"])
+                available_model_configs.append(model_config)
+                seen_model_names.add(model_config.name)
 
         if not available_model_configs:
             logger.error("Keine konfigurierten Modelle verfügbar")
@@ -473,24 +585,10 @@ OCR_TEXT_END"""
             try:
                 start_time = time.time()
 
-                payload = {
-                    "model": self.current_model["name"],
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": self._create_extraction_prompt(text),
-                        }
-                    ],
-                    "stream": False,
-                }
-                if self.provider == "ollama":
-                    payload["format"] = "json"
-                    payload["options"] = dict(OLLAMA_GENERATION_OPTIONS)
-                else:
-                    payload["response_format"] = {"type": "json_object"}
+                payload = self._build_chat_payload(text, prompt_type="full")
 
                 logger.info(
-                    f"Versuch {model_attempt + 1}/{len(available_model_configs)}: Extraktion mit {self.current_model['name']}"
+                    f"Versuch {model_attempt + 1}/{len(available_model_configs)}: Extraktion mit {self.current_model.name}"
                 )
 
                 # API-Request mit Retry-Logik
@@ -499,15 +597,17 @@ OCR_TEXT_END"""
 
                 # Performance-Metriken loggen
                 duration = time.time() - start_time
-                token_count = response.get("eval_count", 0)
+                token_count = 0
                 logger.info(f"API-Erfolg in {duration:.2f}s, {token_count} Tokens")
 
                 # JSON parsen und validieren
                 try:
                     # Bereinige Antwort falls nötig (entferne Markdown-Blöcke etc.)
                     cleaned_content = self._clean_json_response(content)
-                    metadata_dict = json.loads(cleaned_content)
-                    self.sensitive_meta.safe_update(metadata_dict)
+                    metadata_payload = LLMMetadataPayload.model_validate_json(
+                        cleaned_content
+                    )
+                    self.sensitive_meta.safe_update(metadata_payload)
                     metadata = self.sensitive_meta
 
                     # Speichere im Cache
@@ -515,7 +615,7 @@ OCR_TEXT_END"""
                         self.cache.put(text, metadata)
 
                     logger.info(
-                        f"✅ Erfolgreich extrahiert mit {self.current_model['name']}: "
+                        f"✅ Erfolgreich extrahiert mit {self.current_model.name}: "
                         f"Datum: {metadata.examination_date}"
                     )
 
@@ -524,7 +624,7 @@ OCR_TEXT_END"""
 
                 except (json.JSONDecodeError, ValidationError) as e:
                     logger.warning(
-                        f"JSON/Validierung fehlgeschlagen für {self.current_model['name']}: {e}"
+                        f"JSON/Validierung fehlgeschlagen für {self.current_model.name}: {e}"
                     )
                     logger.debug(f"Rohe Antwort: {content}")
 
@@ -539,7 +639,7 @@ OCR_TEXT_END"""
 
             except requests.Timeout:
                 logger.warning(
-                    f"Timeout bei {self.current_model['name']} nach {self.current_model.get('timeout', 30)}s"
+                    f"Timeout bei {self.current_model.name} nach {self.current_model.timeout}s"
                 )
                 # Bei Timeout versuche das nächste Modell
                 if model_attempt < len(available_model_configs) - 1:
@@ -550,7 +650,7 @@ OCR_TEXT_END"""
                     break
 
             except Exception as e:
-                logger.error(f"Fehler mit Modell {self.current_model['name']}: {e}")
+                logger.error(f"Fehler mit Modell {self.current_model.name}: {e}")
 
                 # Bei anderen Fehlern versuche das nächste Modell
                 if model_attempt < len(available_model_configs) - 1:
@@ -626,19 +726,17 @@ OCR_TEXT_END"""
 
         return content[start:].strip()
 
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> LLMModelInfoPayload:
         """Gibt Informationen über das aktuelle Modell und Cache-Statistiken zurück."""
-        info = {
-            "current_model": self.current_model,
-            "available_models": self.available_models,
-            "total_models": len(self.available_models),
-        }
+        current_model_name = self.current_model.name if self.current_model else None
+        cache_stats = self.cache.get_stats() if self.cache else None
 
-        # Cache-Statistiken hinzufügen
-        if self.cache:
-            info["cache_stats"] = self.cache.get_stats()
-
-        return info
+        return LLMModelInfoPayload(
+            current_model=current_model_name,
+            available_models=self.available_models,
+            total_models=len(self.available_models),
+            cache_stats=cache_stats,
+        )
 
     def extract_metadata_smart_sampling(
         self, text: str, confidence_threshold: float = 0.7
@@ -665,11 +763,7 @@ OCR_TEXT_END"""
         fastest_model = self._get_fastest_available_model()
         if not fastest_model:
             return self.extract_metadata(text)  # Fallback zur normalen Extraktion
-        if (
-            fastest_model
-            and self.current_model
-            and fastest_model["name"] == self.current_model.get("name")
-        ):
+        if self.current_model and fastest_model.name == self.current_model.name:
             logger.info(
                 "Fastest model is same as main model. Skipping sampling to avoid double-execution."
             )
@@ -684,26 +778,13 @@ OCR_TEXT_END"""
 
             start_time = time.time()
 
-            payload = {
-                "model": self.current_model["name"],
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": self._create_fast_extraction_prompt(truncated_text),
-                    }
-                ],
-                "stream": False,
-            }
-            if self.provider == "ollama":
-                payload["format"] = "json"
-                payload["options"] = dict(OLLAMA_GENERATION_OPTIONS)
-            else:
-                payload["response_format"] = {"type": "json_object"}
-                payload["temperature"] = 0
-                payload["top_p"] = 0.9
-                payload["max_tokens"] = 150
+            payload = self._build_chat_payload(
+                truncated_text,
+                fast_mode=True,
+                prompt_type="fast",
+            )
 
-            logger.info(f"Smart-Sampling mit {self.current_model['name']}")
+            logger.info(f"Smart-Sampling mit {self.current_model.name}")
             response = self._make_api_request(payload)
             content = self._extract_response_content(response)
 
@@ -713,13 +794,15 @@ OCR_TEXT_END"""
             # Schnelle JSON-Parsing ohne komplexe Validierung
             try:
                 cleaned_content = self._clean_json_response(content)
-                metadata_dict = json.loads(cleaned_content)
+                metadata_payload = LLMMetadataPayload.model_validate_json(
+                    cleaned_content
+                )
 
                 # Einfache Konfidenz-Bewertung basierend auf gefundenen Daten
-                confidence = self._calculate_confidence(metadata_dict)
+                confidence = self._calculate_confidence(metadata_payload)
 
                 if confidence >= confidence_threshold:
-                    self.sensitive_meta.safe_update(metadata_dict)
+                    self.sensitive_meta.safe_update(metadata_payload)
                     metadata = self.sensitive_meta
                     logger.info(
                         f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.first_name} {metadata.last_name}, DOB: {metadata.dob}"
@@ -821,7 +904,7 @@ OCR_TEXT_END"""
         # Erhöhte Schwelle: mindestens 2 Keywords für bessere Präzision
         return keyword_count >= 2
 
-    def _get_fastest_available_model(self) -> Optional[Dict[str, Any]]:
+    def _get_fastest_available_model(self) -> _LLMModelConfig | None:
         """Gibt das schnellste verfügbare Modell zurück."""
         if self.preferred_model and (
             self.preferred_model in self.available_models or not self.available_models
@@ -830,24 +913,23 @@ OCR_TEXT_END"""
                 (
                     m
                     for m in ModelConfig.get_models_by_priority()
-                    if m["name"] == self.preferred_model
+                    if m.name == self.preferred_model
                 ),
                 None,
             )
             if model_config:
                 if self.preferred_timeout:
-                    model_config = dict(model_config)
-                    model_config["timeout"] = self.preferred_timeout
+                    model_config = model_config.with_timeout(self.preferred_timeout)
                 return model_config
-            return {
-                "name": self.preferred_model,
-                "priority": 0,
-                "timeout": self.preferred_timeout or 30,
-                "description": "Preferred model",
-            }
+            return _LLMModelConfig(
+                name=self.preferred_model,
+                priority=0,
+                timeout=self.preferred_timeout or 30,
+                description="Preferred model",
+            )
 
         for model_config in ModelConfig.get_models_by_priority():
-            if model_config["name"] in self.available_models:
+            if model_config.name in self.available_models:
                 return model_config
         return None
 
@@ -879,7 +961,11 @@ OCR_TEXT={text}"""
             )
         )
 
-    def _calculate_confidence(self, metadata_dict: dict) -> float:
+    def calculate_confidence(self, metadata: LLMMetadataPayload) -> float:
+        """Berechnet den Konfidenz-Score für die extrahierten Metadaten."""
+        return self._calculate_confidence(metadata)
+
+    def _calculate_confidence(self, metadata: LLMMetadataPayload) -> float:
         """
         Erweiterte Konfidenz-Berechnung basierend auf gefundenen medizinischen Daten.
 
@@ -889,8 +975,8 @@ OCR_TEXT={text}"""
         score = 0.0
 
         # Patient Name (höchste Priorität)
-        first_name = metadata_dict.get("first_name", "") or ""
-        last_name = metadata_dict.get("last_name", "") or ""
+        first_name = metadata.first_name
+        last_name = metadata.last_name
 
         if (
             first_name
@@ -905,27 +991,27 @@ OCR_TEXT={text}"""
             score += 0.25
 
         # Examination Date (wichtig für medizinische Aufzeichnungen)
-        exam_date = metadata_dict.get("examination_date", "") or ""
+        exam_date = metadata.examination_date
         if exam_date and exam_date.lower() not in ["unknown", "", "null"]:
             score += 0.20
 
         # Fallnummer/Case Number (sehr wichtig für medizinische Identifikation)
-        case_num = metadata_dict.get("casenumber", "") or ""
+        case_num = metadata.casenumber
         if case_num and case_num.lower() not in ["unknown", "", "null"]:
             score += 0.20
 
         # Geburtsdatum (wichtig für Patientenidentifikation)
-        dob = metadata_dict.get("dob", "") or ""
+        dob = metadata.dob
         if dob and dob.lower() not in ["unknown", "", "null"]:
             score += 0.15
 
         # Gender (weniger wichtig, aber hilfreich)
-        gender = metadata_dict.get("gender", "") or ""
+        gender = metadata.gender
         if gender and gender.lower() in ["male", "female"]:
             score += 0.05
 
         # Examiner (zusätzlicher Kontext)
-        examiner_first_name = metadata_dict.get("examiner_first_name", "") or ""
+        examiner_first_name = metadata.examiner_first_name
         if examiner_first_name and examiner_first_name.lower() not in [
             "unknown",
             "",
@@ -933,7 +1019,7 @@ OCR_TEXT={text}"""
         ]:
             score += 0.05
 
-        examiner_last_name = metadata_dict.get("examiner_last_name", "") or ""
+        examiner_last_name = metadata.examiner_last_name
         if examiner_last_name and examiner_last_name.lower() not in [
             "unknown",
             "",
@@ -954,7 +1040,7 @@ class FrameSamplingOptimizer:
         self.max_frames = max_frames
         self.skip_similar_threshold = skip_similar_threshold
         self.processed_hashes: set[str] = set()
-        self.last_metadata: Optional[dict[str, Any]] = None
+        self.last_metadata: LLMFrameDataPayload | None = None
 
     def should_process_frame(
         self, frame_idx: int, total_frames: int, frame_hash: str
@@ -994,14 +1080,15 @@ class FrameSamplingOptimizer:
             return frame_idx % 10 == 0
 
     def register_processed_frame(
-        self, frame_hash: str, metadata: dict[str, Any]
+        self, frame_hash: str, metadata: LLMFrameDataPayload | None = None
     ) -> None:
         """Registriert einen verarbeiteten Frame."""
         if frame_hash:
             self.processed_hashes.add(frame_hash)
-        self.last_metadata = metadata
+        if metadata is not None:
+            self.last_metadata = metadata
 
-    def get_sampling_strategy(self, total_frames: int) -> Dict[str, Any]:
+    def get_sampling_strategy(self, total_frames: int) -> dict[str, object]:
         """
         Gibt die optimale Sampling-Strategie für die gegebene Frame-Anzahl zurück.
 
@@ -1123,13 +1210,13 @@ class EnrichedMetadataExtractor:
             self.llm_extractor = create_llm_extractor()
         if not self.frame_optimizer:
             self.frame_optimizer = FrameSamplingOptimizer()
-        self.frame_context: dict[str, Any] = {}
-        self.temporal_metadata: list[dict[str, Any]] = []
+        self.frame_context: LLMFrameContextPayload = LLMFrameContextPayload()
+        self.temporal_metadata: list[LLMTextTimelineEntryPayload] = []
         self.sensitive_meta = SensitiveMeta()
 
     def extract_from_frame_sequence(
-        self, frames_data: List[Dict[str, Any]], ocr_texts: List[str]
-    ) -> Dict[str, Any]:
+        self, frames_data: Sequence[LLMFrameDataPayload], ocr_texts: list[str]
+    ) -> LLMEnrichedMetadataPayload:
         """
         Extrahiert angereicherte Metadaten aus einer Frame-Sequenz.
 
@@ -1140,19 +1227,13 @@ class EnrichedMetadataExtractor:
         Returns:
             Angereicherte Metadaten-Dictionary
         """
-        enriched_metadata: dict[str, Any] = {
-            "llm_extracted": {},
-            "frame_context": {},
-            "temporal_analysis": {},
-            "confidence_scores": {},
-            "source_frames": [],
-        }
+        enriched_metadata = LLMEnrichedMetadataPayload()
 
         # 1. Sammle Frame-Kontext
         self._analyze_frame_context(frames_data, enriched_metadata)
 
         # 2. OCR-Text-Aggregation
-        combined_text = self._aggregate_ocr_texts(frames_data, ocr_texts)
+        combined_text = self.aggregate_ocr_texts(frames_data, ocr_texts)
 
         # 3. LLM-Extraktion auf aggregiertem Text
         if combined_text:
@@ -1163,56 +1244,69 @@ class EnrichedMetadataExtractor:
                 self.sensitive_meta.safe_update(llm_metadata)
 
         # 4. Temporale Analyse der Frames
-        enriched_metadata["temporal_analysis"] = self._perform_temporal_analysis(
+        enriched_metadata.temporal_analysis = self._perform_temporal_analysis(
             frames_data, enriched_metadata
         )
 
         # 5. Konfidenz-Bewertung
-        enriched_metadata["confidence_scores"] = self._calculate_enriched_confidence(
+        enriched_metadata.confidence_scores = self._calculate_enriched_confidence(
             enriched_metadata
         )
 
-        enriched_metadata["llm_extracted"] = self.sensitive_meta.to_dict()
+        enriched_metadata.llm_extracted = LLMMetadataPayload.model_validate(
+            self.sensitive_meta.to_dict()
+        )
+        enriched_metadata.source_frames = list(frames_data)
         return enriched_metadata
 
     def _analyze_frame_context(
-        self, frames_data: List[Dict[str, Any]], enriched_metadata: Dict[str, Any]
+        self,
+        frames_data: Sequence[LLMFrameDataPayload],
+        enriched_metadata: LLMEnrichedMetadataPayload,
     ) -> None:
         """Analysiert visuellen Kontext der Frames."""
-        frame_stats: dict[str, Any] = {
-            "total_frames": len(frames_data),
-            "text_frames": 0,
-            "quality_scores": [],
-            "timestamps": [],
-            "frame_types": {},
-        }
+        quality_scores: list[float] = []
+        timestamps: list[int | float] = []
+        frame_types: dict[str, int] = {}
+        frame_stats = LLMFrameContextPayload(
+            total_frames=len(frames_data),
+            frame_types=frame_types,
+            quality_scores=quality_scores,
+            timestamps=timestamps,
+        )
+        text_frames = 0
 
         for frame_data in frames_data:
             # Frame-Qualität bewerten
-            if "quality_score" in frame_data:
-                frame_stats["quality_scores"].append(frame_data["quality_score"])
+            quality_score = frame_data.ocr_confidence
+            quality_scores.append(float(quality_score))
 
             # Timestamp-Information
-            if "timestamp" in frame_data:
-                frame_stats["timestamps"].append(frame_data["timestamp"])
+            timestamps.append(float(frame_data.timestamp))
 
             # Text-Frames zählen
-            if (
-                frame_data.get("has_text", False)
-                or frame_data.get("ocr_confidence", 0) > 0.5
-            ):
-                frame_stats["text_frames"] += 1
+            has_text = bool(frame_data.has_text)
+            ocr_confidence = frame_data.ocr_confidence
+            has_confidence = ocr_confidence > 0.5
+            if has_text or has_confidence:
+                text_frames += 1
 
             # Frame-Typ klassifizieren
             frame_type = self._classify_frame_type(frame_data)
-            frame_stats["frame_types"][frame_type] = (
-                frame_stats["frame_types"].get(frame_type, 0) + 1
-            )
+            frame_types[frame_type] = frame_types.get(frame_type, 0) + 1
 
-        enriched_metadata["frame_context"] = frame_stats
+        frame_stats.text_frames = text_frames
+
+        enriched_metadata.frame_context = frame_stats
+
+    def aggregate_ocr_texts(
+        self, frames_data: Sequence[LLMFrameDataPayload], ocr_texts: list[str]
+    ) -> str:
+        """Aggregiert OCR-Texte intelligent und reduziert Input-Groesse."""
+        return self._aggregate_ocr_texts(frames_data, ocr_texts)
 
     def _aggregate_ocr_texts(
-        self, frames_data: List[Dict[str, Any]], ocr_texts: List[str]
+        self, frames_data: Sequence[LLMFrameDataPayload], ocr_texts: list[str]
     ) -> str:
         """Aggregiert OCR-Texte intelligent und reduziert Input-Groesse."""
         raw_texts: list[str] = []
@@ -1222,15 +1316,16 @@ class EnrichedMetadataExtractor:
             raw_texts.extend(t for t in ocr_texts if t)
 
         for frame_data in frames_data:
-            if "ocr_text" in frame_data and frame_data["ocr_text"]:
-                raw_texts.append(frame_data["ocr_text"])
+            ocr_text = frame_data.ocr_text
+            if ocr_text:
+                raw_texts.append(ocr_text)
 
         if not raw_texts:
             return ""
 
         # Smart Deduplication (Zeilen-basiert, normalisiert)
-        unique_lines = set()
-        cleaned_text_parts = []
+        unique_lines: set[str] = set()
+        cleaned_text_parts: list[str] = []
 
         for text in raw_texts:
             for line in text.split("\n"):
@@ -1247,10 +1342,10 @@ class EnrichedMetadataExtractor:
         full_text = " | ".join(cleaned_text_parts)
         return full_text[:1500]
 
-    def _deduplicate_texts(self, texts: List[str]) -> List[str]:
+    def _deduplicate_texts(self, texts: list[str]) -> list[str]:
         """Entfernt doppelte und sehr ähnliche Texte."""
-        unique_texts = []
-        seen_hashes = set()
+        unique_texts: list[str] = []
+        seen_hashes: set[str] = set()
 
         for text in texts:
             if not text or len(text.strip()) < 3:
@@ -1267,17 +1362,17 @@ class EnrichedMetadataExtractor:
         return unique_texts
 
     def _prioritize_by_confidence(
-        self, texts: List[str], frames_data: List[Dict[str, Any]]
-    ) -> List[str]:
+        self, texts: list[str], frames_data: Sequence[LLMFrameDataPayload]
+    ) -> list[str]:
         """Priorisiert Texte basierend auf OCR-Konfidenz."""
-        text_confidence_pairs = []
+        text_confidence_pairs: list[tuple[str, float]] = []
 
         for i, text in enumerate(texts):
             confidence = 0.5  # Default-Konfidenz
 
             # Suche entsprechende Frame-Daten
-            if i < len(frames_data) and "ocr_confidence" in frames_data[i]:
-                confidence = frames_data[i]["ocr_confidence"]
+            if i < len(frames_data):
+                confidence = frames_data[i].ocr_confidence
 
             text_confidence_pairs.append((text, confidence))
 
@@ -1286,65 +1381,77 @@ class EnrichedMetadataExtractor:
 
         return [text for text, _ in text_confidence_pairs]
 
-    def _classify_frame_type(self, frame_data: Dict[str, Any]) -> str:
+    def _classify_frame_type(self, frame_data: LLMFrameDataPayload) -> str:
         """Klassifiziert Frame-Typ basierend auf Eigenschaften."""
-        if frame_data.get("has_patient_info", False):
+        if frame_data.has_patient_info:
             return "patient_info"
-        elif frame_data.get("has_ui_elements", False):
+        elif frame_data.has_ui_elements:
             return "ui_frame"
-        elif frame_data.get("ocr_confidence", 0) > 0.7:
+        if frame_data.ocr_confidence > 0.7:
             return "text_frame"
-        elif frame_data.get("is_endoscopy_view", False):
+        if frame_data.is_endoscopy_view:
             return "endoscopy"
         else:
             return "unknown"
 
     def _perform_temporal_analysis(
-        self, frames_data: List[Dict[str, Any]], enriched_metadata: Dict[str, Any]
-    ) -> dict[str, Any]:
+        self,
+        frames_data: Sequence[LLMFrameDataPayload],
+        enriched_metadata: LLMEnrichedMetadataPayload,
+    ) -> LLMTemporalAnalysisPayload:
         """Führt temporale Analyse der Frame-Sequenz durch."""
-        temporal_info: dict[str, Any] = {
-            "duration_analysis": {},
-            "text_appearance_timeline": [],
-            "stability_scores": {},
-            "change_points": [],
-        }
+        timeline: list[LLMTextTimelineEntryPayload] = []
+        temporal_info = LLMTemporalAnalysisPayload()
 
         # Analysiere Text-Erscheinungen über Zeit
         for i, frame_data in enumerate(frames_data):
-            if frame_data.get("ocr_text"):
-                temporal_info["text_appearance_timeline"].append(
-                    {
-                        "frame_index": i,
-                        "timestamp": frame_data.get("timestamp", i),
-                        "text_snippet": frame_data["ocr_text"][:50] + "..."
-                        if len(frame_data["ocr_text"]) > 50
-                        else frame_data["ocr_text"],
-                        "confidence": frame_data.get("ocr_confidence", 0),
-                    }
-                )
+            ocr_text = frame_data.ocr_text
+            if not ocr_text:
+                continue
 
-        # Erkenne Änderungspunkte in der Text-Stabilität
-        if len(temporal_info["text_appearance_timeline"]) > 1:
-            temporal_info["change_points"] = self._detect_text_change_points(
-                temporal_info["text_appearance_timeline"]
+            timestamp = frame_data.timestamp
+
+            timeline.append(
+                LLMTextTimelineEntryPayload(
+                    frame_index=i,
+                    timestamp=float(timestamp),
+                    text_snippet=ocr_text[:50] + "..."
+                    if len(ocr_text) > 50
+                    else ocr_text,
+                    confidence=frame_data.ocr_confidence,
+                )
+            )
+
+            # Erkenne Änderungspunkte in der Text-Stabilität
+            if len(timeline) > 1:
+                temporal_info.change_points = self._detect_text_change_points(timeline)
+
+        temporal_info.text_appearance_timeline = timeline
+        temporal_info.stability_scores["temporal_density"] = (
+            len(timeline) / len(list(frames_data)) if frames_data else 0.0
+        )
+
+        if timeline:
+            temporal_info.duration_analysis["covered_duration"] = (
+                timeline[-1].timestamp - timeline[0].timestamp
             )
 
         return temporal_info
 
-    def _detect_text_change_points(self, timeline: List[Dict[str, Any]]) -> List[int]:
+    def _detect_text_change_points(
+        self, timeline: list[LLMTextTimelineEntryPayload]
+    ) -> list[int]:
         """Erkennt Punkte wo sich Text-Inhalt signifikant ändert."""
-        change_points = []
+        change_points: list[int] = []
 
         for i in range(1, len(timeline)):
-            current_text = timeline[i]["text_snippet"]
-            previous_text = timeline[i - 1]["text_snippet"]
-
+            current_text = timeline[i].text_snippet
+            previous_text = timeline[i - 1].text_snippet
             # Einfache Ähnlichkeitsberechnung
             similarity = self._calculate_text_similarity(current_text, previous_text)
 
             if similarity < 0.3:  # Signifikante Änderung
-                change_points.append(timeline[i]["frame_index"])
+                change_points.append(timeline[i].frame_index)
 
         return change_points
 
@@ -1365,10 +1472,10 @@ class EnrichedMetadataExtractor:
         return intersection / union if union > 0 else 0.0
 
     def _calculate_enriched_confidence(
-        self, enriched_metadata: Dict[str, Any]
-    ) -> Dict[str, float]:
+        self, enriched_metadata: LLMEnrichedMetadataPayload
+    ) -> dict[str, float]:
         """Berechnet erweiterte Konfidenz-Scores."""
-        confidence_scores = {
+        confidence_scores: dict[str, float] = {
             "llm_confidence": 0.0,
             "frame_quality_confidence": 0.0,
             "temporal_stability_confidence": 0.0,
@@ -1376,28 +1483,28 @@ class EnrichedMetadataExtractor:
         }
 
         # LLM-Konfidenz
-        llm_data = enriched_metadata.get("llm_extracted", {})
-        if llm_data:
+        if enriched_metadata.llm_extracted:
             confidence_scores["llm_confidence"] = (
-                self.llm_extractor._calculate_confidence(llm_data)
+                self.llm_extractor.calculate_confidence(enriched_metadata.llm_extracted)
             )
 
         # Frame-Qualität-Konfidenz
-        frame_context = enriched_metadata.get("frame_context", {})
-        quality_scores = frame_context.get("quality_scores", [])
-        if quality_scores:
-            confidence_scores["frame_quality_confidence"] = sum(quality_scores) / len(
-                quality_scores
-            )
+        if enriched_metadata.frame_context.quality_scores:
+            frame_quality_scores = enriched_metadata.frame_context.quality_scores
+            confidence_scores["frame_quality_confidence"] = sum(
+                frame_quality_scores
+            ) / len(frame_quality_scores)
 
         # Temporale Stabilität
-        temporal_analysis = enriched_metadata.get("temporal_analysis", {})
-        text_timeline = temporal_analysis.get("text_appearance_timeline", [])
-        if text_timeline:
-            avg_ocr_confidence = sum(
-                item["confidence"] for item in text_timeline
-            ) / len(text_timeline)
-            confidence_scores["temporal_stability_confidence"] = avg_ocr_confidence
+        if enriched_metadata.temporal_analysis.text_appearance_timeline:
+            timeline_confidences = [
+                text_frame.confidence
+                for text_frame in enriched_metadata.temporal_analysis.text_appearance_timeline
+            ]
+            if timeline_confidences:
+                confidence_scores["temporal_stability_confidence"] = sum(
+                    timeline_confidences
+                ) / len(timeline_confidences)
 
         # Gesamt-Konfidenz (gewichteter Durchschnitt)
         weights = {
@@ -1421,7 +1528,9 @@ class FrameDataProcessor:
     """
 
     @staticmethod
-    def process_coroutine_output(coroutine_result: Any) -> List[Dict[str, Any]]:
+    def process_coroutine_output(
+        coroutine_result: Iterable[LLMFrameProcessorInput],
+    ) -> list[LLMFrameDataPayload]:
         """
         Verarbeitet die Ausgabe von sample_frames_coroutine zu standardisiertem Format.
 
@@ -1431,30 +1540,44 @@ class FrameDataProcessor:
         Returns:
             Liste von standardisierten Frame-Daten
         """
-        processed_frames: List[Dict[str, Any]] = []
+        processed_frames: list[LLMFrameDataPayload] = []
 
         # Anpassung je nach Format der Coroutine-Ausgabe
-        if isinstance(coroutine_result, list):
-            for i, frame_item in enumerate(coroutine_result):
-                processed_frame = FrameDataProcessor._normalize_frame_data(
-                    frame_item, i
-                )
-                processed_frames.append(processed_frame)
-        elif hasattr(coroutine_result, "__iter__"):
-            for i, frame_item in enumerate(coroutine_result):
-                processed_frame = FrameDataProcessor._normalize_frame_data(
-                    frame_item, i
-                )
-                processed_frames.append(processed_frame)
+        for i, frame_item in enumerate(coroutine_result):
+            processed_frame = FrameDataProcessor._normalize_frame_data(frame_item, i)
+            processed_frames.append(processed_frame)
 
         return processed_frames
 
     @staticmethod
-    def _normalize_frame_data(frame_item: Any, frame_index: int) -> Dict[str, Any]:
+    def _to_float(value: object, default: float = 0.0) -> float:
+        """Konvertiert numerische Werte sicher nach float."""
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, int | float):
+            return float(value)
+        return default
+
+    @staticmethod
+    def _to_int(value: object, default: int) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        return default
+
+    @staticmethod
+    def _to_bool(value: object, default: bool = False) -> bool:
+        return value is True if isinstance(value, bool) else default
+
+    @staticmethod
+    def _normalize_frame_data(
+        frame_item: LLMFrameProcessorInput, frame_index: int
+    ) -> LLMFrameDataPayload:
         """Normalisiert Frame-Daten zu einheitlichem Format."""
-        normalized = {
+        normalized: dict[str, object] = {
             "frame_index": frame_index,
-            "timestamp": frame_index,  # Default-Timestamp
+            "timestamp": float(frame_index),
             "ocr_text": "",
             "ocr_confidence": 0.0,
             "has_text": False,
@@ -1465,17 +1588,131 @@ class FrameDataProcessor:
         }
 
         # Verschiedene Input-Formate handhaben
-        if isinstance(frame_item, dict):
-            normalized.update(frame_item)
-        elif hasattr(frame_item, "__dict__"):
-            normalized.update(frame_item.__dict__)
-        elif isinstance(frame_item, (tuple, list)) and len(frame_item) >= 2:
-            # Annahme: (frame_data, ocr_text) oder ähnlich
-            if len(frame_item) > 1 and isinstance(frame_item[1], str):
-                normalized["ocr_text"] = frame_item[1]
-                normalized["has_text"] = bool(frame_item[1])
+        if isinstance(frame_item, Mapping):
+            frame_payload = _coerce_str_object_map(frame_item)
+            if frame_payload is None:
+                return LLMFrameDataPayload.model_validate(normalized)
 
-        return normalized
+            if "frame_index" in frame_payload:
+                normalized["frame_index"] = FrameDataProcessor._to_int(
+                    frame_payload.get("frame_index"), frame_index
+                )
+            normalized["timestamp"] = FrameDataProcessor._to_float(
+                frame_payload.get("timestamp", frame_index), float(frame_index)
+            )
+            ocr_text = frame_payload.get("ocr_text")
+            if isinstance(ocr_text, str):
+                normalized["ocr_text"] = ocr_text
+            else:
+                normalized["ocr_text"] = ""
+            normalized["ocr_confidence"] = FrameDataProcessor._to_float(
+                frame_payload.get("ocr_confidence"), 0.0
+            )
+            normalized["has_text"] = FrameDataProcessor._to_bool(
+                frame_payload.get("has_text", False), False
+            )
+            normalized["has_patient_info"] = FrameDataProcessor._to_bool(
+                frame_payload.get("has_patient_info", False), False
+            )
+            normalized["has_ui_elements"] = FrameDataProcessor._to_bool(
+                frame_payload.get("has_ui_elements", False), False
+            )
+            normalized["is_endoscopy_view"] = FrameDataProcessor._to_bool(
+                frame_payload.get("is_endoscopy_view", False), False
+            )
+            normalized["quality_score"] = FrameDataProcessor._to_float(
+                frame_payload.get("quality_score"), 0.5
+            )
+            frame_id_value = frame_payload.get("frame_id")
+            if isinstance(frame_id_value, int):
+                normalized["frame_id"] = frame_id_value
+            frame_number_value = frame_payload.get("frame_number")
+            if isinstance(frame_number_value, int):
+                normalized["frame_number"] = frame_number_value
+        elif isinstance(frame_item, FrameCollectionItem):
+            item_payload = frame_item.model_dump()
+            frame_index_payload = item_payload.get("frame_id")
+            frame_number_payload = item_payload.get("frame_number")
+            if isinstance(frame_index_payload, int):
+                normalized["frame_index"] = frame_index_payload
+            elif isinstance(frame_number_payload, int):
+                normalized["frame_index"] = frame_number_payload
+            else:
+                normalized["frame_index"] = frame_index
+            normalized.update(
+                {
+                    "frame_id": item_payload.get("frame_id"),
+                    "frame_number": item_payload.get("frame_number"),
+                    "ocr_text": item_payload.get("ocr_text", ""),
+                    "ocr_confidence": FrameDataProcessor._to_float(
+                        item_payload.get("ocr_confidence"), 0.0
+                    ),
+                    "has_text": bool(item_payload.get("ocr_text", "")),
+                    "timestamp": FrameDataProcessor._to_float(
+                        frame_number_payload, float(frame_index)
+                    ),
+                }
+            )
+            meta = item_payload.get("meta")
+            meta_payload = (
+                _coerce_str_object_map(cast(Mapping[str, object], meta))
+                if isinstance(meta, Mapping)
+                else None
+            )
+            if meta_payload is not None:
+                normalized["has_patient_info"] = FrameDataProcessor._to_bool(
+                    meta_payload.get("has_patient_info", False), False
+                )
+                normalized["has_ui_elements"] = FrameDataProcessor._to_bool(
+                    meta_payload.get("has_ui_elements", False), False
+                )
+                normalized["is_endoscopy_view"] = FrameDataProcessor._to_bool(
+                    meta_payload.get("is_endoscopy_view", False), False
+                )
+                normalized["quality_score"] = FrameDataProcessor._to_float(
+                    meta_payload.get("quality_score", normalized["quality_score"]),
+                    0.5,
+                )
+        else:
+            frame_payload = list(frame_item)
+            if len(frame_payload) < 2:
+                return LLMFrameDataPayload.model_validate(normalized)
+            # Annahme: (frame_data, ocr_text) oder ähnlich
+            ocr_payload = frame_payload[1]
+            if isinstance(ocr_payload, str):
+                normalized["ocr_text"] = ocr_payload
+                normalized["has_text"] = bool(ocr_payload)
+
+            if len(frame_payload) >= 3:
+                raw_ocr_confidence = frame_payload[2]
+                normalized["ocr_confidence"] = FrameDataProcessor._to_float(
+                    raw_ocr_confidence, 0.0
+                )
+
+            if len(frame_payload) >= 4:
+                raw_meta = frame_payload[3]
+                if isinstance(raw_meta, Mapping):
+                    meta_payload = _coerce_str_object_map(
+                        cast(Mapping[str, object], raw_meta)
+                    )
+                    if meta_payload is not None:
+                        normalized["has_patient_info"] = FrameDataProcessor._to_bool(
+                            meta_payload.get("has_patient_info", False), False
+                        )
+                        normalized["has_ui_elements"] = FrameDataProcessor._to_bool(
+                            meta_payload.get("has_ui_elements", False), False
+                        )
+                        normalized["is_endoscopy_view"] = FrameDataProcessor._to_bool(
+                            meta_payload.get("is_endoscopy_view", False), False
+                        )
+                        normalized["quality_score"] = FrameDataProcessor._to_float(
+                            meta_payload.get(
+                                "quality_score", normalized["quality_score"]
+                            ),
+                            0.5,
+                        )
+
+        return LLMFrameDataPayload.model_validate(normalized)
 
 
 # Erweiterte Factory-Funktion für angereicherte Extraktion
@@ -1498,10 +1735,10 @@ class VideoMetadataEnricher:
     def enrich_from_multiple_sources(
         self,
         video_path: str,
-        frame_samples: List[Any],
-        ocr_texts: List[str],
-        existing_metadata: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        frame_samples: list[LLMFrameProcessorInput],
+        ocr_texts: list[str],
+        existing_metadata: dict[str, object],
+    ) -> dict[str, object]:
         """
         Reichert Metadaten aus verschiedenen Quellen an.
 
@@ -1515,7 +1752,7 @@ class VideoMetadataEnricher:
             Vollständig angereicherte Metadaten
         """
 
-        final_metadata = {
+        final_metadata: dict[str, object] = {
             "source_info": {
                 "video_path": video_path,
                 "processing_method": "enriched_extraction",
@@ -1534,7 +1771,7 @@ class VideoMetadataEnricher:
             enriched_data = self.enriched_extractor.extract_from_frame_sequence(
                 processed_frames, ocr_texts
             )
-            final_metadata["enriched_data"] = enriched_data
+            final_metadata["enriched_data"] = enriched_data.model_dump()
 
         # 2. Merge mit bestehenden Metadaten
         if existing_metadata:
@@ -1550,73 +1787,120 @@ class VideoMetadataEnricher:
         return final_metadata
 
     def _merge_metadata_sources(
-        self, enriched_metadata: Dict[str, Any], existing_metadata: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self,
+        enriched_metadata: dict[str, object],
+        existing_metadata: dict[str, object],
+    ) -> dict[str, object]:
         """Merged angereicherte Metadaten mit bestehenden Daten."""
 
         # Prioritäts-basiertes Merging
         merged = enriched_metadata.copy()
 
         # LLM-Daten haben Priorität über legacy OCR-Extraktion
-        llm_data = enriched_metadata.get("enriched_data", {}).get("llm_extracted", {})
+        enriched_data = enriched_metadata.get("enriched_data")
+        if not isinstance(enriched_data, dict):
+            return merged
+        try:
+            enriched_data_payload = LLMEnrichedMetadataPayload.model_validate(
+                enriched_data
+            )
+        except ValidationError:
+            return merged
 
-        for key in [
+        llm_data = enriched_data_payload.llm_extracted
+        existing_fallback = merged.get("fallback_data")
+        merged_fallback_data: dict[str, object] = {}
+        if isinstance(existing_fallback, Mapping):
+            merged_fallback_data = (
+                _coerce_str_object_map(cast(Mapping[str, object], existing_fallback))
+                or {}
+            )
+
+        merged["fallback_data"] = merged_fallback_data
+
+        fallback_candidates = [
             "first_name",
             "last_name",
             "examination_date",
             "gender",
             "dob",
-        ]:
-            if key in existing_metadata and (
-                not llm_data.get(key) or llm_data.get(key) in ["unknown", "", None]
-            ):
-                # Verwende Legacy-Daten als Fallback
-                if "fallback_data" not in merged:
-                    merged["fallback_data"] = {}
-                merged["fallback_data"][key] = existing_metadata[key]
+        ]
+        for key in fallback_candidates:
+            existing_value = existing_metadata.get(key)
+            llm_value = getattr(llm_data, key)
+            if existing_value is not None and llm_value in {"", "unknown"}:
+                merged_fallback_data[key] = existing_value
 
         return merged
 
-    def _calculate_integration_stats(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _coerce_metadata_payload(
+        source_data: object,
+    ) -> LLMMetadataPayload | None:
+        if not isinstance(source_data, Mapping):
+            return None
+
+        source_payload = _coerce_str_object_map(cast(Mapping[str, object], source_data))
+        if source_payload is None:
+            return None
+
+        nested_payload = source_payload.get("llm_extracted")
+        if isinstance(nested_payload, Mapping):
+            source_payload = _coerce_str_object_map(
+                cast(Mapping[str, object], nested_payload)
+            )
+            if source_payload is None:
+                return None
+
+        try:
+            return LLMMetadataPayload.model_validate(source_payload)
+        except ValidationError:
+            return None
+
+    def _calculate_integration_stats(
+        self, metadata: dict[str, object]
+    ) -> LLMEvaluationResultPayload:
         """Berechnet Statistiken über die Metadaten-Integration."""
 
-        stats: dict[str, Any] = {
-            "data_sources_used": [],
-            "confidence_comparison": {},
-            "data_completeness": 0.0,
-        }
-
-        # Erkenne verwendete Datenquellen
-        if metadata.get("enriched_data"):
-            stats["data_sources_used"].append("enriched_llm")
-        if metadata.get("legacy_data"):
-            stats["data_sources_used"].append("legacy_ocr")
-        if metadata.get("fallback_data"):
-            stats["data_sources_used"].append("fallback_data")
-
-        # Daten-Vollständigkeit berechnen
-        required_fields = [
+        data_sources_used: list[str] = []
+        required_fields = (
             "first_name",
             "last_name",
             "dob",
             "examination_date",
             "gender",
-        ]
+        )
         filled_fields = 0
 
-        for source in ["enriched_data", "legacy_data", "fallback_data"]:
-            source_data = metadata.get(source, {})
-            if isinstance(source_data, dict) and "llm_extracted" in source_data:
-                source_data = source_data["llm_extracted"]
+        # Erkenne verwendete Datenquellen
+        if _coerce_str_object_map(metadata.get("enriched_data")) is not None:
+            data_sources_used.append("enriched_llm")
+        if _coerce_str_object_map(metadata.get("legacy_data")) is not None:
+            data_sources_used.append("legacy_ocr")
+        if _coerce_str_object_map(metadata.get("fallback_data")) is not None:
+            data_sources_used.append("fallback_data")
+
+        for source in ("enriched_data", "legacy_data", "fallback_data"):
+            source_payload = self._coerce_metadata_payload(metadata.get(source))
+            if source_payload is None:
+                continue
 
             for field in required_fields:
-                if source_data.get(field) not in [None, "", "unknown"]:
+                field_value = getattr(source_payload, field)
+                if isinstance(field_value, str) and field_value not in [
+                    None,
+                    "",
+                    "unknown",
+                ]:
                     filled_fields += 1
                     break  # Feld ist gefüllt, nächstes Feld
 
-        stats["data_completeness"] = filled_fields / len(required_fields)
-
-        return stats
+        source_count = len(required_fields)
+        return LLMEvaluationResultPayload(
+            data_sources_used=data_sources_used,
+            confidence_comparison={},
+            data_completeness=filled_fields / source_count,
+        )
 
 
 class AsyncMetadataWorker:
@@ -1625,9 +1909,22 @@ class AsyncMetadataWorker:
     def __init__(
         self,
         extractor: Optional[LLMMetadataExtractor] = None,
-        **extractor_kwargs: Any,
+        base_url: str | None = None,
+        enable_cache: bool = True,
+        provider: str = "ollama",
+        preferred_model: str | None = None,
+        model_timeout: int | None = None,
     ) -> None:
-        self.extractor = extractor or LLMMetadataExtractor(**extractor_kwargs)
+        if extractor is None:
+            self.extractor = LLMMetadataExtractor(
+                base_url=base_url,
+                enable_cache=enable_cache,
+                provider=provider,
+                preferred_model=preferred_model,
+                model_timeout=model_timeout,
+            )
+        else:
+            self.extractor = extractor
         self._executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="lx-llm-metadata",
@@ -1659,7 +1956,12 @@ class AsyncMetadataWorker:
     def __enter__(self) -> "AsyncMetadataWorker":
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.shutdown()
 
     def _safe_extract_metadata(self, text: str) -> Optional[SensitiveMeta]:

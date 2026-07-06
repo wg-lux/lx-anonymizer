@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import numpy.typing as npt
 import pytest
 
 
@@ -8,6 +10,9 @@ from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 cv2 = pytest.importorskip("cv2")
+
+FrameArray = npt.NDArray[np.uint8]
+StreamItem = tuple[int, FrameArray, int]
 
 
 def _example_processed_frames() -> list[Path]:
@@ -20,11 +25,7 @@ def _example_processed_frames() -> list[Path]:
 def _sensitive_meta_text_fields() -> list[str]:
     # Focus on frame-relevant metadata fields (exclude free-form text payloads).
     exclude = {"anonymized_text", "text"}
-    return [
-        name
-        for name, field in SensitiveMeta.model_fields.items()
-        if name not in exclude
-    ]
+    return [name for name in SensitiveMeta.model_fields if name not in exclude]
 
 
 @pytest.mark.integration
@@ -44,7 +45,7 @@ def test_example_frames_populate_sensitive_meta_text_fields() -> None:
             "No example frames found under tests/assets/frame*.* or debug/ocr/frame_*/processed.png"
         )
 
-    stream_frames = []
+    stream_frames: list[StreamItem] = []
     for idx, frame_path in enumerate(frame_paths):
         gray = cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE)
         if gray is None:

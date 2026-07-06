@@ -21,7 +21,7 @@ class ROIProcessor:
     ) -> int:
         """Retrieve a numeric value from a nested dictionary using a list of keys."""
         result = reduce(
-            lambda acc, key: acc.get(key, {}) if isinstance(acc, dict) else {},
+            lambda acc, key: acc.get(key, {}),
             keys,
             data,
         )

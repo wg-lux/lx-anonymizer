@@ -6,7 +6,8 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from collections.abc import Callable
+from typing import Any, Sequence, cast
 
 
 class PhiRegionDetectorTrainingError(RuntimeError):
@@ -97,7 +98,8 @@ def train_phi_region_detector(
     if config.device.strip() and config.device != "auto":
         train_kwargs["device"] = config.device.strip()
 
-    training_result = model.train(**train_kwargs)
+    train_model = cast(Callable[..., object | None], getattr(model, "train"))
+    training_result = train_model(**train_kwargs)
     run_dir = _resolve_run_dir(training_result, model, config.output_dir, run_name)
     checkpoint_path = _find_checkpoint(run_dir)
     model_path = checkpoint_path

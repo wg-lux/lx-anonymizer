@@ -4,8 +4,9 @@ import uuid
 from pathlib import Path
 import time
 import ast
-from typing import Any, Optional, Tuple
-from numpy import ndarray
+from collections.abc import Sequence
+from typing import Optional, Tuple, cast
+from numpy.typing import NDArray
 
 from lx_anonymizer.setup.device_reader import read_device, read_text_formatting
 from lx_anonymizer.setup.directory_setup import create_temp_directory
@@ -16,31 +17,59 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = get_logger(__name__)
 
+Box = tuple[int, int, int, int]
+RGBColor = tuple[int, int, int]
+FontSource = str | int
+PilFont = ImageFont.ImageFont | ImageFont.FreeTypeFont
+ImageArray = NDArray[np.uint8]
+TextFormattingConfig = tuple[object, object, FontSource, float, int, str]
+DeviceConfig = tuple[
+    object,
+    object,
+    FontSource,
+    float,
+    int,
+    str,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+]
+
 # Create or read temporary directory
 temp_dir, base_dir, csv_dir = create_temp_directory(Path.cwd())
 
 
-def numpy_to_pil(np_img_bgr):
+def numpy_to_pil(np_img_bgr: ImageArray) -> Image.Image:
     """
     Convert an OpenCV-style (BGR) NumPy array to a Pillow (RGB) Image.
     """
     return Image.fromarray(np_img_bgr[:, :, ::-1])  # flip BGR -> RGB
 
 
-def pil_to_numpy(pil_img):
+def pil_to_numpy(pil_img: Image.Image) -> ImageArray:
     """
     Convert a Pillow (RGB) Image to an OpenCV-style (BGR) NumPy array.
     """
-    return np.array(pil_img)[:, :, ::-1]  # flip RGB -> BGR
+    return cast(ImageArray, np.array(pil_img)[:, :, ::-1])  # flip RGB -> BGR
 
 
-def _parse_rgb_color(value: Any) -> Tuple[int, int, int]:
-    parsed = ast.literal_eval(value) if isinstance(value, str) else value
-    red, green, blue = parsed
+def _parse_rgb_color(value: object) -> RGBColor:
+    parsed = cast(object, ast.literal_eval(value)) if isinstance(value, str) else value
+    if not isinstance(parsed, Sequence):
+        raise ValueError("Invalid RGB color format. Expected three values.")
+    parsed_seq = cast(Sequence[object], parsed)
+    if len(parsed_seq) != 3:
+        raise ValueError("Invalid RGB color format. Expected three values.")
+    red, green, blue = cast(tuple[int, int, int], tuple(parsed_seq))
     return (int(red), int(green), int(blue))
 
 
-def load_font(font_or_path, font_size=40):
+def load_font(font_or_path: FontSource | None, font_size: int = 40) -> PilFont:
     """
     Try loading a TTF font if given a path;
     if 'font_or_path' is already an int (like cv2.FONT_HERSHEY_SIMPLEX),
@@ -59,7 +88,7 @@ def load_font(font_or_path, font_size=40):
         return ImageFont.load_default()
 
 
-def upscale_image(image, scale_factor=2):
+def upscale_image(image: ImageArray, scale_factor: int = 2) -> ImageArray:
     """
     Upscale an image by the given factor using Pillow's resampling.
     """
@@ -68,10 +97,17 @@ def upscale_image(image, scale_factor=2):
     new_width = width * scale_factor
     new_height = height * scale_factor
     pil_img = pil_img.resize((new_width, new_height), resample=Image.Resampling.BICUBIC)
-    return np.array(pil_img)  # Return as NumPy array (RGB)
+    return cast(ImageArray, np.array(pil_img))  # Return as NumPy array (RGB)
 
 
-def compute_uniform_font_scale(text1, text2, font, box1, box2, font_thickness):
+def compute_uniform_font_scale(
+    text1: str,
+    text2: str,
+    font: FontSource | None,
+    box1: Box,
+    box2: Box,
+    font_thickness: int,
+) -> int:
     """
     Dummy function for Pillow usage. In OpenCV you used `cv2.getTextSize` to gauge scale.
     Here we won't do actual 'scaling' changes. We can approximate by stepping down in 0.1 increments
@@ -101,17 +137,17 @@ def compute_uniform_font_scale(text1, text2, font, box1, box2, font_thickness):
     return 10  # some small fallback
 
 
-def measure_text_size_pil(text, font):
+def measure_text_size_pil(text: str, font: PilFont) -> tuple[int, int]:
     """
     Returns (width, height) of `text` using Pillow's textbbox.
     """
     dummy_img = Image.new("RGB", (1, 1))
     draw = ImageDraw.Draw(dummy_img)
     left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-    return right - left, bottom - top
+    return int(right - left), int(bottom - top)
 
 
-def format_name(name, format_string):
+def format_name(name: str, format_string: str) -> str:
     names = name.split()
     if len(names) < 2:
         return name
@@ -125,28 +161,34 @@ def format_name(name, format_string):
     return formatted_name
 
 
-def validate_coordinates(coords):
-    if not isinstance(coords, tuple) or len(coords) != 4:
+def validate_coordinates(coords: object) -> None:
+    if not isinstance(coords, tuple):
         logger.error("Invalid coordinates format. Expected a tuple of four elements.")
         raise ValueError(
             "Invalid coordinates format. Expected a tuple of four elements."
         )
-    if not all(isinstance(coord, int) and coord >= 0 for coord in coords):
+    coord_tuple = cast(tuple[object, ...], coords)
+    if len(coord_tuple) != 4:
+        logger.error("Invalid coordinates format. Expected a tuple of four elements.")
+        raise ValueError(
+            "Invalid coordinates format. Expected a tuple of four elements."
+        )
+    if not all(isinstance(coord, int) and coord >= 0 for coord in coord_tuple):
         logger.error("Coordinates must be non-negative integers.")
         raise ValueError("Coordinates must be non-negative integers.")
 
 
 def draw_text_with_line_break(
-    text,
-    font,
-    font_scale,
-    font_color,
-    font_thickness,
-    background_color,
-    first_name_coords,
-    last_name_coords,
-    line_spacing=20,
-):
+    text: str,
+    font: FontSource | None,
+    font_scale: float,
+    font_color: RGBColor,
+    font_thickness: int,
+    background_color: RGBColor,
+    first_name_coords: Box,
+    last_name_coords: Box,
+    line_spacing: int = 20,
+) -> ImageArray:
     """
     Reimplementation using Pillow. Returns a NumPy array (RGB).
     """
@@ -177,20 +219,20 @@ def draw_text_with_line_break(
     if last_name:
         draw.text((last_name_x, last_name_y), last_name, fill=font_color, font=pil_font)
 
-    return np.array(pil_img)  # RGB
+    return cast(ImageArray, np.array(pil_img))  # RGB
 
 
 def draw_text_without_line_break(
-    text,
-    font,
-    font_scale,
-    font_color,
-    font_thickness,
-    background_color,
-    first_name_coords,
-    last_name_coords,
-    line_spacing,
-):
+    text: str,
+    font: FontSource | None,
+    font_scale: float,
+    font_color: RGBColor,
+    font_thickness: int,
+    background_color: RGBColor,
+    first_name_coords: Box,
+    last_name_coords: Box,
+    line_spacing: int,
+) -> ImageArray:
     """
     Pillow version that draws single-line text in separate regions. Returns a NumPy array (RGB).
     """
@@ -220,20 +262,20 @@ def draw_text_without_line_break(
     if last_name:
         draw.text((last_name_x, last_name_y), last_name, fill=font_color, font=pil_font)
 
-    return np.array(pil_img)  # RGB
+    return cast(ImageArray, np.array(pil_img))  # RGB
 
 
 def draw_free_text(
-    text,
-    font,
-    font_scale,
-    font_color,
-    font_thickness,
-    background_color,
-    first_name_coords,
-    last_name_coords,
-    line_spacing,
-) -> ndarray[Any]:
+    text: str,
+    font: FontSource | None,
+    font_scale: float,
+    font_color: RGBColor,
+    font_thickness: int,
+    background_color: RGBColor,
+    first_name_coords: Box,
+    last_name_coords: Box,
+    line_spacing: int,
+) -> ImageArray:
     """
     Another variant that returns a NumPy array. Uses Pillow for text.
     """
@@ -262,7 +304,7 @@ def draw_free_text(
     if last_name:
         draw.text((last_name_x, last_name_y), last_name, fill=font_color, font=pil_font)
 
-    return np.array(pil_img)  # RGB
+    return cast(ImageArray, np.array(pil_img))  # RGB
 
 
 def add_device_name_to_image(
@@ -272,26 +314,27 @@ def add_device_name_to_image(
     font: Optional[str] = None,
     font_size: int = 100,
     background_color: Tuple[int, int, int] = (0, 0, 0),
-    font_color=(255, 255, 255),
-    text_formatting=None,
-    line_spacing=40,
-    font_scale=1,
-    font_thickness=1,
-):
+    font_color: RGBColor = (255, 255, 255),
+    text_formatting: str | None = None,
+    line_spacing: int = 40,
+    font_scale: float = 1,
+    font_thickness: int = 1,
+) -> Path:
     try:
         if device is None:
             raise ValueError("device is required for device-specific rendering")
-        device_config = read_device(device)
-        if device_config is None:
+        raw_device_config = cast(object | None, read_device(device))
+        if raw_device_config is None:
             logger.error(f"No configuration found for device: {device}")
             raise ValueError(f"No configuration found for device: {device}")
+        device_config = cast(DeviceConfig, raw_device_config)
 
         (
             background_color_str,
             font_color_str,
             font_path_str,
             font_scale_cfg,
-            font_thickness_cfg,
+            _font_thickness_cfg,
             text_formatting_cfg,
             first_name_x,
             first_name_y,
@@ -307,21 +350,22 @@ def add_device_name_to_image(
         font_color = _parse_rgb_color(font_color_str)
         font_scale = font_scale_cfg
         font_thickness = 1  # forced for readability
-        text_formatting = (
-            text_formatting_cfg
-            if isinstance(text_formatting_cfg, str)
-            else text_formatting
-        )
+        text_formatting = text_formatting_cfg
         if isinstance(font_path_str, str) and font_path_str:
             font = font_path_str  # override
 
-        first_name_coords = (
+        first_name_coords: Box = (
             first_name_x,
             first_name_y,
             first_name_width,
             first_name_height,
         )
-        last_name_coords = (last_name_x, last_name_y, last_name_width, last_name_height)
+        last_name_coords: Box = (
+            last_name_x,
+            last_name_y,
+            last_name_width,
+            last_name_height,
+        )
     except (FileNotFoundError, KeyError, ValueError) as e:
         logger.error(
             f"Error reading device configuration: {e}. Using default parameters."
@@ -338,7 +382,7 @@ def add_device_name_to_image(
     if font is None:
         font = "arial.ttf"  # fallback
 
-    formatted_name = format_name(name, text_formatting)
+    formatted_name = format_name(name, text_formatting or "first_name last_name")
     if "\n" in formatted_name:
         text_img = draw_text_with_line_break(
             formatted_name,
@@ -377,7 +421,14 @@ def add_device_name_to_image(
     return output_image_path
 
 
-def draw_text_to_fit(text, font, box, font_color, font_thickness, background_color):
+def draw_text_to_fit(
+    text: str,
+    font: FontSource | None,
+    box: Box,
+    font_color: RGBColor,
+    font_thickness: int,
+    background_color: RGBColor,
+) -> tuple[ImageArray, int]:
     """
     Reimplementation with Pillow. Returns (np_array_rgb, font_scale_used).
     We'll guess a 'font_size' by stepping downward until it fits.
@@ -408,7 +459,7 @@ def draw_text_to_fit(text, font, box, font_color, font_thickness, background_col
     draw.text((x, y), text, fill=font_color, font=final_font)
 
     # Return as NumPy array
-    return np.array(pil_img), best_font_size
+    return cast(ImageArray, np.array(pil_img)), best_font_size
 
 
 # Keep letter size table for consistency, even though we rely on Pillow
@@ -479,7 +530,9 @@ LETTER_SIZE_TABLE = {
 }
 
 
-def calculate_text_size(text: str, font_scale: int, font_thickness):
+def calculate_text_size(
+    text: str, font_scale: float, font_thickness: int
+) -> tuple[int, int]:
     """
     This is the old function name. We'll just measure using Pillow's approach with a 'default' font size.
     The letter table is no longer crucial if using Pillow directly.
@@ -491,7 +544,9 @@ def calculate_text_size(text: str, font_scale: int, font_thickness):
     return w, h
 
 
-def enlarge_box(box, required_width, required_height, padding=10):
+def enlarge_box(
+    box: Box, required_width: int, required_height: int, padding: int = 10
+) -> Box:
     startX, startY, endX, endY = box
     current_width = endX - startX
     current_height = endY - startY
@@ -511,15 +566,15 @@ def enlarge_box(box, required_width, required_height, padding=10):
 
 
 def draw_text_centered(
-    text,
-    font,
-    font_scale,
-    font_color,
-    font_thickness,
-    background_color,
-    box,
-    padding=10,
-):
+    text: str,
+    font: FontSource | None,
+    font_scale: float,
+    font_color: RGBColor,
+    font_thickness: int,
+    background_color: RGBColor,
+    box: Box,
+    padding: int = 10,
+) -> ImageArray:
     """
     Pillow version of the center-draw.
     We'll create a new image with size at least 'box' plus any needed expansions.
@@ -545,16 +600,20 @@ def draw_text_centered(
         f"Text drawn centrally: ({text_width}x{text_height}), position=({x},{y}), scale={font_scale}"
     )
 
-    return np.array(pil_img)  # RGB
+    return cast(ImageArray, np.array(pil_img))  # RGB
 
 
-def hconcat_resize_min_with_spacing(im_list, spacing=10, interpolation=cv2.INTER_CUBIC):
+def hconcat_resize_min_with_spacing(
+    im_list: list[ImageArray],
+    spacing: int = 10,
+    interpolation: int = cv2.INTER_CUBIC,
+) -> ImageArray:
     """
     This is specific to OpenCV usage. We'll keep it as is,
     just ensure 'im' is a NumPy array in BGR or RGB.
     """
     h_min = min(im.shape[0] for im in im_list)
-    im_list_resize = []
+    im_list_resize: list[ImageArray] = []
     for im in im_list:
         # scale to h_min
         w = int(im.shape[1] * h_min / im.shape[0])
@@ -565,7 +624,9 @@ def hconcat_resize_min_with_spacing(im_list, spacing=10, interpolation=cv2.INTER
         sum(img.shape[1] for img in im_list_resize)
         + (len(im_list_resize) - 1) * spacing
     )
-    result_image = np.full((h_min, total_width, 3), 255, dtype=np.uint8)
+    result_image = cast(
+        ImageArray, np.full((h_min, total_width, 3), 255, dtype=np.uint8)
+    )
 
     current_x = 0
     for image in im_list_resize:
@@ -576,47 +637,41 @@ def hconcat_resize_min_with_spacing(im_list, spacing=10, interpolation=cv2.INTER
 
 
 def add_name_to_image(
-    first_name,
-    last_name,
-    gender_par,
-    first_name_box,
-    last_name_box,
-    device=None,
-    font=None,
-    font_size=100,
-    background_color="(255, 255, 255)",
-    font_color="(0, 0, 0)",
-    text_formatting="first_name last_name",
-    line_spacing=40,
-    font_scale=1,
-    font_thickness=1,
-):
+    first_name: str,
+    last_name: str,
+    gender_par: str,
+    first_name_box: Box,
+    last_name_box: Box,
+    device: str | None = None,
+    font: FontSource | None = None,
+    font_size: int = 100,
+    background_color: str | RGBColor = "(255, 255, 255)",
+    font_color: str | RGBColor = "(0, 0, 0)",
+    text_formatting: str = "first_name last_name",
+    line_spacing: int = 40,
+    font_scale: float = 1,
+    font_thickness: int = 1,
+) -> Path:
     logger.info(f"Adding name to image: {first_name} {last_name}")
 
     try:
         device_name = device if device is not None else "default"
-        config = read_text_formatting(device_name)
+        config = cast(TextFormattingConfig | None, read_text_formatting(device_name))
         if config is None:
             raise ValueError(
                 f"No text formatting configuration found for device: {device}"
             )
 
         (
-            background_color,
-            font_color,
+            background_color_raw,
+            font_color_raw,
             font_path,
-            font_scale_cfg,
-            font_thickness_cfg,
-            text_formatting_cfg,
+            _font_scale_cfg,
+            _font_thickness_cfg,
+            _text_formatting_cfg,
         ) = config
-        background_color = (
-            ast.literal_eval(background_color)
-            if isinstance(background_color, str)
-            else background_color
-        )
-        font_color = (
-            ast.literal_eval(font_color) if isinstance(font_color, str) else font_color
-        )
+        background_color = _parse_rgb_color(background_color_raw)
+        font_color = _parse_rgb_color(font_color_raw)
         font = font_path or font  # override
         font_thickness = 1
     except (FileNotFoundError, KeyError, ValueError) as e:
@@ -668,8 +723,9 @@ def add_name_to_image(
     # text_img_ln = draw_text_centered(...)
 
     total_width = text_img_fn.shape[1] + fixed_spacing + text_img_ln.shape[1]
-    final_img = np.full(
-        (standard_height, total_width, 3), background_color, dtype=np.uint8
+    final_img = cast(
+        ImageArray,
+        np.full((standard_height, total_width, 3), background_color, dtype=np.uint8),
     )
 
     # Place first name
@@ -692,36 +748,39 @@ def add_name_to_image(
 
 
 def add_full_name_to_image(
-    name,
-    gender_par,
-    box,
-    font=None,
-    font_size=100,
-    background_color=(0, 0, 0),
-    font_color=(255, 255, 255),
-    font_scale=1,
-    font_thickness=1,
-):
+    name: str,
+    gender_par: str,
+    box: Box,
+    font: FontSource | None = None,
+    font_size: int = 100,
+    background_color: RGBColor = (0, 0, 0),
+    font_color: RGBColor = (255, 255, 255),
+    font_scale: float = 1,
+    font_thickness: int = 1,
+) -> Path:
     """
     Pillow-based reimplementation of add_full_name_to_image.
     """
-    StartX, StartY, EndX, EndY = box
+    StartX, _StartY, EndX, _EndY = box
     box_width = EndX - StartX
 
     if font is None:
         font = "arial.ttf"
 
-    text_img, actual_scale = draw_text_to_fit(
+    text_img, _actual_scale = draw_text_to_fit(
         name, font, box, font_color, font_thickness, background_color
     )
 
     # If the text overflows, enlarge
     pil_font = load_font(font, 30)  # approximate
-    w, h = measure_text_size_pil(name, pil_font)
+    w, _h = measure_text_size_pil(name, pil_font)
     if w > box_width:
         new_width = int(w) + 20
-        bigger = np.full(
-            (text_img.shape[0], new_width, 3), background_color, dtype=np.uint8
+        bigger = cast(
+            ImageArray,
+            np.full(
+                (text_img.shape[0], new_width, 3), background_color, dtype=np.uint8
+            ),
         )
         bigger[:, : text_img.shape[1]] = text_img
         text_img = bigger

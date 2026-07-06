@@ -1,6 +1,10 @@
-def extract_first_words(file_path):
-    first_words = []
-    remaining_lines = []
+from os import PathLike
+from collections.abc import Iterable
+
+
+def extract_first_words(file_path: str | PathLike[str]) -> tuple[list[str], list[str]]:
+    first_words: list[str] = []
+    remaining_lines: list[str] = []
     try:
         with open(str(file_path), "r") as file:
             for line in file:
@@ -18,7 +22,7 @@ def extract_first_words(file_path):
     return first_words, remaining_lines
 
 
-def save_to_file(data, output_file_path):
+def save_to_file(data: Iterable[str], output_file_path: str | PathLike[str]) -> None:
     try:
         with open(str(output_file_path), "w") as file:
             for item in data:

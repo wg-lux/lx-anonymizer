@@ -4,22 +4,23 @@ from lx_dtypes.models import (
     SensitiveMetaState,
     SensitiveMetaStateDataDict,
 )
-from typing import Any
 
 
-def sensitive_meta_to_dict(meta: SensitiveMeta) -> dict[str, Any]:
+def sensitive_meta_to_dict(meta: SensitiveMeta) -> dict[str, object]:
     """Dump SensitiveMeta while preserving inherited dtype fields."""
     payload = meta.model_dump(mode="json")
     for field_name in SensitiveMeta.model_fields:
         if field_name in payload:
             continue
         value = getattr(meta, field_name, None)
-        if hasattr(value, "isoformat"):
-            value = value.isoformat()
-        elif value is not None:
-            value = str(value)
+        if value is not None:
+            if hasattr(value, "isoformat"):
+                value = value.isoformat()
+            else:
+                value = str(value)
         payload[field_name] = value
     return payload
+
 
 __all__ = [
     "SensitiveMeta",

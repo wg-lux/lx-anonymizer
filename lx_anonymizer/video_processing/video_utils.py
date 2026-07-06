@@ -4,40 +4,34 @@ import subprocess
 import tempfile
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import cast
 from contextlib import contextmanager
+
+from lx_dtypes.models.contracts.video_format import VideoFormatInfo
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_FFPROBE_TIMEOUT_SECONDS = 10.0
 
-UNKNOWN_VIDEO_FORMAT: Dict[str, Any] = {
-    "video_codec": "unknown",
-    "pixel_format": "unknown",
-    "width": 0,
-    "height": 0,
-    "has_audio": True,
-    "container": "unknown",
-    "can_stream_copy": False,
-}
+UNKNOWN_VIDEO_FORMAT = VideoFormatInfo()
 
 
 def can_use_stream_copy(
-    video_stream: Dict[str, Any], audio_streams: List[Dict[str, Any]]
+    video_stream: dict[str, object], audio_streams: list[dict[str, object]]
 ) -> bool:
     """Determine if FFmpeg -c copy is viable based on codecs and pixel formats."""
     good_video_codecs = {"h264", "h265", "hevc", "vp8", "vp9", "av1"}
     good_audio_codecs = {"aac", "mp3", "opus", "vorbis"}
 
-    video_codec = video_stream.get("codec_name", "").lower()
+    video_codec = str(video_stream.get("codec_name", "")).lower()
     if video_codec not in good_video_codecs:
         return False
 
     for audio_stream in audio_streams:
-        if audio_stream.get("codec_name", "").lower() not in good_audio_codecs:
+        if str(audio_stream.get("codec_name", "")).lower() not in good_audio_codecs:
             return False
 
-    pixel_format = video_stream.get("pix_fmt", "")
+    pixel_format = str(video_stream.get("pix_fmt", ""))
     # High bit-depth or 4:2:2 chroma often requires re-encoding for compatibility
     if any(tag in pixel_format for tag in ["10le", "422", "12le"]):
         return False
@@ -49,7 +43,7 @@ def detect_video_format(
     video_path: Path,
     *,
     timeout_seconds: float = DEFAULT_FFPROBE_TIMEOUT_SECONDS,
-) -> Dict[str, Any]:
+) -> dict[str, object]:
     """Analyze video format using ffprobe."""
     try:
         cmd = [
@@ -70,33 +64,26 @@ def detect_video_format(
             check=True,
             timeout=timeout_seconds,
         )
-        info = json.loads(result.stdout)
+        info = cast(dict[str, object], json.loads(result.stdout))
+        info_map = _coerce_mapping(info)
 
-        raw_streams = info.get("streams", [])
-        streams: List[Dict[str, Any]] = (
-            [s for s in raw_streams if isinstance(s, dict)]
-            if isinstance(raw_streams, list)
-            else []
-        )
-        v_stream: Dict[str, Any] = next(
-            (s for s in streams if s.get("codec_type") == "video"), {}
-        )
-        a_streams: List[Dict[str, Any]] = [
-            s for s in streams if s.get("codec_type") == "audio"
-        ]
-        format_info = info.get("format", {})
-        if not isinstance(format_info, dict):
-            format_info = {}
+        streams = _coerce_stream_list(info_map.get("streams", []))
+        v_stream = _find_first_stream(streams, "video")
+        a_streams = _find_streams(streams, "audio")
+        format_info = _coerce_mapping(info_map.get("format", {}))
 
-        return {
-            "video_codec": v_stream.get("codec_name", "unknown"),
-            "pixel_format": v_stream.get("pix_fmt", "unknown"),
-            "width": int(v_stream.get("width", 0)),
-            "height": int(v_stream.get("height", 0)),
-            "has_audio": len(a_streams) > 0,
-            "container": format_info.get("format_name", "unknown"),
-            "can_stream_copy": can_use_stream_copy(v_stream, a_streams),
-        }
+        probe = VideoFormatInfo.model_validate(
+            {
+                "video_codec": v_stream.get("codec_name", "unknown"),
+                "pixel_format": v_stream.get("pix_fmt", "unknown"),
+                "width": v_stream.get("width", 0),
+                "height": v_stream.get("height", 0),
+                "has_audio": len(a_streams) > 0,
+                "container": format_info.get("format_name", "unknown"),
+                "can_stream_copy": can_use_stream_copy(v_stream, a_streams),
+            }
+        )
+        return probe.model_dump()
     except (
         json.JSONDecodeError,
         OSError,
@@ -107,11 +94,11 @@ def detect_video_format(
         subprocess.TimeoutExpired,
     ) as e:
         logger.warning(f"Metadata probe failed for {video_path}: {e}")
-        return UNKNOWN_VIDEO_FORMAT.copy()
+        return UNKNOWN_VIDEO_FORMAT.model_dump()
 
 
 @contextmanager
-def named_pipe(suffix=".mp4"):
+def named_pipe(suffix: str = ".mp4"):
     """Creates a temporary FIFO for in-memory streaming."""
     temp_dir = Path(tempfile.mkdtemp(prefix="anony_pipe_"))
     pipe_path = temp_dir / f"stream{suffix}"
@@ -122,3 +109,38 @@ def named_pipe(suffix=".mp4"):
         if pipe_path.exists():
             pipe_path.unlink()
         temp_dir.rmdir()
+
+
+def _coerce_mapping(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    raw_mapping = cast(dict[object, object], value)
+    return {str(key): raw_value for key, raw_value in raw_mapping.items()}
+
+
+def _coerce_stream_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    streams: list[dict[str, object]] = []
+    for item in cast(list[object], value):
+        if isinstance(item, dict):
+            raw_item = cast(dict[object, object], item)
+            streams.append(_coerce_mapping(raw_item))
+    return streams
+
+
+def _find_first_stream(
+    streams: list[dict[str, object]], codec_type: str
+) -> dict[str, object]:
+    for stream in streams:
+        if str(stream.get("codec_type", "")) == codec_type:
+            return stream
+    return {}
+
+
+def _find_streams(
+    streams: list[dict[str, object]], codec_type: str
+) -> list[dict[str, object]]:
+    return [
+        stream for stream in streams if str(stream.get("codec_type", "")) == codec_type
+    ]

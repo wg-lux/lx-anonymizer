@@ -24,8 +24,7 @@ def _write_wheel(
             archive.writestr(name, content)
         archive.writestr(
             "lx_anonymizer-0.0.0.dist-info/METADATA",
-            metadata
-            or "Metadata-Version: 2.4\nName: lx-anonymizer\nVersion: 0.0.0\n",
+            metadata or "Metadata-Version: 2.4\nName: lx-anonymizer\nVersion: 0.0.0\n",
         )
         archive.writestr(
             "lx_anonymizer/_lx_anonymizer_native.cpython-312-x86_64-linux-gnu.so",

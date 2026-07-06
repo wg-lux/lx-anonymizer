@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TypedDict
 
 from lx_anonymizer.regex_patterns import (
     FALLBACK_PATIENT_FULL_RE,
@@ -7,13 +10,20 @@ from lx_anonymizer.regex_patterns import (
 )
 
 
-def extract_patient_info_from_text(text):
-    # Dictionary to store extracted information
-    info = {
-        "first_name": "Unknown",
-        "last_name": "Unknown",
+class PatientFallbackInfo(TypedDict):
+    first_name: str | None
+    last_name: str | None
+    dob: str | None
+    gender: str | None
+    casenumber: str | None
+
+
+def extract_patient_info_from_text(text: str) -> PatientFallbackInfo | None:
+    info: PatientFallbackInfo = {
+        "first_name": None,
+        "last_name": None,
         "dob": None,
-        "gender": "Unknown",
+        "gender": None,
         "casenumber": None,
     }
 
@@ -55,9 +65,7 @@ def extract_patient_info_from_text(text):
         context_window = text[
             max(0, text.find(info["first_name"]) - 30) : min(
                 len(text),
-                text.find(info["first_name"])
-                + len(info["first_name"])
-                + 30,
+                text.find(info["first_name"]) + len(info["first_name"]) + 30,
             )
         ]
 
@@ -89,4 +97,4 @@ def extract_patient_info_from_text(text):
             info["last_name"] = " ".join(parts[1:])
             return info
 
-    return info
+    return None

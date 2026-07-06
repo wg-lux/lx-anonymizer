@@ -4,10 +4,11 @@ import json
 import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Sequence
+from typing import Any, Dict, Iterable, Mapping, Sequence, TypeAlias, cast
 
 from rapidfuzz import fuzz, utils
 
+JsonRecord: TypeAlias = dict[str, Any]
 
 TITLE_WORDS = {
     "herr",
@@ -148,8 +149,7 @@ def _canonical_value(field: str, value: Any) -> str:
     if field in NAME_FIELDS:
         return _strip_titles(normalized)
 
-    processed = utils.default_process(normalized)
-    return processed if processed is not None else normalized.casefold()
+    return utils.default_process(normalized)
 
 
 def _similarity(field: str, predicted: str, expected: str) -> float:
@@ -189,8 +189,15 @@ def _build_record_map(
     return record_map, duplicate_keys
 
 
-def _parse_json_lines(raw_text: str, source_path: Path) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
+def _coerce_record(value: object) -> JsonRecord | None:
+    if not isinstance(value, dict):
+        return None
+    raw_record = cast(Mapping[object, Any], value)
+    return {str(key): item for key, item in raw_record.items()}
+
+
+def _parse_json_lines(raw_text: str, source_path: Path) -> list[JsonRecord]:
+    records: list[JsonRecord] = []
     for line_number, raw_line in enumerate(raw_text.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
@@ -198,14 +205,15 @@ def _parse_json_lines(raw_text: str, source_path: Path) -> list[dict[str, Any]]:
 
         candidate = line[:-1].rstrip() if line.endswith(",") else line
         try:
-            parsed = json.loads(candidate)
+            parsed: object = json.loads(candidate)
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Could not parse JSONL line {line_number} in {source_path}: {exc.msg}"
             ) from exc
 
-        if isinstance(parsed, dict):
-            records.append(parsed)
+        record = _coerce_record(parsed)
+        if record is not None:
+            records.append(record)
             continue
 
         raise ValueError(f"Line {line_number} in {source_path} is not a JSON object.")
@@ -213,37 +221,43 @@ def _parse_json_lines(raw_text: str, source_path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def load_records(path: Path | str) -> list[dict[str, Any]]:
+def load_records(path: Path | str) -> list[JsonRecord]:
     source = Path(path)
     raw_text = source.read_text(encoding="utf-8").strip()
     if not raw_text:
         return []
 
     if raw_text.startswith("["):
-        parsed = json.loads(raw_text)
+        parsed: object = json.loads(raw_text)
         if not isinstance(parsed, list):
             raise ValueError(f"Expected JSON array in {source}, got {type(parsed)!r}")
-        return [entry for entry in parsed if isinstance(entry, dict)]
+        return [
+            record
+            for entry in cast(list[object], parsed)
+            if (record := _coerce_record(entry)) is not None
+        ]
 
     if raw_text.startswith("{") and "\n" not in raw_text:
-        parsed = json.loads(raw_text)
-        if isinstance(parsed, dict):
-            return [parsed]
+        parsed: object = json.loads(raw_text)
+        record = _coerce_record(parsed)
+        if record is not None:
+            return [record]
         raise ValueError(f"Unsupported JSON root in {source}: {type(parsed)!r}")
 
     if raw_text.startswith("{") and "\n" in raw_text:
         try:
-            parsed = json.loads(raw_text)
-            if isinstance(parsed, dict):
+            parsed: object = json.loads(raw_text)
+            parsed_record = _coerce_record(parsed)
+            if parsed_record is not None:
                 nested_dict_values = all(
-                    isinstance(value, dict) for value in parsed.values()
+                    isinstance(value, dict) for value in parsed_record.values()
                 )
                 if nested_dict_values:
                     return [
-                        {"report_id": str(key), **value}
-                        for key, value in parsed.items()
+                        {"report_id": str(key), **cast(Mapping[str, Any], value)}
+                        for key, value in parsed_record.items()
                     ]
-                return [parsed]
+                return [parsed_record]
         except json.JSONDecodeError:
             pass
 
@@ -380,41 +394,29 @@ def evaluate_pair_files(
 def evaluate_study_dataset(study_dir: Path | str) -> list[ScenarioEvaluation]:
     base = Path(study_dir)
 
-    scenarios: list[dict[str, object]] = [
-        {
-            "name": "control_vs_gold",
-            "pred": base / "names_control.json",
-            "gold": base / "gold.json",
-            "fields": ("first_name", "last_name"),
-        },
-        {
-            "name": "regex_vs_gold_regex",
-            "pred": base / "names_regex.json",
-            "gold": base / "gold_regex.json",
-            "fields": ("first_name", "last_name"),
-        },
-        {
-            "name": "deepseek_vs_gold_deepseek",
-            "pred": base / "names_deepseek.json",
-            "gold": base / "gold_deepseek.json",
-            "fields": ("first_name", "last_name", "dob", "gender", "casenumber"),
-        },
+    scenarios: list[tuple[str, Path, Path, tuple[str, ...]]] = [
+        (
+            "control_vs_gold",
+            base / "names_control.json",
+            base / "gold.json",
+            ("first_name", "last_name"),
+        ),
+        (
+            "regex_vs_gold_regex",
+            base / "names_regex.json",
+            base / "gold_regex.json",
+            ("first_name", "last_name"),
+        ),
+        (
+            "deepseek_vs_gold_deepseek",
+            base / "names_deepseek.json",
+            base / "gold_deepseek.json",
+            ("first_name", "last_name", "dob", "gender", "casenumber"),
+        ),
     ]
 
     results: list[ScenarioEvaluation] = []
-    for scenario in scenarios:
-        pred_path = scenario["pred"]
-        gold_path = scenario["gold"]
-        fields = scenario["fields"]
-        scenario_name = scenario["name"]
-        if not isinstance(pred_path, Path) or not isinstance(gold_path, Path):
-            continue
-        if not isinstance(fields, tuple) or not all(
-            isinstance(field, str) for field in fields
-        ):
-            continue
-        if not isinstance(scenario_name, str):
-            continue
+    for scenario_name, pred_path, gold_path, fields in scenarios:
         if not pred_path.exists() or not gold_path.exists():
             continue
 

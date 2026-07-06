@@ -59,7 +59,7 @@ def preprocess_image(
         elif method == "threshold":
             # Apply adaptive thresholding
             image_cv = np.array(image.convert("L"))
-            image_cv = cv2.adaptiveThreshold(
+            image_cv = cast(Any, cv2).adaptiveThreshold(
                 image_cv, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
             )
             image = Image.fromarray(image_cv)
@@ -83,7 +83,7 @@ def preprocess_image(
             # Deskew image for better OCR accuracy
             image_cv = np.array(image.convert("L"))
             coords = np.column_stack(np.where(image_cv > 0))
-            angle = cv2.minAreaRect(coords)[-1]
+            angle = float(cast(Any, cv2).minAreaRect(coords)[-1])
 
             # Correct the angle
             if angle < -45:
@@ -94,7 +94,7 @@ def preprocess_image(
             # Rotate the image to deskew it
             (h, w) = image_cv.shape[:2]
             center = (w // 2, h // 2)
-            M = cv2.getRotationMatrix2D(center, angle, 1.0)
+            M = cast(Any, cv2).getRotationMatrix2D(center, angle, 1.0)
             rotated = cv2.warpAffine(
                 image_cv,
                 M,
@@ -215,9 +215,11 @@ def detect_table_structure(image: Image.Image) -> List[Tuple[int, int, int, int]
     )
 
     # Extract bounding boxes
-    table_boxes = []
+    table_boxes: List[Tuple[int, int, int, int]] = []
     for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
+        x, y, w, h = cast(
+            Tuple[int, int, int, int], cast(Any, cv2).boundingRect(contour)
+        )
         # Filter out very small boxes
         if w > 50 and h > 50:
             table_boxes.append((x, y, x + w, y + h))
@@ -248,6 +250,6 @@ def preprocess_for_handwriting(image: Image.Image) -> Image.Image:
 
     # Apply slight sharpening
     kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    sharpened = cv2.filter2D(enhanced, -1, kernel)
+    sharpened = cast(Any, cv2).filter2D(enhanced, -1, kernel)
 
     return Image.fromarray(sharpened)

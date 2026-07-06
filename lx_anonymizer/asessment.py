@@ -7,13 +7,14 @@ Usage:
     python compare_names.py model.jsonl gold.jsonl
 """
 
-import json
 import sys
 import statistics as stats
 from collections import defaultdict, Counter
 from pathlib import Path
-from typing import Dict, Tuple, List
+from typing import List, Tuple
 from rapidfuzz import fuzz, utils
+
+from lx_dtypes.models.contracts.assessment import AssessmentRecord
 
 # ---------------------------------------------------------------------------
 # configuration -------------------------------------------------------------
@@ -57,19 +58,19 @@ def strip_titles(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def read_jsonl(path: Path) -> Dict[Tuple[str, str], dict]:
+def read_jsonl(path: Path) -> dict[Tuple[str, str], AssessmentRecord]:
     """Return dict keyed by (file, report_id) with the record as value"""
-    with path.open(encoding="utf-8") as fh:
-        return {(d["file"], d["report_id"]): d for d in map(json.loads, fh)}
+    with path.open(encoding="utf-8") as file_handle:
+        records: list[AssessmentRecord] = []
+        for line in file_handle:
+            record = AssessmentRecord.model_validate_json(line)
+            records.append(record)
+        return {(record.file, record.report_id): record for record in records}
 
 
 def similarity(a: str, b: str) -> float:
     """token-sort ratio ∈ [0,100]"""
     return fuzz.token_sort_ratio(strip_titles(a), strip_titles(b))
-
-
-def safe_get(d: dict, field: str) -> str:
-    return d.get(field) or ""
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +84,10 @@ def main(generated_path: str, gold_path: str) -> None:
 
     first_scores: List[float] = []
     last_scores: List[float] = []
-    per_file: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
+    per_file: dict[str, List[Tuple[float, float]]]
 
     missing: Counter[str] = Counter()
+    per_file = defaultdict(list)
 
     for key, gold_rec in gold.items():
         if key not in gen:
@@ -93,12 +95,8 @@ def main(generated_path: str, gold_path: str) -> None:
             continue
         gen_rec = gen[key]
 
-        f_score = similarity(
-            safe_get(gen_rec, "first_name"), safe_get(gold_rec, "first_name")
-        )
-        l_score = similarity(
-            safe_get(gen_rec, "last_name"), safe_get(gold_rec, "last_name")
-        )
+        f_score = similarity(gen_rec.first_name, gold_rec.first_name)
+        l_score = similarity(gen_rec.last_name, gold_rec.last_name)
 
         first_scores.append(f_score)
         last_scores.append(l_score)

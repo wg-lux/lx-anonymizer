@@ -1,11 +1,15 @@
 import string
+from os import PathLike
 
 
-def is_ascii(s):
+def is_ascii(s: str) -> bool:
     return all(c in string.printable for c in s)
 
 
-def filter_non_ascii_lines(input_file, output_file):
+def filter_non_ascii_lines(
+    input_file: str | PathLike[str],
+    output_file: str | PathLike[str],
+) -> None:
     with open(str(input_file), "r", encoding="utf-8") as infile:
         lines = infile.readlines()
 

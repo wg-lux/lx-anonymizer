@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from lx_anonymizer.text_detection import phi_region_detector
@@ -26,7 +27,7 @@ class _FakeNet:
 
 def test_custom_phi_region_detector_parses_yolo_xywh_output(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model_path = tmp_path / "phi_detector.onnx"
     model_path.write_bytes(b"fake model")
@@ -42,11 +43,10 @@ def test_custom_phi_region_detector_parses_yolo_xywh_output(
         )
     )
 
-    monkeypatch.setattr(
-        phi_region_detector.cv2_dnn,
-        "readNet",
-        lambda path: fake_net,
-    )
+    def read_net(model_path: str) -> _FakeNet:
+        return fake_net
+
+    monkeypatch.setattr(phi_region_detector.cv2_dnn, "readNet", read_net)
 
     config = PhiRegionDetectorConfig(
         model_path=model_path,
@@ -67,7 +67,7 @@ def test_custom_phi_region_detector_parses_yolo_xywh_output(
 
 def test_custom_phi_region_detector_filters_class_ids(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model_path = tmp_path / "phi_detector.onnx"
     model_path.write_bytes(b"fake model")
@@ -83,11 +83,10 @@ def test_custom_phi_region_detector_filters_class_ids(
         )
     )
 
-    monkeypatch.setattr(
-        phi_region_detector.cv2_dnn,
-        "readNet",
-        lambda path: fake_net,
-    )
+    def read_net(model_path: str) -> _FakeNet:
+        return fake_net
+
+    monkeypatch.setattr(phi_region_detector.cv2_dnn, "readNet", read_net)
 
     config = PhiRegionDetectorConfig(
         model_path=model_path,

@@ -1,5 +1,6 @@
 import re
-from typing import Dict, Optional, Tuple, Union
+from collections.abc import Callable, Sequence
+from typing import Dict, Optional, Protocol, Tuple, TypedDict, Union, cast
 
 import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
@@ -10,6 +11,51 @@ from lx_anonymizer.ocr.ocr_preprocessing import (
     preprocess_image,
 )
 from lx_anonymizer.setup.custom_logger import logger
+
+OcrTextConfidenceResult = Tuple[str, float]
+OcrFunction = Callable[[Image.Image], Union[str, OcrTextConfidenceResult]]
+TesseractDataDict = Dict[str, list[str]]
+OcrResultsDict = Dict[str, str]
+ConfidenceScoresDict = Dict[str, float]
+
+
+class _LineCandidate(TypedDict):
+    text: str
+    score: int
+
+
+class _TesseractImageToString(Protocol):
+    def __call__(self, image: Image.Image, *, config: str = "") -> str: ...
+
+
+class _TesseractImageToData(Protocol):
+    def __call__(
+        self, image: Image.Image, *, output_type: object, config: str = ""
+    ) -> TesseractDataDict: ...
+
+
+class _TesseractOutput(Protocol):
+    DICT: object
+
+
+class _TesseractModule(Protocol):
+    image_to_string: _TesseractImageToString
+    image_to_data: _TesseractImageToData
+    Output: _TesseractOutput
+
+
+_PYTESSERACT = cast(_TesseractModule, pytesseract)
+
+
+def _image_to_string(image: Image.Image, config: str = "") -> str:
+    return _PYTESSERACT.image_to_string(image, config=config)
+
+
+def _image_to_data(image: Image.Image, config: str = "") -> TesseractDataDict:
+    return _PYTESSERACT.image_to_data(
+        image, output_type=_PYTESSERACT.Output.DICT, config=config
+    )
+
 
 # Initialize spellchecker with medical dictionary if available
 spell: Optional[SpellChecker]
@@ -86,18 +132,16 @@ def ensemble_ocr(
         )
 
     # Get results from each OCR engine
-    results = {}
-    confidence_scores = {}
+    results: OcrResultsDict = {}
+    confidence_scores: ConfidenceScoresDict = {}
 
     # Tesseract OCR with optimized parameters
     try:
         config = "--oem 1 --psm 6"  # LSTM only + assume single uniform text block
-        text_tesseract = pytesseract.image_to_string(image_tesseract, config=config)
+        text_tesseract = _image_to_string(image_tesseract, config=config)
 
         # Calculate confidence score
-        data = pytesseract.image_to_data(
-            image_tesseract, output_type=pytesseract.Output.DICT, config=config
-        )
+        data = _image_to_data(image_tesseract, config=config)
         confidences = [float(c) for c in data["conf"] if c != "-1" and c != ""]
         confidence_tesseract = sum(confidences) / len(confidences) if confidences else 0
 
@@ -130,7 +174,7 @@ def ensemble_ocr(
         from lx_anonymizer.ocr_donut import donut_full_image_ocr  # type: ignore[import-untyped]
 
         logger.info("Running Donut OCR with improved parameters")
-        text_donut = donut_full_image_ocr(image_donut)
+        text_donut = cast(str, donut_full_image_ocr(image_donut))
 
         # Improved evaluation: check actual content rather than just length
         # Count number of sentences and meaningful words
@@ -200,11 +244,13 @@ def combine_ocr_results(results: Dict[str, str]) -> str:
         return list(results.values())[0]
 
     # Split each result into lines
-    line_sets = {engine: text.split("\n") for engine, text in results.items()}
+    line_sets: Dict[str, list[str]] = {
+        engine: text.split("\n") for engine, text in results.items()
+    }
 
     # Find the result with the most lines as a base
     base_engine = max(line_sets.items(), key=lambda x: len(x[1]))[0]
-    combined_lines = []
+    combined_lines: list[str] = []
 
     # For each line in the base result
     for i, base_line in enumerate(line_sets[base_engine]):
@@ -212,7 +258,7 @@ def combine_ocr_results(results: Dict[str, str]) -> str:
             combined_lines.append("")
             continue
 
-        line_candidates = [base_line]
+        line_candidates: list[str] = [base_line]
 
         # Look for corresponding lines in other results
         for engine, lines in line_sets.items():
@@ -224,9 +270,14 @@ def combine_ocr_results(results: Dict[str, str]) -> str:
                 line_candidates.append(lines[i])
 
         # Choose the longest non-empty line as the best candidate
-        best_line = max(
-            line_candidates, key=lambda x: len(x.strip()) if x.strip() else 0
-        )
+        scored_candidates: list[_LineCandidate] = [
+            {
+                "text": candidate,
+                "score": len(candidate.strip()) if candidate.strip() else 0,
+            }
+            for candidate in line_candidates
+        ]
+        best_line = max(scored_candidates, key=lambda x: x["score"])["text"]
         combined_lines.append(best_line)
 
     return "\n".join(combined_lines)
@@ -246,7 +297,7 @@ def apply_spelling_correction(text: str) -> str:
         return text
 
     lines = text.split("\n")
-    corrected_lines = []
+    corrected_lines: list[str] = []
 
     for line in lines:
         # Don't correct very short lines or lines that might be measurements/values
@@ -255,7 +306,7 @@ def apply_spelling_correction(text: str) -> str:
             continue
 
         words = line.split()
-        corrected_words = []
+        corrected_words: list[str] = []
 
         for word in words:
             # Skip correction for special cases
@@ -293,7 +344,11 @@ def apply_spelling_correction(text: str) -> str:
     return "\n".join(corrected_lines)
 
 
-def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str, float]:
+def multi_scale_ocr(
+    image: Image.Image,
+    ocr_function: OcrFunction,
+    scales: Optional[Sequence[float]] = None,
+) -> OcrTextConfidenceResult:
     """
     Process image at multiple scales and select best OCR result.
 
@@ -309,8 +364,8 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
     if scales is None:
         scales = [0.8, 1.0, 1.2, 1.5]
 
-    results = []
-    confidences = []
+    results: list[str] = []
+    confidences: list[float] = []
     logger.info(f"Running multi-scale OCR with scales {scales}")
 
     for scale in scales:
@@ -321,7 +376,9 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
 
         try:
             # Assume ocr_function returns (text, confidence)
-            text, confidence = ocr_function(resized_image)
+            text, confidence = cast(
+                OcrTextConfidenceResult, ocr_function(resized_image)
+            )
             results.append(text)
             confidences.append(
                 confidence if confidence else len(text) / 100
@@ -331,7 +388,7 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
             )
         except ValueError:
             # If only text is returned
-            text = ocr_function(resized_image)
+            text = cast(str, ocr_function(resized_image))
             results.append(text)
             confidences.append(len(text) / 100)  # Use length as confidence proxy
             logger.debug(f"Scale {scale}: text length {len(text)}")
@@ -342,6 +399,4 @@ def multi_scale_ocr(image: Image.Image, ocr_function, scales=None) -> Tuple[str,
         f"Selected scale {scales[best_index]} with confidence {confidences[best_index]}"
     )
 
-    return results[best_index], confidences[best_index]
-    return results[best_index], confidences[best_index]
     return results[best_index], confidences[best_index]

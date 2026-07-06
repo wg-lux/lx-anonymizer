@@ -29,9 +29,7 @@ class Settings(BaseSettings):
     # --- Performance & Sampling ---
     MAX_FRAMES_TO_SAMPLE: int = 24
     SMART_EARLY_STOPPING: bool = True
-    FRAME_CLEANER_QUALITY_PROFILE: Literal["fast", "balanced", "quality"] = (
-        "balanced"
-    )
+    FRAME_CLEANER_QUALITY_PROFILE: Literal["fast", "balanced", "quality"] = "balanced"
 
     # --- OCR / Detection ---
     OCR_CONFIDENCE_THRESHOLD: float = 0.6

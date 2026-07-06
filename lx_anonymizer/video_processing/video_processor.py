@@ -182,7 +182,7 @@ class VideoProcessor:
                 mask_config.get("image_width", 1920),
                 mask_config.get("image_height", 1080),
             )
-            draw_boxes = []
+            draw_boxes: list[str] = []
             # left, right, top, bottom masks
             if x > 0:
                 draw_boxes.append(f"drawbox=0:0:{x}:{ih}:color=black@1:t=fill")

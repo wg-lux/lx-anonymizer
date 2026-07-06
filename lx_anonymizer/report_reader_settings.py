@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Mapping
+from typing import Mapping, cast
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -86,34 +86,35 @@ class ReportReaderSettings(BaseSettings):
 
     @field_validator("first_names", "last_names", mode="before")
     @classmethod
-    def normalize_name_list(cls, value: Any) -> list[str]:
+    def normalize_name_list(cls, value: object) -> list[str]:
         if value is None:
             return []
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         if isinstance(value, (list, tuple, set)):
-            return [
-                str(item).strip()
-                for item in value
-                if item is not None and str(item).strip()
-            ]
+            normalized_items: list[str] = []
+            for item in cast(tuple[object, ...] | list[object] | set[object], value):
+                text = str(item).strip()
+                if text:
+                    normalized_items.append(text)
+            return normalized_items
         return [str(value).strip()] if str(value).strip() else []
 
     @field_validator("flags", mode="before")
     @classmethod
-    def normalize_flags(cls, value: Any) -> ReportReaderFlags | Mapping[str, Any]:
+    def normalize_flags(cls, value: object) -> ReportReaderFlags:
         if value is None:
             return default_report_reader_flags()
         if isinstance(value, ReportReaderFlags):
             return value
         if isinstance(value, Mapping):
-            return value
+            return ReportReaderFlags.model_validate(cast(Mapping[str, object], value))
         raise TypeError(
             f"flags must be a mapping or ReportReaderFlags, got {type(value)!r}"
         )
 
     @property
-    def default_settings_dict(self) -> dict[str, Any]:
+    def default_settings_dict(self) -> dict[str, object]:
         return {
             "locale": self.locale,
             "first_names": list(self.first_names),

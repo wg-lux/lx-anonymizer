@@ -14,7 +14,8 @@ Separated from PDF processing logic to maintain clean architecture.
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Dict, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any, Optional, Tuple, cast
 
 import dateparser  # type: ignore[import-untyped]
 
@@ -51,22 +52,22 @@ class FrameMetadataExtractor:
 
     _SENTINELS = {"unknown", "none", "n/a", "na", "unbekannt", "undefined", "-"}
 
-    def __init__(self):
+    def __init__(self) -> None:
         # runtime SensitiveMeta accumulator
         self.meta = SensitiveMeta()
 
         # Frame-specific patterns optimized for overlay text
-        self.patient_patterns = list(FRAME_PATIENT_PATTERNS)
-        self.dob_patterns = list(FRAME_DOB_PATTERNS)
-        self.case_patterns = list(FRAME_CASE_PATTERNS)
-        self.date_patterns = list(FRAME_DATE_PATTERNS)
-        self.time_patterns = list(FRAME_TIME_PATTERNS)
-        self.examiner_patterns = list(FRAME_EXAMINER_PATTERNS)
-        self.gender_patterns = list(FRAME_GENDER_PATTERNS)
+        self.patient_patterns: list[str] = list(FRAME_PATIENT_PATTERNS)
+        self.dob_patterns: list[str] = list(FRAME_DOB_PATTERNS)
+        self.case_patterns: list[str] = list(FRAME_CASE_PATTERNS)
+        self.date_patterns: list[str] = list(FRAME_DATE_PATTERNS)
+        self.time_patterns: list[str] = list(FRAME_TIME_PATTERNS)
+        self.examiner_patterns: list[str] = list(FRAME_EXAMINER_PATTERNS)
+        self.gender_patterns: list[str] = list(FRAME_GENDER_PATTERNS)
 
     # ---------- public API ----------
 
-    def extract_metadata_from_frame_text(self, text: str) -> Dict[str, Any]:
+    def extract_metadata_from_frame_text(self, text: str) -> dict[str, object]:
         """
         Extract metadata from frame OCR text using specialized patterns.
         Writes through SensitiveMeta.safe_update, returns dict for compatibility.
@@ -127,7 +128,7 @@ class FrameMetadataExtractor:
             logger.error(f"Frame metadata extraction failed: {e}")
             return self.meta.to_dict()
 
-    def is_sensitive_content(self, metadata: Dict[str, Any]) -> bool:
+    def is_sensitive_content(self, metadata: Mapping[str, object]) -> bool:
         """Basic sensitive presence check (uses dict for call-site compatibility)."""
         sensitive_fields = (
             "first_name",
@@ -143,7 +144,7 @@ class FrameMetadataExtractor:
             return True
         return False
 
-    def is_complete(self, metadata: Dict[str, Any]) -> bool:
+    def is_complete(self, metadata: Mapping[str, object]) -> bool:
         """
         Returns True when enough high-signal identifiers are present.
         Used to stop early when smart sampling is enabled.
@@ -172,8 +173,8 @@ class FrameMetadataExtractor:
         return False
 
     def merge_metadata(
-        self, existing: Dict[str, Any], new: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, existing: Mapping[str, object], new: Mapping[str, object]
+    ) -> dict[str, object]:
         """
         Safe merge via SensitiveMeta:
         - Only non-blank values from `new` can fill blanks in `existing`
@@ -209,7 +210,7 @@ class FrameMetadataExtractor:
                 pass
 
             # write back safely (isoformat)
-            inferred = {}
+            inferred: dict[str, object] = {}
             if exam_dt:
                 inferred["examination_date"] = exam_dt.isoformat()
             if dob_dt:
@@ -241,7 +242,7 @@ class FrameMetadataExtractor:
             try:
                 # YYYY-MM-DD
                 return datetime.strptime(v.strip(), "%Y-%m-%d").date()
-            except Exception:
+            except ValueError:
                 parsed = dateparser.parse(
                     v.strip(), languages=["de"], settings={"DATE_ORDER": "DMY"}
                 )
@@ -252,7 +253,10 @@ class FrameMetadataExtractor:
     def _extract_patient_names(self, text: str) -> Tuple[Optional[str], Optional[str]]:
         try:
             for pattern in self.patient_patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
+                matches = cast(
+                    list[str | tuple[str, ...]],
+                    re.findall(pattern, text, re.IGNORECASE),
+                )
                 if not matches:
                     continue
                 m0 = matches[0]
@@ -429,7 +433,5 @@ class FrameMetadataExtractor:
                     return date(y, m, d)
             return None
         except Exception as e:
-            logger.debug(f"Date parsing failed for '{date_str}': {e}")
-            return None
             logger.debug(f"Date parsing failed for '{date_str}': {e}")
             return None

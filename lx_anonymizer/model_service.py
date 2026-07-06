@@ -1,9 +1,7 @@
 import gc
 import os
-from typing import (  # Added Any for pipeline, consider specific type if known
-    Any,
-    Optional,
-)
+from collections.abc import Callable
+from typing import Optional, Protocol, Self, TypeAlias, TypeVar, cast
 
 import torch  # type: ignore[import-untyped]
 from transformers import (  # type: ignore[import-untyped]
@@ -11,12 +9,92 @@ from transformers import (  # type: ignore[import-untyped]
     AutoTokenizer,
     TrOCRProcessor,
     VisionEncoderDecoderModel,
-    pipeline,
+    pipeline as transformers_pipeline,  # type: ignore[reportUnknownVariableType]
 )
 
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
+
+
+class Phi4ModelProtocol(Protocol):
+    """Boundary protocol for the dynamically loaded causal LM instance."""
+
+
+class Phi4TokenizerProtocol(Protocol):
+    """Boundary protocol for the dynamically loaded tokenizer instance."""
+
+
+class TextGenerationPipelineProtocol(Protocol):
+    """Boundary protocol for the transformers text-generation pipeline."""
+
+    def __call__(self, *args: object, **kwargs: object) -> object: ...
+
+
+class TrocrTokenizerProtocol(Protocol):
+    """Boundary protocol for the tokenizer exposed by TrOCRProcessor."""
+
+
+class TrocrProcessorProtocol(Protocol):
+    tokenizer: TrocrTokenizerProtocol
+
+
+class TrocrModelProtocol(Protocol):
+    def cuda(self) -> Self: ...
+
+    def to(self, device: torch.device) -> Self: ...
+
+
+_LoadedFactoryResult = TypeVar("_LoadedFactoryResult", covariant=True)
+
+
+class _PretrainedFactory(Protocol[_LoadedFactoryResult]):
+    def from_pretrained(
+        self, pretrained_model_name_or_path: str, **kwargs: object
+    ) -> _LoadedFactoryResult: ...
+
+
+class _TextGenerationPipelineFactory(Protocol):
+    def __call__(
+        self,
+        task: str,
+        *,
+        model: Phi4ModelProtocol,
+        tokenizer: Phi4TokenizerProtocol,
+    ) -> TextGenerationPipelineProtocol: ...
+
+
+Phi4LoadResult: TypeAlias = (
+    tuple[Phi4ModelProtocol, Phi4TokenizerProtocol, TextGenerationPipelineProtocol]
+    | tuple[None, None, None]
+)
+TrocrLoadResult: TypeAlias = (
+    tuple[
+        TrocrProcessorProtocol,
+        TrocrModelProtocol,
+        TrocrTokenizerProtocol | None,
+        torch.device | None,
+    ]
+    | tuple[None, None, None, None]
+)
+
+_manual_seed = cast(
+    Callable[[int], object],
+    torch.random.manual_seed,  # type: ignore[reportUnknownMemberType]
+)
+_load_phi4_model = cast(
+    _PretrainedFactory[Phi4ModelProtocol], AutoModelForCausalLM
+).from_pretrained
+_load_phi4_tokenizer = cast(
+    _PretrainedFactory[Phi4TokenizerProtocol], AutoTokenizer
+).from_pretrained
+_load_trocr_processor = cast(
+    _PretrainedFactory[TrocrProcessorProtocol], TrOCRProcessor
+).from_pretrained
+_load_trocr_model = cast(
+    _PretrainedFactory[TrocrModelProtocol], VisionEncoderDecoderModel
+).from_pretrained
+_text_generation_pipeline = cast(_TextGenerationPipelineFactory, transformers_pipeline)
 
 
 class ModelService:
@@ -28,30 +106,26 @@ class ModelService:
     _instance = None
 
     # Phi-4 LLM Modell
-    phi4_model: Optional[AutoModelForCausalLM] = None
-    phi4_tokenizer: Optional[AutoTokenizer] = None
-    phi4_pipe: Optional[Any] = (
-        None  # Using Any for pipeline, replace with specific type if available e.g. TextGenerationPipeline
-    )
+    phi4_model: Optional[Phi4ModelProtocol] = None
+    phi4_tokenizer: Optional[Phi4TokenizerProtocol] = None
+    phi4_pipe: Optional[TextGenerationPipelineProtocol] = None
 
     # TrOCR Modell
-    trocr_processor: Optional[TrOCRProcessor] = None
-    trocr_model: Optional[VisionEncoderDecoderModel] = None
-    trocr_tokenizer: Optional[AutoTokenizer] = (
-        None  # TrOCRProcessor.tokenizer is often a standard tokenizer
-    )
+    trocr_processor: Optional[TrocrProcessorProtocol] = None
+    trocr_model: Optional[TrocrModelProtocol] = None
+    trocr_tokenizer: Optional[TrocrTokenizerProtocol] = None
     trocr_device: Optional[torch.device] = None
 
-    def __new__(cls):
+    def __new__(cls) -> Self:
         """Implementierung des Singleton-Patterns"""
         if cls._instance is None:
             cls._instance = super(ModelService, cls).__new__(cls)
             # Setze CUDA-Konfiguration
             os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-            torch.random.manual_seed(0)
+            _manual_seed(0)
         return cls._instance
 
-    def get_device(self):
+    def get_device(self) -> torch.device:
         """Ermittelt das optimale Gerät für die Modellausführung"""
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -62,7 +136,7 @@ class ModelService:
             logger.warning("CUDA not available, using CPU")
         return device
 
-    def load_phi4_model(self, force_reload=False):
+    def load_phi4_model(self, force_reload: bool = False) -> Phi4LoadResult:
         """Lädt das Phi-4 LLM Modell, wenn es noch nicht geladen ist oder wenn force_reload=True"""
         if (
             self.phi4_model is not None
@@ -87,15 +161,15 @@ class ModelService:
 
             try:
                 # Versuche auf dem ermittelten Gerät zu laden
-                model = AutoModelForCausalLM.from_pretrained(
+                model = _load_phi4_model(
                     model_id,
                     device_map="auto",  # or "cpu"/"cuda", or a dictionary mapping module names to devices
                     torch_dtype="auto",
                     trust_remote_code=False,
                     low_cpu_mem_usage=True,
                 )
-                tokenizer = AutoTokenizer.from_pretrained(model_id)
-                pipe = pipeline(
+                tokenizer = _load_phi4_tokenizer(model_id)
+                pipe = _text_generation_pipeline(
                     "text-generation",
                     model=model,
                     tokenizer=tokenizer,
@@ -116,15 +190,15 @@ class ModelService:
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                     # Versuche auf CPU zu laden
-                    model = AutoModelForCausalLM.from_pretrained(
+                    model = _load_phi4_model(
                         model_id,
                         device_map="cpu",
                         torch_dtype=torch.float32,
                         trust_remote_code=False,
                         low_cpu_mem_usage=True,
                     )
-                    tokenizer = AutoTokenizer.from_pretrained(model_id)
-                    pipe = pipeline(
+                    tokenizer = _load_phi4_tokenizer(model_id)
+                    pipe = _text_generation_pipeline(
                         "text-generation",
                         model=model,
                         tokenizer=tokenizer,
@@ -144,7 +218,7 @@ class ModelService:
             logger.error(f"Error initializing Phi-4 model: {e}")
             return None, None, None
 
-    def load_trocr_model(self, force_reload=False):
+    def load_trocr_model(self, force_reload: bool = False) -> TrocrLoadResult:
         """Lädt das TrOCR-Modell, wenn es noch nicht geladen ist oder wenn force_reload=True"""
         if (
             self.trocr_processor is not None
@@ -170,10 +244,8 @@ class ModelService:
 
         try:
             # TrOCRProcessor verwenden (kombiniert Feature Extractor und Tokenizer)
-            processor = TrOCRProcessor.from_pretrained("microsoft/trocr-base-str")
-            model = VisionEncoderDecoderModel.from_pretrained(
-                "microsoft/trocr-base-str"
-            )
+            processor = _load_trocr_processor("microsoft/trocr-base-str")
+            model = _load_trocr_model("microsoft/trocr-base-str")
 
             # Auf Gerät verschieben mit zusätzlichen CUDA-Optimierungen
             if device.type == "cuda":
@@ -198,9 +270,7 @@ class ModelService:
                         )
                         # Auf CPU zurückfallen
                         device = torch.device("cpu")
-                        model = VisionEncoderDecoderModel.from_pretrained(
-                            "microsoft/trocr-base-str"
-                        )
+                        model = _load_trocr_model("microsoft/trocr-base-str")
                         logger.info("Fallback: TrOCR model loaded on CPU")
                     else:
                         raise

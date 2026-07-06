@@ -1,5 +1,19 @@
 import argparse
 import sys
+from typing import Protocol, cast
+
+
+class _PipelineMain(Protocol):
+    def __call__(
+        self,
+        image_path: str,
+        east_model_path: str | None,
+        device: str,
+        validation: bool,
+        min_confidence: float,
+        width: int,
+        height: int,
+    ) -> object | None: ...
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,7 +76,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        from lx_anonymizer.main_with_reassembly import main as pipeline_main
+        from lx_anonymizer.main_with_reassembly import main as raw_pipeline_main
         from lx_anonymizer.setup.custom_logger import configure_global_logger
     except ImportError as exc:
         parser.exit(
@@ -71,15 +85,16 @@ def main() -> int:
             "Install with `pip install lx-anonymizer[ocr]`.\n",
         )
 
-    configure_global_logger(verbose=args.verbose)
+    pipeline_main = cast(_PipelineMain, raw_pipeline_main)
+    configure_global_logger(verbose=cast(bool, args.verbose))
     result = pipeline_main(
-        args.image,
-        args.east,
-        args.device,
-        args.validation,
-        args.min_confidence,
-        args.width,
-        args.height,
+        cast(str, args.image),
+        cast(str | None, args.east),
+        cast(str, args.device),
+        cast(bool, args.validation),
+        cast(float, args.min_confidence),
+        cast(int, args.width),
+        cast(int, args.height),
     )
     if result is not None:
         print(result)

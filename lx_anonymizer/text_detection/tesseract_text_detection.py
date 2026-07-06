@@ -1,27 +1,40 @@
 import json
-from typing import cast
+from pathlib import Path
+from typing import TypeAlias, cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
-import pytesseract  # type: ignore[import-untyped]
-from pytesseract import Output
+import pytesseract  # type: ignore[import-untyped, reportMissingTypeStubs]
+from pytesseract import Output  # type: ignore[import-untyped, reportMissingTypeStubs]
 
+from lx_dtypes.models.contracts.text_detection import (
+    TesseractOCRData,
+    TesseractWordConfidence,
+)
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
 from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.text_detection.np_wrapper import load_image_into_np
 
 logger = get_logger(__name__)
 
+Box: TypeAlias = tuple[int, int, int, int]
 
-def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=320):
+
+def tesseract_text_detection(
+    image_path: str | Path,
+    min_confidence: float = 0.5,
+    width: int = 320,
+    height: int = 320,
+) -> tuple[list[Box], str]:
     """
     Detects text at word level using Tesseract OCR.
     """
+    if width <= 0 or height <= 0:
+        raise ValueError("width and height must be positive integers")
+
     # Load the input image
-    image = cv2.imread(str(image_path))
+    image = load_image_into_np(image_path)
     logger.debug("Loading tesseract text detection")
-    if image is None:
-        raise ValueError("Could not open or find the image.")
 
     orig = image.copy()
     (H, W) = image.shape[:2]
@@ -34,12 +47,10 @@ def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=3
     custom_config = r"--oem 3 --psm 11"  # PSM 11 for sparse text with OEM 3 (default)
 
     # Detecting text using Tesseract with word-level configuration
-    results = pytesseract.image_to_data(
-        image, output_type=Output.DICT, config=custom_config
-    )
+    results = _load_tesseract_ocr_data(image, custom_config)
 
-    output_boxes = []
-    output_confidences = []
+    output_boxes: list[Box] = []
+    output_confidences: list[TesseractWordConfidence] = []
 
     # Add size filtering parameters
     min_width = 15  # Minimum width for a word
@@ -49,16 +60,16 @@ def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=3
     aspect_ratio_threshold = 10.0  # Maximum width/height ratio
 
     # Loop over each of the individual text localizations
-    for i in range(0, len(results["text"])):
+    for i in range(0, len(results.text)):
         # Extract the bounding box coordinates and confidence
         x, y, w, h = (
-            results["left"][i],
-            results["top"][i],
-            results["width"][i],
-            results["height"][i],
+            results.left[i],
+            results.top[i],
+            results.width[i],
+            results.height[i],
         )
-        conf = float(results["conf"][i])
-        text = results["text"][i].strip()
+        conf = float(results.conf[i])
+        text = results.text[i].strip()
 
         # Filter out weak detections and empty text
         if (
@@ -79,16 +90,17 @@ def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=3
 
             # Additional check for minimum box area
             if (endX - startX) * (endY - startY) >= 100:  # Minimum area of 100 pixels
-                output_boxes.append((startX, startY, endX, endY))
+                box: Box = (startX, startY, endX, endY)
+                output_boxes.append(box)
                 output_confidences.append(
-                    {
-                        "startX": startX,
-                        "startY": startY,
-                        "endX": endX,
-                        "endY": endY,
-                        "confidence": conf,
-                        "text": text,
-                    }
+                    TesseractWordConfidence(
+                        startX=startX,
+                        startY=startY,
+                        endX=endX,
+                        endY=endY,
+                        confidence=conf,
+                        text=text,
+                    )
                 )
 
     # Merge very close boxes that might be parts of the same word
@@ -98,21 +110,23 @@ def tesseract_text_detection(image_path, min_confidence=0.5, width=320, height=3
     output_boxes = sort_boxes(output_boxes, vertical_threshold=5)
 
     # Extend boxes with minimal margins
-    output_boxes = extend_boxes_if_needed(
-        cast(npt.NDArray[np.uint8], orig), output_boxes, extension_margin=2
+    output_boxes = extend_boxes_if_needed(orig, output_boxes, extension_margin=2)
+
+    logger.info("Tesseract text detection complete. Found %s words.", len(output_boxes))
+    return output_boxes, json.dumps(
+        [confidence.model_dump(by_alias=True) for confidence in output_confidences]
     )
 
-    logger.info(f"Tesseract text detection complete. Found {len(output_boxes)} words.")
-    return output_boxes, json.dumps(output_confidences)
 
-
-def merge_close_boxes(boxes, horizontal_threshold=8):
+def merge_close_boxes(boxes: list[Box], horizontal_threshold: int = 8) -> list[Box]:
     """Merge boxes that are horizontally very close and likely part of the same word."""
     if not boxes:
-        return boxes
+        return []
+    if horizontal_threshold < 1:
+        raise ValueError("horizontal_threshold must be a positive integer")
 
-    merged = []
-    current_box = list(boxes[0])
+    merged: list[Box] = []
+    current_box: list[int] = list(boxes[0])
 
     for box in boxes[1:]:
         # Check if boxes are close horizontally and on the same line
@@ -124,16 +138,37 @@ def merge_close_boxes(boxes, horizontal_threshold=8):
             current_box[2] = box[2]  # Extend to end of next box
             current_box[3] = max(current_box[3], box[3])  # Take max height
         else:
-            merged.append(tuple(current_box))
+            merged_box: Box = (
+                current_box[0],
+                current_box[1],
+                current_box[2],
+                current_box[3],
+            )
+            merged.append(merged_box)
             current_box = list(box)
 
-    merged.append(tuple(current_box))
+    merged_box = (
+        current_box[0],
+        current_box[1],
+        current_box[2],
+        current_box[3],
+    )
+    merged.append(merged_box)
     return merged
 
 
-def sort_boxes(boxes, vertical_threshold=5):
+def sort_boxes(boxes: list[Box], vertical_threshold: int = 5) -> list[Box]:
     """Sort boxes by vertical position then horizontal position."""
-    boxes.sort(key=lambda b: (round(b[1] / vertical_threshold), b[0]))
-    return boxes
-    boxes.sort(key=lambda b: (round(b[1] / vertical_threshold), b[0]))
-    return boxes
+    if vertical_threshold < 1:
+        raise ValueError("vertical_threshold must be a positive integer")
+    return sorted(boxes, key=lambda b: (round(b[1] / vertical_threshold), b[0]))
+
+
+def _load_tesseract_ocr_data(image: np.ndarray, custom_config: str) -> TesseractOCRData:
+    raw_payload: object = cast(
+        object,
+        pytesseract.image_to_data(  # pyright: ignore[reportUnknownMemberType]
+            image, output_type=Output.DICT, config=custom_config
+        ),
+    )
+    return TesseractOCRData.model_validate(raw_payload)

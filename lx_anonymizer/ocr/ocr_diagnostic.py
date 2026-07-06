@@ -14,7 +14,7 @@ import logging
 import subprocess
 import argparse
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Callable, Literal, Protocol, TypedDict, cast
 import unicodedata
 import cv2
 import numpy as np
@@ -30,6 +30,98 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+FrameArray = np.ndarray[tuple[int, ...], np.dtype[np.uint8]]
+Cv2ImageFunc = Callable[..., FrameArray]
+
+
+class OCRConfig(TypedDict):
+    name: str
+    lang: str
+    psm: int
+    oem: int
+    dpi: int
+
+
+class OCRQuality(TypedDict, total=False):
+    len: int
+    letters: int
+    digits: int
+    punct: int
+    whitespace: int
+    punct_ratio: float
+    words: int
+    readable_words: int
+    repeated_chars: int
+    special_symbols: int
+    text_sample: str
+
+
+class OCRResult(OCRQuality, total=False):
+    frame_idx: int
+    config_name: str
+    text: str
+    mean_conf: float
+    word_count: int
+    preprocessing: str
+    roi: str
+    error: str
+
+
+class OCRRoi(TypedDict, total=False):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class TesseractData(TypedDict):
+    text: list[str]
+    conf: list[str]
+
+
+class TesseractOutput(Protocol):
+    DICT: Literal["dict"]
+
+
+class TesseractModule(Protocol):
+    Output: TesseractOutput
+
+    def image_to_data(
+        self,
+        image: FrameArray,
+        *,
+        lang: str,
+        config: str,
+        output_type: Literal["dict"],
+    ) -> TesseractData: ...
+
+
+class VideoCaptureLike(Protocol):
+    def isOpened(self) -> bool: ...
+
+    def get(self, prop_id: int) -> float: ...
+
+    def set(self, prop_id: int, value: float) -> bool: ...
+
+    def read(self) -> tuple[bool, FrameArray]: ...
+
+    def release(self) -> None: ...
+
+
+class VideoCaptureFactory(Protocol):
+    def __call__(self, video_path: str) -> VideoCaptureLike: ...
+
+
+tesseract = cast(TesseractModule, pytesseract)
+cv2_cvt_color = cast(Cv2ImageFunc, cv2.cvtColor)
+cv2_threshold = cast(Callable[..., tuple[float, FrameArray]], cv2.threshold)
+cv2_adaptive_threshold = cast(Cv2ImageFunc, getattr(cv2, "adaptiveThreshold"))
+cv2_gaussian_blur = cast(Cv2ImageFunc, cv2.GaussianBlur)
+cv2_morphology_ex = cast(Cv2ImageFunc, cv2.morphologyEx)
+cv2_imwrite = cast(Callable[[str, FrameArray], bool], cv2.imwrite)
+cv2_video_capture = cast(VideoCaptureFactory, cv2.VideoCapture)
+
+
 class OCRDiagnostic:
     """Diagnose-Tool für OCR-Probleme im FrameCleaner."""
 
@@ -38,7 +130,7 @@ class OCRDiagnostic:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Verschiedene OCR-Konfigurationen zum Testen
-        self.test_configs = [
+        self.test_configs: list[OCRConfig] = [
             {"name": "current", "lang": "deu+eng", "psm": 6, "oem": 3, "dpi": 300},
             {"name": "single_word", "lang": "deu+eng", "psm": 8, "oem": 3, "dpi": 400},
             {"name": "single_block", "lang": "deu+eng", "psm": 6, "oem": 1, "dpi": 300},
@@ -48,13 +140,13 @@ class OCRDiagnostic:
             {"name": "deu_only", "lang": "deu", "psm": 6, "oem": 3, "dpi": 300},
         ]
 
-        self.results: list[dict[str, Any]] = []
+        self.results: list[OCRResult] = []
 
-    def check_tesseract_setup(self) -> Dict[str, Any]:
+    def check_tesseract_setup(self) -> dict[str, object]:
         """Überprüft Tesseract-Installation und verfügbare Sprachen."""
         logger.info("🔍 Checking Tesseract setup...")
 
-        setup_info: Dict[str, Any] = {}
+        setup_info: dict[str, object] = {}
 
         try:
             # Tesseract Version
@@ -83,7 +175,7 @@ class OCRDiagnostic:
 
         return setup_info
 
-    def analyze_text_quality(self, text: str) -> Dict[str, Any]:
+    def analyze_text_quality(self, text: str) -> OCRQuality:
         """Analysiert die Qualität eines OCR-Textes."""
         if not text:
             return {
@@ -131,8 +223,8 @@ class OCRDiagnostic:
         }
 
     def test_ocr_config(
-        self, image: np.ndarray, config: Dict[str, Any], frame_idx: int
-    ) -> Dict[str, Any]:
+        self, image: FrameArray, config: OCRConfig, frame_idx: int
+    ) -> OCRResult:
         """Testet eine OCR-Konfiguration auf einem Bild."""
         try:
             # Build tesseract config string
@@ -141,16 +233,16 @@ class OCRDiagnostic:
             )
 
             # Führe OCR durch
-            ocr_data = pytesseract.image_to_data(
+            ocr_data = tesseract.image_to_data(
                 image,
                 lang=config["lang"],
                 config=tesseract_config,
-                output_type=pytesseract.Output.DICT,
+                output_type=tesseract.Output.DICT,
             )
 
             # Extrahiere Text mit Konfidenz
-            words = []
-            confidences = []
+            words: list[str] = []
+            confidences: list[int] = []
 
             for i, word in enumerate(ocr_data["text"]):
                 if word.strip():
@@ -165,7 +257,7 @@ class OCRDiagnostic:
             # Analysiere Textqualität
             quality = self.analyze_text_quality(text)
 
-            result = {
+            result: OCRResult = {
                 "frame_idx": frame_idx,
                 "config_name": config["name"],
                 "text": text,
@@ -176,7 +268,7 @@ class OCRDiagnostic:
 
             logger.debug(
                 f"Config {config['name']}: {mean_conf:.1f}% conf, {len(words)} words, "
-                f"punct_ratio: {quality['punct_ratio']:.2f}"
+                f"punct_ratio: {quality.get('punct_ratio', 0.0):.2f}"
             )
 
             return result
@@ -192,13 +284,13 @@ class OCRDiagnostic:
                 "word_count": 0,
             }
 
-    def preprocess_variations(self, frame: np.ndarray) -> Dict[str, np.ndarray]:
+    def preprocess_variations(self, frame: FrameArray) -> dict[str, FrameArray]:
         """Erstellt verschiedene Preprocessing-Varianten eines Frames."""
-        variations = {}
+        variations: dict[str, FrameArray] = {}
 
         # Original grayscale
         if len(frame.shape) == 3:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2_cvt_color(frame, cv2.COLOR_BGR2GRAY)
         else:
             gray = frame.copy()
         variations["original"] = gray
@@ -207,12 +299,17 @@ class OCRDiagnostic:
         variations["raw"] = gray
 
         # OTSU Threshold
-        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, otsu = cv2_threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         variations["otsu"] = otsu
 
         # Adaptive Threshold
-        adaptive = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        adaptive = cv2_adaptive_threshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            11,
+            2,
         )
         variations["adaptive"] = adaptive
 
@@ -222,23 +319,23 @@ class OCRDiagnostic:
         variations["enhanced"] = enhanced
 
         # Gaussian Blur + Threshold
-        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-        _, blur_thresh = cv2.threshold(
+        blurred = cv2_gaussian_blur(gray, (3, 3), 0)
+        _, blur_thresh = cv2_threshold(
             blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
         )
         variations["blur_thresh"] = blur_thresh
 
         # Morphological cleaning
         kernel = np.ones((2, 2), np.uint8)
-        cleaned = cv2.morphologyEx(otsu, cv2.MORPH_CLOSE, kernel)
-        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+        cleaned = cv2_morphology_ex(otsu, cv2.MORPH_CLOSE, kernel)
+        cleaned = cv2_morphology_ex(cleaned, cv2.MORPH_OPEN, kernel)
         variations["morph_clean"] = cleaned
 
         return variations
 
     def diagnose_frame(
-        self, frame: np.ndarray, frame_idx: int, roi: Optional[Dict] = None
-    ) -> List[Dict]:
+        self, frame: FrameArray, frame_idx: int, roi: OCRRoi | None = None
+    ) -> list[OCRResult]:
         """Führt vollständige Diagnose für einen Frame durch."""
         logger.info(f"🔍 Diagnosing frame {frame_idx}")
 
@@ -255,16 +352,16 @@ class OCRDiagnostic:
         # Speichere Original
         frame_dir = self.output_dir / f"frame_{frame_idx:06d}"
         frame_dir.mkdir(exist_ok=True)
-        cv2.imwrite(str(frame_dir / "original.png"), frame)
+        cv2_imwrite(str(frame_dir / "original.png"), frame)
 
-        frame_results = []
+        frame_results: list[OCRResult] = []
 
         # Teste verschiedene Preprocessing-Varianten
         variations = self.preprocess_variations(frame)
 
         for var_name, processed_img in variations.items():
             # Speichere Preprocessing-Variante
-            cv2.imwrite(str(frame_dir / f"preprocess_{var_name}.png"), processed_img)
+            cv2_imwrite(str(frame_dir / f"preprocess_{var_name}.png"), processed_img)
 
             # Teste alle OCR-Konfigurationen
             for config in self.test_configs:
@@ -275,7 +372,7 @@ class OCRDiagnostic:
 
         return frame_results
 
-    def generate_report(self, video_id: str, results: List[Dict]) -> str:
+    def generate_report(self, video_id: str, results: list[OCRResult]) -> str:
         """Generiert einen detaillierten Diagnosebericht."""
         report_path = self.output_dir / f"ocr_diagnostic_report_{video_id}.md"
 
@@ -304,7 +401,11 @@ class OCRDiagnostic:
             f.write(
                 f"- English language pack: {'✅' if setup.get('has_eng') else '❌'}\n"
             )
-            f.write(f"- Available languages: {len(setup.get('languages', []))}\n\n")
+            languages = setup.get("languages", [])
+            language_count = (
+                len(cast(list[object], languages)) if isinstance(languages, list) else 0
+            )
+            f.write(f"- Available languages: {language_count}\n\n")
 
             # Statistiken
             f.write("## OCR Statistics\n\n")
@@ -381,7 +482,7 @@ class OCRDiagnostic:
         logger.info(f"🚀 Starting OCR diagnosis for video {video_id}")
 
         # Video öffnen
-        cap = cv2.VideoCapture(video_path)  # type: ignore[call-arg]
+        cap = cv2_video_capture(video_path)
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {video_path}")
 
@@ -391,7 +492,7 @@ class OCRDiagnostic:
         # Sample-Frames auswählen (gleichmäßig verteilt)
         frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
 
-        all_results = []
+        all_results: list[OCRResult] = []
 
         for i, frame_idx in enumerate(frame_indices):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -421,7 +522,7 @@ class OCRDiagnostic:
         return report_path
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="OCR Diagnostic Tool")
     parser.add_argument("--video-path", required=True, help="Path to video file")
     parser.add_argument("--video-id", required=True, help="Video ID for reporting")

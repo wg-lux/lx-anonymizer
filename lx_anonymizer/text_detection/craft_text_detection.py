@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import cast
+from typing import Protocol, TypedDict, TypeAlias, cast
 
 import cv2
 import numpy as np
@@ -17,8 +19,35 @@ from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
+Box: TypeAlias = tuple[int, int, int, int]
 
-def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320):
+
+class _CraftOutput(TypedDict):
+    boxes: list[list[int]]
+
+
+class _CraftModel(Protocol):
+    def predict(
+        self,
+        inputs: Image.Image,
+        *,
+        text_threshold: float,
+        link_threshold: float,
+        low_text: float,
+        poly: bool,
+    ) -> list[_CraftOutput]: ...
+
+
+class _CraftModelFactory(Protocol):
+    def load(self, hub_or_local_path: str, *, device: str) -> _CraftModel: ...
+
+
+def craft_text_detection(
+    image_input: str | Path | Image.Image,
+    min_confidence: float = 0.5,
+    width: int = 320,
+    height: int = 320,
+) -> tuple[list[Box], str]:
     """
     Performs CRAFT text detection on the input image.
 
@@ -31,20 +60,21 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
     """
     try:
         # Determine if input is a file path or a PIL image, and load appropriately.
+        if width <= 0 or height <= 0:
+            raise ValueError("width and height must be positive integers")
+
         if isinstance(image_input, (str, Path)):
             image_file_path = str(image_input)
             # Use OpenCV to load the image for dimension calculations.
-            orig = cv2.imread(image_file_path)
+            orig = cast(npt.NDArray[np.uint8] | None, cv2.imread(image_file_path))
             if orig is None:
                 raise FileNotFoundError(f"Failed to load image: {image_input}")
             # Load the image using your custom load_image utility.
-            image = load_image(image_file_path)
-        elif isinstance(image_input, Image.Image):
+            image = cast(Image.Image, load_image(image_file_path))
+        else:
             # Input is already a PIL image. Convert to an OpenCV compatible image.
             orig = cv2.cvtColor(np.array(image_input), cv2.COLOR_RGB2BGR)
-            image = image_input  # Use the provided PIL image directly.
-        else:
-            raise ValueError(f"Unsupported image input type: {type(image_input)}")
+            image = image_input
 
         # Original image dimensions.
         (origH, origW) = orig.shape[:2]
@@ -53,7 +83,8 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
 
         logger.info("Loading CRAFT model...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = Model.load("hezarai/CRAFT", device=device)
+        model_factory = cast(_CraftModelFactory, Model)
+        model = model_factory.load("hezarai/CRAFT", device=device)
 
         logger.info("Running CRAFT text detection...")
         # Run the model prediction with your desired thresholds.
@@ -73,16 +104,11 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
         max_height = int(origH * 0.1)  # Maximum 10% of image height
         aspect_ratio_threshold = 10.0  # Maximum width/height ratio
 
-        output_boxes = []
-        output_confidences = []
+        output_boxes: list[Box] = []
+        output_confidences: list[dict[str, float | int]] = []
 
         # Check that outputs have the expected format.
-        if (
-            outputs
-            and isinstance(outputs, list)
-            and len(outputs) > 0
-            and "boxes" in outputs[0]
-        ):
+        if outputs and len(outputs) > 0:
             boxes = outputs[0]["boxes"]
             for box in boxes:
                 points = np.array(box, dtype=np.int32)
@@ -152,12 +178,14 @@ def craft_text_detection(image_input, min_confidence=0.5, width=320, height=320)
         raise
 
 
-def merge_close_boxes(boxes, horizontal_threshold=8):
+def merge_close_boxes(boxes: list[Box], horizontal_threshold: int = 8) -> list[Box]:
     """Merge boxes that are horizontally very close and likely part of the same word."""
     if not boxes:
-        return boxes
+        return []
+    if horizontal_threshold < 1:
+        raise ValueError("horizontal_threshold must be a positive integer")
 
-    merged = []
+    merged: list[Box] = []
     current_box = list(boxes[0])
 
     for box in boxes[1:]:
@@ -170,16 +198,18 @@ def merge_close_boxes(boxes, horizontal_threshold=8):
             current_box[2] = box[2]  # Extend to the end of the next box.
             current_box[3] = max(current_box[3], box[3])  # Take the max height.
         else:
-            merged.append(tuple(current_box))
+            merged.append(
+                (current_box[0], current_box[1], current_box[2], current_box[3])
+            )
             current_box = list(box)
 
-    merged.append(tuple(current_box))
+    merged.append((current_box[0], current_box[1], current_box[2], current_box[3]))
     return merged
 
 
-def sort_boxes(boxes, vertical_threshold=5):
+def sort_boxes(boxes: list[Box], vertical_threshold: int = 5) -> list[Box]:
     """Sort boxes by vertical position then horizontal position with a tighter threshold."""
-    boxes.sort(key=lambda b: (round(b[1] / vertical_threshold), b[0]))
-    return boxes
+    if vertical_threshold < 1:
+        raise ValueError("vertical_threshold must be a positive integer")
     boxes.sort(key=lambda b: (round(b[1] / vertical_threshold), b[0]))
     return boxes

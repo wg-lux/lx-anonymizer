@@ -1,6 +1,10 @@
 import difflib
+from collections.abc import Sequence
+from os import PathLike
+from typing import Optional, cast
 
 import cv2
+import numpy as np
 
 from lx_anonymizer._native import native as _native
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -8,7 +12,12 @@ from lx_anonymizer.setup.custom_logger import get_logger
 logger = get_logger(__name__)
 
 
-def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
+Box = tuple[int, int, int, int]
+
+
+def fuzzy_match_snippet(
+    snippet_text: str, candidates: Sequence[str], threshold: float = 0.7
+) -> tuple[Optional[str], float]:
     """
     Find the best fuzzy match for 'snippet_text' among a list of 'candidates'.
     Returns (best_match, best_ratio).
@@ -17,9 +26,12 @@ def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
     logger.debug(f"Fuzzy matching: snippet text: {snippet_text}")
 
     if _native is not None:
-        return _native.fuzzy_match_best(snippet_text, candidates, threshold)
+        return cast(
+            tuple[Optional[str], float],
+            _native.fuzzy_match_best(snippet_text, candidates, threshold),
+        )
 
-    best_match = None
+    best_match: Optional[str] = None
     best_ratio = 0.0
 
     for candidate in candidates:
@@ -35,20 +47,22 @@ def fuzzy_match_snippet(snippet_text, candidates, threshold=0.7):
 
 
 def correct_box_for_new_text(
-    image_path,
-    snippet_box,
-    old_text,
-    new_text,
-    extension_margin=15,
-    font_face=cv2.FONT_HERSHEY_SIMPLEX,
-    font_scale=1.0,
-    font_thickness=2,
-):
+    image_path: str | PathLike[str],
+    snippet_box: Box,
+    old_text: str,
+    new_text: str,
+    extension_margin: int = 15,
+    font_face: int = cv2.FONT_HERSHEY_SIMPLEX,
+    font_scale: float = 1.0,
+    font_thickness: int = 2,
+) -> Box:
     """
     If the new (corrected) text is significantly longer than the old text,
     expand the bounding box accordingly. Uses some of the box_operations helpers.
     """
-    image = cv2.imread(str(image_path))
+    image = cast(Optional[np.ndarray], cv2.imread(str(image_path)))
+    if image is None:
+        raise ValueError(f"Could not read image for box correction: {image_path}")
 
     # Calculate the text size of the old and new text
     old_size = cv2.getTextSize(old_text, font_face, font_scale, font_thickness)[0]
@@ -69,7 +83,5 @@ def correct_box_for_new_text(
     # Optionally, you could adjust height if needed
     # For instance, if new text has more lines, etc.
 
-    # Return the new bounding box
-    return (startX, startY, endX, endY)
     # Return the new bounding box
     return (startX, startY, endX, endY)

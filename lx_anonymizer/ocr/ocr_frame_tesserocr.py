@@ -18,10 +18,11 @@ import threading
 import time
 import unicodedata
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypeAlias, TypedDict, cast
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 from PIL import Image
 
 from lx_anonymizer._native import native as _native
@@ -36,7 +37,20 @@ from lx_anonymizer.regex_patterns import (
 
 logger = logging.getLogger(__name__)
 
-_TESSEROCR_MODULE: ModuleType | None = None
+FrameArray: TypeAlias = npt.NDArray[np.uint8]
+GrayArray: TypeAlias = npt.NDArray[np.uint8]
+Box: TypeAlias = Tuple[int, int, int, int]
+PsmValue: TypeAlias = int
+
+
+class OCRRoi(TypedDict):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+_tesserocr_module: ModuleType | None = None
 
 
 def _get_tesserocr_module() -> ModuleType:
@@ -48,9 +62,9 @@ def _get_tesserocr_module() -> ModuleType:
     import lazy makes Django URL/view imports safe in ASGI worker threads; OCR
     callers outside the main thread fall back to pytesseract through FrameOCR.
     """
-    global _TESSEROCR_MODULE
-    if _TESSEROCR_MODULE is not None:
-        return _TESSEROCR_MODULE
+    global _tesserocr_module
+    if _tesserocr_module is not None:
+        return _tesserocr_module
 
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError(
@@ -58,8 +72,8 @@ def _get_tesserocr_module() -> ModuleType:
             "falling back to PyTesseract for this OCR worker"
         )
 
-    _TESSEROCR_MODULE = importlib.import_module("tesserocr")
-    return _TESSEROCR_MODULE
+    _tesserocr_module = importlib.import_module("tesserocr")
+    return _tesserocr_module
 
 
 _EXPECTED_OCR_CHARS = set(
@@ -334,7 +348,7 @@ class TesseOCRFrameProcessor:
 
     # ---------------- Helpers ----------------
     @staticmethod
-    def _validate_roi(roi: Dict[str, Any]) -> bool:
+    def _validate_roi(roi: OCRRoi) -> bool:
         req = ["x", "y", "width", "height"]
         return all(k in roi for k in req) and roi["width"] > 0 and roi["height"] > 0
 
@@ -342,7 +356,7 @@ class TesseOCRFrameProcessor:
     def _is_gibberish(text: str) -> bool:
         return _is_gibberish_impl(text)
 
-    def _choose_psm_for_box(self, w, h):
+    def _choose_psm_for_box(self, w: int, h: int) -> PsmValue:
         """Choose optimal PSM based on ROI dimensions and expected content"""
         assert self._tesserocr is not None
         aspect_ratio = w / max(h, 1)
@@ -389,7 +403,9 @@ class TesseOCRFrameProcessor:
         return self._default_whitelist
 
     # ---------------- Preprocessing ----------------
-    def _preprocess_to_gray(self, frame, roi=None, mode: str = "binary"):
+    def _preprocess_to_gray(
+        self, frame: FrameArray, roi: Optional[OCRRoi] = None, mode: str = "binary"
+    ) -> GrayArray:
         if frame.ndim == 3:
             img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         else:
@@ -416,11 +432,11 @@ class TesseOCRFrameProcessor:
 
         # 2. CLAHE for adaptive contrast enhancement
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced = clahe.apply(denoised)
+        enhanced: GrayArray = clahe.apply(denoised)
 
         # 4. Detect if we have white-on-black text (common in medical overlays)
         # Calculate mean brightness to determine if inversion is needed
-        mean_brightness = np.mean(enhanced)
+        mean_brightness = float(np.mean(enhanced))
         is_dark_background = mean_brightness < 127  # More dark pixels than light
 
         if is_dark_background:
@@ -433,17 +449,21 @@ class TesseOCRFrameProcessor:
 
         # 3b. Sharpen only for binary path (can introduce halos in grayscale OCR path)
         sharpen_kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-        sharpened = cv2.filter2D(enhanced, -1, sharpen_kernel)
+        cv2_dynamic = cast(Any, cv2)
+        sharpened = cast(GrayArray, cv2_dynamic.filter2D(enhanced, -1, sharpen_kernel))
 
         # 5. Adaptive thresholding for varying lighting
         # Use THRESH_BINARY (not INV) since we already inverted if needed
-        binary = cv2.adaptiveThreshold(
-            sharpened,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,  # Changed from THRESH_BINARY_INV
-            blockSize=21,
-            C=8,
+        binary = cast(
+            GrayArray,
+            cv2_dynamic.adaptiveThreshold(
+                sharpened,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,  # Changed from THRESH_BINARY_INV
+                blockSize=21,
+                C=8,
+            ),
         )
 
         # 6. Morphological cleaning to connect broken characters
@@ -706,8 +726,9 @@ class TesseOCRFrameProcessor:
             H, W = gray.shape
             max_area = self._max_area_ratio * (W * H)
 
+            cv2_dynamic = cast(Any, cv2)
             for cnt in contours:
-                x, y, w, h = cv2.boundingRect(cnt)
+                x, y, w, h = cast(Box, cv2_dynamic.boundingRect(cnt))
                 area = w * h
                 if (
                     area < self._roi_min_area
@@ -748,11 +769,12 @@ class TesseOCRFrameProcessor:
             try:
                 # Choose DPI per mode
                 dpi = self.frame_config["high_quality_dpi" if high_quality else "dpi"]
-                has_roi = bool(roi)
+                typed_roi = cast(Optional[OCRRoi], roi)
+                has_roi = bool(typed_roi)
                 candidates: List[Tuple[str, str, float, Dict[str, Any]]] = []
                 for preprocess_mode in ("gray_clahe", "binary"):
                     processed = self._preprocess_to_gray(
-                        frame, roi, mode=preprocess_mode
+                        frame, typed_roi, mode=preprocess_mode
                     )
                     c_text, c_conf, c_meta = self._ocr_processed_image(
                         processed, has_roi=has_roi, dpi=dpi

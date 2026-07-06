@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
 import warnings
-from typing import Any, Literal, Optional, cast
+from typing import Any, Final, Literal, Optional, cast
 
 from spacy.matcher import Matcher
 from spacy.pipeline import EntityRuler
@@ -10,7 +10,7 @@ from spacy.tokens import Doc
 from lx_anonymizer.ner.determine_gender import determine_gender
 from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
 from lx_anonymizer.ner.spacy_extractor import PatientInfo
-from lx_anonymizer.ner.spacy_extractor import _clean_date
+from lx_anonymizer.ner.spacy_extractor import clean_date_value
 from lx_anonymizer.regex_patterns import DATE_DOT_FULL_RE
 
 # Compile heavy regexes once at module level
@@ -27,7 +27,7 @@ class PatientDataExtractorLg:
         "gender",
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.nlp = SpacyModelManager.get_model()
         # Initialize ruler here and add it to the pipeline
         # overwrite_ents=True allows the ruler to overwrite existing entities if needed
@@ -35,7 +35,9 @@ class PatientDataExtractorLg:
             add_pipe_kwargs: dict[str, Any] = {"config": {"overwrite_ents": True}}
             if "ner" in self.nlp.pipe_names:
                 add_pipe_kwargs["before"] = "ner"
-            self.ruler = cast(EntityRuler, self.nlp.add_pipe("entity_ruler", **add_pipe_kwargs))
+            self.ruler = cast(
+                EntityRuler, self.nlp.add_pipe("entity_ruler", **add_pipe_kwargs)
+            )
         else:
             self.ruler = cast(EntityRuler, self.nlp.get_pipe("entity_ruler"))
 
@@ -47,9 +49,9 @@ class PatientDataExtractorLg:
         Doc.set_extension("meta", default={}, force=True)
 
         # Initialize examiner ruler once
-        self._examiner_ruler = None
+        self._examiner_ruler: Optional[EntityRuler] = None
 
-    _FIELDS = {
+    _FIELDS: Final[dict[FieldName, str]] = {
         "first_name": r"first_name",
         "last_name": r"last_name",
         "dob": r"(?:patient_)?(?:dob|geb(?:urtsdatum)?)",
@@ -61,10 +63,10 @@ class PatientDataExtractorLg:
 
     @staticmethod
     def clean_date(value: str) -> Optional[str]:
-        return _clean_date(value)
+        return clean_date_value(value)
 
     def _build_regex_patterns(self) -> list[dict[str, str]]:
-        patts = []
+        patts: list[dict[str, str]] = []
         for key, lbl in self._FIELDS.items():
             # (?m) → multiline; ^\s*-? optional bullet or list dash
             pattern = rf"(?m)^\s*-?\s*{lbl}\s*[:=]\s*{self._VALUE}"

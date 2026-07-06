@@ -62,7 +62,7 @@ def normalize_roi_keys(roi: Mapping[str, Any] | None) -> NormalizedRoi | None:
     Converts mixed field names (e.g., endoscope_image_x) to a strict ROI form:
     {"x": int, "y": int, "width": int, "height": int}.
     """
-    if not roi or not isinstance(roi, Mapping):
+    if not roi:
         logger.warning("ROI normalization skipped: input is not a mapping.")
         return None
 

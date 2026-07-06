@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import importlib.metadata
+from collections.abc import Sequence
 from statistics import mean
-from typing import Any, Mapping
+from typing import Mapping, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,7 +54,7 @@ def build_anonymizer_provenance(
 
 
 def summarize_frame_observations(
-    observations: list[Mapping[str, Any]],
+    observations: list[Mapping[str, object]],
 ) -> tuple[list[str], dict[str, int]]:
     detector_sources: set[str] = set()
     proposal_counts = {
@@ -64,13 +65,18 @@ def summarize_frame_observations(
     for observation in observations:
         if bool(observation.get("is_sensitive")):
             proposal_counts["sensitive_frames"] += 1
-        for source_tag in observation.get("source_tags") or []:
-            if isinstance(source_tag, str) and source_tag:
-                detector_sources.add(source_tag)
+        source_tags = observation.get("source_tags")
+        if isinstance(source_tags, Sequence) and not isinstance(
+            source_tags, (str, bytes)
+        ):
+            for source_tag in cast(Sequence[object], source_tags):
+                if isinstance(source_tag, str) and source_tag:
+                    detector_sources.add(source_tag)
         regions = observation.get("phi_regions")
         if isinstance(regions, list):
-            proposal_counts["phi_regions"] += len(regions)
-            if regions:
+            phi_regions = cast(list[object], regions)
+            proposal_counts["phi_regions"] += len(phi_regions)
+            if phi_regions:
                 detector_sources.add("phi_detector")
     return sorted(detector_sources), proposal_counts
 

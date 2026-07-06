@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Dict, List, Optional, Protocol, Tuple, TypedDict, Union, cast
 
 import numpy as np
 import pytesseract  # type: ignore[import-untyped]
@@ -7,12 +8,64 @@ from PIL import Image
 from lx_anonymizer.ocr.ocr_preprocessing import preprocess_image
 from lx_anonymizer.setup.custom_logger import logger
 
+TesseractDataDict = Dict[str, list[str]]
+ScaleResultMetadata = Dict[str, Union[float, int, str]]
+ScaleResultsMetadata = Dict[str, ScaleResultMetadata]
+PyramidMetadataValue = Union[float, ScaleResultsMetadata, Dict[str, float]]
+PyramidMetadata = Dict[str, PyramidMetadataValue]
+PyramidOcrResult = Tuple[str, PyramidMetadata]
+
+
+class BlockWord(TypedDict):
+    text: str
+    left: str
+    top: str
+    width: str
+    height: str
+
+
+class _TesseractImageToString(Protocol):
+    def __call__(self, image: Image.Image, *, config: str = "") -> str: ...
+
+
+class _TesseractImageToData(Protocol):
+    def __call__(
+        self, image: Image.Image, *, output_type: object, config: str = ""
+    ) -> TesseractDataDict: ...
+
+
+class _TesseractOutput(Protocol):
+    DICT: object
+
+
+class _TesseractModule(Protocol):
+    image_to_string: _TesseractImageToString
+    image_to_data: _TesseractImageToData
+    Output: _TesseractOutput
+
+
+class _Cv2Module(Protocol):
+    boundingRect: Callable[[object], tuple[int, int, int, int]]
+
+
+_PYTESSERACT = cast(_TesseractModule, pytesseract)
+
+
+def _image_to_string(image: Image.Image, config: str = "") -> str:
+    return _PYTESSERACT.image_to_string(image, config=config)
+
+
+def _image_to_data(image: Image.Image, config: str = "") -> TesseractDataDict:
+    return _PYTESSERACT.image_to_data(
+        image, output_type=_PYTESSERACT.Output.DICT, config=config
+    )
+
 
 def pyramid_ocr(
     image: Image.Image,
     scales: Optional[List[float]] = None,
     preprocessing_methods: Optional[List[str]] = None,
-) -> Tuple[str, Dict]:
+) -> PyramidOcrResult:
     """
     Process an image at multiple scales and combine results for best OCR output.
 
@@ -31,9 +84,10 @@ def pyramid_ocr(
     if preprocessing_methods is None:
         preprocessing_methods = ["grayscale", "contrast", "sharpen"]
 
-    results = []
-    confidences = []
-    metadata: Dict[str, Any] = {"scale_results": {}}
+    results: list[str] = []
+    confidences: list[float] = []
+    scale_results: ScaleResultsMetadata = {}
+    metadata: PyramidMetadata = {"scale_results": scale_results}
 
     for scale in scales:
         logger.info(f"Processing image at scale {scale}")
@@ -55,10 +109,8 @@ def pyramid_ocr(
             config = f"--oem 1 --psm {psm}"
 
             # Extract text and data for confidence calculation
-            text = pytesseract.image_to_string(processed_image, config=config)
-            data = pytesseract.image_to_data(
-                processed_image, output_type=pytesseract.Output.DICT, config=config
-            )
+            text = _image_to_string(processed_image, config=config)
+            data = _image_to_data(processed_image, config=config)
 
             # Calculate average confidence, excluding negative values
             confidences_list = [
@@ -73,7 +125,7 @@ def pyramid_ocr(
             confidences.append(avg_confidence)
 
             # Add to metadata
-            metadata["scale_results"][str(scale)] = {
+            scale_results[str(scale)] = {
                 "confidence": avg_confidence,
                 "text_length": len(text),
                 "word_count": len(text.split()),
@@ -87,7 +139,7 @@ def pyramid_ocr(
             logger.error(f"OCR processing failed at scale {scale}: {str(e)}")
             results.append("")
             confidences.append(0)
-            metadata["scale_results"][str(scale)] = {"error": str(e)}
+            scale_results[str(scale)] = {"error": str(e)}
 
     # Choose best scale based on confidence
     best_index = confidences.index(max(confidences)) if any(confidences) else 0
@@ -138,15 +190,13 @@ def segment_and_ocr(
 
     if segmentation_mode == "blocks":
         # Use Tesseract to find text blocks
-        data = pytesseract.image_to_data(
-            processed_image, output_type=pytesseract.Output.DICT
-        )
+        data = _image_to_data(processed_image)
 
         # Group words into blocks based on block_num
-        blocks: Dict[int, List[Dict[str, Any]]] = {}
+        blocks: Dict[int, List[BlockWord]] = {}
         for i in range(len(data["text"])):
             if data["text"][i].strip():
-                block_num = data["block_num"][i]
+                block_num = int(data["block_num"][i])
                 if block_num not in blocks:
                     blocks[block_num] = []
                 blocks[block_num].append(
@@ -165,7 +215,7 @@ def segment_and_ocr(
         )
 
         # Extract text from each block
-        text_blocks = []
+        text_blocks: list[str] = []
         for block in sorted_blocks:
             block_text = " ".join(word["text"] for word in block)
             text_blocks.append(block_text)
@@ -201,11 +251,12 @@ def segment_and_ocr(
         )
 
         # Process each cell
-        cell_texts = []
+        cell_texts: list[str] = []
+        cv2_typed = cast(_Cv2Module, cv2)
         for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
+            x, y, w, h = cv2_typed.boundingRect(contour)
             cell_image = processed_image.crop((x, y, x + w, y + h))
-            cell_text = pytesseract.image_to_string(cell_image)
+            cell_text = _image_to_string(cell_image)
             cell_texts.append(cell_text.strip())
 
         return "\n".join(cell_texts)
@@ -214,7 +265,7 @@ def segment_and_ocr(
         # Simplified layout analysis - divide into rows
         row_height = height // 10  # Divide image into 10 rows
 
-        row_texts = []
+        row_texts: list[str] = []
         for i in range(10):
             y_start = i * row_height
             y_end = (i + 1) * row_height
@@ -224,7 +275,7 @@ def segment_and_ocr(
                 continue
 
             row_image = processed_image.crop((0, y_start, width, y_end))
-            row_text = pytesseract.image_to_string(row_image)
+            row_text = _image_to_string(row_image)
 
             if row_text.strip():
                 row_texts.append(row_text.strip())
@@ -233,7 +284,7 @@ def segment_and_ocr(
 
     else:
         # Fallback - process entire image
-        return pytesseract.image_to_string(processed_image)
+        return _image_to_string(processed_image)
 
 
 def adaptive_multi_engine_ocr(image: Image.Image) -> str:
@@ -284,7 +335,7 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
 
     # Default: try both Tesseract and TrOCR and pick the best result
     try:
-        tesseract_text = pytesseract.image_to_string(image)
+        tesseract_text = _image_to_string(image)
     except Exception as e:
         logger.error(f"Tesseract OCR failed: {str(e)}")
         tesseract_text = ""
@@ -303,7 +354,4 @@ def adaptive_multi_engine_ocr(image: Image.Image) -> str:
         return trocr_text
     else:
         logger.info("Tesseract produced better results (more content)")
-        return tesseract_text
-        logger.info("Tesseract produced better results (more content)")
-        return tesseract_text
         return tesseract_text

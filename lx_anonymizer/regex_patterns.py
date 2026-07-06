@@ -18,9 +18,7 @@ NON_DIGIT_RE: Final[Pattern[str]] = re.compile(r"\D")
 
 DATE_8_DIGIT_RE: Final[Pattern[str]] = re.compile(r"\d{8}")
 DATE_DOT_FULL_RE: Final[Pattern[str]] = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
-DATE_DOT_FLEX_RE: Final[Pattern[str]] = re.compile(
-    r"^\d{1,2}\.\d{1,2}\.\d{2,4}$"
-)
+DATE_DOT_FLEX_RE: Final[Pattern[str]] = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$")
 DATE_TEXT_RE: Final[Pattern[str]] = re.compile(
     r"(\d{1,2}[.\s]?\d{1,2}[.\s]?\d{2,4})|(\d{8})"
 )
@@ -74,7 +72,9 @@ LLM_TITLE_TOKEN_RE: Final[Pattern[str]] = re.compile(
     r"\b(?:herrn?|frau|Herr||fru|monsieur|madame|dr\.?|prof\.?|professor|ing\.?)\b",
     re.IGNORECASE,
 )
-LLM_AGE_TOKEN_RE: Final[Pattern[str]] = re.compile(r"\b\d{1,3}\s*jahre?\b", re.IGNORECASE)
+LLM_AGE_TOKEN_RE: Final[Pattern[str]] = re.compile(
+    r"\b\d{1,3}\s*jahre?\b", re.IGNORECASE
+)
 LLM_NARRATIVE_TOKEN_RE: Final[Pattern[str]] = re.compile(
     r"\b(?:befund|patient|screening|beschwerden|koloskopie|gastroskopie)\b",
     re.IGNORECASE,

@@ -1,17 +1,46 @@
 import io
+from os import PathLike
+from typing import Any, Protocol, cast
 
 import torch  # type: ignore[import-not-found]
 from PIL import Image
 from transformers import AutoModel, AutoTokenizer  # type: ignore[import-untyped]
 
+
+class GotTokenizer(Protocol):
+    eos_token_id: int
+
+
+class GotModel(Protocol):
+    def eval(self) -> "GotModel": ...
+
+    def cuda(self) -> "GotModel": ...
+
+    def chat(self, tokenizer: GotTokenizer, image: bytes, ocr_type: str) -> str: ...
+
+
+ImageInput = Image.Image | str | PathLike[str]
+
+
+class AutoTokenizerFactory(Protocol):
+    def from_pretrained(self, model_id: str, **kwargs: Any) -> GotTokenizer: ...
+
+
+class AutoModelFactory(Protocol):
+    def from_pretrained(self, model_id: str, **kwargs: Any) -> GotModel: ...
+
+
+auto_tokenizer = cast(AutoTokenizerFactory, AutoTokenizer)
+auto_model = cast(AutoModelFactory, AutoModel)
+
 # Check if CUDA is available and set device accordingly
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 try:
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = auto_tokenizer.from_pretrained(
         "ucaslcl/GOT-OCR2_0", trust_remote_code=True
     )
-    model = AutoModel.from_pretrained(
+    model = auto_model.from_pretrained(
         "ucaslcl/GOT-OCR2_0",
         trust_remote_code=True,
         use_safetensors=True,
@@ -25,7 +54,7 @@ except Exception as e:
     raise
 
 
-def ocr(image):
+def ocr(image: ImageInput) -> str:
     """
     Perform OCR on an image.
 

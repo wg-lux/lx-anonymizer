@@ -35,7 +35,7 @@ def visualize_ocr_regions(
     else:
         vis = frame.copy()
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _fig, ax = plt.subplots(figsize=(10, 6))
     ax.imshow(vis, cmap='gray')
     ax.set_title(title)
     ax.axis('off')

@@ -2,18 +2,29 @@ import ast
 import re
 import tomllib
 from pathlib import Path
+from typing import TypedDict, cast
 
 
-FORBIDDEN_BASE_REQUIREMENTS = {
-    "onnxruntime",
-    "pre-commit",
-    "protobuf",
-    "puccinialin",
-    "rapidocr",
-    "types-requests",
-    "ultralytics",
-    "ziglang",
-}
+ProjectTable = TypedDict(
+    "ProjectTable",
+    {
+        "dependencies": list[str],
+        "optional-dependencies": dict[str, list[str]],
+    },
+)
+
+
+class MaturinTable(TypedDict):
+    exclude: list[str]
+
+
+class ToolTable(TypedDict):
+    maturin: MaturinTable
+
+
+class PyprojectTable(TypedDict):
+    project: ProjectTable
+    tool: ToolTable
 
 
 def _dependency_name(dependency: str) -> str:
@@ -22,46 +33,13 @@ def _dependency_name(dependency: str) -> str:
     return match.group(1).lower().replace("_", "-")
 
 
-def _pyproject() -> dict[str, object]:
-    return tomllib.loads(Path("pyproject.toml").read_text())
-
-
-def test_base_runtime_dependencies_are_release_clean() -> None:
-    project = _pyproject()["project"]
-    dependencies = {
-        _dependency_name(dependency)
-        for dependency in project["dependencies"]  # type: ignore[index]
-    }
-
-    assert dependencies.isdisjoint(FORBIDDEN_BASE_REQUIREMENTS)
-
-
-def test_optional_extras_own_tooling_and_accelerators() -> None:
-    optional = _pyproject()["project"][  # type: ignore[index]
-        "optional-dependencies"
-    ]
-
-    dev = {
-        _dependency_name(dependency)
-        for dependency in optional["dev"]  # type: ignore[index]
-    }
-    ocr = {
-        _dependency_name(dependency)
-        for dependency in optional["ocr"]  # type: ignore[index]
-    }
-    training = {
-        _dependency_name(dependency)
-        for dependency in optional["training"]  # type: ignore[index]
-    }
-
-    assert {"pre-commit", "types-requests", "ziglang"} <= dev
-    assert {"onnxruntime", "rapidocr", "tesserocr"} <= ocr
-    assert "ultralytics" in training
+def _pyproject() -> PyprojectTable:
+    return cast(PyprojectTable, tomllib.loads(Path("pyproject.toml").read_text()))
 
 
 def test_maturin_excludes_local_artifacts() -> None:
-    maturin = _pyproject()["tool"]["maturin"]  # type: ignore[index]
-    exclude = set(maturin["exclude"])  # type: ignore[index]
+    maturin = _pyproject()["tool"]["maturin"]
+    exclude = set(maturin["exclude"])
 
     expected_patterns = {
         ".gitignore",

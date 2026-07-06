@@ -5,8 +5,12 @@ import subprocess
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, NamedTuple
+from typing import Mapping, cast
 
+from lx_dtypes.models.contracts.video_processing import (
+    VideoMaskConfig,
+    VideoMaskRegionCore,
+)
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 from lx_anonymizer.video_processing import video_utils
 
@@ -16,19 +20,6 @@ logger = logging.getLogger(__name__)
 class MaskMode(str, Enum):
     PRESERVE_DIMENSIONS = "preserve_dimensions"
     CROP = "crop"
-
-
-class MaskRegion(NamedTuple):
-    x: int
-    y: int
-    width: int
-    height: int
-    image_width: int
-    image_height: int
-    configured_x: int
-    configured_y: int
-    configured_width: int
-    configured_height: int
 
 
 @dataclass(frozen=True)
@@ -42,28 +33,22 @@ class DimensionBackfillResult:
 
 class MaskApplication:
     def __init__(
-        self, preferred_encoder: Dict[str, Any], device_name: str = "olympus_cv_1500"
+        self,
+        preferred_encoder: Mapping[str, object],
+        device_name: str = "olympus_cv_1500",
     ):
-        self.preferred_encoder = preferred_encoder
+        self.preferred_encoder = dict(preferred_encoder)
         self.video_encoder = VideoEncoder()
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
         self.device_name = device_name
 
         # Default mask configuration based on olympus_cv_1500_mask.json
-        self.default_mask_config = {
-            "image_width": 0,
-            "image_height": 0,
-            "x": 550,
-            "y": 0,
-            "width": 1350,
-            "height": 1080,
-        }
-        self.default_mask_config = self._canonicalize_mask_config(self._load_mask())
+        self.default_mask_config: VideoMaskConfig = self._load_mask()
 
     def mask_video_streaming(
         self,
         input_video: Path,
-        mask_config: Dict[str, Any],
+        mask_config: Mapping[str, object],
         output_video: Path,
         use_named_pipe: bool = False,
         mode: MaskMode | str = MaskMode.PRESERVE_DIMENSIONS,
@@ -168,14 +153,22 @@ class MaskApplication:
             return False
 
     @staticmethod
-    def _coerce_int(value: Any, fallback: int) -> int:
+    def _coerce_int(value: object, fallback: int) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if not isinstance(value, str):
+            return fallback
         try:
             return int(value)
         except (TypeError, ValueError):
             return fallback
 
     @staticmethod
-    def _canonicalize_mask_config(mask_config: Dict[str, Any] | None) -> Dict[str, Any]:
+    def _canonicalize_mask_config(
+        mask_config: Mapping[str, object] | None,
+    ) -> dict[str, object]:
         canonical = dict(mask_config or {})
         for canonical_key, legacy_key in (
             ("x", "endoscope_image_x"),
@@ -200,24 +193,30 @@ class MaskApplication:
     def _resolve_mask_region(
         self,
         input_video: Path,
-        mask_config: Dict[str, Any] | None,
-    ) -> MaskRegion | None:
+        mask_config: Mapping[str, object] | None,
+    ) -> VideoMaskRegionCore | None:
         normalized_config = self._canonicalize_mask_config(mask_config)
-        effective_config = self._canonicalize_mask_config(self.default_mask_config)
-        for key, value in normalized_config.items():
-            if value is not None:
-                effective_config[key] = value
+        effective_config = self.default_mask_config.model_dump()
+        effective_config.update(normalized_config)
 
-        endoscope_x = self._coerce_int(effective_config.get("x"), 550)
-        endoscope_y = self._coerce_int(effective_config.get("y"), 0)
-        endoscope_w = self._coerce_int(effective_config.get("width"), 1350)
-        endoscope_h = self._coerce_int(effective_config.get("height"), 1080)
-        configured_x = endoscope_x
-        configured_y = endoscope_y
-        configured_w = endoscope_w
-        configured_h = endoscope_h
-        config_image_width = self._coerce_int(effective_config.get("image_width"), 0)
-        config_image_height = self._coerce_int(effective_config.get("image_height"), 0)
+        config_image_width = self._coerce_int(
+            effective_config.get("image_width"), self.default_mask_config.image_width
+        )
+        config_image_height = self._coerce_int(
+            effective_config.get("image_height"), self.default_mask_config.image_height
+        )
+        configured_x = self._coerce_int(
+            effective_config.get("x"), self.default_mask_config.x
+        )
+        configured_y = self._coerce_int(
+            effective_config.get("y"), self.default_mask_config.y
+        )
+        configured_w = self._coerce_int(
+            effective_config.get("width"), self.default_mask_config.width
+        )
+        configured_h = self._coerce_int(
+            effective_config.get("height"), self.default_mask_config.height
+        )
 
         format_info = video_utils.detect_video_format(input_video)
         image_width = self._coerce_int(format_info.get("width"), 0)
@@ -239,27 +238,32 @@ class MaskApplication:
         ):
             x_ratio = image_width / config_image_width
             y_ratio = image_height / config_image_height
-            scaled_x = int(round(endoscope_x * x_ratio))
-            scaled_y = int(round(endoscope_y * y_ratio))
-            scaled_w = int(round(endoscope_w * x_ratio))
-            scaled_h = int(round(endoscope_h * y_ratio))
+            scaled_x = int(round(configured_x * x_ratio))
+            scaled_y = int(round(configured_y * y_ratio))
+            scaled_w = int(round(configured_w * x_ratio))
+            scaled_h = int(round(configured_h * y_ratio))
             logger.info(
                 "Scaling mask ROI from configured %dx%d to actual %dx%d: x=%d->%d y=%d->%d w=%d->%d h=%d->%d",
                 config_image_width,
                 config_image_height,
                 image_width,
                 image_height,
-                endoscope_x,
+                configured_x,
                 scaled_x,
-                endoscope_y,
+                configured_y,
                 scaled_y,
-                endoscope_w,
+                configured_w,
                 scaled_w,
-                endoscope_h,
+                configured_h,
                 scaled_h,
             )
             endoscope_x, endoscope_y = scaled_x, scaled_y
             endoscope_w, endoscope_h = scaled_w, scaled_h
+        else:
+            endoscope_x = configured_x
+            endoscope_y = configured_y
+            endoscope_w = configured_w
+            endoscope_h = configured_h
 
         if endoscope_w <= 0 or endoscope_h <= 0:
             logger.error(
@@ -306,7 +310,7 @@ class MaskApplication:
             )
             return None
 
-        return MaskRegion(
+        return VideoMaskRegionCore(
             x=mask_x,
             y=mask_y,
             width=mask_w,
@@ -320,7 +324,9 @@ class MaskApplication:
         )
 
     @staticmethod
-    def _align_region_for_crop(region: MaskRegion) -> MaskRegion | None:
+    def _align_region_for_crop(
+        region: VideoMaskRegionCore,
+    ) -> VideoMaskRegionCore | None:
         crop_x = region.x
         crop_y = region.y
         crop_w = region.width
@@ -351,9 +357,11 @@ class MaskApplication:
             )
             return None
 
-        return region._replace(x=crop_x, y=crop_y, width=crop_w, height=crop_h)
+        return region.model_copy(
+            update={"x": crop_x, "y": crop_y, "width": crop_w, "height": crop_h}
+        )
 
-    def _build_video_filter(self, region: MaskRegion, mode: MaskMode) -> str:
+    def _build_video_filter(self, region: VideoMaskRegionCore, mode: MaskMode) -> str:
         if mode == MaskMode.CROP:
             crop_region = self._align_region_for_crop(region)
             if crop_region is None:
@@ -368,7 +376,7 @@ class MaskApplication:
                 return ""
             return f"crop={crop_region.width}:{crop_region.height}:{crop_region.x}:{crop_region.y}"
 
-        filters = []
+        filters: list[str] = []
         if region.x > 0:
             filters.append(f"drawbox=0:0:{region.x}:ih:color=black@1:t=fill")
         right_x = region.x + region.width
@@ -411,7 +419,7 @@ class MaskApplication:
     def _verify_output_dimensions(
         self,
         output_video: Path,
-        region: MaskRegion,
+        region: VideoMaskRegionCore,
         mode: MaskMode,
     ) -> bool:
         output_info = video_utils.detect_video_format(output_video)
@@ -444,7 +452,7 @@ class MaskApplication:
         *,
         source_video: Path,
         anonymized_video: Path,
-        mask_config: Dict[str, Any],
+        mask_config: Mapping[str, object],
         dry_run: bool = False,
     ) -> DimensionBackfillResult:
         """
@@ -530,8 +538,8 @@ class MaskApplication:
             temp_output.unlink(missing_ok=True)
 
     def create_mask_config_from_roi(
-        self, endoscope_image_roi: dict[str, int]
-    ) -> Dict[str, Any]:
+        self, endoscope_image_roi: Mapping[str, object]
+    ) -> VideoMaskConfig:
         """
         Create mask config dictionary from ROI.
         Args:
@@ -539,21 +547,22 @@ class MaskApplication:
         Returns:
             Mask config dictionary
         """
-        default_image_width = self.default_mask_config.get("image_width")
-        default_image_height = self.default_mask_config.get("image_height")
+        return VideoMaskConfig.model_validate(
+            {
+                "x": endoscope_image_roi["x"],
+                "y": endoscope_image_roi["y"],
+                "width": endoscope_image_roi["width"],
+                "height": endoscope_image_roi["height"],
+                "image_width": endoscope_image_roi.get(
+                    "image_width", self.default_mask_config.image_width
+                ),
+                "image_height": endoscope_image_roi.get(
+                    "image_height", self.default_mask_config.image_height
+                ),
+            }
+        )
 
-        return {
-            "x": endoscope_image_roi.get("x"),
-            "y": endoscope_image_roi.get("y"),
-            "width": endoscope_image_roi.get("width"),
-            "height": endoscope_image_roi.get("height"),
-            "image_width": endoscope_image_roi.get("image_width")
-            or default_image_width,
-            "image_height": endoscope_image_roi.get("image_height")
-            or default_image_height,
-        }
-
-    def _load_mask(self) -> Dict[str, Any]:
+    def _load_mask(self) -> VideoMaskConfig:
         masks_dir = Path(__file__).parent / "masks"
         mask_file = masks_dir / f"{self.device_name}_mask.json"
         stub = {
@@ -567,7 +576,10 @@ class MaskApplication:
 
         try:
             with mask_file.open() as f:
-                return json.load(f)  # works if file is valid
+                loaded = cast(dict[str, object], json.load(f))
+                normalized = self._canonicalize_mask_config(loaded)
+                normalized.pop("description", None)
+                return VideoMaskConfig.model_validate(normalized)
         except (FileNotFoundError, json.JSONDecodeError):
             # create or overwrite with a fresh stub
             masks_dir.mkdir(parents=True, exist_ok=True)
@@ -577,7 +589,7 @@ class MaskApplication:
                 "Created or repaired mask file %s – please verify coordinates.",
                 mask_file,
             )
-            return stub
+            return VideoMaskConfig.model_validate(stub)
 
         except (json.JSONDecodeError, IOError) as e:
             logger.error(

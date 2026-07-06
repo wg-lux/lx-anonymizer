@@ -206,7 +206,7 @@ def read_name_boxes(
         return first_name_box, last_name_box
 
 
-def read_background_color(device):
+def read_background_color(device: str) -> str | tuple[int, ...]:
     device_file_path = Path(base_dir) / f"devices/{device}.json"
     logger.debug(f"reading device background color config for {device}")
     with open(str(device_file_path)) as json_parameters:

@@ -1,7 +1,9 @@
-from typing import Any
+from typing import Any, cast
 import cv2
 from pathlib import Path
 import uuid
+import numpy as np
+from numpy.typing import NDArray
 from lx_anonymizer.setup.custom_logger import get_logger
 
 
@@ -11,10 +13,10 @@ logger = get_logger(__name__)
 
 def reassemble_image(
     modified_images_map: dict[tuple[tuple[str, Any], str], str],
-    output_dir,
-    id,
-    original_image_path=None,
-):
+    output_dir: str | Path,
+    id: str,
+    original_image_path: str | Path | None = None,
+) -> Path | None:
     """
     Reassembles an image by overlaying modified image regions (patches) on the original image.
 
@@ -37,9 +39,10 @@ def reassemble_image(
 
     # Load the original image only once
     logger.info(f"Loading original image from {str(original_image_path)}.")
-    curr_image = cv2.imread(
-        str(original_image_path)
-    )  # cv2.imread expects a string path
+    curr_image = cast(
+        NDArray[np.uint8] | None,
+        cv2.imread(str(original_image_path)),
+    )
     if curr_image is None:
         logger.error(f"Could not load original image from {str(original_image_path)}.")
         return None
@@ -52,7 +55,10 @@ def reassemble_image(
         logger.info(
             f"Processing box {box_key} with modified image {str(modified_image_path)}."
         )
-        modified_image = cv2.imread(str(modified_image_path))
+        modified_image = cast(
+            NDArray[np.uint8] | None,
+            cv2.imread(str(modified_image_path)),
+        )
         if modified_image is None:
             logger.warning(
                 f"Could not load modified image from {str(modified_image_path)}. Skipping this modification."

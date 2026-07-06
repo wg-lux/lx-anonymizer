@@ -106,7 +106,8 @@ def get_dominant_color(
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)  # type: ignore
     flags = cv2.KMEANS_RANDOM_CENTERS  # type: ignore
 
-    _, labels, palette = cv2.kmeans(
+    kmeans = getattr(cast(Any, cv2), "kmeans")
+    _, labels, palette = kmeans(
         cast(Any, pixels), n_colors, cast(Any, None), criteria, 10, flags
     )
     _, counts = np.unique(labels, return_counts=True)

@@ -3,7 +3,14 @@ from lx_anonymizer.setup.custom_logger import get_logger
 logger = get_logger(__name__)
 
 
-def expand_roi(startX, startY, endX, endY, expansion, image_shape):
+def expand_roi(
+    startX: int,
+    startY: int,
+    endX: int,
+    endY: int,
+    expansion: int,
+    image_shape: tuple[int, int, int] | tuple[int, int],
+) -> tuple[int, int, int, int]:
     """
     Expand the ROI by a certain number of pixels in all directions and ensure it is within image boundaries.
 

@@ -7,15 +7,84 @@ import subprocess
 import json
 import logging
 import unicodedata
-import re
 import cv2
 import numpy as np
+import numpy.typing as npt
 import pytesseract  # type: ignore[import-untyped]
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Any, Callable, Literal, Optional, Protocol, TypedDict, cast
 from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, REPEATED_CHAR_RE
 
 logger = logging.getLogger(__name__)
+
+FrameArray = npt.NDArray[np.uint8]
+
+
+class OCRConfig(TypedDict):
+    lang: str
+    psm: int
+    oem: int
+    dpi: int
+
+
+class OCRRoi(TypedDict):
+    x: int | float
+    y: int | float
+    width: int | float
+    height: int | float
+
+
+class OCRQuality(TypedDict):
+    len: int
+    letters: int
+    digits: int
+    punct: int
+    whitespace: int
+    punct_ratio: float
+    words: int
+    readable_words: int
+    repeated_chars: int
+    special_symbols: int
+    is_gibberish: bool
+    gibberish_score: float
+
+
+class DiagnosticSample(OCRQuality):
+    frame_id: int
+    text: str
+    confidence: float
+    roi: str
+
+
+class TesseractData(TypedDict):
+    text: list[str]
+    conf: list[str]
+
+
+class TesseractOutput(Protocol):
+    DICT: Literal["dict"]
+
+
+class TesseractModule(Protocol):
+    Output: TesseractOutput
+
+    def image_to_data(
+        self,
+        image: FrameArray,
+        *,
+        lang: str,
+        config: str,
+        output_type: Literal["dict"],
+    ) -> TesseractData: ...
+
+
+Cv2ImageFunc = Callable[..., FrameArray]
+
+tesseract = cast(TesseractModule, pytesseract)
+cv2_cvt_color = cast(Cv2ImageFunc, cv2.cvtColor)
+cv2_bilateral_filter = cast(Cv2ImageFunc, cv2.bilateralFilter)
+cv2_adaptive_threshold = cast(Cv2ImageFunc, getattr(cv2, "adaptiveThreshold"))
+cv2_imwrite = cast(Callable[[str, FrameArray], bool], cv2.imwrite)
 
 
 class DiagnosticFrameOCR:
@@ -36,9 +105,9 @@ class DiagnosticFrameOCR:
         # Enhanced OCR configuration with robust defaults
         self.ocr_config = self._get_robust_ocr_config()
         self.frame_count = 0
-        self.diag_samples: list[dict[str, Any]] = []
+        self.diag_samples: list[DiagnosticSample] = []
 
-    def _get_robust_ocr_config(self) -> Dict[str, Any]:
+    def _get_robust_ocr_config(self) -> OCRConfig:
         """Get robust OCR configuration based on environment or defaults."""
         return {
             "lang": os.getenv("OCR_LANG", "deu+eng"),
@@ -72,7 +141,7 @@ class DiagnosticFrameOCR:
         except Exception as e:
             logger.error(f"Tesseract setup check failed: {e}")
 
-    def _analyze_text_quality(self, text: str) -> Dict[str, Any]:
+    def _analyze_text_quality(self, text: str) -> OCRQuality:
         """Analyze OCR text quality and detect gibberish patterns."""
         if not text:
             return {
@@ -80,9 +149,12 @@ class DiagnosticFrameOCR:
                 "letters": 0,
                 "digits": 0,
                 "punct": 0,
+                "whitespace": 0,
                 "punct_ratio": 0.0,
                 "words": 0,
                 "readable_words": 0,
+                "repeated_chars": 0,
+                "special_symbols": 0,
                 "is_gibberish": True,
                 "gibberish_score": 1.0,
             }
@@ -140,18 +212,19 @@ class DiagnosticFrameOCR:
         }
 
     def _preprocess_for_ocr(
-        self, frame: np.ndarray, roi: Optional[Dict] = None
-    ) -> np.ndarray:
+        self, frame: FrameArray, roi: Optional[OCRRoi] = None
+    ) -> FrameArray:
         """Improved preprocessing with reduced aggressive filtering."""
         try:
             # Apply ROI if specified
-            if roi and self._validate_roi(roi):
-                x, y, w, h = roi["x"], roi["y"], roi["width"], roi["height"]
+            normalized_roi = self._normalize_roi(roi)
+            if normalized_roi is not None:
+                x, y, w, h = normalized_roi
                 frame = frame[y : y + h, x : x + w]
 
             # Convert to grayscale if needed
             if len(frame.shape) == 3:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                gray = cv2_cvt_color(frame, cv2.COLOR_BGR2GRAY)
             else:
                 gray = frame.copy()
 
@@ -160,14 +233,14 @@ class DiagnosticFrameOCR:
                 # Improved preprocessing based on diagnostic results
 
                 # Mild noise reduction
-                denoised = cv2.bilateralFilter(gray, 9, 75, 75)
+                denoised = cv2_bilateral_filter(gray, 9, 75, 75)
 
                 # Contrast enhancement
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                clahe = cast(Any, cv2).createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                 enhanced = clahe.apply(denoised)
 
                 # Adaptive thresholding
-                processed = cv2.adaptiveThreshold(
+                processed = cv2_adaptive_threshold(
                     enhanced,
                     255,
                     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -190,30 +263,33 @@ class DiagnosticFrameOCR:
             return (
                 frame
                 if len(frame.shape) == 2
-                else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                else cv2_cvt_color(frame, cv2.COLOR_BGR2GRAY)
             )
 
-    def _validate_roi(self, roi: Dict[str, Any]) -> bool:
-        """Validate ROI dictionary."""
-        required_keys = ["x", "y", "width", "height"]
-        if not all(key in roi for key in required_keys):
-            return False
-
+    def _normalize_roi(self, roi: Optional[OCRRoi]) -> tuple[int, int, int, int] | None:
+        """Validate and convert ROI values to slice-safe integers."""
+        if roi is None:
+            return None
         try:
             x, y, w, h = roi["x"], roi["y"], roi["width"], roi["height"]
-            return all(
-                isinstance(val, (int, float)) and val >= 0 for val in [x, y, w, h]
-            )
-        except (TypeError, ValueError):
-            return False
+        except KeyError:
+            return None
+
+        if not all(val >= 0 for val in (x, y, w, h)):
+            return None
+        return int(x), int(y), int(w), int(h)
+
+    def _validate_roi(self, roi: OCRRoi) -> bool:
+        """Validate ROI dictionary."""
+        return self._normalize_roi(roi) is not None
 
     def extract_text_from_frame(
         self,
-        frame: np.ndarray,
-        roi: Optional[Dict[str, Any]] = None,
+        frame: FrameArray,
+        roi: Optional[OCRRoi] = None,
         high_quality: bool = True,
         frame_id: Optional[int] = None,
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         """Extract text with diagnostic capabilities and gibberish detection."""
         try:
             # Preprocess frame
@@ -226,16 +302,16 @@ class DiagnosticFrameOCR:
             )
 
             # Perform OCR
-            ocr_data = pytesseract.image_to_data(
+            ocr_data = tesseract.image_to_data(
                 processed_frame,
                 lang=config["lang"],
                 config=tesseract_config,
-                output_type=pytesseract.Output.DICT,
+                output_type=tesseract.Output.DICT,
             )
 
             # Extract and filter words
-            words = []
-            confidences = []
+            words: list[str] = []
+            confidences: list[int] = []
 
             for i, word in enumerate(ocr_data["text"]):
                 if word.strip():
@@ -283,27 +359,27 @@ class DiagnosticFrameOCR:
                 f"gibberish: {quality['gibberish_score']:.2f}"
             )
 
-            return text, mean_conf, ocr_data
+            return text, mean_conf, cast(dict[str, Any], ocr_data)
 
         except Exception as e:
             logger.error(f"OCR extraction failed: {e}")
             return "", 0.0, {}
 
-    def _try_alternative_ocr(self, image: np.ndarray) -> Tuple[str, float]:
+    def _try_alternative_ocr(self, image: FrameArray) -> tuple[str, float]:
         """Try alternative OCR configuration for better results."""
         try:
             # Try single line mode (PSM 7)
             alt_config = "--oem 3 --psm 7 --dpi 400"
 
-            ocr_data = pytesseract.image_to_data(
+            ocr_data = tesseract.image_to_data(
                 image,
                 lang="deu+eng",
                 config=alt_config,
-                output_type=pytesseract.Output.DICT,
+                output_type=tesseract.Output.DICT,
             )
 
-            words = []
-            confidences = []
+            words: list[str] = []
+            confidences: list[int] = []
 
             for i, word in enumerate(ocr_data["text"]):
                 if word.strip():
@@ -326,12 +402,12 @@ class DiagnosticFrameOCR:
     def _log_diagnostic_sample(
         self,
         frame_id: int,
-        processed_frame: np.ndarray,
+        processed_frame: FrameArray,
         text: str,
         confidence: float,
-        quality: Dict,
-        roi: Optional[Dict],
-    ):
+        quality: OCRQuality,
+        roi: Optional[OCRRoi],
+    ) -> None:
         """Log diagnostic sample for analysis."""
         if len(self.diag_samples) >= 20:
             return
@@ -340,10 +416,10 @@ class DiagnosticFrameOCR:
         sample_dir.mkdir(exist_ok=True)
 
         # Save processed frame
-        cv2.imwrite(str(sample_dir / "processed.png"), processed_frame)
+        cv2_imwrite(str(sample_dir / "processed.png"), processed_frame)
 
         # Log sample data
-        sample = {
+        sample: DiagnosticSample = {
             "frame_id": frame_id,
             "text": text[:200],
             "confidence": confidence,
@@ -357,7 +433,7 @@ class DiagnosticFrameOCR:
         with open(sample_dir / "analysis.json", "w") as f:
             json.dump(sample, f, indent=2)
 
-    def get_diagnostic_summary(self) -> Dict[str, Any]:
+    def get_diagnostic_summary(self) -> dict[str, Any]:
         """Get summary of diagnostic results."""
         if not self.diag_samples:
             return {"error": "No diagnostic samples collected"}

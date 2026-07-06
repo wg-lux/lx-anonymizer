@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Literal, Protocol, Sequence, cast
 
 import cv2
 import numpy as np
@@ -13,10 +13,38 @@ from lx_anonymizer.config import settings
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
-cv2_dnn = cast(Any, cv2.dnn)  # type: ignore[attr-defined]
+cv2_dnn = cast("_Cv2DnnModule", cv2.dnn)  # type: ignore[attr-defined]
 
 BoxFormat = Literal["yolo_xywh", "xyxy"]
 ScoreFormat = Literal["class_scores", "objectness"]
+
+
+class _DnnNet(Protocol):
+    def setInput(self, blob: np.ndarray) -> None: ...
+
+    def forward(self) -> object: ...
+
+
+class _Cv2DnnModule(Protocol):
+    def readNet(self, model_path: str) -> _DnnNet: ...
+
+    def blobFromImage(
+        self,
+        image: np.ndarray,
+        scalefactor: float,
+        size: tuple[int, int],
+        mean: tuple[float, float, float],
+        swapRB: bool,
+        crop: bool,
+    ) -> np.ndarray: ...
+
+    def NMSBoxes(
+        self,
+        bboxes: list[list[int]],
+        scores: list[float],
+        score_threshold: float,
+        nms_threshold: float,
+    ) -> np.ndarray: ...
 
 
 class CustomPhiRegionDetectorError(RuntimeError):
@@ -46,8 +74,8 @@ class PhiRegionDetectorConfig:
             confidence_threshold=float(settings.PHI_REGION_DETECTOR_CONFIDENCE),
             nms_threshold=float(settings.PHI_REGION_DETECTOR_NMS_THRESHOLD),
             input_size=int(settings.PHI_REGION_DETECTOR_INPUT_SIZE),
-            box_format=cast(BoxFormat, settings.PHI_REGION_DETECTOR_BOX_FORMAT),
-            score_format=cast(ScoreFormat, settings.PHI_REGION_DETECTOR_SCORE_FORMAT),
+            box_format=settings.PHI_REGION_DETECTOR_BOX_FORMAT,
+            score_format=settings.PHI_REGION_DETECTOR_SCORE_FORMAT,
             allowed_class_ids=_parse_class_ids(settings.PHI_REGION_DETECTOR_CLASS_IDS),
             expected_sha256=(
                 settings.PHI_REGION_DETECTOR_MODEL_SHA256.strip().lower() or None
@@ -75,7 +103,7 @@ class CustomPhiRegionDetector:
 
     def __init__(self, config: PhiRegionDetectorConfig):
         self.config = config
-        self._net: Any = None
+        self._net: _DnnNet | None = None
         self._validate_config()
 
     def detect(self, image: Image.Image) -> list[tuple[int, int, int, int]]:
@@ -162,8 +190,8 @@ class CustomPhiRegionDetector:
         return boxes, scores
 
 
-_CACHED_CONFIG: PhiRegionDetectorConfig | None = None
-_CACHED_DETECTOR: CustomPhiRegionDetector | None = None
+_cached_config: PhiRegionDetectorConfig | None = None
+_cached_detector: CustomPhiRegionDetector | None = None
 
 
 def detect_phi_regions_from_settings(
@@ -198,14 +226,14 @@ def detect_phi_regions_from_settings(
 
 
 def _get_cached_detector(config: PhiRegionDetectorConfig) -> CustomPhiRegionDetector:
-    global _CACHED_CONFIG, _CACHED_DETECTOR
+    global _cached_config, _cached_detector
 
-    if _CACHED_DETECTOR is not None and _CACHED_CONFIG == config:
-        return _CACHED_DETECTOR
+    if _cached_detector is not None and _cached_config == config:
+        return _cached_detector
 
-    _CACHED_CONFIG = config
-    _CACHED_DETECTOR = CustomPhiRegionDetector(config)
-    return _CACHED_DETECTOR
+    _cached_config = config
+    _cached_detector = CustomPhiRegionDetector(config)
+    return _cached_detector
 
 
 def _parse_class_ids(value: str) -> frozenset[int]:
@@ -229,8 +257,13 @@ def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _as_detection_rows(outputs: Any) -> np.ndarray:
-    raw_outputs = outputs if isinstance(outputs, (list, tuple)) else [outputs]
+def _as_detection_rows(outputs: object) -> np.ndarray:
+    if isinstance(outputs, list):
+        raw_outputs: Sequence[object] = cast(Sequence[object], outputs)
+    elif isinstance(outputs, tuple):
+        raw_outputs = cast(Sequence[object], outputs)
+    else:
+        raw_outputs = (outputs,)
     arrays: list[np.ndarray] = []
 
     for output in raw_outputs:

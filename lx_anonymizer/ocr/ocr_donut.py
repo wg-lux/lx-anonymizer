@@ -1,6 +1,7 @@
 import os
 import re
-from typing import List, Tuple
+from os import PathLike
+from typing import Any, Protocol, TypeAlias, cast
 
 import torch  # type: ignore[import-not-found]
 from PIL import Image
@@ -14,7 +15,75 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 logger = get_logger(__name__)
 
 
-def get_decoder_start_token_id(tokenizer):
+ImagePosition: TypeAlias = tuple[int, int, int, int]
+ImageInput: TypeAlias = Image.Image | str | PathLike[str]
+
+
+class TensorLike(Protocol):
+    def to(self, device: torch.device) -> "TensorLike": ...
+
+
+class ProcessorOutput(Protocol):
+    pixel_values: TensorLike
+
+
+class DonutTokenizer(Protocol):
+    bos_token: str | None
+    decoder_start_token_id: int
+
+    def get_decoder_start_token_id(self) -> int: ...
+
+    def convert_tokens_to_ids(self, token: str) -> int: ...
+
+
+class DonutProcessorLike(Protocol):
+    tokenizer: DonutTokenizer
+
+    def __call__(self, image: Image.Image, return_tensors: str) -> ProcessorOutput: ...
+
+    def batch_decode(
+        self, sequences: object, skip_special_tokens: bool
+    ) -> list[str]: ...
+
+
+class GeneratedOutput(Protocol):
+    sequences: object
+
+
+class DonutModelLike(Protocol):
+    def to(self, device: torch.device) -> "DonutModelLike": ...
+
+    def generate(
+        self,
+        pixel_values: TensorLike,
+        *,
+        max_new_tokens: int,
+        min_new_tokens: int,
+        num_beams: int,
+        early_stopping: bool,
+        do_sample: bool,
+        temperature: float,
+        top_k: int,
+        top_p: float,
+        decoder_start_token_id: int,
+        return_dict_in_generate: bool,
+        output_scores: bool,
+    ) -> GeneratedOutput: ...
+
+
+class DonutProcessorFactory(Protocol):
+    def from_pretrained(self, model_id: str, **kwargs: Any) -> DonutProcessorLike: ...
+
+
+class DonutModelFactory(Protocol):
+    def from_pretrained(self, model_id: str, **kwargs: Any) -> DonutModelLike: ...
+
+
+donut_processor_factory = cast(DonutProcessorFactory, DonutProcessor)
+donut_model_factory = cast(DonutModelFactory, VisionEncoderDecoderModel)
+
+
+def get_decoder_start_token_id(tokenizer: DonutTokenizer) -> int:
     """
     Helper function to obtain the decoder start token ID.
     Checks for the method and falls back to known attributes.
@@ -31,7 +100,9 @@ def get_decoder_start_token_id(tokenizer):
         )
 
 
-def split_image_into_chunks(image, max_height=800, max_width=800, overlap=100):
+def split_image_into_chunks(
+    image: Image.Image, max_height: int = 800, max_width: int = 800, overlap: int = 100
+) -> tuple[list[Image.Image], list[ImagePosition]]:
     """
     Split a large image into smaller chunks with intelligent boundaries.
 
@@ -48,13 +119,15 @@ def split_image_into_chunks(image, max_height=800, max_width=800, overlap=100):
         List of PIL Image chunks and their positions (for merging context)
     """
     width, height = image.size
-    chunks = []
-    positions = []
+    chunks: list[Image.Image] = []
+    positions: list[ImagePosition] = []
 
     # Convert to numpy for analysis
     import numpy as np
 
-    img_array = np.array(image.convert("L"))
+    img_array = cast(
+        "np.ndarray[tuple[int, int], np.dtype[np.uint8]]", np.array(image.convert("L"))
+    )
 
     # Calculate number of chunks needed in each dimension
     num_chunks_h = max(1, (height - overlap) // (max_height - overlap))
@@ -65,7 +138,7 @@ def split_image_into_chunks(image, max_height=800, max_width=800, overlap=100):
     )
 
     # Helper function to find better split position near whitespace
-    def find_better_split(start_pos, end_pos, is_vertical):
+    def find_better_split(start_pos: int, end_pos: int, is_vertical: bool) -> int:
         # Define a window to look for better split positions
         window = 100  # Pixels to look around for better splits
 
@@ -132,18 +205,18 @@ def split_image_into_chunks(image, max_height=800, max_width=800, overlap=100):
 
 
 def process_chunk(
-    chunk,
-    processor,
-    model,
-    device,
-    max_new_tokens=1024,
-    min_new_tokens=50,
-    num_beams=5,
-    do_sample=True,
-    temperature=0.7,
-    top_k=50,
-    top_p=0.95,
-):
+    chunk: Image.Image,
+    processor: DonutProcessorLike,
+    model: DonutModelLike,
+    device: torch.device,
+    max_new_tokens: int = 1024,
+    min_new_tokens: int = 50,
+    num_beams: int = 5,
+    do_sample: bool = True,
+    temperature: float = 0.7,
+    top_k: int = 50,
+    top_p: float = 0.95,
+) -> str:
     """
     Process a single image chunk using the provided processor and model.
 
@@ -190,9 +263,7 @@ def process_chunk(
     return decoded_text
 
 
-def post_process_chunks(
-    chunk_texts: List[str], positions: List[Tuple[int, int, int, int]]
-) -> str:
+def post_process_chunks(chunk_texts: list[str], positions: list[ImagePosition]) -> str:
     """
     Post-process and merge text from multiple chunks intelligently.
 
@@ -219,7 +290,7 @@ def post_process_chunks(
 
     # Find and remove duplicate text segments
     processed_texts: list[str] = []
-    for i, (text, _) in enumerate(positioned_texts):
+    for text, _ in positioned_texts:
         if not text.strip():
             continue
 
@@ -261,7 +332,7 @@ def post_process_chunks(
     return result
 
 
-def donut_full_image_ocr(image_input, token=None):
+def donut_full_image_ocr(image_input: ImageInput, token: str | None = None) -> str:
     """
     Perform OCR on an image using a Donut model.
     For large images, splits the image into manageable chunks to avoid CUDA OOM errors.
@@ -278,7 +349,7 @@ def donut_full_image_ocr(image_input, token=None):
 
     try:
         # Ensure we have a PIL Image
-        if hasattr(image_input, "convert"):
+        if isinstance(image_input, Image.Image):
             image = image_input.convert("RGB")
         else:
             image = Image.open(image_input).convert("RGB")
@@ -287,12 +358,10 @@ def donut_full_image_ocr(image_input, token=None):
         large_image = width > 800 or height > 800
 
         # Load processor and model (with token if required)
-        processor = DonutProcessor.from_pretrained(
+        processor = donut_processor_factory.from_pretrained(
             model_id, use_fast=True, use_auth_token=token
         )
-        model = VisionEncoderDecoderModel.from_pretrained(
-            model_id, use_auth_token=token
-        )
+        model = donut_model_factory.from_pretrained(model_id, use_auth_token=token)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
@@ -302,7 +371,7 @@ def donut_full_image_ocr(image_input, token=None):
                 f"Large image detected ({width}x{height}), processing in chunks"
             )
             chunks, positions = split_image_into_chunks(image)
-            all_outputs = []
+            all_outputs: list[str] = []
 
             for i, chunk in enumerate(chunks):
                 logger.info(f"Processing chunk {i + 1}/{len(chunks)}")
@@ -331,8 +400,8 @@ def donut_full_image_ocr(image_input, token=None):
                         smaller_chunks, _ = split_image_into_chunks(
                             chunk, max_height=400, max_width=400, overlap=50
                         )
-                        sub_outputs = []
-                        for j, smaller_chunk in enumerate(smaller_chunks):
+                        sub_outputs: list[str] = []
+                        for smaller_chunk in smaller_chunks:
                             sub_output = process_chunk(
                                 smaller_chunk,
                                 processor=processor,
@@ -372,14 +441,12 @@ def donut_full_image_ocr(image_input, token=None):
     except torch.cuda.OutOfMemoryError:
         logger.error("CUDA out of memory in Donut OCR, falling back to CPU")
         try:
-            processor = DonutProcessor.from_pretrained(
+            processor = donut_processor_factory.from_pretrained(
                 model_id, use_fast=True, use_auth_token=token
             )
-            model = VisionEncoderDecoderModel.from_pretrained(
-                model_id, use_auth_token=token
-            )
+            model = donut_model_factory.from_pretrained(model_id, use_auth_token=token)
 
-            if hasattr(image_input, "convert"):
+            if isinstance(image_input, Image.Image):
                 image = image_input.convert("RGB")
             else:
                 image = Image.open(image_input).convert("RGB")
@@ -387,7 +454,7 @@ def donut_full_image_ocr(image_input, token=None):
             chunks, positions = split_image_into_chunks(
                 image, max_height=600, max_width=600
             )
-            all_outputs = []
+            all_outputs: list[str] = []
             for i, chunk in enumerate(chunks):
                 logger.info(f"Processing chunk {i + 1}/{len(chunks)} on CPU")
                 output = process_chunk(

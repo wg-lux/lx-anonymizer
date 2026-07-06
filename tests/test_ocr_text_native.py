@@ -11,9 +11,9 @@ def test_native_or_python_normalize_matches_reference():
         "äöüß -- ok",
     ]
     for sample in samples:
-        assert ocr_mod._normalize_ocr_text_impl(
+        assert ocr_mod._normalize_ocr_text_impl(  # pyright: ignore[reportPrivateUsage]
             sample
-        ) == ocr_mod._py_normalize_ocr_text(sample)
+        ) == ocr_mod._py_normalize_ocr_text(sample)  # pyright: ignore[reportPrivateUsage]
 
 
 def test_native_or_python_gibberish_matches_reference():
@@ -26,10 +26,12 @@ def test_native_or_python_gibberish_matches_reference():
         "zzzx qwrty",
     ]
     for sample in samples:
-        assert ocr_mod._is_gibberish_impl(sample) == ocr_mod._py_is_gibberish(sample)
-        assert ocr_mod._looks_structured_overlay_text_impl(
+        assert ocr_mod._is_gibberish_impl(  # pyright: ignore[reportPrivateUsage]
             sample
-        ) == ocr_mod._py_looks_structured_overlay_text(sample)
+        ) == ocr_mod._py_is_gibberish(sample)  # pyright: ignore[reportPrivateUsage]
+        assert ocr_mod._looks_structured_overlay_text_impl(  # pyright: ignore[reportPrivateUsage]
+            sample
+        ) == ocr_mod._py_looks_structured_overlay_text(sample)  # pyright: ignore[reportPrivateUsage]
 
 
 def test_native_or_python_candidate_rank_matches_reference():
@@ -40,7 +42,9 @@ def test_native_or_python_candidate_rank_matches_reference():
         ("##@@", 30.0),
     ]
     for text, conf in samples:
-        assert ocr_mod._candidate_rank_impl(text, conf) == ocr_mod._py_candidate_rank(
+        assert ocr_mod._candidate_rank_impl(  # pyright: ignore[reportPrivateUsage]
+            text, conf
+        ) == ocr_mod._py_candidate_rank(  # pyright: ignore[reportPrivateUsage]
             text, conf
         )
 

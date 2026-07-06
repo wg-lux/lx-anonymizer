@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-from lx_anonymizer.region_processing.box_operations import get_dominant_color
+from lx_anonymizer.region_processing.box_operations import Box, get_dominant_color
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.setup.directory_setup import (
     create_blur_directory,
@@ -21,13 +21,13 @@ temp_dir, base_dir, csv_dir = create_temp_directory(Path.cwd())
 
 
 def blur_function(
-    image_path,
-    box,
-    background_color=None,
-    expansion=5,
-    blur_strength=(51, 51),
-    rectangle_scale=0.8,
-):
+    image_path: str | Path,
+    box: Box,
+    background_color: tuple[int, int, int] | None = None,
+    expansion: int = 5,
+    blur_strength: tuple[int, int] = (51, 51),
+    rectangle_scale: float = 0.8,
+) -> Path:
     """
     Apply a strong Gaussian blur to the specified ROI in the image and slightly extend the blur outside the ROI.
 
@@ -51,18 +51,17 @@ def blur_function(
     """
     logger.info("Applying blur to the specified region")
     blur_dir = create_blur_directory(base_dir)
-    if blur_dir is None:
-        raise ValueError("Blur directory could not be created or accessed")
     image_path = Path(image_path)
-    image = cv2.imread(str(image_path))
+    image: npt.NDArray[np.uint8] | None = cast(
+        npt.NDArray[np.uint8] | None, cv2.imread(str(image_path))
+    )
     if image is None:
         raise ValueError(f"Could not load image: {image_path}")
     image = image.astype(np.uint8, copy=False)
-    typed_image = cast(npt.NDArray[np.uint8], image)
-    (startX, startY, endX, endY) = box
+    startX, startY, endX, endY = box
 
     # Expand the ROI to include a border around the detected region
-    (startX, startY, endX, endY) = expand_roi(
+    startX, startY, endX, endY = expand_roi(
         startX, startY, endX, endY, expansion, image.shape
     )
 
@@ -73,7 +72,7 @@ def blur_function(
     if background_color is not None:
         dominant_color = background_color
     else:
-        dominant_color = get_dominant_color(typed_image, box)
+        dominant_color = get_dominant_color(image, box)
 
     # Calculate the dimensions for the smaller rectangle
     rect_width = int((endX - startX) * rectangle_scale)

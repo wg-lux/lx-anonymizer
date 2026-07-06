@@ -2,7 +2,11 @@ import subprocess
 import logging
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, List
+
+from lx_dtypes.models.contracts.video_processing import (
+    VideoEncoderConfig,
+    VideoMaskConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +17,8 @@ class VideoProcessingService:
     pixel format conversion, and stream copying.
     """
 
-    def __init__(self, preferred_encoder: Dict[str, Any]):
-        self.preferred_encoder = preferred_encoder
+    def __init__(self, preferred_encoder: dict[str, object]):
+        self.preferred_encoder = VideoEncoderConfig.model_validate(preferred_encoder)
 
     # ----------------------------
     # Stream Copy & Conversion
@@ -42,19 +46,17 @@ class VideoProcessingService:
     # Mask Overlay
     # ----------------------------
     def mask_video(
-        self, input_video: Path, mask_config: Dict[str, Any], output_video: Path
+        self, input_video: Path, mask_config: dict[str, object], output_video: Path
     ) -> bool:
         """
         Apply black mask outside ROI region.
         """
         try:
-            x, y = mask_config["x"], mask_config["y"]
-            w, h = mask_config["width"], mask_config["height"]
-            iw, ih = (
-                mask_config.get("image_width", 1920),
-                mask_config.get("image_height", 1080),
-            )
-            draw_boxes = []
+            mask = VideoMaskConfig.model_validate(mask_config)
+            x, y = mask.x, mask.y
+            w, h = mask.width, mask.height
+            iw, ih = mask.image_width, mask.image_height
+            draw_boxes: list[str] = []
             # left, right, top, bottom masks
             if x > 0:
                 draw_boxes.append(f"drawbox=0:0:{x}:{ih}:color=black@1:t=fill")
@@ -90,7 +92,7 @@ class VideoProcessingService:
             return False
 
     def frame_removal(
-        self, input_video: Path, frames_to_remove: List[int], output_video: Path
+        self, input_video: Path, frames_to_remove: list[int], output_video: Path
     ) -> bool:
         """
         Remove specified frames from the video.

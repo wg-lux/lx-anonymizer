@@ -82,7 +82,14 @@ pip install "lx-anonymizer[dev]"      # local development tooling
 git clone https://github.com/wg-lux/lx-anonymizer.git
 cd lx-anonymizer
 uv sync
+uv sync --extra cpu  # CPU-only PyTorch-dependent features
+uv sync --extra gpu  # CUDA 12.8 PyTorch-dependent features
 ```
+
+The `cpu` and `gpu` extras are mutually exclusive in uv. The CPU extra routes
+`torch`, `torchaudio`, and `torchvision` to PyTorch's CPU wheel index; the GPU
+extra routes them to PyTorch's CUDA 12.8 wheel index and adds
+`onnxruntime-gpu`.
 
 ### Nix development shell
 ```bash

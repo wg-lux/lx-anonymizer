@@ -1,16 +1,15 @@
-"""
-Sensitive Region Cropper - Implementierung für das Cropping von Regionen mit sensitivem Text.
-
-Dieses Modul erkennt sensitive Textregionen in PDFs und erstellt gecropte Versionen
-der entsprechenden Bereiche für die Anonymisierung.
-"""
-
+from __future__ import annotations
 import re
 from pathlib import Path
-from typing import Iterable, List, Mapping, Optional, Tuple
+from typing import Iterable, Mapping, Sequence, cast
 
 from PIL import Image, ImageDraw
 
+from lx_dtypes.models.contracts.text_detection import (
+    OcrTextBoxCore,
+    PixelBoundingBoxCore,
+)
+from lx_anonymizer.region_processing.box_operations import Box, OcrResult
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
@@ -20,7 +19,39 @@ from lx_anonymizer.ner.spacy_extractor import (
     PatientInfo,
 )
 
+"""
+Sensitive Region Cropper - Implementierung für das Cropping von Regionen mit sensitivem Text.
+
+Dieses Modul erkennt sensitive Textregionen in PDFs und erstellt gecropte Versionen
+der entsprechenden Bereiche für die Anonymisierung.
+"""
+
+
 logger = get_logger(__name__)
+
+
+class _PdfPage:
+    rect: _PdfRect
+
+    def draw_rect(
+        self,
+        rect: object,
+        color: Sequence[float] | None = None,
+        fill: Sequence[float] | None = None,
+    ) -> object: ...
+
+
+class _PdfDocument:
+    def __getitem__(self, index: int) -> _PdfPage: ...
+
+    def save(self, filename: str) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class _PdfRect:
+    width: float
+    height: float
 
 
 class SensitiveRegionCropper:
@@ -31,7 +62,7 @@ class SensitiveRegionCropper:
     def __init__(
         self,
         margin: int = 20,
-        min_region_size: Tuple[int, int] = (100, 30),
+        min_region_size: tuple[int, int] = (100, 30),
         merge_distance: int = 50,
     ):
         """
@@ -50,7 +81,7 @@ class SensitiveRegionCropper:
         self.patient_extractor = PatientDataExtractor()
         self.examiner_extractor = ExaminerDataExtractor()
 
-        self.patient_info: Optional[PatientInfo] = None
+        self.patient_info: PatientInfo | None = None
 
         # Definiere sensitive Datentypen und ihre Regex-Patterns
         self.sensitive_patterns = {
@@ -67,29 +98,27 @@ class SensitiveRegionCropper:
 
     # Füge in der Klasse SensitiveRegionCropper hinzu:
 
-    def _enclosing_box(
-        self, boxes: Iterable[Tuple[int, int, int, int]]
-    ) -> Tuple[int, int, int, int]:
+    def _enclosing_box(self, boxes: Iterable[Box]) -> Box:
         """
-        Enclosing-Box-Helfer: (x, y, w, h)-Boxen -> (x1, y1, x2, y2).
+        Enclosing-Box-Helfer: Boxen im Format (x1, y1, x2, y2).
         """
         boxes = list(boxes)
         if not boxes:
             return (0, 0, 0, 0)
         x1 = min(b[0] for b in boxes)
         y1 = min(b[1] for b in boxes)
-        x2 = max(b[0] + b[2] for b in boxes)
-        y2 = max(b[1] + b[3] for b in boxes)
+        x2 = max(b[2] for b in boxes)
+        y2 = max(b[3] for b in boxes)
         return (x1, y1, x2, y2)
 
     def _create_bounding_boxes_recursive(
         self,
-        boxes: List[Tuple[int, int, int, int]],
+        boxes: list[Box],
         axis: str = "x",
-        gap_threshold: Optional[int] = None,
+        gap_threshold: int | None = None,
         depth: int = 0,
         max_depth: int = 10,
-    ) -> List[Tuple[int, int, int, int]]:
+    ) -> list[Box]:
         """
         Rekursive Zerlegung einer Menge von (x, y, w, h)-Boxen in kleinere
         Enclosing-Boxes, indem entlang einer Achse bei ausreichend großen Lücken
@@ -118,11 +147,11 @@ class SensitiveRegionCropper:
         if axis == "x":
             boxes_sorted = sorted(boxes, key=lambda b: (b[0], b[1]))
             # gap = linker Rand des nächsten - rechter Rand des vorherigen
-            gaps = []
+            gaps: list[tuple[int, int]] = []
             for i in range(len(boxes_sorted) - 1):
                 left = boxes_sorted[i]
                 right = boxes_sorted[i + 1]
-                gap = (right[0]) - (left[0] + left[2])
+                gap = right[0] - left[2]
                 gaps.append((gap, i))
         else:  # axis == "y"
             boxes_sorted = sorted(boxes, key=lambda b: (b[1], b[0]))
@@ -131,7 +160,7 @@ class SensitiveRegionCropper:
             for i in range(len(boxes_sorted) - 1):
                 top = boxes_sorted[i]
                 bottom = boxes_sorted[i + 1]
-                gap = (bottom[1]) - (top[1] + top[3])
+                gap = bottom[1] - top[3]
                 gaps.append((gap, i))
 
         # Finde größte Lücke über Schwellwert
@@ -183,8 +212,8 @@ class SensitiveRegionCropper:
     def detect_sensitive_regions(
         self,
         image: Image.Image,
-        word_boxes: List[Tuple[str, Tuple[int, int, int, int]]],
-    ) -> List[Tuple[int, int, int, int]]:
+        word_boxes: Sequence[OcrResult],
+    ) -> list[Box]:
         """
         Erkennt sensitive Textregionen basierend auf OCR-Ergebnissen und Regex-Patterns.
 
@@ -195,8 +224,15 @@ class SensitiveRegionCropper:
         Returns:
             Liste von (x1, y1, x2, y2) Bounding Boxes für sensitive Regionen
         """
-        sensitive_regions = []
-        full_text = " ".join([word for word, _ in word_boxes])
+        validated_word_boxes: list[OcrResult] = [
+            OcrTextBoxCore(
+                text=word,
+                box=PixelBoundingBoxCore(x1=box[0], y1=box[1], x2=box[2], y2=box[3]),
+            ).to_ocr_result()
+            for word, box in word_boxes
+        ]
+        sensitive_regions: list[Box] = []
+        full_text = " ".join([word for word, _ in validated_word_boxes])
 
         logger.info(f"Analyzing text for sensitive data: {full_text[:100]}...")
 
@@ -218,7 +254,7 @@ class SensitiveRegionCropper:
 
                 # Finde entsprechende Word-Boxes für diesen Text
                 region_boxes = self._find_word_boxes_for_text_span(
-                    matched_text, word_boxes, start_pos, end_pos
+                    matched_text, validated_word_boxes, start_pos, end_pos
                 )
 
                 if region_boxes:
@@ -231,31 +267,21 @@ class SensitiveRegionCropper:
         # 3. Zusätzliche Erkennung für Patientendaten aus SpaCy-Extraktor
         if patient_info:
             sensitive_regions.extend(
-                self._find_patient_data_regions(patient_info, word_boxes, full_text)
+                self._find_patient_data_regions(
+                    patient_info, validated_word_boxes, full_text
+                )
             )
 
         # 4. Führe benachbarte Regionen zusammen
         logger.debug(f"Sensitive regions vor Merge: {len(sensitive_regions)} Regionen")
-        for i, region in enumerate(sensitive_regions):
-            if not isinstance(region, tuple) or len(region) != 4:
-                logger.error(
-                    f"Invalid region at index {i}: {region} (type: {type(region)})"
-                )
 
-        # Filtere ungültige Regionen heraus
-        valid_regions = [
-            r for r in sensitive_regions if isinstance(r, tuple) and len(r) == 4
-        ]
-        if len(valid_regions) != len(sensitive_regions):
-            logger.warning(
-                f"Filtered out {len(sensitive_regions) - len(valid_regions)} invalid regions"
-            )
+        valid_regions: list[Box] = list(sensitive_regions)
 
         # merged_regions = self._merge_nearby_regions(valid_regions)
         merged_regions = valid_regions  # Deaktiviere Merging für präzisere Crops
 
         # 5. Erweitere Regionen um Margin und validiere Größe
-        final_regions = []
+        final_regions: list[Box] = []
         for x1, y1, x2, y2 in merged_regions:
             x1 = max(0, x1 - self.margin)
             y1 = max(0, y1 - self.margin)
@@ -275,14 +301,14 @@ class SensitiveRegionCropper:
     def _find_word_boxes_for_text_span(
         self,
         target_text: str,
-        word_boxes: List[Tuple[str, Tuple[int, int, int, int]]],
+        word_boxes: Sequence[OcrResult],
         start_pos: int = 0,
         end_pos: int = 0,
-    ) -> List[Tuple[int, int, int, int]]:
+    ) -> list[Box]:
         """
         Findet Word-Boxes, die einem bestimmten Text entsprechen.
         """
-        matching_boxes = []
+        matching_boxes: list[Box] = []
         target_words = target_text.lower().split()
 
         # Einfacher Ansatz: Suche nach aufeinanderfolgenden Words
@@ -312,18 +338,16 @@ class SensitiveRegionCropper:
 
     def _find_patient_data_regions(
         self,
-        patient_info: PatientInfo | Mapping[str, Optional[str]],
-        word_boxes: List[Tuple[str, Tuple[int, int, int, int]]],
+        patient_info: PatientInfo | Mapping[str, str | None],
+        word_boxes: Sequence[OcrResult],
         full_text: str,
-    ) -> List[Tuple[int, int, int, int]]:
+    ) -> list[Box]:
         """
         Findet Regionen basierend auf extrahierten Patientendaten.
         """
-        regions = []
+        regions: list[Box] = []
 
-        if patient_info.get("first_name") and patient_info.get(
-            "last_name"
-        ):
+        if patient_info.get("first_name") and patient_info.get("last_name"):
             full_name = f"{patient_info['first_name']} {patient_info['last_name']}"
             name_boxes = self._find_word_boxes_for_text_span(full_name, word_boxes)
             if name_boxes:
@@ -353,9 +377,7 @@ class SensitiveRegionCropper:
 
         return regions
 
-    def _create_bounding_box(
-        self, boxes: List[Tuple[int, int, int, int]]
-    ) -> Tuple[int, int, int, int]:
+    def _create_bounding_box(self, boxes: Sequence[Box]) -> Box:
         """
         Erstellt eine umschließende Bounding Box aus mehreren kleineren Boxes.
         """
@@ -369,16 +391,14 @@ class SensitiveRegionCropper:
 
         return (x1, y1, x2, y2)
 
-    def _merge_nearby_regions(
-        self, regions: List[Tuple[int, int, int, int]]
-    ) -> List[Tuple[int, int, int, int]]:
+    def _merge_nearby_regions(self, regions: Sequence[Box]) -> list[Box]:
         """
         Führt benachbarte Regionen zusammen, die näher als merge_distance sind.
         """
         if not regions:
             return []
 
-        merged = []
+        merged: list[Box] = []
         regions = sorted(regions)  # Sortiere nach x1-Koordinate
 
         current_region = regions[0]
@@ -400,9 +420,7 @@ class SensitiveRegionCropper:
         merged.append(current_region)
         return merged
 
-    def _regions_should_merge(
-        self, region1: Tuple[int, int, int, int], region2: Tuple[int, int, int, int]
-    ) -> bool:
+    def _regions_should_merge(self, region1: Box, region2: Box) -> bool:
         """
         Bestimmt, ob zwei Regionen zusammengeführt werden sollten.
         """
@@ -420,7 +438,7 @@ class SensitiveRegionCropper:
         )
 
     def crop_sensitive_regions(
-        self, pdf_path: str, output_dir: str, page_numbers: Optional[List[int]] = None
+        self, pdf_path: str, output_dir: str, page_numbers: Sequence[int] = ()
     ) -> dict[str, list[str]]:
         """
         Croppt sensitive Regionen aus einem PDF und speichert sie als separate Bilder.
@@ -443,13 +461,12 @@ class SensitiveRegionCropper:
             logger.info(f"Konvertiere PDF zu Bildern: {pdf_path}")
             images = convert_pdf_to_images(pdf_path)
 
-            if page_numbers is None:
-                page_numbers = list(range(len(images)))
-
-            results: dict[str, list[str]] = {}
+            selected_page_numbers = (
+                list(range(len(images))) if not page_numbers else list(page_numbers)
+            )
             pdf_name = Path(pdf_path).stem
 
-            for page_num in page_numbers:
+            for page_num in selected_page_numbers:
                 if page_num >= len(images):
                     logger.warning(f"Seite {page_num} existiert nicht in PDF")
                     continue
@@ -458,7 +475,7 @@ class SensitiveRegionCropper:
                 image = images[page_num]
 
                 # Führe OCR durch, um Word-Boxes zu erhalten
-                full_text, word_boxes = tesseract_full_image_ocr(image)
+                _full_text, word_boxes = tesseract_full_image_ocr(image)
 
                 if not word_boxes:
                     logger.warning(f"Keine Textboxen auf Seite {page_num + 1} gefunden")
@@ -475,7 +492,7 @@ class SensitiveRegionCropper:
                     continue
 
                 # Croppe und speichere sensitive Regionen
-                page_crops = []
+                page_crops: list[str] = []
                 for i, (x1, y1, x2, y2) in enumerate(sensitive_regions):
                     # Croppe die Region
                     cropped_image = image.crop((x1, y1, x2, y2))
@@ -502,7 +519,7 @@ class SensitiveRegionCropper:
     def visualize_sensitive_regions(
         self,
         image: Image.Image,
-        word_boxes: List[Tuple[str, Tuple[int, int, int, int]]],
+        word_boxes: Sequence[OcrResult],
         output_path: str,
     ) -> None:
         """
@@ -526,8 +543,8 @@ class SensitiveRegionCropper:
             draw.text((x1, y1 - 20), f"Region {i + 1}", fill="red")
 
         # Zeichne alle OCR Word-Boxes in Blau (optional)
-        for word, (x, y, w, h) in word_boxes:
-            draw.rectangle([x, y, x + w, y + h], outline="blue", width=1)
+        for _word, (x1, y1, x2, y2) in word_boxes:
+            draw.rectangle([x1, y1, x2, y2], outline="blue", width=1)
 
         vis_image.save(output_path)
         logger.info(f"Visualisierung gespeichert: {output_path}")
@@ -550,7 +567,7 @@ class SensitiveRegionCropper:
             logger.info(f"Erstelle anonymisiertes PDF: {anonymized_pdf_path}")
 
             # Öffne das ursprüngliche PDF
-            doc = pymupdf.open(pdf_path)
+            doc = cast(_PdfDocument, pymupdf.open(pdf_path))
 
             # Konvertiere PDF zu Bildern für die Analyse
             images = convert_pdf_to_images(pdf_path)
@@ -560,7 +577,7 @@ class SensitiveRegionCropper:
                 page = doc[page_num]
 
                 # Führe OCR durch, um sensitive Bereiche zu finden
-                full_text, word_boxes = tesseract_full_image_ocr(image)
+                _full_text, word_boxes = tesseract_full_image_ocr(image)
 
                 # Erkenne sensitive Regionen
                 sensitive_regions = self.detect_sensitive_regions(image, word_boxes)
@@ -641,7 +658,7 @@ def crop_sensitive_regions_from_pdf(
         pdf_name = Path(pdf_path).stem
 
         for page_num, image in enumerate(images):
-            full_text, word_boxes = tesseract_full_image_ocr(image)
+            _full_text, word_boxes = tesseract_full_image_ocr(image)
             vis_path = vis_dir / f"{pdf_name}_page_{page_num + 1}_visualization.png"
             cropper.visualize_sensitive_regions(image, word_boxes, str(vis_path))
 

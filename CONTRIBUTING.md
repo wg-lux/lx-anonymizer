@@ -30,23 +30,25 @@ If a proposal falls outside these boundaries, consider opening a discussion firs
    ```bash
    git clone https://github.com/wg-lux/lx-anonymizer.git
    cd lx-anonymizer
-   uv sync
+   uv sync --extra dev --extra cpu
    # optional: direnv allow && nix develop for GPU tooling
    ```
 2. **Install extras**
-   - CPU-focused development: `uv pip install -e .[dev,ocr,nlu]`
-   - LLM features: add `[llm]`
+   - CPU-focused development: `uv sync --extra dev --extra cpu`
+   - GPU-focused development: `uv sync --extra dev --extra gpu`
 3. **Run checks**
    ```bash
    ./scripts/run_checks.sh
    ```
-   The script installs `uv` if needed, syncs dependencies, lints, and runs the CPU-friendly test suite. Pass extra pytest arguments as desired, e.g. `./scripts/run_checks.sh -k anonymizer`.
+   The script installs `uv` if needed, runs `uv sync --extra dev --extra cpu`, then runs strict Pyright before linting or the CPU-friendly test suite. Pass extra pytest arguments as desired, e.g. `./scripts/run_checks.sh -k anonymizer`.
    GPU/LLM tests are behind markers (`-m gpu`, `-m llm`) to keep defaults lightweight.
 4. **Keep commits focused**
    - Separate concerns (docs vs code changes) to simplify review.
    - Reference issue numbers in commit messages when relevant.
 
 ## Pull request checklist
+- [ ] `uv sync --extra dev --extra cpu` has been run before validation
+- [ ] Strict Pyright passes locally (`.devenv/state/venv/bin/pyright`)
 - [ ] Tests pass locally (`pytest -m "not gpu"` at minimum)
 - [ ] Lint passes (`flake8`)
 - [ ] New/changed functionality is documented (`README.md`, docstrings, or examples)

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import overload
+from typing import cast, overload
 
 import cv2
 import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
 
 
@@ -30,7 +31,7 @@ def load_image_into_np(
         return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
     path = Path(image_input).expanduser().resolve()
-    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    image = cast(NDArray[np.uint8] | None, cv2.imread(str(path), cv2.IMREAD_COLOR))
     if image is None:
         raise FileNotFoundError(f"Could not read image: {path}")
     return image

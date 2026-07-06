@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Iterator, cast
 
 import numpy as np
 import pytest
@@ -12,7 +13,7 @@ from lx_anonymizer.video_processing import video_utils
 
 
 @pytest.fixture(autouse=True)
-def mock_central_video_format():
+def mock_central_video_format() -> Iterator[None]:
     """
     Override the central autouse mock with a no-op fixture.
     This allows the real detect_video_format to execute so we can unit-test it.
@@ -24,10 +25,10 @@ def test_str_to_path_and_create_directories(tmp_path: Path) -> None:
     a = tmp_path / "a"
     b = tmp_path / "b"
 
-    assert directory_setup._str_to_path(str(a)) == a
-    assert directory_setup._str_to_path(b) == b
+    assert directory_setup._str_to_path(str(a)) == a  # pyright: ignore[reportPrivateUsage]
+    assert directory_setup._str_to_path(b) == b  # pyright: ignore[reportPrivateUsage]
 
-    created = directory_setup.create_directories([str(a), b])
+    created = directory_setup.create_directories([a, b])
     assert created == [a, b]
     assert a.exists()
     assert b.exists()
@@ -109,7 +110,7 @@ def test_detect_video_format_success_and_failure(
     captured_kwargs: dict[str, object] = {}
 
     def fake_run(*args: object, **kwargs: object) -> SimpleNamespace:
-        captured_cmd.extend(args[0])
+        captured_cmd.extend(cast(list[str], args[0]))
         captured_kwargs.update(kwargs)
         return SimpleNamespace(stdout=json.dumps(payload))
 
@@ -147,7 +148,15 @@ def test_detect_video_format_success_and_failure(
 
     monkeypatch.setattr(video_utils.subprocess, "run", fake_run_timeout)
     timed_out = video_utils.detect_video_format(Path("x.mp4"))
-    assert timed_out == video_utils.UNKNOWN_VIDEO_FORMAT
+    assert timed_out == {
+        "video_codec": "unknown",
+        "pixel_format": "unknown",
+        "width": 0,
+        "height": 0,
+        "has_audio": True,
+        "container": "unknown",
+        "can_stream_copy": False,
+    }
 
     def fake_run_missing_keys(*args: object, **kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(stdout=json.dumps({}))

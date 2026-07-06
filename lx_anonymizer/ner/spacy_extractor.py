@@ -116,10 +116,7 @@ class SpacyModelManager:
         env_model = os.environ.get(cls.MODEL_ENV, "").strip()
         if env_model:
             return env_model
-        return (
-            settings.SPACY_MODEL.strip()
-            or cls.DEFAULT_MODEL
-        )
+        return settings.SPACY_MODEL.strip() or cls.DEFAULT_MODEL
 
     @classmethod
     def _env_flag_enabled(cls, env_name: str) -> bool:
@@ -127,7 +124,9 @@ class SpacyModelManager:
 
     @classmethod
     def _auto_download_enabled(cls) -> bool:
-        return cls._env_flag_enabled(cls.AUTO_DOWNLOAD_ENV) or settings.SPACY_AUTO_DOWNLOAD
+        return (
+            cls._env_flag_enabled(cls.AUTO_DOWNLOAD_ENV) or settings.SPACY_AUTO_DOWNLOAD
+        )
 
     @classmethod
     def _strict_model_required(cls) -> bool:

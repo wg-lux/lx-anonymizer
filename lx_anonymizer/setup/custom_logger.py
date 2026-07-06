@@ -6,7 +6,7 @@ VERBOSE_LOG_LEVEL = 15
 logging.addLevelName(VERBOSE_LOG_LEVEL, "VERBOSE")
 
 
-def configure_global_logger(verbose=False):
+def configure_global_logger(verbose: bool = False) -> logging.Logger:
     """
     Configure the global logger with optional verbose logging.
 

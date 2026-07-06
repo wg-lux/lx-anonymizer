@@ -44,7 +44,7 @@ def _get_tagger():
         return None
 
 
-def flair_NER_German(text):
+def flair_NER_German(text: object) -> object | None:
     if not isinstance(text, str):
         logger.error(f"Expected a string, but got {type(text)}")
         return None
@@ -72,5 +72,4 @@ def flair_NER_German(text):
             return None
     except Exception as e:
         logger.error(f"Error in NER_German: {e}")
-        return None
         return None

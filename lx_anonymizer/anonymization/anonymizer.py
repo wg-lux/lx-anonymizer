@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import tempfile
+import inspect
 from pathlib import Path
-from typing import Any, Dict, Optional
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Dict, Optional, Protocol, cast
 
 import pymupdf  # type: ignore[import-untyped]
 from PIL import Image, ImageDraw
 
 from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
-from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
+import lx_anonymizer.image_processing.pdf_operations as pdf_operations
+from lx_anonymizer.region_processing.box_operations import Box, OcrResult
 from lx_anonymizer.metrics_provenance import summarize_pdf_redactions
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -21,7 +24,45 @@ from lx_anonymizer.text_detection.phi_region_detector import (
 logger = get_logger(__name__)
 
 
-def _ocr_text_on_boxes(image: Image.Image, text_boxes, language: str = "deu+eng"):
+class _PdfRect(Protocol):
+    is_empty: bool
+    width: float
+    height: float
+
+    def __and__(self, other: _PdfRect, /) -> _PdfRect: ...
+
+
+class _PdfPage(Protocol):
+    rect: _PdfRect
+
+    def add_redact_annot(
+        self,
+        quad: object,
+        text: str | None = None,
+        fontname: str | None = None,
+        fontsize: float = 11,
+        align: int = 0,
+        fill: Sequence[float] | None = None,
+        text_color: Sequence[float] | None = None,
+        cross_out: bool = True,
+    ) -> object: ...
+
+    def apply_redactions(self) -> None: ...
+
+
+class _PdfDocument(Protocol):
+    def __getitem__(self, index: int) -> _PdfPage: ...
+
+    def save(self, filename: str) -> None: ...
+
+    def close(self) -> None: ...
+
+
+def _ocr_text_on_boxes(
+    image: Image.Image,
+    text_boxes: list[Box],
+    language: str = "deu+eng",
+) -> tuple[list[OcrResult], list[float]]:
     try:
         from lx_anonymizer.ocr.ocr_tesserocr import tesseract_on_boxes_fast
 
@@ -47,8 +88,18 @@ def _east_text_detection_on_pil_image(
 
     try:
         image.save(tmp_path)
+        if "east_path" not in inspect.signature(east_text_detection).parameters:
+            legacy_detector = cast(
+                Callable[
+                    [Path, float, int, int],
+                    tuple[list[tuple[int, int, int, int]], str],
+                ],
+                east_text_detection,
+            )
+            return legacy_detector(tmp_path, min_confidence, width, height)
         return east_text_detection(
             tmp_path,
+            east_path=None,
             min_confidence=min_confidence,
             width=width,
             height=height,
@@ -102,7 +153,7 @@ def _pil_to_pdf_rect(
     image_width: int,
     image_height: int,
     padding: float = 2.0,
-) -> pymupdf.Rect | None:
+) -> _PdfRect | None:
     x1, y1, x2, y2 = box
 
     if image_width <= 0 or image_height <= 0:
@@ -116,14 +167,20 @@ def _pil_to_pdf_rect(
     pdf_x2 = x2 * scale_x
     pdf_y2 = page_height - (y1 * scale_y)
 
-    rect = pymupdf.Rect(
-        pdf_x1 - padding,
-        pdf_y1 - padding,
-        pdf_x2 + padding,
-        pdf_y2 + padding,
+    rect = cast(
+        _PdfRect,
+        pymupdf.Rect(
+            pdf_x1 - padding,
+            pdf_y1 - padding,
+            pdf_x2 + padding,
+            pdf_y2 + padding,
+        ),
     )
 
-    page_bounds = pymupdf.Rect(0, 0, page_width, page_height)
+    page_bounds = cast(
+        _PdfRect,
+        pymupdf.Rect(0, 0, page_width, page_height),
+    )
     rect = rect & page_bounds
 
     if rect.is_empty or rect.width <= 0 or rect.height <= 0:
@@ -132,10 +189,14 @@ def _pil_to_pdf_rect(
     return rect
 
 
+def convert_pdf_to_images(pdf_path: str | Path) -> list[Image.Image]:
+    return pdf_operations.convert_pdf_to_images(pdf_path)
+
+
 class Anonymizer:
     def __init__(self) -> None:
         self.sensitive_cropper = SensitiveRegionCropper()
-        self.last_redaction_summary: dict[str, Any] | None = None
+        self.last_redaction_summary: dict[str, object] | None = None
 
     def _default_output_path(self, input_path: str, suffix: str = "_anonymized") -> str:
         path = Path(input_path)
@@ -152,9 +213,10 @@ class Anonymizer:
         east_height: int = 640,
         language: str = "deu+eng",
     ) -> list[tuple[int, int, int, int]]:
-        custom_regions = detect_phi_regions_from_settings(image)
+        custom_regions: list[Box] = detect_phi_regions_from_settings(image)
 
         logger.debug("Running EAST text detection")
+        text_boxes: list[Box]
         text_boxes, _ = _east_text_detection_on_pil_image(
             image,
             min_confidence=east_min_confidence,
@@ -253,9 +315,9 @@ class Anonymizer:
 
     def _apply_pdf_redactions(
         self,
-        doc: pymupdf.Document,
+        doc: _PdfDocument,
         images: list[Image.Image],
-        rois_per_page: dict[int, list[tuple[int, int, int, int]]],
+        rois_per_page: dict[int, list[Box]],
         padding_points: float = 2.0,
     ) -> None:
         for page_num, image in enumerate(images):
@@ -295,7 +357,7 @@ class Anonymizer:
                     logger.debug("Skipping empty converted PDF rect for ROI: %s", roi)
                     continue
 
-                page.add_redact_annot(rect, fill=(0, 0, 0))
+                page.add_redact_annot(rect, fill=(0.0, 0.0, 0.0))
                 added += 1
 
             if added:
@@ -306,7 +368,7 @@ class Anonymizer:
         self,
         pdf_path: str,
         output_path: Optional[str] = None,
-        report_meta: Optional[Dict[str, Any]] = None,
+        report_meta: Mapping[str, object] | None = None,
     ) -> Optional[str]:
         _ = report_meta
         self.last_redaction_summary = None
@@ -321,7 +383,7 @@ class Anonymizer:
             )
 
             images = convert_pdf_to_images(pdf_path)
-            rois_per_page: dict[int, list[tuple[int, int, int, int]]] = {}
+            rois_per_page: dict[int, list[Box]] = {}
 
             for page_num, image in enumerate(images):
                 logger.debug("Processing PDF page %d", page_num + 1)
@@ -333,7 +395,7 @@ class Anonymizer:
                 detector_sources=["east_ocr", "phi_detector"],
             ).model_dump()
 
-            doc = pymupdf.open(pdf_path)
+            doc = cast(_PdfDocument, pymupdf.open(pdf_path))
             try:
                 self._apply_pdf_redactions(doc, images, rois_per_page)
                 doc.save(output_path)
@@ -387,7 +449,7 @@ class Anonymizer:
     def create_anonymized_pdf_from_rois(
         self,
         pdf_path: str,
-        rois_per_page: dict[int, list[tuple[int, int, int, int]]],
+        rois_per_page: dict[int, list[Box]],
         output_path: Optional[str] = None,
     ) -> Optional[str]:
         try:
@@ -399,7 +461,7 @@ class Anonymizer:
 
             images = convert_pdf_to_images(pdf_path)
 
-            doc = pymupdf.open(pdf_path)
+            doc = cast(_PdfDocument, pymupdf.open(pdf_path))
             try:
                 self._apply_pdf_redactions(doc, images, rois_per_page)
                 doc.save(output_path)

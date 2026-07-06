@@ -1,5 +1,7 @@
 import logging
 
+from pytest import LogCaptureFixture
+
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 
 
@@ -18,21 +20,27 @@ def test_normalize_roi_keys_preserves_zero_values() -> None:
     assert normalize_roi_keys(roi) == {"x": 0, "y": 0, "width": 10, "height": 20}
 
 
-def test_normalize_roi_keys_returns_none_for_missing_keys(caplog) -> None:
+def test_normalize_roi_keys_returns_none_for_missing_keys(
+    caplog: LogCaptureFixture,
+) -> None:
     caplog.set_level(logging.WARNING)
     roi = {"x": 1, "y": 2, "width": 3}
     assert normalize_roi_keys(roi) is None
     assert "missing required ROI keys" in caplog.text
 
 
-def test_normalize_roi_keys_returns_none_for_invalid_type(caplog) -> None:
+def test_normalize_roi_keys_returns_none_for_invalid_type(
+    caplog: LogCaptureFixture,
+) -> None:
     caplog.set_level(logging.WARNING)
     roi = {"x": 1, "y": 2, "width": ["bad"], "height": 4}
     assert normalize_roi_keys(roi) is None
     assert "failed validation" in caplog.text
 
 
-def test_normalize_roi_keys_returns_none_for_negative_values(caplog) -> None:
+def test_normalize_roi_keys_returns_none_for_negative_values(
+    caplog: LogCaptureFixture,
+) -> None:
     caplog.set_level(logging.WARNING)
     roi = {"x": -1, "y": 2, "width": 3, "height": 4}
     assert normalize_roi_keys(roi) is None

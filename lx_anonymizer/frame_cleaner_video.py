@@ -3,7 +3,8 @@ import math
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, cast
+from collections.abc import Callable, Mapping
+from typing import Iterator, List, Optional, Protocol, Tuple, cast
 
 import cv2
 import numpy as np
@@ -13,15 +14,38 @@ from lx_dtypes.models.meta.VideoMeta import (
     VideoFormatProbe,
     VideoRoiBox,
 )
+from lx_dtypes.models.contracts.video_processing import VideoEncoderConfig
 
 from lx_anonymizer.config import settings
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_utils
+from lx_anonymizer.video_processing.video_encoder import VideoEncoder
+from lx_anonymizer.video_processing.video_processor import VideoProcessor
 
 logger = logging.getLogger(__name__)
 
 
+class _VideoCaptureProtocol(Protocol):
+    def isOpened(self) -> bool: ...
+
+    def set(self, prop_id: int, value: float) -> bool: ...
+
+    def get(self, prop_id: int) -> float: ...
+
+    def read(self) -> tuple[bool, np.ndarray]: ...
+
+    def release(self) -> None: ...
+
+
 class FrameCleanerVideoMixin:
+    video_encoder: VideoEncoder
+    video_processor: VideoProcessor
+    preferred_encoder: VideoEncoderConfig
+    build_encoder_cmd: Callable[..., List[str]]
+
+    def _target_sample_count(self, total_frames: int) -> int:
+        raise NotImplementedError
+
     def remove_frames_from_video_streaming(
         self,
         original_video: Path,
@@ -170,7 +194,7 @@ class FrameCleanerVideoMixin:
         filter -> mkv pipe -> stream copy to final output.
         """
         with video_utils.named_pipe() as pipe_path:
-            filter_proc: Optional[subprocess.Popen] = None
+            filter_proc: Optional[subprocess.Popen[bytes]] = None
             try:
                 filter_cmd = self._named_pipe_filter_cmd(
                     original_video=original_video,
@@ -236,7 +260,7 @@ class FrameCleanerVideoMixin:
         logger.debug("Copy command with -nostdin: %s", " ".join(copy_cmd))
 
     @staticmethod
-    def _start_filter_process(filter_cmd: list[str]) -> subprocess.Popen:
+    def _start_filter_process(filter_cmd: list[str]) -> subprocess.Popen[bytes]:
         return subprocess.Popen(
             filter_cmd,
             stdout=subprocess.DEVNULL,
@@ -252,7 +276,7 @@ class FrameCleanerVideoMixin:
             check=False,
             timeout=timeout,
         )
-        if isinstance(result.returncode, int) and result.returncode != 0:
+        if result.returncode != 0:
             raise subprocess.CalledProcessError(
                 result.returncode,
                 cmd,
@@ -263,17 +287,19 @@ class FrameCleanerVideoMixin:
 
     @staticmethod
     def _wait_checked(
-        process: subprocess.Popen,
+        process: subprocess.Popen[bytes],
         cmd: list[str],
         timeout: int,
     ) -> None:
         return_code = process.wait(timeout=timeout)
-        if isinstance(return_code, int) and return_code != 0:
+        if return_code != 0:
             raise subprocess.CalledProcessError(return_code, cmd)
         logger.debug("Streaming frame removal completed via named pipe")
 
     @staticmethod
-    def _terminate_filter_process(filter_proc: Optional[subprocess.Popen]) -> None:
+    def _terminate_filter_process(
+        filter_proc: Optional[subprocess.Popen[bytes]],
+    ) -> None:
         if filter_proc is None or filter_proc.poll() is not None:
             return
         filter_proc.terminate()
@@ -305,7 +331,7 @@ class FrameCleanerVideoMixin:
 
         logger.info(
             "Direct frame removal processing using %s",
-            self.preferred_encoder["type"],
+            self.preferred_encoder.type,
         )
         logger.debug("FFmpeg command with -nostdin: %s", " ".join(cmd))
 
@@ -413,11 +439,10 @@ class FrameCleanerVideoMixin:
         logger.error("Frame removal output is empty or missing")
         return False
 
-
     def _iter_video(
         self, video_path: Path, total_frames: int
     ) -> Iterator[Tuple[int, np.ndarray, int]]:
-        cap = cv2.VideoCapture(str(video_path))  # type: ignore[call-arg]
+        cap = cast(_VideoCaptureProtocol, cv2.VideoCapture(str(video_path)))
         if not cap.isOpened():
             logger.error("Cannot open %s", video_path)
             return
@@ -427,7 +452,7 @@ class FrameCleanerVideoMixin:
         except (AttributeError, cv2.error):
             pass
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         target_samples = self._target_sample_count(total_frames) or 1
         calculated_skip = (
             math.ceil(total_frames / target_samples) if total_frames else 1
@@ -445,9 +470,7 @@ class FrameCleanerVideoMixin:
 
             if idx % skip == 0:
                 gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-                gray = cv2.filter2D(
-                    gray, -1, np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-                )
+                gray = cv2.equalizeHist(gray)
                 yield idx, gray, skip
             idx += 1
 
@@ -517,7 +540,7 @@ class FrameCleanerVideoMixin:
             tmp.flush()
             return Path(tmp.name)
 
-    def _validate_roi(self, roi: Dict[str, Any]) -> bool:
+    def _validate_roi(self, roi: Mapping[str, object]) -> bool:
         if not isinstance(roi, dict):
             return False
 

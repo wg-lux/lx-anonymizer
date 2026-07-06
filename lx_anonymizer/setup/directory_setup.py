@@ -46,14 +46,14 @@ data_dir_env = os.getenv("DATA_DIR")
 
 if data_dir_env:
     # Type checker knows data_dir_env is 'str' here, not 'None'
-    MAIN_DIR = Path(data_dir_env)
+    main_dir = Path(data_dir_env)
 else:
-    MAIN_DIR = default_main_directory
+    main_dir = default_main_directory
 
 if data_dir_env:
-    TEMP_DIR_ROOT = Path(data_dir_env) / "temp"
+    temp_dir_root = Path(data_dir_env) / "temp"
 else:
-    TEMP_DIR_ROOT = default_temp_directory
+    temp_dir_root = default_temp_directory
 # --- FIX END ---
 
 
@@ -65,7 +65,7 @@ def _str_to_path(path: str | Path) -> Path:
 
 def create_directories(directories: Optional[List[Path]] = None) -> List[Path]:
     if not directories:
-        directories = [MAIN_DIR, TEMP_DIR_ROOT]
+        directories = [main_dir, temp_dir_root]
     else:
         directories = [_str_to_path(directory) for directory in directories]
 
@@ -93,7 +93,7 @@ def create_main_directory(default_main_directory: Optional[Path] = None):
     # check if string path, make to path object if necessary
 
     if not default_main_directory:
-        default_main_directory = MAIN_DIR
+        default_main_directory = main_dir
     else:
         default_main_directory = _str_to_path(default_main_directory)
 
@@ -114,7 +114,7 @@ def create_main_directory(default_main_directory: Optional[Path] = None):
 
 def create_results_directory(default_main_directory: Optional[Path] = None) -> Path:
     if not default_main_directory:
-        default_main_directory = MAIN_DIR
+        default_main_directory = main_dir
     else:
         default_main_directory = _str_to_path(default_main_directory)
 
@@ -140,7 +140,7 @@ def create_model_directory(default_main_directory: Optional[Path] = None) -> Pat
         Path: _description_
     """
     if not default_main_directory:
-        default_main_directory = MAIN_DIR
+        default_main_directory = main_dir
     else:
         default_main_directory = _str_to_path(default_main_directory)
 
@@ -175,12 +175,12 @@ def create_temp_directory(
     """
 
     if not default_temp_directory:
-        default_temp_directory = TEMP_DIR_ROOT
+        default_temp_directory = temp_dir_root
     else:
         default_temp_directory = _str_to_path(default_temp_directory)
 
     if not default_main_directory:
-        default_main_directory = MAIN_DIR
+        default_main_directory = main_dir
     else:
         default_main_directory = _str_to_path(default_main_directory)
 
@@ -202,7 +202,7 @@ def create_temp_directory(
 
 def create_blur_directory(default_main_directory: Path | None) -> Path:
     if not default_main_directory:
-        default_main_directory = MAIN_DIR
+        default_main_directory = main_dir
     else:
         default_main_directory = _str_to_path(default_main_directory)
 

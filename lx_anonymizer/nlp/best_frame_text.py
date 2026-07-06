@@ -6,7 +6,8 @@ import os
 import random
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from collections.abc import Mapping
+from typing import Any, Dict, List, Optional, cast
 
 from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, MEDICAL_QUALITY_PATTERNS
@@ -175,7 +176,16 @@ class BestFrameText:
             if text:
                 meta = self.llm_extraction.extract_metadata(text)
                 if isinstance(meta, dict):
-                    best = meta.get("representative_text") or meta.get("best") or ""
+                    meta_map = cast(Mapping[str, object], meta)
+                    representative = meta_map.get("representative_text")
+                    fallback_best = meta_map.get("best")
+                    best = (
+                        representative
+                        if isinstance(representative, str)
+                        else fallback_best
+                        if isinstance(fallback_best, str)
+                        else ""
+                    )
                 else:
                     best = str(meta)
                 average = "\n\n".join(
