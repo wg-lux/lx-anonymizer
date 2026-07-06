@@ -1,7 +1,9 @@
 import logging
 import os
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Mapping, Optional, cast
+from typing import Any, Generator, List, Mapping, cast
 
 import cv2
 import numpy as np
@@ -14,6 +16,11 @@ from lx_dtypes.models.meta.VideoMeta import (
     FrameProcessResult,
     VideoMeta,
 )
+from lx_dtypes.models.contracts.llm_extractor import LLMFrameDataPayload
+from lx_dtypes.models.contracts.video_processing import (
+    VideoEncoderConfig,
+    VideoMaskConfig,
+)
 
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.config import settings
@@ -22,6 +29,7 @@ from lx_anonymizer.llm.factory import LLMFactory
 from lx_anonymizer.llm.llm_extractor import (
     EnrichedMetadataExtractor,
     FrameSamplingOptimizer,
+    LLMMetadataExtractor,
 )
 from lx_anonymizer.metrics_provenance import (
     build_anonymizer_provenance,
@@ -29,7 +37,7 @@ from lx_anonymizer.metrics_provenance import (
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
-from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, NestedRoi, RoiInput
+from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, RoiInput
 from lx_anonymizer.regex_patterns import (
     LLM_AGE_TOKEN_RE,
     LLM_NARRATIVE_TOKEN_RE,
@@ -50,6 +58,61 @@ from lx_anonymizer.frame_cleaner_video import FrameCleanerVideoMixin
 logger = logging.getLogger(__name__)
 
 
+class FrameCleanerQualityProfile(str, Enum):
+    FAST = "fast"
+    BALANCED = "balanced"
+    QUALITY = "quality"
+
+
+@dataclass(frozen=True)
+class FrameCleanerSamplingProfile:
+    max_frames_to_sample: int
+    high_quality_ocr: bool
+    smart_early_stopping: bool
+    early_stop_techniques: frozenset[str]
+
+    @classmethod
+    def from_quality_profile(
+        cls, profile: FrameCleanerQualityProfile | str | None
+    ) -> "FrameCleanerSamplingProfile":
+        resolved_profile = _coerce_quality_profile(
+            profile or settings.FRAME_CLEANER_QUALITY_PROFILE
+        )
+        configured_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
+
+        if resolved_profile is FrameCleanerQualityProfile.FAST:
+            max_frames = min(configured_samples, 12)
+            high_quality_ocr = False
+        elif resolved_profile is FrameCleanerQualityProfile.QUALITY:
+            max_frames = max(configured_samples, 48)
+            high_quality_ocr = True
+        else:
+            max_frames = configured_samples
+            high_quality_ocr = True
+
+        return cls(
+            max_frames_to_sample=max_frames,
+            high_quality_ocr=high_quality_ocr,
+            smart_early_stopping=bool(settings.SMART_EARLY_STOPPING),
+            early_stop_techniques=frozenset({"extract_only", "mask_overlay"}),
+        )
+
+
+def _coerce_quality_profile(
+    profile: FrameCleanerQualityProfile | str,
+) -> FrameCleanerQualityProfile:
+    if isinstance(profile, FrameCleanerQualityProfile):
+        return profile
+    try:
+        return FrameCleanerQualityProfile(profile.strip().lower())
+    except ValueError as exc:
+        valid_values = ", ".join(item.value for item in FrameCleanerQualityProfile)
+        raise ValueError(
+            f"Unknown frame cleaner quality profile {profile!r}. "
+            f"Expected one of: {valid_values}."
+        ) from exc
+
+
 def _in_pytest_runtime() -> bool:
     return bool(
         os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("PYTEST_VERSION")
@@ -64,11 +127,24 @@ class FrameCleaner(FrameCleanerVideoMixin):
     def __init__(
         self,
         use_minicpm: bool = False,
-        minicpm_config: Optional[Dict[str, Any]] = None,
-        use_llm: Optional[bool] = None,
+        minicpm_config: Mapping[str, object] | None = None,
+        use_llm: bool | None = None,
+        quality_profile: FrameCleanerQualityProfile | str | None = None,
+        sampling_profile: FrameCleanerSamplingProfile | None = None,
     ):
         self.use_minicpm = use_minicpm
-        self.minicpm_config = minicpm_config or {}
+        self.minicpm_config: dict[str, object] = dict(minicpm_config or {})
+        self.sampling_profile = (
+            sampling_profile
+            or FrameCleanerSamplingProfile.from_quality_profile(quality_profile)
+        )
+        self.llm_extractor: LLMMetadataExtractor | None = None
+        self.frame_sampling_optimizer: FrameSamplingOptimizer | None = None
+        self.enriched_extractor: EnrichedMetadataExtractor | None = None
+        self.mask_application: MaskApplication | None = None
+        self.default_mask_config: VideoMaskConfig | None = None
+        self._mask_video_streaming = None
+        self._create_mask_config_from_roi = None
 
         self._init_core_components()
         self._log_hf_cache_status()
@@ -99,7 +175,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         hf = HF_Cache()
         hf.log_hf_cache_info()
 
-    def _init_llm_pipeline(self, use_llm: Optional[bool]) -> None:
+    def _init_llm_pipeline(self, use_llm: bool | None) -> None:
         self.use_llm = settings.LLM_ENABLED if use_llm is None else bool(use_llm)
 
         self.llm_extractor = None
@@ -147,11 +223,13 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self.video_processor = video_processor.VideoProcessor(self.video_encoder)
 
         self.nvenc_available = self.video_encoder.nvenc_available
-        self.preferred_encoder = self.video_encoder.preferred_encoder
+        self.preferred_encoder = VideoEncoderConfig.model_validate(
+            self.video_encoder.preferred_encoder
+        )
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
 
     def _init_masking(self) -> None:
-        self.mask_application = MaskApplication(self.preferred_encoder)
+        self.mask_application = MaskApplication(self.preferred_encoder.model_dump())
         self.default_mask_config = self.mask_application.default_mask_config
         self._mask_video_streaming = self.mask_application.mask_video_streaming
         self._create_mask_config_from_roi = (
@@ -168,7 +246,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         logger.debug("Run state reset for new video")
 
     def _target_sample_count(self, total_frames: int) -> int:
-        configured = max(1, settings.MAX_FRAMES_TO_SAMPLE)
+        configured = max(1, self.sampling_profile.max_frames_to_sample)
         if total_frames <= 0:
             return 0
 
@@ -186,12 +264,12 @@ class FrameCleaner(FrameCleanerVideoMixin):
     def clean_video(
         self,
         video_path: Path,
-        endoscope_image_roi: Optional[dict[str, int]],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
-        output_path: Optional[Path] = None,
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
+        output_path: Path | None = None,
         technique: str = "mask_overlay",
-        device: Optional[str] = "olympus_cv_1500",
-    ) -> tuple[Path, Dict[str, Any]]:
+        device: str | None = "olympus_cv_1500",
+    ) -> tuple[Path, dict[str, object]]:
         """
         Handles the cleaning of a video by removing or masking frames with sensitive information.
         """
@@ -244,9 +322,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self.current_video_total_frames = total_frames
         max_samples = self._target_sample_count(total_frames)
         logger.info(
-            "Video detected (%d frames). Sampling ≤%d frames.",
+            "Video detected (%d frames). Sampling ≤%d frames (high_quality_ocr=%s, early_stop=%s).",
             total_frames,
             max_samples,
+            self.sampling_profile.high_quality_ocr,
+            self.sampling_profile.smart_early_stopping,
         )
         return total_frames, max_samples
 
@@ -256,8 +336,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
         video_path: Path,
         total_frames: int,
         max_samples: int,
-        endoscope_image_roi: Optional[dict[str, int]],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
         technique: str,
         accumulated: FrameCleanerAccumulatedMeta,
     ) -> FrameAnalysisResult:
@@ -281,8 +361,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
             100 * sensitive_ratio,
         )
 
-    def _build_final_video_meta(self) -> dict[str, Any]:
-        frame_observation_payloads: list[Mapping[str, Any]] = [
+    def _build_final_video_meta(self) -> dict[str, object]:
+        frame_observation_payloads: list[Mapping[str, object]] = [
             observation.model_dump(mode="json")
             for observation in self.frame_observations
         ]
@@ -293,23 +373,28 @@ class FrameCleaner(FrameCleanerVideoMixin):
             detector_sources=detector_sources,
             proposal_counts=proposal_counts,
         )
-        sensitive_payload = sensitive_meta_to_dict(self.sensitive_meta)
-        final_meta = VideoMeta.model_validate(
-            {
-                **sensitive_payload,
-                "frame_observations": frame_observation_payloads,
-                "anonymizer_provenance": anonymizer_provenance.model_dump(),
-            }
-        )
+        raw_sensitive_payload = sensitive_meta_to_dict(self.sensitive_meta)
+        sensitive_payload = {
+            key: value
+            for key, value in raw_sensitive_payload.items()
+            if value is not None
+        }
+        final_payload: dict[str, object] = {
+            **sensitive_payload,
+            "anonymizer_provenance": anonymizer_provenance.model_dump(),
+        }
+        if frame_observation_payloads:
+            final_payload["frame_observations"] = frame_observation_payloads
+        final_meta = VideoMeta.model_validate(final_payload)
         payload = final_meta.model_dump(mode="json")
-        for field_name, value in sensitive_payload.items():
+        for field_name, value in raw_sensitive_payload.items():
             payload.setdefault(field_name, value)
         return payload
 
     def _prepare_clean_video_run(
         self,
         video_path: Path,
-        output_path: Optional[Path],
+        output_path: Path | None,
     ) -> tuple[Path, FrameCleanerAccumulatedMeta]:
         default_center = os.environ.get("DEFAULT_CENTER", "Endoscopy Center")
         output_video = output_path or video_path.with_stem(f"{video_path.stem}_anony")
@@ -324,7 +409,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
     def _get_total_frames(video_path: Path) -> int:
         cap = cv2.VideoCapture(str(video_path))  # type: ignore[call-arg]
         try:
-            return int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            frame_count = cast(float, cast(Any, cap).get(cv2.CAP_PROP_FRAME_COUNT))
+            return int(frame_count)
         finally:
             cap.release()
 
@@ -333,8 +419,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
         video_path: Path,
         total_frames: int,
         max_samples: int,
-        endoscope_image_roi: Optional[dict[str, int]],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
         technique: str,
         accumulated: FrameCleanerAccumulatedMeta,
     ) -> FrameAnalysisResult:
@@ -355,6 +441,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 endoscope_data_roi_nested=endoscope_data_roi_nested,
                 frame_id=idx,
                 collect_for_batch=True,
+                high_quality_ocr=self.sampling_profile.high_quality_ocr,
             )
 
             merged_accumulated = self.frame_metadata_extractor.merge_metadata(
@@ -377,12 +464,14 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
             frames_processed += 1
 
-            if (
-                settings.SMART_EARLY_STOPPING
-                and technique == "extract_only"
-                and self.frame_metadata_extractor.is_complete(accumulated.model_dump())
+            if self._should_stop_frame_analysis(
+                technique=technique,
+                accumulated=accumulated,
             ):
-                logger.info("Critical metadata found. Early stopping enabled.")
+                logger.info(
+                    "Critical metadata found. Early stopping enabled for %s.",
+                    technique,
+                )
                 break
 
         return FrameAnalysisResult(
@@ -391,6 +480,18 @@ class FrameCleaner(FrameCleanerVideoMixin):
             best_ocr_text=best_ocr_text,
             best_ocr_conf=best_ocr_conf,
             frames_processed=frames_processed,
+        )
+
+    def _should_stop_frame_analysis(
+        self,
+        *,
+        technique: str,
+        accumulated: FrameCleanerAccumulatedMeta,
+    ) -> bool:
+        return (
+            self.sampling_profile.smart_early_stopping
+            and technique in self.sampling_profile.early_stop_techniques
+            and self.frame_metadata_extractor.is_complete(accumulated.model_dump())
         )
 
     def _maybe_enrich_video_metadata(
@@ -433,7 +534,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         output_video: Path,
         sensitive_idx: list[int],
         total_frames: int,
-        endoscope_image_roi: Optional[dict[str, int]],
+        endoscope_image_roi: Mapping[str, object] | None,
     ) -> Path:
         if technique == "remove_frames":
             return self._apply_frame_removal(
@@ -484,13 +585,14 @@ class FrameCleaner(FrameCleanerVideoMixin):
         *,
         video_path: Path,
         output_video: Path,
-        endoscope_image_roi: Optional[dict[str, int]],
+        endoscope_image_roi: Mapping[str, object] | None,
     ) -> Path:
         logger.info("Using masking strategy.")
         mask_cfg = self._mask_config_for_roi(endoscope_image_roi)
+        assert self._mask_video_streaming is not None
         ok = self._mask_video_streaming(
             video_path,
-            mask_cfg,
+            mask_cfg.model_dump(),
             output_video,
             use_named_pipe=True,
         )
@@ -500,9 +602,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
             )
         return output_video
 
-    def _mask_config_for_roi(self, roi: Optional[dict[str, int]]) -> dict[str, Any]:
+    def _mask_config_for_roi(self, roi: Mapping[str, object] | None) -> VideoMaskConfig:
         if roi and self._validate_roi(roi):
+            assert self._create_mask_config_from_roi is not None
             return self._create_mask_config_from_roi(roi)
+        assert self.default_mask_config is not None
         return self.default_mask_config
 
     def _finalize_video_metadata(
@@ -545,11 +649,13 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
         return " | ".join(parts).strip()
 
-    def _unified_metadata_extract(self, text: str) -> Dict[str, Any]:
-        meta: Optional[Dict[str, Any]] = {}
+    def _unified_metadata_extract(self, text: str) -> dict[str, object]:
+        meta: dict[str, object] | None = {}
         if self.patient_data_extractor:
             try:
-                patient_candidate: Mapping[str, Any] = self.patient_data_extractor(text)
+                patient_candidate: Mapping[str, object] = self.patient_data_extractor(
+                    text
+                )
                 if self._metadata_has_signal(patient_candidate):
                     self.sensitive_meta.safe_update(patient_candidate)
                     meta = self.sensitive_meta.to_dict()
@@ -562,16 +668,15 @@ class FrameCleaner(FrameCleanerVideoMixin):
             self.sensitive_meta.safe_update(out)
             meta = self.sensitive_meta.to_dict()
 
-        if isinstance(meta, SensitiveMeta):
-            return meta.to_dict()
-
         return meta or {}
 
     @staticmethod
     def _normalize_text_for_llm(text: str) -> str:
         return MULTISPACE_RE.sub(" ", text).strip().lower()
 
-    def _should_attempt_llm(self, text: str, current_meta: Dict[str, Any]) -> bool:
+    def _should_attempt_llm(
+        self, text: str, current_meta: Mapping[str, object]
+    ) -> bool:
         if not (self.use_llm and self.llm_extractor):
             return False
 
@@ -598,7 +703,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
         return True
 
-    def _remaining_llm_budget(self) -> Optional[int]:
+    def _remaining_llm_budget(self) -> int | None:
         max_calls = int(settings.LLM_MAX_CALLS_PER_VIDEO)
         if max_calls < 0:
             return None
@@ -609,11 +714,12 @@ class FrameCleaner(FrameCleanerVideoMixin):
         seen: set[str] = set()
 
         if self.enriched_extractor:
-            aggregated = self.enriched_extractor._aggregate_ocr_texts(
-                [
-                    frame_data.model_dump(mode="json")
-                    for frame_data in self.frame_collection
-                ],
+            llm_frames = [
+                LLMFrameDataPayload.model_validate(frame_data.model_dump(mode="json"))
+                for frame_data in self.frame_collection
+            ]
+            aggregated = self.enriched_extractor.aggregate_ocr_texts(
+                llm_frames,
                 self.ocr_text_collection,
             )
             normalized = self._normalize_text_for_llm(aggregated)
@@ -646,7 +752,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         return candidates
 
     def _llm_candidate_value_is_valid(
-        self, key: str, value: Any, source_text: str
+        self, key: str, value: object, source_text: str
     ) -> bool:
         if value is None:
             return True
@@ -682,7 +788,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         return True
 
     def _validate_llm_metadata_candidate(
-        self, candidate: Mapping[str, Any], source_text: str
+        self, candidate: Mapping[str, object], source_text: str
     ) -> bool:
         if not self._metadata_has_signal(candidate):
             return False
@@ -703,9 +809,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
         return True
 
     @staticmethod
-    def _metadata_has_signal(meta: Any) -> bool:
-        if not isinstance(meta, dict):
+    def _metadata_has_signal(meta: object) -> bool:
+        if not isinstance(meta, Mapping):
             return False
+        typed_meta = cast(Mapping[str, object], meta)
+
         signal_keys = (
             "first_name",
             "last_name",
@@ -721,7 +829,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         )
         return any(
             (
-                (value := meta.get(key)) is not None
+                (value := typed_meta.get(key)) is not None
                 and (not isinstance(value, str) or bool(value.strip()))
             )
             for key in signal_keys
@@ -729,11 +837,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
     @staticmethod
     def _resolve_ocr_roi(
-        endoscope_image_roi: Optional[dict | None],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
     ) -> RoiInput:
         if endoscope_data_roi_nested:
-            return cast(NestedRoi, endoscope_data_roi_nested)
+            return endoscope_data_roi_nested
 
         if not endoscope_image_roi:
             return None
@@ -752,10 +860,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
     def _detect_phi_regions_for_frame(
         self, gray_frame: np.ndarray
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         image = self._frame_image_for_phi_detection(gray_frame)
         regions = detect_phi_regions_from_settings(image)
-        phi_regions: list[dict[str, Any]] = []
+        phi_regions: list[dict[str, object]] = []
         for x1, y1, x2, y2 in regions:
             width = max(0, int(x2) - int(x1))
             height = max(0, int(y2) - int(y1))
@@ -781,10 +889,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
     @staticmethod
     def _observation_source_tags(
         *,
-        ocr_roi: Any,
+        ocr_roi: RoiInput,
         ocr_text: str,
         metadata_signal: bool,
-        phi_regions: list[dict[str, Any]],
+        phi_regions: list[dict[str, object]],
     ) -> list[str]:
         tags: list[str] = []
         if ocr_roi:
@@ -802,12 +910,12 @@ class FrameCleaner(FrameCleanerVideoMixin):
         *,
         frame_id: int | None,
         gray_frame: np.ndarray,
-        ocr_roi: Any,
+        ocr_roi: RoiInput,
         ocr_text: str,
         ocr_conf: float,
-        frame_metadata: dict[str, Any],
+        frame_metadata: dict[str, object],
         is_sensitive: bool,
-        phi_regions: list[dict[str, Any]],
+        phi_regions: list[dict[str, object]],
     ) -> FrameObservation:
         image_height, image_width = gray_frame.shape[:2]
         metadata_signal = self._metadata_has_signal(frame_metadata)
@@ -835,19 +943,25 @@ class FrameCleaner(FrameCleanerVideoMixin):
     def _process_frame_result(
         self,
         gray_frame: np.ndarray,
-        endoscope_image_roi: Optional[dict | None],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
         frame_id: int | None = None,
         collect_for_batch: bool = False,
+        high_quality_ocr: bool = True,
     ) -> FrameProcessResult:
         logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
         ocr_roi = self._resolve_ocr_roi(
             endoscope_image_roi,
             endoscope_data_roi_nested,
         )
-        ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
-            gray_frame, ocr_roi
-        )
+        if high_quality_ocr:
+            ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
+                gray_frame, ocr_roi
+            )
+        else:
+            ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
+                gray_frame, ocr_roi, high_quality=False
+            )
         phi_regions = self._detect_phi_regions_for_frame(gray_frame)
         frame_metadata = self._metadata_for_ocr_text(ocr_text, frame_metadata)
         is_sensitive = self._frame_is_sensitive(frame_metadata, phi_regions)
@@ -883,8 +997,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
     def _metadata_for_ocr_text(
         self,
         ocr_text: str,
-        frame_metadata: dict[str, Any],
-    ) -> dict[str, Any]:
+        frame_metadata: dict[str, object],
+    ) -> dict[str, object]:
         if ocr_text:
             meta_unified = self._unified_metadata_extract(ocr_text)
             frame_metadata = self.frame_metadata_extractor.merge_metadata(
@@ -895,8 +1009,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
     def _frame_is_sensitive(
         self,
-        frame_metadata: dict[str, Any],
-        phi_regions: list[dict[str, Any]],
+        frame_metadata: dict[str, object],
+        phi_regions: list[dict[str, object]],
     ) -> bool:
         return self.frame_metadata_extractor.is_sensitive_content(
             frame_metadata
@@ -907,12 +1021,12 @@ class FrameCleaner(FrameCleanerVideoMixin):
         *,
         frame_id: int | None,
         gray_frame: np.ndarray,
-        ocr_roi: Any,
+        ocr_roi: RoiInput,
         ocr_text: str,
         ocr_conf: float,
-        frame_metadata: dict[str, Any],
+        frame_metadata: dict[str, object],
         is_sensitive: bool,
-        phi_regions: list[dict[str, Any]],
+        phi_regions: list[dict[str, object]],
     ) -> None:
         self.frame_observations.append(
             self._build_frame_observation(
@@ -933,9 +1047,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         frame_id: int | None,
         ocr_text: str,
         ocr_conf: float,
-        frame_metadata: dict[str, Any],
+        frame_metadata: dict[str, object],
         is_sensitive: bool,
-        phi_regions: list[dict[str, Any]],
+        phi_regions: list[dict[str, object]],
     ) -> None:
         self.frame_collection.append(
             FrameCollectionItem.model_validate(
@@ -955,22 +1069,24 @@ class FrameCleaner(FrameCleanerVideoMixin):
     def _process_frame_single(
         self,
         gray_frame: np.ndarray,
-        endoscope_image_roi: Optional[dict | None],
-        endoscope_data_roi_nested: Optional[dict[str, dict[str, int | None]] | None],
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
         frame_id: int | None = None,
         collect_for_batch: bool = False,
-    ) -> tuple[bool, dict[str, Any], str, float]:
+        high_quality_ocr: bool = True,
+    ) -> tuple[bool, dict[str, object], str, float]:
         return self._process_frame_result(
             gray_frame=gray_frame,
             endoscope_image_roi=endoscope_image_roi,
             endoscope_data_roi_nested=endoscope_data_roi_nested,
             frame_id=frame_id,
             collect_for_batch=collect_for_batch,
+            high_quality_ocr=high_quality_ocr,
         ).as_legacy_tuple()
 
     def video_ocr_stream(
         self, frame_paths: List[Path]
-    ) -> Generator[tuple[str, float], Any, None]:
+    ) -> Generator[tuple[str, float], None, None]:
         for fp in frame_paths:
             img = Image.open(fp).convert("L")
             frame_array = np.array(img)
@@ -986,8 +1102,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
             yield ocr_text, avg_conf
 
-
-    def extract_metadata(self, text: str) -> Dict[str, Any]:
+    def extract_metadata(self, text: str) -> dict[str, object]:
         if not text or not text.strip():
             return {}
 
@@ -995,14 +1110,14 @@ class FrameCleaner(FrameCleanerVideoMixin):
             f"Extracting metadata from text of length {len(text)} with content: {text}..."
         )
 
-        meta: Dict[str, Any] = {}
+        meta: dict[str, object] = {}
         if (
             getattr(self, "use_llm", False)
             and getattr(self, "llm_extractor", None) is not None
         ):
             try:
                 meta_obj = self.llm_extractor.extract_metadata(text)  # type: ignore
-                if isinstance(meta_obj, SensitiveMeta):
+                if meta_obj is not None:
                     meta = meta_obj.to_dict()
             except Exception as e:
                 logger.warning("LLM extraction failed: %s", e)
@@ -1010,23 +1125,30 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
         if meta == {}:
             try:
+                spacy_meta: Mapping[str, object] = {}
                 if callable(self.patient_data_extractor):
-                    spacy_meta: Mapping[str, Any] = self.patient_data_extractor(text)
+                    spacy_meta = cast(
+                        Mapping[str, object], self.patient_data_extractor(text)
+                    )
                 elif hasattr(self.patient_data_extractor, "extract"):
-                    spacy_meta = self.patient_data_extractor.extract(text)
+                    spacy_meta = cast(
+                        Mapping[str, object], self.patient_data_extractor.extract(text)
+                    )
                 elif hasattr(self.patient_data_extractor, "patient_extractor"):
-                    spacy_meta = self.patient_data_extractor.patient_extractor(text)
+                    spacy_meta = cast(
+                        Mapping[str, object],
+                        self.patient_data_extractor.patient_extractor(text),
+                    )
                 else:
                     spacy_meta = {}
-                if isinstance(spacy_meta, Mapping):
-                    meta = dict(spacy_meta)
+                meta = dict(spacy_meta)
             except Exception as e:
                 logger.error(f"spaCy fallback failed: {e}")
                 meta = {}
 
         return meta or {}
 
-    def _extract_enriched_metadata_batch(self) -> Dict[str, Any]:
+    def _extract_enriched_metadata_batch(self) -> dict[str, object]:
         if not self.use_llm:
             logger.debug("Batch enrichment disabled because LLM is not enabled.")
             return {}
@@ -1095,7 +1217,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         *,
         text_candidates: list[str],
         attempts_allowed: int,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         for idx, text in enumerate(text_candidates[:attempts_allowed], start=1):
             candidate = self._extract_llm_candidate(text, idx, attempts_allowed)
             if not candidate:
@@ -1113,7 +1235,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         text: str,
         attempt_idx: int,
         attempts_allowed: int,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         normalized = self._normalize_text_for_llm(text)
         self._llm_seen_texts.add(normalized)
         self._llm_calls_this_video += 1
@@ -1127,6 +1249,4 @@ class FrameCleaner(FrameCleanerVideoMixin):
         meta_obj = self.llm_extractor.extract_metadata(text)
         if meta_obj is None:
             return {}
-        if isinstance(meta_obj, SensitiveMeta):
-            return meta_obj.to_dict()
-        return dict(meta_obj)
+        return meta_obj.to_dict()

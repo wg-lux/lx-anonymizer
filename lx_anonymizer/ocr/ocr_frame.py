@@ -1,39 +1,53 @@
 import logging
+import os
 import threading
 import time
-from typing import Any, Dict, Optional, TypeAlias, Tuple, cast
+from collections.abc import Mapping, Sequence
+from typing import Any, Dict, Optional, TypeAlias, Tuple, TypedDict, cast
 
 import cv2
 import numpy as np
 import pytesseract  # type: ignore[import-untyped]
 from PIL import Image, ImageEnhance, ImageFilter
 
+from lx_anonymizer.config import settings
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.regex_patterns import STRUCTURED_OVERLAY_RE
 
-_RapidOCR: Optional[type] = None
+_RapidOCR: Optional[type[Any]] = None
 RAPIDOCR_BACKEND = "rapidocr"
+RAPIDOCR_ACCELERATION_ENV = "LX_ANONYMIZER_RAPIDOCR_ACCELERATION"
+CUDA_EXECUTION_PROVIDER = "CUDAExecutionProvider"
+CPU_EXECUTION_PROVIDER = "CPUExecutionProvider"
+rapidocr_available = False
 
 try:
     from rapidocr import RapidOCR  # type: ignore[import-untyped]
 
     _RapidOCR = RapidOCR  # Assign the class to your internal variable
-    RAPIDOCR_AVAILABLE = True
+    rapidocr_available = True
 except ImportError:
-    RAPIDOCR_AVAILABLE = False
+    rapidocr_available = False
 
-_TesseOCRFrameProcessor: Optional[type] = None
+_TesseOCRFrameProcessor: Optional[type[Any]] = None
+tesserocr_available = False
 try:
     from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
 
     _TesseOCRFrameProcessor = TesseOCRFrameProcessor
-    TESSEROCR_AVAILABLE = True
+    tesserocr_available = True
 except ImportError:
-    TESSEROCR_AVAILABLE = False
+    tesserocr_available = False
 
 FlatRoi: TypeAlias = dict[str, int | None]
 NestedRoi: TypeAlias = dict[str, FlatRoi]
-RoiInput: TypeAlias = NestedRoi | FlatRoi | list[Any] | None
+RoiInput: TypeAlias = NestedRoi | FlatRoi | list[object] | None
+
+
+class PytesseractData(TypedDict):
+    text: list[str]
+    conf: list[str | int | float]
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +65,18 @@ class FrameOCR:
     def __init__(self):
         self.frame_metadata_extractor = FrameMetadataExtractor()
         self.rapidocr_engine: Optional[Any] = None
+        self.rapidocr_params = self._rapidocr_init_params()
         self._rapidocr_lock = threading.Lock()
         self.tesserocr_processor: Optional[Any] = None
-        self._rapidocr_available = RAPIDOCR_AVAILABLE and _RapidOCR is not None
+        self._rapidocr_available = rapidocr_available and _RapidOCR is not None
 
         if self._rapidocr_available:
-            logger.info("FrameOCR configured with lazy %s backend", RAPIDOCR_BACKEND)
-        elif TESSEROCR_AVAILABLE and _TesseOCRFrameProcessor is not None:
+            logger.info(
+                "FrameOCR configured with lazy %s backend (acceleration=%s)",
+                RAPIDOCR_BACKEND,
+                self._resolved_rapidocr_acceleration(),
+            )
+        elif tesserocr_available and _TesseOCRFrameProcessor is not None:
             self._ensure_tesserocr_processor()
         else:
             logger.info("TesseOCR not available, using PyTesseract")
@@ -94,7 +113,7 @@ class FrameOCR:
 
         if (
             self.tesserocr_processor is None
-            and TESSEROCR_AVAILABLE
+            and tesserocr_available
             and _TesseOCRFrameProcessor is not None
         ):
             self._ensure_tesserocr_processor()
@@ -119,10 +138,71 @@ class FrameOCR:
         with self._rapidocr_lock:
             if self.rapidocr_engine is not None:
                 return
-            if not RAPIDOCR_AVAILABLE or _RapidOCR is None:
+            if not rapidocr_available or _RapidOCR is None:
                 raise RuntimeError("RapidOCR is not available")
-            self.rapidocr_engine = _RapidOCR()
-            logger.info("FrameOCR initialized with %s backend", RAPIDOCR_BACKEND)
+            rapidocr_params = cast(
+                Dict[str, Any],
+                getattr(self, "rapidocr_params", {}),
+            )
+            if rapidocr_params:
+                self.rapidocr_engine = _RapidOCR(params=rapidocr_params)
+            else:
+                self.rapidocr_engine = _RapidOCR()
+            logger.info(
+                "FrameOCR initialized with %s backend params=%s",
+                RAPIDOCR_BACKEND,
+                rapidocr_params,
+            )
+
+    @staticmethod
+    def _resolved_rapidocr_acceleration() -> str:
+        configured = os.environ.get(RAPIDOCR_ACCELERATION_ENV, "").strip().lower()
+        if configured:
+            return configured
+        return settings.RAPIDOCR_ACCELERATION
+
+    @classmethod
+    def _rapidocr_init_params(cls) -> Dict[str, Any]:
+        acceleration = cls._resolved_rapidocr_acceleration()
+        if acceleration not in {"auto", "cpu", "cuda"}:
+            raise ValueError(
+                "Invalid RapidOCR acceleration setting "
+                f"{acceleration!r}; expected 'auto', 'cpu', or 'cuda'."
+            )
+        if acceleration == "cpu":
+            return {"EngineConfig.onnxruntime.use_cuda": False}
+
+        available_providers = cls._available_onnx_providers()
+        if CUDA_EXECUTION_PROVIDER in available_providers:
+            logger.info(
+                "RapidOCR will request %s; available ONNX providers=%s",
+                CUDA_EXECUTION_PROVIDER,
+                list(available_providers),
+            )
+            return {"EngineConfig.onnxruntime.use_cuda": True}
+
+        if acceleration == "cuda":
+            raise RuntimeError(
+                "RapidOCR CUDA acceleration was requested, but "
+                f"{CUDA_EXECUTION_PROVIDER} is not available. "
+                f"Available ONNX providers: {list(available_providers)}"
+            )
+
+        logger.info(
+            "RapidOCR using CPU ONNX provider; available ONNX providers=%s",
+            list(available_providers),
+        )
+        return {"EngineConfig.onnxruntime.use_cuda": False}
+
+    @staticmethod
+    def _available_onnx_providers() -> tuple[str, ...]:
+        try:
+            import onnxruntime as ort  # type: ignore[import-untyped]
+        except ImportError:
+            return ()
+
+        providers = cast(Sequence[object], cast(Any, ort).get_available_providers())
+        return tuple(str(provider) for provider in providers)
 
     def _ensure_tesserocr_processor(self) -> None:
         if self.tesserocr_processor is not None:
@@ -221,17 +301,17 @@ class FrameOCR:
         entries: list[dict[str, Any]] = []
 
         if hasattr(result, "boxes") and hasattr(result, "txts"):
-            boxes = getattr(result, "boxes")
+            boxes = cast(Sequence[object] | None, getattr(result, "boxes"))
             if boxes is None:
                 return entries, elapsed
 
-            txts = getattr(result, "txts")
+            txts = cast(Sequence[object] | None, getattr(result, "txts"))
             if txts is None:
-                txts = []
+                txts = ()
 
-            scores = getattr(result, "scores", None)
+            scores = cast(Sequence[object] | None, getattr(result, "scores", None))
             if scores is None:
-                scores = [0.0] * len(txts)
+                scores = tuple(0.0 for _ in txts)
 
             for box, text, score in zip(boxes, txts, scores, strict=False):
                 entry = self._rapidocr_entry(box, text, score, x_offset, y_offset)
@@ -307,7 +387,7 @@ class FrameOCR:
     def _normalize_roi_input(self, roi: RoiInput) -> list[tuple[str, FlatRoi]]:
         rois: list[tuple[str, FlatRoi]] = []
 
-        def collect(value: Any, name: str = "") -> None:
+        def collect(value: object, name: str = "") -> None:
             if not value:
                 return
             if isinstance(value, dict) and "x" in value:
@@ -315,12 +395,14 @@ class FrameOCR:
                 if self._validate_roi(flat_roi):
                     rois.append((name, flat_roi))
                 return
-            if isinstance(value, dict):
-                for key, nested in value.items():
+            if isinstance(value, Mapping):
+                nested_mapping = cast(Mapping[str, object], value)
+                for key, nested in nested_mapping.items():
                     collect(nested, str(key))
                 return
             if isinstance(value, list):
-                for idx, nested in enumerate(value):
+                nested_values = cast(list[object], value)
+                for idx, nested in enumerate(nested_values):
                     collect(nested, str(idx))
 
         collect(roi)
@@ -356,18 +438,24 @@ class FrameOCR:
             img = self._preprocess_frame(frame, roi)
             cfg = self.pytesseract_config
             config_str = f"--oem {cfg['oem']} --psm {cfg['psm']} --dpi {cfg['dpi']}"
-            data = pytesseract.image_to_data(
-                img,
-                lang=cfg["lang"],
-                config=config_str,
-                output_type=pytesseract.Output.DICT,
+            data = cast(
+                PytesseractData,
+                cast(Any, pytesseract).image_to_data(
+                    img,
+                    lang=cfg["lang"],
+                    config=config_str,
+                    output_type=pytesseract.Output.DICT,
+                ),
             )
 
-            words, confs = [], []
+            words: list[str] = []
+            confs: list[int] = []
             for text, conf in zip(data["text"], data["conf"]):
-                if text.strip() and int(conf) > 0:
-                    words.append(text.strip())
-                    confs.append(int(conf))
+                stripped_text = text.strip()
+                int_conf = int(conf)
+                if stripped_text and int_conf > 0:
+                    words.append(stripped_text)
+                    confs.append(int_conf)
 
             text = " ".join(words)
             avg_conf = (sum(confs) / len(confs) / 100) if confs else 0.0
@@ -423,8 +511,8 @@ class FrameOCR:
     def _ocr_with_tesserocr(
         self,
         gray_frame: np.ndarray,
-        endoscope_data_roi_nested: Optional[NestedRoi | list[Any]] = None,
-    ) -> tuple[str, float, dict, bool]:
+        endoscope_data_roi_nested: Optional[NestedRoi | list[object]] = None,
+    ) -> tuple[str, float, Dict[str, Any], bool]:
         """
         OCR with TesserOCR and metadata extraction.
         Handles both dict-based and list-based ROI structures gracefully.
@@ -434,32 +522,36 @@ class FrameOCR:
             logger.debug("Using TesserOCR OCR engine with enhanced validation")
             frame_metadata: Dict[str, Any] = {}
             ocr_text = ""
-            valid_texts = []  # Store only validated text
+            valid_texts: list[str] = []  # Store only validated text
 
             # --- Normalize input ROI structure ---
-            rois: list[dict[str, int | None]] = []
+            rois: list[FlatRoi] = []
 
             if not endoscope_data_roi_nested:
                 has_roi = False
             elif isinstance(endoscope_data_roi_nested, dict):
                 # Original expected format
-                rois = list(endoscope_data_roi_nested.values())
+                rois = [
+                    roi
+                    for roi in endoscope_data_roi_nested.values()
+                    if self._validate_roi(roi)
+                ]
                 has_roi = True
-            elif isinstance(endoscope_data_roi_nested, list):
+            else:
                 # Flatten nested lists of dicts
                 for item in endoscope_data_roi_nested:
                     if isinstance(item, dict):
-                        rois.append(item)
+                        flat_item = cast(FlatRoi, item)
+                        if self._validate_roi(flat_item):
+                            rois.append(flat_item)
                     elif isinstance(item, list):
-                        for sub in item:
+                        sub_items = cast(list[object], item)
+                        for sub in sub_items:
                             if isinstance(sub, dict):
-                                rois.append(sub)
+                                flat_sub = cast(FlatRoi, sub)
+                                if self._validate_roi(flat_sub):
+                                    rois.append(flat_sub)
                 has_roi = len(rois) > 0
-            else:
-                logger.warning(
-                    f"Unexpected ROI type: {type(endoscope_data_roi_nested)}"
-                )
-                has_roi = False
 
             # --- Run OCR ---
             if not has_roi:

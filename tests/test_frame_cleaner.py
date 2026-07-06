@@ -1,14 +1,41 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
+from typing import TypedDict
 import numpy as np
 import numpy.typing as npt
 from lx_dtypes.models.meta.VideoMeta import FrameProcessResult, VideoMeta
 
 # Adjust import based on your actual package structure
-from lx_anonymizer.frame_cleaner import FrameCleaner
+from lx_anonymizer.frame_cleaner import (
+    FrameCleaner,
+    FrameCleanerQualityProfile,
+    FrameCleanerSamplingProfile,
+)
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+
+FrameArray = npt.NDArray[np.uint8]
+StreamItem = tuple[int, FrameArray, int]
+NestedRoi = dict[str, dict[str, int | None]]
+
+
+class VideoFormat(TypedDict):
+    video_codec: str
+    pixel_format: str
+    width: int
+    height: int
+    has_audio: bool
+    container: str
+    can_stream_copy: bool
+
+
+def _fps_or_zero(prop: int) -> float:
+    return {5: 30.0}.get(prop, 0.0)
+
+
+def _long_video_fps(prop: int) -> float:
+    return 30.0 if prop == 5 else 0.0
 
 
 def _frame_cleaner_unit_stub() -> FrameCleaner:
@@ -30,14 +57,14 @@ class TestFrameCleanerRefactored:
         return FrameCleaner(use_llm=False)
 
     @pytest.fixture
-    def mock_frame(self):
+    def mock_frame(self) -> FrameArray:
         """Create a dummy grayscale numpy frame (height, width)."""
         return np.zeros((1080, 1920), dtype=np.uint8)
 
     def test_iter_video_logic(
         self,
         frame_cleaner: FrameCleaner,
-    ):
+    ) -> None:
         """
         Test _iter_video generator logic without a real file.
 
@@ -57,25 +84,23 @@ class TestFrameCleanerRefactored:
 
             # Setup Metadata
             mock_cap.isOpened.return_value = True
-            mock_cap.get.side_effect = lambda prop: {
-                # cv2.CAP_PROP_FPS is usually 5
-                5: 30.0
-            }.get(prop, 0)
+            mock_cap.get.side_effect = _fps_or_zero
 
             # Setup the stream: Return a frame 100 times, then False (EOF)
             # side_effect: [(True, frame), (True, frame), ... (False, None)]
             # We create a dummy color frame (H, W, 3) because _iter_video converts BGR2GRAY
-            dummy_color_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+            dummy_color_frame: FrameArray = np.zeros((100, 100, 3), dtype=np.uint8)
 
             # Create a side effect that yields frames and then stops
-            read_side_effect = [(True, dummy_color_frame)] * total_frames + [
-                (False, None)
-            ]
+            read_side_effect: list[tuple[bool, FrameArray | None]] = []
+            for _ in range(total_frames):
+                read_side_effect.append((True, dummy_color_frame))
+            read_side_effect.append((False, None))
             mock_cap.read.side_effect = read_side_effect
 
             # Execute the generator
             # Pass total_frames manually as clean_video usually calculates this before calling _iter_video
-            iterator = frame_cleaner._iter_video(video_path, total_frames=total_frames)
+            iterator = frame_cleaner._iter_video(video_path, total_frames=total_frames)  # pyright: ignore[reportPrivateUsage]
 
             yielded_items = list(iterator)
 
@@ -93,7 +118,7 @@ class TestFrameCleanerRefactored:
             assert frame.ndim == 2  # Ensure it was converted to grayscale
 
             # Validate sampling logic using the current helper behavior.
-            target_samples = frame_cleaner._target_sample_count(total_frames)
+            target_samples = frame_cleaner._target_sample_count(total_frames)  # pyright: ignore[reportPrivateUsage]
             expected_skip = max(5, min(-(-total_frames // target_samples), 60))
             assert stride == expected_skip
 
@@ -122,7 +147,11 @@ class TestFrameCleanerRefactored:
         # Frame 2: Sensitive
 
         # (index, frame, stride)
-        mock_stream_data = [(0, mock_frame, 1), (1, mock_frame, 1), (2, mock_frame, 1)]
+        mock_stream_data: list[StreamItem] = [
+            (0, mock_frame, 1),
+            (1, mock_frame, 1),
+            (2, mock_frame, 1),
+        ]
 
         # Patch internal dependencies
         with (
@@ -172,6 +201,7 @@ class TestFrameCleanerRefactored:
             )
 
             # ASSERTIONS
+            assert result_path == output_path
 
             # 1. Verify Iteration
             mock_iter.assert_called_once()
@@ -198,7 +228,7 @@ class TestFrameCleanerRefactored:
         mock_frame: npt.NDArray[np.uint8],
         mock_central_video_format: MagicMock,
     ) -> None:
-        mock_central_video_format.return_value = {
+        video_format: VideoFormat = {
             "video_codec": "unknown",
             "pixel_format": "unknown",
             "width": 0,
@@ -207,10 +237,11 @@ class TestFrameCleanerRefactored:
             "container": "unknown",
             "can_stream_copy": False,
         }
+        mock_central_video_format.return_value = video_format
 
         video_path = Path("input.mp4")
         output_path = Path("output.mp4")
-        mock_stream_data = [(0, mock_frame, 1)]
+        mock_stream_data: list[StreamItem] = [(0, mock_frame, 1)]
 
         with (
             patch.object(frame_cleaner, "_iter_video", return_value=mock_stream_data),
@@ -241,6 +272,59 @@ class TestFrameCleanerRefactored:
         assert result_path == video_path
         assert VideoMeta.model_validate(meta).file_path == str(video_path)
 
+    def test_mask_overlay_stops_analysis_after_complete_metadata(
+        self,
+        frame_cleaner: FrameCleaner,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        video_path = Path("input.mp4")
+        output_path = Path("output.mp4")
+        complete_metadata = {
+            "first_name": "Thomas",
+            "last_name": "Lux",
+            "dob": "2024-02-15",
+        }
+        mock_stream_data: list[StreamItem] = [
+            (0, mock_frame, 1),
+            (1, mock_frame, 1),
+            (2, mock_frame, 1),
+        ]
+
+        with (
+            patch.object(frame_cleaner, "_iter_video", return_value=mock_stream_data),
+            patch.object(
+                frame_cleaner,
+                "_process_frame_result",
+                return_value=FrameProcessResult(
+                    is_sensitive=True,
+                    metadata=complete_metadata,
+                    ocr_text="Thomas Lux geb. 15.02.2024",
+                    ocr_confidence=0.9,
+                ),
+            ) as mock_process,
+            patch.object(frame_cleaner, "_mask_video_streaming", return_value=True),
+            patch("cv2.VideoCapture") as mock_cv2,
+        ):
+            mock_cv2_instance = MagicMock()
+            mock_cv2.return_value = mock_cv2_instance
+            mock_cv2_instance.get.return_value = 100.0
+
+            result_path, meta = frame_cleaner.clean_video(
+                video_path=video_path,
+                endoscope_image_roi=None,
+                endoscope_data_roi_nested=None,
+                output_path=output_path,
+                technique="mask_overlay",
+            )
+
+        assert result_path == output_path
+        assert mock_process.call_count == 1
+        video_meta = VideoMeta.model_validate(meta)
+        assert video_meta.first_name == "Thomas"
+        assert video_meta.last_name == "Lux"
+        assert video_meta.dob is not None
+        assert video_meta.dob.isoformat() == "2024-02-15"
+
     def test_process_frame_marks_sensitive_after_ocr_metadata_merge(
         self,
         mock_frame: npt.NDArray[np.uint8],
@@ -266,7 +350,7 @@ class TestFrameCleanerRefactored:
                 return_value=parsed_meta,
             ),
         ):
-            frame_result = frame_cleaner._process_frame_result(
+            frame_result = frame_cleaner._process_frame_result(  # pyright: ignore[reportPrivateUsage]
                 mock_frame,
                 endoscope_image_roi=None,
                 endoscope_data_roi_nested=None,
@@ -304,7 +388,7 @@ class TestFrameCleanerRefactored:
             "extract_text_from_frame",
             return_value=("", 0.0, {}),
         ) as mock_extract:
-            frame_cleaner._process_frame_single(
+            frame_cleaner._process_frame_single(  # pyright: ignore[reportPrivateUsage]
                 mock_frame,
                 endoscope_image_roi=image_roi,
                 endoscope_data_roi_nested=None,
@@ -322,14 +406,16 @@ class TestFrameCleanerRefactored:
     ) -> None:
         frame_cleaner = _frame_cleaner_unit_stub()
         image_roi = {"x": 10, "y": 20, "width": 300, "height": 120}
-        nested_roi = {"patient_info": {"x": 1, "y": 2, "width": 3, "height": 4}}
+        nested_roi: NestedRoi = {
+            "patient_info": {"x": 1, "y": 2, "width": 3, "height": 4}
+        }
 
         with patch.object(
             frame_cleaner.frame_ocr,
             "extract_text_from_frame",
             return_value=("", 0.0, {}),
         ) as mock_extract:
-            frame_cleaner._process_frame_single(
+            frame_cleaner._process_frame_single(  # pyright: ignore[reportPrivateUsage]
                 mock_frame,
                 endoscope_image_roi=image_roi,
                 endoscope_data_roi_nested=nested_roi,
@@ -337,6 +423,49 @@ class TestFrameCleanerRefactored:
             )
 
         mock_extract.assert_called_once_with(mock_frame, nested_roi)
+
+    def test_process_frame_can_use_fast_ocr_quality(
+        self,
+        mock_frame: npt.NDArray[np.uint8],
+    ) -> None:
+        frame_cleaner = _frame_cleaner_unit_stub()
+
+        with (
+            patch.object(
+                frame_cleaner.frame_ocr,
+                "extract_text_from_frame",
+                return_value=("", 0.0, {}),
+            ) as mock_extract,
+            patch.object(
+                frame_cleaner,
+                "_detect_phi_regions_for_frame",
+                return_value=[],
+            ),
+        ):
+            frame_cleaner._process_frame_result(  # pyright: ignore[reportPrivateUsage]
+                mock_frame,
+                endoscope_image_roi=None,
+                endoscope_data_roi_nested=None,
+                frame_id=7,
+                high_quality_ocr=False,
+            )
+
+        mock_extract.assert_called_once_with(
+            mock_frame,
+            None,
+            high_quality=False,
+        )
+
+    def test_fast_quality_profile_caps_sampling_and_disables_high_quality(
+        self,
+    ) -> None:
+        profile = FrameCleanerSamplingProfile.from_quality_profile(
+            FrameCleanerQualityProfile.FAST
+        )
+
+        assert profile.max_frames_to_sample == 12
+        assert profile.high_quality_ocr is False
+        assert "mask_overlay" in profile.early_stop_techniques
 
     def test_process_frame_records_phi_detector_observations_as_sensitive(
         self,
@@ -371,7 +500,7 @@ class TestFrameCleanerRefactored:
                 return_value=phi_regions,
             ),
         ):
-            frame_result = frame_cleaner._process_frame_result(
+            frame_result = frame_cleaner._process_frame_result(  # pyright: ignore[reportPrivateUsage]
                 mock_frame,
                 endoscope_image_roi=None,
                 endoscope_data_roi_nested=None,
@@ -404,7 +533,7 @@ class TestFrameCleanerRefactored:
             mock_cap_cls.return_value = mock_cap
 
             # FPS = 30
-            mock_cap.get.side_effect = lambda x: 30.0 if x == 5 else 0
+            mock_cap.get.side_effect = _long_video_fps
 
             # Mock read to stop immediately so we don't loop 50k times
             # We only care about the setup logic before the loop yields
@@ -415,10 +544,10 @@ class TestFrameCleanerRefactored:
             # we check the stride of the *first* yielded item if we allowed one read.
 
             # Let's allow one read to capture the calculated stride
-            dummy_frame = np.zeros((10, 10, 3), dtype=np.uint8)
+            dummy_frame: FrameArray = np.zeros((10, 10, 3), dtype=np.uint8)
             mock_cap.read.side_effect = [(True, dummy_frame), (False, None)]
 
-            gen = frame_cleaner._iter_video(video_path, long_frame_count)
+            gen = frame_cleaner._iter_video(video_path, long_frame_count)  # pyright: ignore[reportPrivateUsage]
             items = list(gen)
 
             if items:
@@ -439,14 +568,19 @@ class TestFrameCleanerRefactored:
     ) -> None:
         video_path = Path("input.mp4")
         output_path = Path("output.mp4")
-        mock_stream_data = [(0, mock_frame, 1)]
+        mock_stream_data: list[StreamItem] = [(0, mock_frame, 1)]
 
         with (
             patch.object(frame_cleaner, "_iter_video", return_value=mock_stream_data),
             patch.object(
                 frame_cleaner,
-                "_process_frame_single",
-                return_value=(False, {}, "Clean", 0.9),
+                "_process_frame_result",
+                return_value=FrameProcessResult(
+                    is_sensitive=False,
+                    metadata={},
+                    ocr_text="Clean",
+                    ocr_confidence=0.9,
+                ),
             ),
             patch.object(frame_cleaner, "_mask_video_streaming", return_value=False),
             patch("cv2.VideoCapture") as mock_cv2,
@@ -504,6 +638,14 @@ class TestFrameCleanerRefactored:
 
             # Verify Run (Copy process) arguments
             assert mock_run.called
-            copy_args = mock_run.call_args[0][0]
-            assert "-c" in copy_args
+            copy_args = next(
+                call.args[0]
+                for call in mock_run.call_args_list
+                if "copy" in call.args[0]
+            )
+            assert any(
+                isinstance(arg, str)
+                and (arg.startswith("-c") or arg in ("-codec", "-vcodec", "-acodec"))
+                for arg in copy_args
+            )
             assert "copy" in copy_args  # Should enable stream copy from pipe

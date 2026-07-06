@@ -1,18 +1,20 @@
+# pyright: reportPrivateUsage=false
+
 from dataclasses import dataclass
 import threading
 import time
-from typing import Any
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from lx_anonymizer.ocr import ocr_frame as ocr_mod
-from lx_anonymizer.ocr.ocr_frame import FrameOCR
+from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, NestedRoi
 
 
 @dataclass
 class FakeRapidOCROutput:
-    boxes: np.ndarray
+    boxes: NDArray[np.float32]
     txts: tuple[str, ...]
     scores: tuple[float, ...]
     elapse: float = 0.01
@@ -23,12 +25,12 @@ class FakeRapidOCREngine:
         self.outputs = outputs
         self.input_shapes: list[tuple[int, ...]] = []
 
-    def __call__(self, image: np.ndarray) -> FakeRapidOCROutput:
+    def __call__(self, image: NDArray[np.uint8]) -> FakeRapidOCROutput:
         self.input_shapes.append(image.shape)
         return self.outputs.pop(0)
 
 
-def _frame_ocr_with_engine(engine: Any) -> FrameOCR:
+def _frame_ocr_with_engine(engine: FakeRapidOCREngine) -> FrameOCR:
     frame_ocr = FrameOCR.__new__(FrameOCR)
     frame_ocr.rapidocr_engine = engine
     frame_ocr._rapidocr_lock = threading.Lock()
@@ -59,12 +61,12 @@ def test_rapidocr_full_frame_normalizes_modern_output() -> None:
     )
 
     assert text == "Patient Mueller 09:53:32"
-    assert confidence == pytest.approx(0.90)
+    assert abs(confidence - 0.90) <= 1e-12
     assert metadata["backend"] == "rapidocr"
     assert metadata["method"] == "rapidocr"
     assert metadata["regions"] == 2
     assert metadata["words"] == 3
-    assert metadata["elapse"] == pytest.approx(0.12)
+    assert abs(float(metadata["elapse"]) - 0.12) <= 1e-12
     assert engine.input_shapes == [(100, 200)]
 
 
@@ -72,19 +74,25 @@ def test_rapidocr_nested_rois_crop_and_offset_boxes() -> None:
     engine = FakeRapidOCREngine(
         [
             FakeRapidOCROutput(
-                boxes=np.array([[[1, 2], [11, 2], [11, 8], [1, 8]]]),
+                boxes=np.array(
+                    [[[1, 2], [11, 2], [11, 8], [1, 8]]],
+                    dtype=np.float32,
+                ),
                 txts=("Patient Mueller",),
                 scores=(0.8,),
             ),
             FakeRapidOCROutput(
-                boxes=np.array([[[3, 4], [23, 4], [23, 10], [3, 10]]]),
+                boxes=np.array(
+                    [[[3, 4], [23, 4], [23, 10], [3, 10]]],
+                    dtype=np.float32,
+                ),
                 txts=("09:53:32",),
                 scores=(0.6,),
             ),
         ]
     )
     frame_ocr = _frame_ocr_with_engine(engine)
-    roi = {
+    roi: NestedRoi = {
         "patient": {"x": 20, "y": 30, "width": 40, "height": 20},
         "time": {"x": 100, "y": 50, "width": 50, "height": 25},
     }
@@ -94,7 +102,7 @@ def test_rapidocr_nested_rois_crop_and_offset_boxes() -> None:
     )
 
     assert text == "Patient Mueller\n09:53:32"
-    assert confidence == pytest.approx(0.7)
+    assert abs(confidence - 0.7) <= 1e-12
     assert metadata["method"] == "rapidocr+roi"
     assert metadata["roi_count"] == 2
     assert metadata["roi_0"] == "Patient Mueller"
@@ -117,14 +125,17 @@ def test_rapidocr_lazy_initialization_is_locked(
             with init_count_lock:
                 init_count += 1
 
-        def __call__(self, image: np.ndarray) -> FakeRapidOCROutput:
+        def __call__(self, image: NDArray[np.uint8]) -> FakeRapidOCROutput:
             return FakeRapidOCROutput(
-                boxes=np.array([[[0, 0], [10, 0], [10, 5], [0, 5]]]),
+                boxes=np.array(
+                    [[[0, 0], [10, 0], [10, 5], [0, 5]]],
+                    dtype=np.float32,
+                ),
                 txts=("Patient Mueller",),
                 scores=(0.9,),
             )
 
-    monkeypatch.setattr(ocr_mod, "RAPIDOCR_AVAILABLE", True)
+    monkeypatch.setattr(ocr_mod, "rapidocr_available", True)
     monkeypatch.setattr(ocr_mod, "_RapidOCR", LazyEngine)
 
     frame_ocr = FrameOCR.__new__(FrameOCR)
@@ -140,8 +151,9 @@ def test_rapidocr_lazy_initialization_is_locked(
     def worker() -> None:
         try:
             barrier.wait()
+            roi: FlatRoi | None = None
             text, confidence, _ = frame_ocr.extract_text_from_frame(
-                np.zeros((20, 20), dtype=np.uint8), roi=None
+                np.zeros((20, 20), dtype=np.uint8), roi=roi
             )
             results.append((text, confidence))
         except BaseException as exc:
@@ -156,3 +168,41 @@ def test_rapidocr_lazy_initialization_is_locked(
     assert errors == []
     assert init_count == 1
     assert results == [("Patient Mueller", 0.9)] * 4
+
+
+def test_rapidocr_init_params_request_cuda_when_provider_is_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def available_providers() -> tuple[str, str]:
+        return (
+            ocr_mod.CUDA_EXECUTION_PROVIDER,
+            ocr_mod.CPU_EXECUTION_PROVIDER,
+        )
+
+    monkeypatch.delenv(ocr_mod.RAPIDOCR_ACCELERATION_ENV, raising=False)
+    monkeypatch.setattr(
+        FrameOCR,
+        "_available_onnx_providers",
+        staticmethod(available_providers),
+    )
+
+    params = FrameOCR._rapidocr_init_params()
+
+    assert params["EngineConfig.onnxruntime.use_cuda"] is True
+
+
+def test_rapidocr_cuda_request_raises_without_cuda_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def available_providers() -> tuple[str]:
+        return (ocr_mod.CPU_EXECUTION_PROVIDER,)
+
+    monkeypatch.setenv(ocr_mod.RAPIDOCR_ACCELERATION_ENV, "cuda")
+    monkeypatch.setattr(
+        FrameOCR,
+        "_available_onnx_providers",
+        staticmethod(available_providers),
+    )
+
+    with pytest.raises(RuntimeError, match=ocr_mod.CUDA_EXECUTION_PROVIDER):
+        FrameOCR._rapidocr_init_params()
