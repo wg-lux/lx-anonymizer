@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     MODE: str = "production"
     DEBUG_SAVE_FRAMES: bool = False
 
+    # --- spaCy / Clinical NER ---
+    SPACY_MODEL: str = "de_core_news_sm"
+    SPACY_AUTO_DOWNLOAD: bool = False
+    SPACY_STRICT: bool = False
+
     # --- LLM Configuration ---
     # Conservative library default: require explicit opt-in before doing network/model work.
     LLM_ENABLED: bool = False
@@ -24,9 +29,13 @@ class Settings(BaseSettings):
     # --- Performance & Sampling ---
     MAX_FRAMES_TO_SAMPLE: int = 24
     SMART_EARLY_STOPPING: bool = True
+    FRAME_CLEANER_QUALITY_PROFILE: Literal["fast", "balanced", "quality"] = (
+        "balanced"
+    )
 
     # --- OCR / Detection ---
     OCR_CONFIDENCE_THRESHOLD: float = 0.6
+    RAPIDOCR_ACCELERATION: Literal["auto", "cpu", "cuda"] = "auto"
     PHI_REGION_DETECTOR_MODEL_PATH: str = ""
     PHI_REGION_DETECTOR_MODEL_SHA256: str = ""
     PHI_REGION_DETECTOR_REQUIRED: bool = False

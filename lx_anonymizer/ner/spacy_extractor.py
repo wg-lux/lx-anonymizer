@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from typing import (
     Any,
+    Callable,
     Final,
     Mapping,
     Optional,
@@ -18,6 +19,7 @@ from spacy.language import Language
 from spacy.matcher import Matcher
 from spacy.tokens import Span, Token
 
+from lx_anonymizer.config import settings
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ner.determine_gender import determine_gender
 from lx_anonymizer.regex_patterns import (
@@ -100,18 +102,44 @@ class SpacyModelManager:
     MODEL_ENV = "LX_ANONYMIZER_SPACY_MODEL"
     AUTO_DOWNLOAD_ENV = "LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD"
     STRICT_MODEL_ENV = "LX_ANONYMIZER_SPACY_STRICT"
+    PROFILE_ENV = "LX_ANONYMIZER_PROFILE"
     _TRUE_VALUES = {"1", "true", "yes", "on"}
+    _CLINICAL_PROFILE_VALUES = {
+        "clinical",
+        "clinical_profile",
+        "clinical-production",
+        "clinical_production",
+    }
 
     @classmethod
     def configured_model_name(cls) -> str:
+        env_model = os.environ.get(cls.MODEL_ENV, "").strip()
+        if env_model:
+            return env_model
         return (
-            os.environ.get(cls.MODEL_ENV, cls.DEFAULT_MODEL).strip()
+            settings.SPACY_MODEL.strip()
             or cls.DEFAULT_MODEL
         )
 
     @classmethod
     def _env_flag_enabled(cls, env_name: str) -> bool:
         return os.environ.get(env_name, "").strip().casefold() in cls._TRUE_VALUES
+
+    @classmethod
+    def _auto_download_enabled(cls) -> bool:
+        return cls._env_flag_enabled(cls.AUTO_DOWNLOAD_ENV) or settings.SPACY_AUTO_DOWNLOAD
+
+    @classmethod
+    def _strict_model_required(cls) -> bool:
+        if cls._env_flag_enabled(cls.STRICT_MODEL_ENV) or settings.SPACY_STRICT:
+            return True
+
+        configured_profile = (
+            os.environ.get(cls.PROFILE_ENV, "")
+            or os.environ.get("MODE", "")
+            or settings.MODE
+        )
+        return configured_profile.strip().casefold() in cls._CLINICAL_PROFILE_VALUES
 
     @classmethod
     def get_model(cls, model_name: Optional[str] = None) -> Language:
@@ -124,7 +152,7 @@ class SpacyModelManager:
             logger.info(f"Loading spacy model: {model_name}")
             cls._instance = spacy.load(model_name)
         except OSError as exc:
-            if cls._env_flag_enabled(cls.AUTO_DOWNLOAD_ENV):
+            if cls._auto_download_enabled():
                 logger.warning(
                     "Model '%s' not found. Attempting download because %s is enabled.",
                     model_name,
@@ -133,7 +161,7 @@ class SpacyModelManager:
                 cls._download_model(model_name)
                 cls._instance = spacy.load(model_name)
                 logger.info(f"Successfully loaded {model_name} after download.")
-            elif cls._env_flag_enabled(cls.STRICT_MODEL_ENV):
+            elif cls._strict_model_required():
                 message = cls._missing_model_message(model_name)
                 logger.error(message)
                 raise RuntimeError(message) from exc
@@ -145,9 +173,10 @@ class SpacyModelManager:
     @classmethod
     def _download_model(cls, model_name: str) -> None:
         try:
-            from spacy.cli.download import download as download_model
+            from spacy.cli.download import download as download_model  # type: ignore[reportUnknownVariableType]
 
-            download_model(model_name)
+            download = cast(Callable[[str], None], download_model)
+            download(model_name)
         except SystemExit as exc:
             raise RuntimeError(
                 "spaCy model download failed with exit code "
@@ -226,6 +255,10 @@ def _clean_date(date_str: str) -> Optional[str]:
 
     logger.debug(f"Could not parse date: {date_str}")
     return None
+
+
+def clean_date_value(date_str: str) -> Optional[str]:
+    return _clean_date(date_str)
 
 
 # --- Base Class ---
@@ -310,13 +343,7 @@ class PatientDataExtractor(BaseExtractor):
             + [{"OP": "?"}]  # Optional token between name and DOB
             + geb_block,
         )
-        patient_with_case = cast(
-            list[dict[str, Any]],
-            patient_with_dob
-            + [space]
-            + [{"OP": "?"}]
-            + fall_block,
-        )
+        patient_with_case = patient_with_dob + [space] + [{"OP": "?"}] + fall_block
 
         self.matcher.add("PATIENT_LINE", [patient_with_case, patient_with_dob])
 
@@ -392,8 +419,7 @@ class PatientDataExtractor(BaseExtractor):
         stop_indices = [
             i
             for i, t in enumerate(tokens)
-            if t.lower_
-            in ["geb", "geb.", "geboren", "fallnr", "fallnr.", "fallnummer"]
+            if t.lower_ in ["geb", "geb.", "geboren", "fallnr", "fallnr.", "fallnummer"]
         ]
         end_name_idx = min(stop_indices) if stop_indices else len(tokens)
 
@@ -409,13 +435,13 @@ class PatientDataExtractor(BaseExtractor):
                 fn_tokens = full_name_tokens[-1:]
             else:
                 ln_tokens = full_name_tokens
-                fn_tokens = []
+                fn_tokens = cast(Sequence[Token], [])
 
         # Filter titles
-        ln_clean = [
+        ln_clean: list[str] = [
             t.text for t in ln_tokens if t.is_alpha and t.lower_ not in TITLE_WORDS
         ]
-        fn_clean = [
+        fn_clean: list[str] = [
             t.text for t in fn_tokens if t.is_alpha and t.lower_ not in TITLE_WORDS
         ]
 

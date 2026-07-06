@@ -1,4 +1,7 @@
+from typing import Iterator
+
 import pytest
+from pytest import MonkeyPatch
 from spacy.language import Language
 
 from lx_anonymizer.ner import spacy_extractor
@@ -6,18 +9,20 @@ from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor, SpacyModelMa
 
 
 @pytest.fixture(autouse=True)
-def reset_spacy_model_manager():
-    previous_instance = SpacyModelManager._instance
-    SpacyModelManager._instance = None
+def reset_spacy_model_manager() -> Iterator[None]:
+    previous_instance = SpacyModelManager._instance  # pyright: ignore[reportPrivateUsage]
+    SpacyModelManager._instance = None  # pyright: ignore[reportPrivateUsage]
     yield
-    SpacyModelManager._instance = previous_instance
+    SpacyModelManager._instance = previous_instance  # pyright: ignore[reportPrivateUsage]
 
 
 def _raise_missing_model(_model_name: str) -> Language:
     raise OSError("missing model")
 
 
-def test_missing_model_uses_blank_fallback_without_download(monkeypatch):
+def test_missing_model_uses_blank_fallback_without_download(
+    monkeypatch: MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def fake_load(model_name: str) -> Language:
@@ -36,7 +41,7 @@ def test_missing_model_uses_blank_fallback_without_download(monkeypatch):
     assert calls == ["de_core_news_sm"]
 
 
-def test_missing_model_raises_in_strict_mode(monkeypatch):
+def test_missing_model_raises_in_strict_mode(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(spacy_extractor.spacy, "load", _raise_missing_model)
     monkeypatch.delenv(SpacyModelManager.AUTO_DOWNLOAD_ENV, raising=False)
     monkeypatch.setenv(SpacyModelManager.STRICT_MODEL_ENV, "1")
@@ -45,7 +50,21 @@ def test_missing_model_raises_in_strict_mode(monkeypatch):
         SpacyModelManager.get_model("de_core_news_sm")
 
 
-def test_patient_extractor_matches_with_blank_fallback(monkeypatch):
+def test_missing_model_raises_for_clinical_profile(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(spacy_extractor.spacy, "load", _raise_missing_model)
+    monkeypatch.delenv(SpacyModelManager.AUTO_DOWNLOAD_ENV, raising=False)
+    monkeypatch.delenv(SpacyModelManager.STRICT_MODEL_ENV, raising=False)
+    monkeypatch.setenv("MODE", "clinical")
+
+    with pytest.raises(RuntimeError, match="de_core_news_sm"):
+        SpacyModelManager.get_model("de_core_news_sm")
+
+
+def test_patient_extractor_matches_with_blank_fallback(
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.setattr(spacy_extractor.spacy, "load", _raise_missing_model)
     monkeypatch.delenv(SpacyModelManager.AUTO_DOWNLOAD_ENV, raising=False)
     monkeypatch.delenv(SpacyModelManager.STRICT_MODEL_ENV, raising=False)
