@@ -2,7 +2,7 @@ import logging
 import subprocess
 from pathlib import Path
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from lx_dtypes.models.contracts.video_processing import VideoMaskConfig
 
@@ -26,14 +26,14 @@ class VideoProcessor:
         self,
         input_video: Path,
         output_video: Path,
-        format_info: Optional[Dict[str, Any]] = None,
+        format_info: Mapping[str, object] | None = None,
     ) -> bool:
         """Determines the fastest way to save the video (Copy vs Fast Re-encode)."""
         if format_info is None:
             format_info = video_utils.detect_video_format(input_video)
 
         try:
-            if format_info["can_stream_copy"]:
+            if bool(format_info.get("can_stream_copy", False)):
                 # The fastest possible path: no transcoding
                 cmd = [
                     "ffmpeg",
@@ -49,7 +49,7 @@ class VideoProcessor:
                 ]
                 logger.info("Performing pure stream copy (ultra-fast)")
             else:
-                pixel_fmt = format_info.get("pixel_format", "unknown")
+                pixel_fmt = str(format_info.get("pixel_format", "unknown"))
                 # Handle specific high-depth formats that break most players
                 if any(x in pixel_fmt for x in ["10le", "422"]):
                     return self._stream_copy_with_pixel_conversion(
