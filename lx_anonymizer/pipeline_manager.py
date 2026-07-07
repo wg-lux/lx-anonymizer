@@ -8,9 +8,6 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import pymupdf  # type: ignore[import-untyped]
-import pytesseract  # type: ignore[import-untyped]
-from PIL import Image
-
 from lx_anonymizer.anonymization.blur import blur_function
 from lx_anonymizer.region_processing.box_operations import (
     close_to_box,
@@ -170,11 +167,7 @@ def _run_llm_image_analysis(img_path: Path) -> Dict[str, object]:
     )
 
     try:
-        image = Image.open(img_path).convert("RGB")
-        ocr_text = cast(
-            str,
-            pytesseract.image_to_string(image),  # pyright: ignore[reportUnknownMemberType]
-        )
+        ocr_text, _ = tesseract_full_image_ocr(img_path)
     except Exception as e:
         logger.warning(f"Failed to extract OCR text: {e}")
         ocr_text = ""
@@ -271,7 +264,10 @@ def _save_final_blurred_image(blurred_image_path: Optional[Path]) -> None:
     output_filename = f"blurred_image_{uuid.uuid4()}.jpg"
     blur_dir = create_blur_directory(default_main_directory=None)
     output_path = Path(blur_dir) / output_filename
-    final_image = cv2.imread(str(blurred_image_path))
+    final_image_obj = cast(object, cv2.imread(str(blurred_image_path)))
+    if final_image_obj is None:
+        raise ValueError(f"Unable to read blurred image: {blurred_image_path}")
+    final_image = cast(npt.NDArray[np.uint8], final_image_obj)
     cv2.imwrite(str(output_path), final_image)
     logger.info(f"Final blurred image saved to: {output_path}")
 

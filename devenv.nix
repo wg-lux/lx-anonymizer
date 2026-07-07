@@ -123,11 +123,11 @@ in
   env = {
     LD_LIBRARY_PATH =
       with pkgs;
-      lib.makeLibraryPath runtimePackages
-      + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+      "/run/opengl-driver/lib:/run/opengl-driver-32/lib"
       + ":/usr/lib/wsl/lib"
       + ":/usr/lib/x86_64-linux-gnu"
-      + ":/usr/lib";
+      + ":/usr/lib"
+      + ":${lib.makeLibraryPath runtimePackages}";
     OLLAMA_HOST = "0.0.0.0";
     PYTORCH_ALLOC_CONF = "expandable_segments:True";
     PYO3_PYTHON = "${python}/bin/python";
@@ -137,9 +137,9 @@ in
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
 
   scripts.env-setup.exec = ''
-    export LD_LIBRARY_PATH="${
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${
       with pkgs; lib.makeLibraryPath buildInputs
-    }:/run/opengl-driver/lib:/run/opengl-driver-32/lib"
+    }"
     export TESSDATA_PREFIX="${
       pkgs.tesseract.override {
         enableLanguages = [
@@ -151,7 +151,7 @@ in
   '';
 
   scripts.uvs.exec = ''
-    uv sync --extra dev --extra ocr --extra llm
+    uv sync --extra dev --extra gpu
   '';
 
   processes = {
@@ -165,7 +165,7 @@ in
   };
 
   enterShell = ''
-    SYNC_CMD='uv sync --extra dev --extra ocr --extra llm'
+    SYNC_CMD='uv sync --extra dev --extra gpu'
 
     if [ ! -d ".devenv/state/venv" ]; then
        echo "Virtual environment not found. Running initial uv sync..."

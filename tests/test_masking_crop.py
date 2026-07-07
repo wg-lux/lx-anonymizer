@@ -149,6 +149,39 @@ def test_mask_video_streaming_preserves_dimensions_by_default(
     assert calls == [input_video, output_video]
 
 
+def test_mask_video_streaming_creates_output_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(VideoEncoder, "_detect_nvenc_support", _disable_nvenc)
+
+    mask_app = MaskApplication(preferred_encoder={"type": "cpu"})
+    monkeypatch.setattr(mask_app, "build_encoder_cmd", _empty_encoder_args)
+
+    input_video = tmp_path / "input.mp4"
+    output_video = tmp_path / "missing" / "nested" / "output.mp4"
+    input_video.write_bytes(b"0" * 100)
+
+    def fake_run(
+        cmd: list[str], *args: object, **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        assert output_video.parent.is_dir()
+        _write_fake_output(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+    def fake_detect(video_path: Path) -> Mapping[str, int]:
+        if video_path == input_video:
+            return {"width": 1920, "height": 1080}
+        return {"width": 1920, "height": 1080}
+
+    monkeypatch.setattr(masking_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(masking_module.video_utils, "detect_video_format", fake_detect)
+
+    ok = mask_app.mask_video_streaming(input_video, _mask_config(), output_video)
+
+    assert ok is True
+    assert output_video.is_file()
+
+
 def test_mask_video_streaming_crop_mode_keeps_legacy_behavior(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

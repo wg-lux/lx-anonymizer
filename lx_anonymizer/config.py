@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,9 +10,24 @@ class Settings(BaseSettings):
     DEBUG_SAVE_FRAMES: bool = False
 
     # --- spaCy / Clinical NER ---
-    SPACY_MODEL: str = "de_core_news_sm"
-    SPACY_AUTO_DOWNLOAD: bool = False
-    SPACY_STRICT: bool = False
+    SPACY_MODEL: str = Field(
+        default="de_core_news_sm",
+        validation_alias=AliasChoices("LX_ANONYMIZER_SPACY_MODEL", "SPACY_MODEL"),
+    )
+    SPACY_AUTO_DOWNLOAD: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD",
+            "SPACY_AUTO_DOWNLOAD",
+        ),
+    )
+    SPACY_STRICT: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "LX_ANONYMIZER_SPACY_STRICT",
+            "SPACY_STRICT",
+        ),
+    )
 
     # --- LLM Configuration ---
     # Conservative library default: require explicit opt-in before doing network/model work.
@@ -55,6 +71,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
+        populate_by_name=True,
     )
 
     @property

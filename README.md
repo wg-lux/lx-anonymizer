@@ -39,7 +39,9 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 - Linux or macOS (Windows support is experimental)
 - NVIDIA GPU recommended for real-time video anonymization (CUDA 12.x). CPU-only processing works but is slower.
 - Optional extras:
-  - spaCy `de_core_news_lg` model (download after installation)
+  - spaCy `de_core_news_sm` model for German NER. Source installs with `uv`
+    use the locked model wheel; other runtime environments may need an explicit
+    install.
   - Torch vision/audio for video OCR workloads
   - local or remote LLM-backed metadata extraction
 
@@ -174,10 +176,18 @@ Settings are loaded from environment variables and an optional `.env` file. See
 [`SETTINGS.md`](SETTINGS.md) for a quick overview and example configuration.
 
 ## Model downloads
-After installation, fetch the German spaCy model used by the report pipeline:
+The default German spaCy model is `de_core_news_sm`. Source installs with `uv`
+use the locked model wheel automatically. If you are running in another
+environment and see a missing-model error, install it explicitly:
 ```bash
-python -m spacy download de_core_news_lg
+python -m spacy download de_core_news_sm
 ```
+
+Clinical/strict deployments fail loudly when the configured model is missing.
+For non-clinical local development you can either install the model, set
+`LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD=1` or `SPACY_AUTO_DOWNLOAD=True` to allow an
+explicit runtime download, or unset `LX_ANONYMIZER_SPACY_STRICT`/`SPACY_STRICT`
+to use the degraded blank fallback.
 
 Start a compatible LLM server exposing either an OpenAI-compatible API or Ollama:
 ```bash

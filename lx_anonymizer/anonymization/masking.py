@@ -80,6 +80,7 @@ class MaskApplication:
             if region is None:
                 return False
 
+            self._ensure_output_parent(output_video)
             vf = self._build_video_filter(region, mask_mode)
             if not vf:
                 return self._copy_video_stream(input_video, output_video)
@@ -151,6 +152,13 @@ class MaskApplication:
         except (OSError, IOError) as e:
             logger.error("File operation failed during masking: %s", e)
             return False
+
+    @staticmethod
+    def _ensure_output_parent(output_video: Path) -> None:
+        output_dir = output_video.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        if not output_dir.is_dir():
+            raise OSError(f"Video output parent is not a directory: {output_dir}")
 
     @staticmethod
     def _coerce_int(value: object, fallback: int) -> int:
@@ -410,6 +418,7 @@ class MaskApplication:
             str(output_video),
         ]
         try:
+            MaskApplication._ensure_output_parent(output_video)
             subprocess.run(cmd, capture_output=True, text=True, check=True)
             return output_video.exists() and output_video.stat().st_size > 0
         except subprocess.CalledProcessError as exc:

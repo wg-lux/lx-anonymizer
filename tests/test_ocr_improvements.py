@@ -9,6 +9,8 @@ This script tests:
 4. Better PSM selection
 """
 
+from typing import cast
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray
@@ -36,7 +38,7 @@ def create_test_image_with_text(
         noise: NDArray[np.uint8] = np.random.normal(0, noise_level, size).astype(
             np.uint8
         )
-        img = cv2.add(img, noise)
+        img = cast(NDArray[np.uint8], cv2.add(img, noise))
 
     return img
 

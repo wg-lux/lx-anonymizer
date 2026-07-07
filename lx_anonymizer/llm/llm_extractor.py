@@ -18,10 +18,10 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from collections.abc import Iterable, Mapping
 from types import TracebackType
-from typing import Optional, Sequence, cast
+from typing import Optional, Self, Sequence, cast
 
 import requests
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from tenacity import retry, stop_after_attempt, wait_fixed
 from lx_dtypes.models.contracts.llm_service import (
     LLMChatMessagePayload,
@@ -36,7 +36,6 @@ from lx_dtypes.models.contracts.llm_extractor import (
     LLMFrameDataPayload,
     LLMMetadataCacheStatsPayload,
     LLMModelInfoPayload,
-    LLMOllamaModelsPayload,
     LLMTextTimelineEntryPayload,
     LLMTemporalAnalysisPayload,
     LLMEvaluationResultPayload,
@@ -67,6 +66,61 @@ STRICT_METADATA_TEMPLATE = (
 )
 
 LLMChatRequestPayload = LLMChatOllamaPayload | LLMChatOpenAIPayload
+
+
+class _OllamaModelDetailsPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    parent_model: str | None = None
+    format: str | None = None
+    family: str | None = None
+    families: list[str] | None = None
+    parameter_size: str | None = None
+    quantization_level: str | None = None
+    embedding_length: int | None = None
+
+
+class _OllamaModelTagPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    name: str | None = None
+    model: str | None = None
+    modified_at: str | None = None
+    size: int | None = None
+    digest: str | None = None
+    details: _OllamaModelDetailsPayload | None = None
+    capabilities: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _require_identifier(self) -> Self:
+        if not self.name and not self.model:
+            raise ValueError("Ollama model entry must include name or model")
+        return self
+
+    @property
+    def identifier(self) -> str:
+        if self.name:
+            return self.name
+        if self.model:
+            return self.model
+        raise RuntimeError("validated Ollama model entry missing identifier")
+
+
+def _empty_ollama_model_tags() -> list[_OllamaModelTagPayload]:
+    return []
+
+
+class _OllamaTagsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    models: list[_OllamaModelTagPayload] = Field(
+        default_factory=_empty_ollama_model_tags
+    )
+
+
+def _parse_ollama_model_names(raw_models_json: object) -> list[str]:
+    models_payload = _OllamaTagsPayload.model_validate(raw_models_json)
+    return [model.identifier for model in models_payload.models]
 
 
 def _coerce_str_object_map(value: object) -> dict[str, object] | None:
@@ -251,10 +305,7 @@ class LLMMetadataExtractor:
                 raw_models_json = response.json()
 
                 if self.provider == "ollama":
-                    models_payload = LLMOllamaModelsPayload.model_validate(
-                        raw_models_json
-                    )
-                    return [model.name for model in models_payload.models]
+                    return _parse_ollama_model_names(raw_models_json)
 
                 models_payload = LLMVllmModelsPayload.model_validate(raw_models_json)
                 return [model.id for model in models_payload.data]

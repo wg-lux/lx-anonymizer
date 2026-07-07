@@ -136,7 +136,7 @@ def test_rapidocr_lazy_initialization_is_locked(
             )
 
     monkeypatch.setattr(ocr_mod, "rapidocr_available", True)
-    monkeypatch.setattr(ocr_mod, "_RapidOCR", LazyEngine)
+    monkeypatch.setattr(ocr_mod, "_RapidOCRClass", LazyEngine)
 
     frame_ocr = FrameOCR.__new__(FrameOCR)
     frame_ocr.rapidocr_engine = None
@@ -206,3 +206,46 @@ def test_rapidocr_cuda_request_raises_without_cuda_provider(
 
     with pytest.raises(RuntimeError, match=ocr_mod.CUDA_EXECUTION_PROVIDER):
         FrameOCR._rapidocr_init_params()
+
+
+def test_rapidocr_init_params_use_latin_script_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ocr_mod.RAPIDOCR_ACCELERATION_ENV, "cpu")
+
+    params = FrameOCR._rapidocr_init_params()
+
+    assert params["Det.lang_type"].value == "en"
+    assert params["Rec.lang_type"].value == "latin"
+    assert params["EngineConfig.onnxruntime.use_cuda"] is False
+
+
+def test_pytesseract_fallback_uses_default_config_on_partial_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_image_to_data(
+        image: object,
+        lang: str,
+        config: str,
+        output_type: object,
+    ) -> dict[str, list[str]]:
+        captured["image"] = image
+        captured["lang"] = lang
+        captured["config"] = config
+        captured["output_type"] = output_type
+        return {"text": ["Patient", "Mueller"], "conf": ["92", "88"]}
+
+    monkeypatch.setattr(ocr_mod.pytesseract, "image_to_data", fake_image_to_data)
+
+    frame_ocr = FrameOCR.__new__(FrameOCR)
+    text, confidence, metadata = frame_ocr._extract_text_pytesseract(
+        np.zeros((20, 80), dtype=np.uint8)
+    )
+
+    assert text == "Patient Mueller"
+    assert abs(confidence - 0.9) <= 1e-12
+    assert metadata == {"words": 2, "avg_conf": 0.9}
+    assert captured["lang"] == "deu+eng"
+    assert captured["config"] == "--oem 3 --psm 6 --dpi 300"

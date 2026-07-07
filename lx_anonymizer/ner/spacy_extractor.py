@@ -100,10 +100,14 @@ class SpacyModelManager:
     _instance: Optional[Language] = None
     DEFAULT_MODEL = "de_core_news_sm"
     MODEL_ENV = "LX_ANONYMIZER_SPACY_MODEL"
+    SETTINGS_MODEL_ENV = "SPACY_MODEL"
     AUTO_DOWNLOAD_ENV = "LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD"
+    SETTINGS_AUTO_DOWNLOAD_ENV = "SPACY_AUTO_DOWNLOAD"
     STRICT_MODEL_ENV = "LX_ANONYMIZER_SPACY_STRICT"
+    SETTINGS_STRICT_MODEL_ENV = "SPACY_STRICT"
     PROFILE_ENV = "LX_ANONYMIZER_PROFILE"
     _TRUE_VALUES = {"1", "true", "yes", "on"}
+    _FALSE_VALUES = {"0", "false", "no", "off"}
     _CLINICAL_PROFILE_VALUES = {
         "clinical",
         "clinical_profile",
@@ -113,24 +117,60 @@ class SpacyModelManager:
 
     @classmethod
     def configured_model_name(cls) -> str:
-        env_model = os.environ.get(cls.MODEL_ENV, "").strip()
+        env_model = cls._env_text_value(cls.MODEL_ENV, cls.SETTINGS_MODEL_ENV)
         if env_model:
             return env_model
         return settings.SPACY_MODEL.strip() or cls.DEFAULT_MODEL
 
     @classmethod
-    def _env_flag_enabled(cls, env_name: str) -> bool:
-        return os.environ.get(env_name, "").strip().casefold() in cls._TRUE_VALUES
+    def _env_text_value(cls, *env_names: str) -> Optional[str]:
+        for env_name in env_names:
+            env_value = os.environ.get(env_name)
+            if env_value is None:
+                continue
+            stripped_value = env_value.strip()
+            if stripped_value:
+                return stripped_value
+        return None
+
+    @classmethod
+    def _env_flag_value(cls, *env_names: str) -> Optional[bool]:
+        for env_name in env_names:
+            env_value = os.environ.get(env_name)
+            if env_value is None:
+                continue
+            normalized_value = env_value.strip().casefold()
+            if not normalized_value:
+                continue
+            if normalized_value in cls._TRUE_VALUES:
+                return True
+            if normalized_value in cls._FALSE_VALUES:
+                return False
+            raise RuntimeError(
+                f"Invalid boolean value for {env_name}: {env_value!r}. Expected "
+                f"one of {sorted(cls._TRUE_VALUES | cls._FALSE_VALUES)}."
+            )
+        return None
 
     @classmethod
     def _auto_download_enabled(cls) -> bool:
-        return (
-            cls._env_flag_enabled(cls.AUTO_DOWNLOAD_ENV) or settings.SPACY_AUTO_DOWNLOAD
+        configured_value = cls._env_flag_value(
+            cls.AUTO_DOWNLOAD_ENV,
+            cls.SETTINGS_AUTO_DOWNLOAD_ENV,
         )
+        if configured_value is not None:
+            return configured_value
+        return settings.SPACY_AUTO_DOWNLOAD
 
     @classmethod
     def _strict_model_required(cls) -> bool:
-        if cls._env_flag_enabled(cls.STRICT_MODEL_ENV) or settings.SPACY_STRICT:
+        configured_strict = cls._env_flag_value(
+            cls.STRICT_MODEL_ENV,
+            cls.SETTINGS_STRICT_MODEL_ENV,
+        )
+        if configured_strict is not None:
+            return configured_strict
+        if settings.SPACY_STRICT:
             return True
 
         configured_profile = (
@@ -153,12 +193,23 @@ class SpacyModelManager:
         except OSError as exc:
             if cls._auto_download_enabled():
                 logger.warning(
-                    "Model '%s' not found. Attempting download because %s is enabled.",
+                    "spaCy model '%s' is not installed. Attempting download because "
+                    "spaCy auto-download is enabled.",
                     model_name,
-                    cls.AUTO_DOWNLOAD_ENV,
                 )
                 cls._download_model(model_name)
-                cls._instance = spacy.load(model_name)
+                try:
+                    logger.info(
+                        "Reloading spaCy model '%s' after download attempt.",
+                        model_name,
+                    )
+                    cls._instance = spacy.load(model_name)
+                except OSError as load_exc:
+                    message = cls._download_did_not_make_model_loadable_message(
+                        model_name
+                    )
+                    logger.error(message)
+                    raise RuntimeError(message) from load_exc
                 logger.info(f"Successfully loaded {model_name} after download.")
             elif cls._strict_model_required():
                 message = cls._missing_model_message(model_name)
@@ -180,8 +231,17 @@ class SpacyModelManager:
             raise RuntimeError(
                 "spaCy model download failed with exit code "
                 f"{exc.code!r}. Install '{model_name}' in the runtime environment "
-                f"or disable {cls.AUTO_DOWNLOAD_ENV}."
+                f"or disable {cls.AUTO_DOWNLOAD_ENV}/{cls.SETTINGS_AUTO_DOWNLOAD_ENV}."
             ) from exc
+
+    @classmethod
+    def _download_did_not_make_model_loadable_message(cls, model_name: str) -> str:
+        return (
+            f"spaCy model '{model_name}' is still not loadable after an automatic "
+            "download attempt. Install it in the same Python runtime that launches "
+            "LX Anonymizer, check network/package-index access, or disable "
+            f"{cls.AUTO_DOWNLOAD_ENV}/{cls.SETTINGS_AUTO_DOWNLOAD_ENV}."
+        )
 
     @classmethod
     def _fallback_model(cls, model_name: str) -> Language:
@@ -189,10 +249,11 @@ class SpacyModelManager:
         logger.warning(
             "spaCy model '%s' is not installed. Falling back to a blank '%s' "
             "pipeline; NER and POS-based extraction are degraded. Install the "
-            "model or set %s=1 to allow an explicit runtime download.",
+            "model or set %s=1/%s=True to allow an explicit runtime download.",
             model_name,
             lang,
             cls.AUTO_DOWNLOAD_ENV,
+            cls.SETTINGS_AUTO_DOWNLOAD_ENV,
         )
         nlp = spacy.blank(lang)
         if "sentencizer" not in nlp.pipe_names:
@@ -211,8 +272,10 @@ class SpacyModelManager:
         return (
             f"spaCy model '{model_name}' is not installed. Install it in the "
             "runtime environment, set "
-            f"{cls.AUTO_DOWNLOAD_ENV}=1 to allow an explicit runtime download, "
-            f"or unset {cls.STRICT_MODEL_ENV} to use the degraded blank fallback."
+            f"{cls.AUTO_DOWNLOAD_ENV}=1 or {cls.SETTINGS_AUTO_DOWNLOAD_ENV}=True "
+            "to allow an explicit runtime download, or unset "
+            f"{cls.STRICT_MODEL_ENV}/{cls.SETTINGS_STRICT_MODEL_ENV} to use the "
+            "degraded blank fallback outside clinical profiles."
         )
 
 

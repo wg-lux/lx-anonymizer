@@ -1,3 +1,4 @@
+import inspect
 import logging
 import os
 import threading
@@ -14,7 +15,9 @@ from lx_anonymizer.config import settings
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.regex_patterns import STRUCTURED_OVERLAY_RE
 
-_RapidOCR: Optional[type[Any]] = None
+_RapidOCRClass: Optional[type[Any]] = (
+    None  # Umbenannt, um zu zeigen: Das ist die KLASSE
+)
 RAPIDOCR_BACKEND = "rapidocr"
 RAPIDOCR_ACCELERATION_ENV = "LX_ANONYMIZER_RAPIDOCR_ACCELERATION"
 CUDA_EXECUTION_PROVIDER = "CUDAExecutionProvider"
@@ -22,11 +25,25 @@ CPU_EXECUTION_PROVIDER = "CPUExecutionProvider"
 rapidocr_available = False
 
 try:
-    from rapidocr import RapidOCR  # type: ignore[import-untyped]
+    from rapidocr import (  # type: ignore[import-untyped]
+        EngineType,
+        LangCls,
+        LangDet,
+        LangRec,
+        ModelType,
+        OCRVersion,
+        RapidOCR,
+    )
 
-    _RapidOCR = RapidOCR  # Assign the class to your internal variable
+    _RapidOCRClass = RapidOCR  # Merkt sich die KLASSE für die spätere Instanziierung
     rapidocr_available = True
 except ImportError:
+    EngineType = cast(Any, None)
+    LangCls = cast(Any, None)
+    LangDet = cast(Any, None)
+    LangRec = cast(Any, None)
+    ModelType = cast(Any, None)
+    OCRVersion = cast(Any, None)
     rapidocr_available = False
 
 _TesseOCRFrameProcessor: Optional[type[Any]] = None
@@ -49,6 +66,13 @@ class PytesseractData(TypedDict):
     conf: list[str | int | float]
 
 
+class PytesseractConfig(TypedDict):
+    lang: str
+    oem: int
+    psm: int
+    dpi: int
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,13 +86,24 @@ class FrameOCR:
     - Includes medical pattern extraction helpers
     """
 
+    frame_metadata_extractor: FrameMetadataExtractor
+    rapidocr_engine: Optional[Any]
+    rapidocr_params: Dict[str, Any]
+    _rapidocr_lock: threading.Lock
+    tesserocr_processor: Optional[Any]
+    _rapidocr_available: bool
+    pytesseract_config: PytesseractConfig
+
     def __init__(self):
         self.frame_metadata_extractor = FrameMetadataExtractor()
+        self.pytesseract_config = self._default_pytesseract_config()
         self.rapidocr_engine: Optional[Any] = None
-        self.rapidocr_params = self._rapidocr_init_params()
         self._rapidocr_lock = threading.Lock()
         self.tesserocr_processor: Optional[Any] = None
-        self._rapidocr_available = rapidocr_available and _RapidOCR is not None
+        self._rapidocr_available = rapidocr_available and _RapidOCRClass is not None
+        self.rapidocr_params = (
+            self._rapidocr_init_params() if self._rapidocr_available else {}
+        )
 
         if self._rapidocr_available:
             logger.info(
@@ -81,12 +116,35 @@ class FrameOCR:
         else:
             logger.info("TesseOCR not available, using PyTesseract")
 
-        self.pytesseract_config = {
+    # ---------------- Configuration defaults ----------------
+    @staticmethod
+    def _default_pytesseract_config() -> PytesseractConfig:
+        return {
             "lang": "deu+eng",
             "oem": 3,
             "psm": 6,
             "dpi": 300,
         }
+
+    def _get_pytesseract_config(self) -> PytesseractConfig:
+        raw_config = getattr(self, "pytesseract_config", None)
+        if not isinstance(raw_config, dict):
+            return self._default_pytesseract_config()
+
+        raw_mapping = cast(Mapping[str, object], raw_config)
+        lang = raw_mapping.get("lang")
+        oem = raw_mapping.get("oem")
+        psm = raw_mapping.get("psm")
+        dpi = raw_mapping.get("dpi")
+        if (
+            isinstance(lang, str)
+            and isinstance(oem, int)
+            and isinstance(psm, int)
+            and isinstance(dpi, int)
+        ):
+            return {"lang": lang, "oem": oem, "psm": psm, "dpi": dpi}
+
+        return self._default_pytesseract_config()
 
     # ---------------- Public API ----------------
     def extract_text_from_frame(
@@ -138,21 +196,50 @@ class FrameOCR:
         with self._rapidocr_lock:
             if self.rapidocr_engine is not None:
                 return
-            if not rapidocr_available or _RapidOCR is None:
+            if not rapidocr_available or _RapidOCRClass is None:
                 raise RuntimeError("RapidOCR is not available")
+
+            # Nutzt die über init_params generierten vollständigen Parameter
             rapidocr_params = cast(
                 Dict[str, Any],
                 getattr(self, "rapidocr_params", {}),
             )
-            if rapidocr_params:
-                self.rapidocr_engine = _RapidOCR(params=rapidocr_params)
-            else:
-                self.rapidocr_engine = _RapidOCR()
+
+            self.rapidocr_engine = self._new_rapidocr_engine(
+                _RapidOCRClass,
+                rapidocr_params,
+            )
+
             logger.info(
                 "FrameOCR initialized with %s backend params=%s",
                 RAPIDOCR_BACKEND,
                 rapidocr_params,
             )
+
+    @classmethod
+    def _new_rapidocr_engine(
+        cls, rapidocr_cls: type[Any], rapidocr_params: Dict[str, Any]
+    ) -> Any:
+        if rapidocr_params and cls._rapidocr_constructor_accepts_params(rapidocr_cls):
+            return rapidocr_cls(params=rapidocr_params)
+
+        if rapidocr_params:
+            logger.warning(
+                "RapidOCR constructor does not accept params; using package defaults."
+            )
+        return rapidocr_cls()
+
+    @staticmethod
+    def _rapidocr_constructor_accepts_params(rapidocr_cls: type[Any]) -> bool:
+        try:
+            constructor_signature = inspect.signature(rapidocr_cls)
+        except (TypeError, ValueError):
+            return True
+
+        for name, parameter in constructor_signature.parameters.items():
+            if name == "params" or parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                return True
+        return False
 
     @staticmethod
     def _resolved_rapidocr_acceleration() -> str:
@@ -163,14 +250,35 @@ class FrameOCR:
 
     @classmethod
     def _rapidocr_init_params(cls) -> Dict[str, Any]:
+        if not rapidocr_available:
+            return {}
+
+        # German/English overlays are Latin-script. RapidOCR defaults to Chinese
+        # models, so pin Latin recognition at the package boundary.
+        params: Dict[str, Any] = {
+            "Det.engine_type": EngineType.ONNXRUNTIME,
+            "Det.lang_type": LangDet.EN,
+            "Det.model_type": ModelType.MOBILE,
+            "Det.ocr_version": OCRVersion.PPOCRV4,
+            "Cls.engine_type": EngineType.ONNXRUNTIME,
+            "Cls.lang_type": LangCls.CH,
+            "Cls.model_type": ModelType.MOBILE,
+            "Cls.ocr_version": OCRVersion.PPOCRV4,
+            "Rec.engine_type": EngineType.ONNXRUNTIME,
+            "Rec.lang_type": LangRec.LATIN,
+            "Rec.ocr_version": OCRVersion.PPOCRV4,
+        }
+
         acceleration = cls._resolved_rapidocr_acceleration()
         if acceleration not in {"auto", "cpu", "cuda"}:
             raise ValueError(
                 "Invalid RapidOCR acceleration setting "
                 f"{acceleration!r}; expected 'auto', 'cpu', or 'cuda'."
             )
+
         if acceleration == "cpu":
-            return {"EngineConfig.onnxruntime.use_cuda": False}
+            params["EngineConfig.onnxruntime.use_cuda"] = False
+            return params
 
         available_providers = cls._available_onnx_providers()
         if CUDA_EXECUTION_PROVIDER in available_providers:
@@ -179,7 +287,8 @@ class FrameOCR:
                 CUDA_EXECUTION_PROVIDER,
                 list(available_providers),
             )
-            return {"EngineConfig.onnxruntime.use_cuda": True}
+            params["EngineConfig.onnxruntime.use_cuda"] = True
+            return params
 
         if acceleration == "cuda":
             raise RuntimeError(
@@ -192,7 +301,8 @@ class FrameOCR:
             "RapidOCR using CPU ONNX provider; available ONNX providers=%s",
             list(available_providers),
         )
-        return {"EngineConfig.onnxruntime.use_cuda": False}
+        params["EngineConfig.onnxruntime.use_cuda"] = False
+        return params
 
     @staticmethod
     def _available_onnx_providers() -> tuple[str, ...]:
@@ -436,7 +546,7 @@ class FrameOCR:
         """Simplified pytesseract fallback for emergency OCR."""
         try:
             img = self._preprocess_frame(frame, roi)
-            cfg = self.pytesseract_config
+            cfg = self._get_pytesseract_config()
             config_str = f"--oem {cfg['oem']} --psm {cfg['psm']} --dpi {cfg['dpi']}"
             data = cast(
                 PytesseractData,

@@ -12,13 +12,18 @@ from lx_anonymizer.region_processing import box_operations as box_ops
 from lx_anonymizer.setup import directory_setup
 from lx_anonymizer.video_processing import video_utils
 
+_REAL_DETECT_VIDEO_FORMAT = video_utils.detect_video_format
+
 
 @pytest.fixture(autouse=True)
-def mock_central_video_format() -> Iterator[None]:
+def use_real_video_format(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_central_video_format: object,
+) -> Iterator[None]:
     """
-    Override the central autouse mock with a no-op fixture.
-    This allows the real detect_video_format to execute so we can unit-test it.
+    Let the central autouse mock start, then restore the real probe for this module.
     """
+    monkeypatch.setattr(video_utils, "detect_video_format", _REAL_DETECT_VIDEO_FORMAT)
     yield
 
 
@@ -117,8 +122,9 @@ def test_detect_video_format_success_and_failure(
 
     monkeypatch.setattr(video_utils.subprocess, "run", fake_run)
     info = video_utils.detect_video_format(Path("x.mp4"))
-    assert "-nostdin" in captured_cmd
+    assert "-nostdin" not in captured_cmd
     assert captured_kwargs["timeout"] == video_utils.DEFAULT_FFPROBE_TIMEOUT_SECONDS
+    assert captured_kwargs["stdin"] == subprocess.DEVNULL
     assert info == {
         "video_codec": "h264",
         "pixel_format": "yuv420p",
@@ -209,8 +215,9 @@ def test_detect_video_frame_rate_success_and_fallback(
     frame_rate = video_utils.detect_video_frame_rate(Path("x.mp4"))
 
     assert math.isclose(frame_rate, 29.97002997002997)
-    assert "-nostdin" in captured_cmd
+    assert "-nostdin" not in captured_cmd
     assert captured_kwargs["timeout"] == video_utils.DEFAULT_FFPROBE_TIMEOUT_SECONDS
+    assert captured_kwargs["stdin"] == subprocess.DEVNULL
 
     def fake_run_no_streams(*args: object, **kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(stdout=json.dumps({"streams": []}))

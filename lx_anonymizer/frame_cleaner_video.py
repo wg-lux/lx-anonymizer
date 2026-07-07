@@ -539,7 +539,7 @@ class FrameCleanerVideoMixin:
                 return False
 
             if roi_box.width == 0 or roi_box.height == 0:
-                logger.warning(f"ROI has zero width or height: {roi}")
+                logger.warning("ROI has zero width or height: %s", roi)
                 return False
 
             if any(

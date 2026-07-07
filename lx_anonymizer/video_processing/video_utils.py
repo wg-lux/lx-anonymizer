@@ -51,7 +51,6 @@ def detect_video_format(
     try:
         cmd = [
             "ffprobe",
-            "-nostdin",
             "-v",
             "quiet",
             "-print_format",
@@ -66,6 +65,7 @@ def detect_video_format(
             text=True,
             check=True,
             timeout=timeout_seconds,
+            stdin=subprocess.DEVNULL,
         )
         info = cast(dict[str, object], json.loads(result.stdout))
         info_map = _coerce_mapping(info)
@@ -111,7 +111,6 @@ def detect_video_frame_rate(
     try:
         cmd = [
             "ffprobe",
-            "-nostdin",
             "-v",
             "quiet",
             "-select_streams",
@@ -128,6 +127,7 @@ def detect_video_frame_rate(
             text=True,
             check=True,
             timeout=timeout_seconds,
+            stdin=subprocess.DEVNULL,
         )
         info = cast(dict[str, object], json.loads(result.stdout))
         streams = _coerce_stream_list(_coerce_mapping(info).get("streams", []))

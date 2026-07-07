@@ -19,6 +19,13 @@ if settings.LLM_ENABLED:
 
 - `MODE` (default: `production`) - general mode flag.
 - `DEBUG_SAVE_FRAMES` (default: `False`) - save intermediate frames for debugging.
+- `SPACY_MODEL` / `LX_ANONYMIZER_SPACY_MODEL` (default: `de_core_news_sm`) -
+  German spaCy model used by the metadata extractors.
+- `SPACY_AUTO_DOWNLOAD` / `LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD` (default: `False`)
+  - allow the extractor to download the configured spaCy model if it is missing.
+- `SPACY_STRICT` / `LX_ANONYMIZER_SPACY_STRICT` (default: `False`) - fail
+  instead of using the degraded blank fallback when the configured spaCy model
+  is missing. Clinical profiles are strict even when this is unset.
 - `LLM_ENABLED` (default: `False`) - enable LLM metadata extraction. The package
   defaults to off so it behaves conservatively when imported by other repos.
 - `LLM_PROVIDER` (default: `ollama`) - provider backend, one of `vllm` or `ollama`.
@@ -56,6 +63,9 @@ if settings.LLM_ENABLED:
 
 ```ini
 MODE=production
+SPACY_MODEL=de_core_news_sm
+SPACY_AUTO_DOWNLOAD=False
+SPACY_STRICT=False
 LLM_ENABLED=True
 LLM_PROVIDER=ollama
 LLM_BASE_URL=

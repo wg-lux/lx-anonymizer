@@ -3,6 +3,8 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import cast
 
+import pytest
+from pydantic import ValidationError
 from pytest import MonkeyPatch
 from lx_dtypes.models.contracts.llm_extractor import (
     LLMEnrichedMetadataPayload,
@@ -27,6 +29,7 @@ from lx_anonymizer.llm.llm_extractor import (
     MetadataCache,
     VideoMetadataEnricher,
     _LLMModelConfig,  # pyright: ignore[reportPrivateUsage]
+    _parse_ollama_model_names,  # pyright: ignore[reportPrivateUsage]
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
@@ -47,6 +50,7 @@ def _extractor_stub(
         else current_model
     )
     extractor.available_models = available_models or []
+    extractor.available_models_retry = False
     extractor.preferred_model = preferred_model
     extractor.preferred_timeout = preferred_timeout
     extractor.base_url = (
@@ -109,12 +113,26 @@ class _StubFrameProcessor(FrameDataProcessor):
         return [LLMFrameDataPayload.model_validate(item) for item in coroutine_result]
 
 
+class _ResponseStub:
+    status_code: int
+    text: str
+    _payload: Mapping[str, object]
+
+    def __init__(self, payload: Mapping[str, object], status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status_code
+        self.text = ""
+
+    def json(self) -> Mapping[str, object]:
+        return self._payload
+
+
 def test_model_priority_prefers_custom_gemma_profile():
-    extractor = _extractor_stub(available_models=["gemma4:e2b", "lx-gemma4-e2b-json"])
+    extractor = _extractor_stub(available_models=["gemma4:e2b"])
     extractor._initialize_best_model()  # pyright: ignore[reportPrivateUsage]
 
     assert extractor.current_model is not None
-    assert extractor.current_model.name == "lx-gemma4-e2b-json"
+    assert extractor.current_model.name == "gemma4:e2b"
 
 
 def test_model_initialization_does_not_pick_non_allowlisted_fallback():
@@ -124,10 +142,75 @@ def test_model_initialization_does_not_pick_non_allowlisted_fallback():
     assert extractor.current_model is None
 
 
+def test_parse_ollama_model_names_accepts_metadata_rich_tags_payload():
+    payload: dict[str, object] = {
+        "models": [
+            {
+                "name": "deepseek-r1:1.5b",
+                "model": "deepseek-r1:1.5b",
+                "modified_at": "2026-03-31T11:40:22.609640149+02:00",
+                "size": 1117322768,
+                "digest": ("e0979632db5a88d1a53884cb8cf34a1365aabaa6801c4e36f3a6c2d7"),
+                "details": {
+                    "parent_model": "",
+                    "format": "gguf",
+                    "family": "qwen2",
+                    "families": ["qwen2"],
+                    "parameter_size": "1.8B",
+                    "quantization_level": "Q4_K_M",
+                    "embedding_length": 1536,
+                },
+                "capabilities": ["completion", "thinking"],
+            }
+        ]
+    }
+
+    assert _parse_ollama_model_names(payload) == ["deepseek-r1:1.5b"]
+
+
+def test_parse_ollama_model_names_accepts_model_field_without_name():
+    payload: dict[str, object] = {"models": [{"model": "gemma4:e2b"}]}
+
+    assert _parse_ollama_model_names(payload) == ["gemma4:e2b"]
+
+
+def test_parse_ollama_model_names_rejects_entries_without_identifier():
+    payload: dict[str, object] = {"models": [{"size": 1117322768}]}
+
+    with pytest.raises(ValidationError):
+        _parse_ollama_model_names(payload)
+
+
+def test_check_available_models_uses_metadata_rich_ollama_tags_parser(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    payload: dict[str, object] = {
+        "models": [
+            {
+                "name": "deepseek-r1:1.5b",
+                "model": "deepseek-r1:1.5b",
+                "modified_at": "2026-03-31T11:40:22.609640149+02:00",
+                "size": 1117322768,
+                "digest": "e0979632db5a",
+                "details": {"embedding_length": 1536},
+                "capabilities": ["completion", "thinking"],
+            }
+        ]
+    }
+
+    def fake_get(url: str, timeout: float) -> _ResponseStub:
+        assert url == "http://127.0.0.1:11434/api/tags"
+        assert timeout == 5
+        return _ResponseStub(payload)
+
+    monkeypatch.setattr("lx_anonymizer.llm.llm_extractor.requests.get", fake_get)
+    extractor = _extractor_stub()
+
+    assert extractor._check_available_models() == ["deepseek-r1:1.5b"]  # pyright: ignore[reportPrivateUsage]
+
+
 def test_extraction_prompt_uses_sensitive_meta_subset_only():
-    extractor = _extractor_stub(
-        current_model={"name": "lx-gemma4-e2b-json", "timeout": 120}
-    )
+    extractor = _extractor_stub(current_model={"name": "gemma4:e2b", "timeout": 120})
 
     prompt = extractor._create_extraction_prompt("Patient Max")  # pyright: ignore[reportPrivateUsage]
     fast_prompt = extractor._create_fast_extraction_prompt("Patient Max")  # pyright: ignore[reportPrivateUsage]
@@ -229,8 +312,8 @@ def test_extract_metadata_ollama_payload_uses_json_format_and_8k_context(
     monkeypatch: MonkeyPatch,
 ) -> None:
     extractor = _extractor_stub(
-        current_model={"name": "lx-gemma4-e2b-json", "timeout": 120},
-        available_models=["lx-gemma4-e2b-json"],
+        current_model={"name": "gemma4:e2b", "timeout": 120},
+        available_models=["gemma4:e2b"],
     )
     captured: dict[str, LLMChatRequestPayload] = {}
 
@@ -257,7 +340,7 @@ def test_smart_sampling_ollama_payload_uses_json_format_and_8k_context(
 ) -> None:
     extractor = _extractor_stub(
         current_model={"name": "gemma4:e2b", "timeout": 120},
-        available_models=["lx-gemma4-e2b-json"],
+        available_models=["gemma4:e2b"],
     )
     captured: dict[str, LLMChatRequestPayload] = {}
 

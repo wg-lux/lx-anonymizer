@@ -432,7 +432,7 @@ class TesseOCRFrameProcessor:
 
         # 2. CLAHE for adaptive contrast enhancement
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced: GrayArray = clahe.apply(denoised)
+        enhanced = cast(GrayArray, clahe.apply(denoised))
 
         # 4. Detect if we have white-on-black text (common in medical overlays)
         # Calculate mean brightness to determine if inversion is needed
