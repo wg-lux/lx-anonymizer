@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterator, cast
@@ -167,6 +168,67 @@ def test_detect_video_format_success_and_failure(
     assert missing_keys["height"] == 0
     assert missing_keys["container"] == "unknown"
     assert missing_keys["can_stream_copy"] is False
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("30000/1001", 29.97002997002997),
+        ("25", 25.0),
+        (24, 24.0),
+        (23.976, 23.976),
+    ],
+)
+def test_parse_frame_rate_accepts_ffprobe_values(
+    value: object, expected: float
+) -> None:
+    frame_rate = video_utils.parse_frame_rate(value)
+    assert frame_rate is not None
+    assert math.isclose(frame_rate, expected)
+
+
+@pytest.mark.parametrize("value", ["0/0", "N/A", "", None, False, -1, 0])
+def test_parse_frame_rate_rejects_invalid_values(value: object) -> None:
+    assert video_utils.parse_frame_rate(value) is None
+
+
+def test_detect_video_frame_rate_success_and_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_cmd: list[str] = []
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_run(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured_cmd.extend(cast(list[str], args[0]))
+        captured_kwargs.update(kwargs)
+        return SimpleNamespace(
+            stdout=json.dumps({"streams": [{"avg_frame_rate": "30000/1001"}]})
+        )
+
+    monkeypatch.setattr(video_utils.subprocess, "run", fake_run)
+    frame_rate = video_utils.detect_video_frame_rate(Path("x.mp4"))
+
+    assert math.isclose(frame_rate, 29.97002997002997)
+    assert "-nostdin" in captured_cmd
+    assert captured_kwargs["timeout"] == video_utils.DEFAULT_FFPROBE_TIMEOUT_SECONDS
+
+    def fake_run_no_streams(*args: object, **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(stdout=json.dumps({"streams": []}))
+
+    monkeypatch.setattr(video_utils.subprocess, "run", fake_run_no_streams)
+    assert math.isclose(
+        video_utils.detect_video_frame_rate(Path("x.mp4"), default_frame_rate=24.0),
+        24.0,
+    )
+
+    def fake_run_fail(*args: object, **kwargs: object) -> SimpleNamespace:
+        raise subprocess.CalledProcessError(returncode=1, cmd="ffprobe")
+
+    monkeypatch.setattr(video_utils.subprocess, "run", fake_run_fail)
+    assert math.isclose(
+        video_utils.detect_video_frame_rate(Path("x.mp4"), default_frame_rate=0.0),
+        video_utils.DEFAULT_VIDEO_FRAME_RATE,
+    )
 
 
 def test_named_pipe_context_cleans_up(

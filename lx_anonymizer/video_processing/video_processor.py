@@ -1,8 +1,12 @@
 import logging
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-import tempfile
+from collections.abc import Mapping
+from typing import Any, Dict, List, Optional
+
+from lx_dtypes.models.contracts.video_processing import VideoMaskConfig
+
+from lx_anonymizer.video_processing.ffmpeg_filters import build_frame_drop_filters
 from lx_anonymizer.video_processing import video_utils
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 
@@ -170,18 +174,19 @@ class VideoProcessor:
     # Mask Overlay
     # ----------------------------
     def mask_video(
-        self, input_video: Path, mask_config: Dict[str, Any], output_video: Path
+        self,
+        input_video: Path,
+        mask_config: Mapping[str, object],
+        output_video: Path,
     ) -> bool:
         """
         Apply black mask outside ROI region.
         """
         try:
-            x, y = mask_config["x"], mask_config["y"]
-            w, h = mask_config["width"], mask_config["height"]
-            iw, ih = (
-                mask_config.get("image_width", 1920),
-                mask_config.get("image_height", 1080),
-            )
+            mask = VideoMaskConfig.model_validate(mask_config)
+            x, y = mask.x, mask.y
+            w, h = mask.width, mask.height
+            iw, ih = mask.image_width, mask.image_height
             draw_boxes: list[str] = []
             # left, right, top, bottom masks
             if x > 0:
@@ -198,6 +203,9 @@ class VideoProcessor:
                 )
 
             vf = ",".join(draw_boxes)
+            if not vf:
+                return self.stream_copy_video(input_video, output_video)
+
             encoder_args = self.encoder.build_encoder_cmd("balanced")
             cmd = [
                 "ffmpeg",
@@ -210,6 +218,8 @@ class VideoProcessor:
                 *encoder_args,
                 "-c:a",
                 "copy",
+                "-movflags",
+                "+faststart",
                 str(output_video),
             ]
             logger.debug("Masking ffmpeg command: %s", " ".join(cmd))
@@ -223,51 +233,9 @@ class VideoProcessor:
         self, input_video: Path, frames_to_remove: List[int], output_video: Path
     ) -> bool:
         """
-        Remove specified frames from the video.
+        Remove specified frames from the video without dumping all frames to disk.
         """
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmpdir_path = Path(tmpdir)
-                # Extract frames
-                extract_cmd = [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-y",
-                    "-i",
-                    str(input_video),
-                    str(tmpdir_path / "frame_%05d.png"),
-                ]
-                subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
-
-                # Remove specified frames
-                for frame_num in frames_to_remove:
-                    frame_file = tmpdir_path / f"frame_{frame_num:05d}.png"
-                    if frame_file.exists():
-                        frame_file.unlink()
-
-                # Reassemble video
-                reassemble_cmd = [
-                    "ffmpeg",
-                    "-nostdin",
-                    "-y",
-                    "-framerate",
-                    "30",
-                    "-i",
-                    str(tmpdir_path / "frame_%05d.png"),
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    str(output_video),
-                ]
-                subprocess.run(
-                    reassemble_cmd, capture_output=True, text=True, check=True
-                )
-
-            return output_video.exists() and output_video.stat().st_size > 0
-        except Exception as e:
-            logger.error(f"Frame removal failed: {e}")
-            return False
+        return self.remove_frames_streaming(input_video, frames_to_remove, output_video)
 
     def extract_frames(
         self, video_path: Path, output_dir: Path, fps: int = 1
@@ -282,8 +250,8 @@ class VideoProcessor:
             str(video_path),
             "-vf",
             f"fps={fps}",
-            "-q:v",
-            "1",
+            "-compression_level",
+            "0",
             "-pix_fmt",
             "rgb24",
             str(output_dir / "frame_%04d.png"),
@@ -295,47 +263,57 @@ class VideoProcessor:
     def remove_frames_streaming(
         self, input_video: Path, frames: List[int], output_video: Path
     ) -> bool:
-        """Removes specific frames using a select filter and named pipes."""
+        """Remove specific frames in one FFmpeg process."""
         if not frames:
             return self.stream_copy_video(input_video, output_video)
 
-        idx_filter = "+".join([f"eq(n\\,{idx})" for idx in frames])
-        vf = f"select='not({idx_filter})',setpts=N/FRAME_RATE/TB"
-        af = f"aselect='not({idx_filter})',asetpts=N/SR/TB"
+        try:
+            frame_rate = video_utils.detect_video_frame_rate(input_video)
+            filters = build_frame_drop_filters(frames, frame_rate)
+            format_info = video_utils.detect_video_format(input_video)
+            has_audio = bool(format_info.get("has_audio", False))
+            encoder_args = self.encoder.build_encoder_cmd("balanced")
 
-        with video_utils.named_pipe() as pipe:
-            # Command 1: Filter to Pipe
-            filter_cmd = [
+            cmd = [
                 "ffmpeg",
                 "-nostdin",
                 "-y",
                 "-i",
                 str(input_video),
                 "-vf",
-                vf,
-                "-af",
-                af,
-                "-f",
-                "matroska",
-                str(pipe),
+                filters.video_filter,
             ]
 
-            # Command 2: Pipe to Final Output (using Centralized Encoder)
-            encoder_args = self.encoder.build_encoder_cmd("balanced")
-            copy_cmd = [
-                "ffmpeg",
-                "-nostdin",
-                "-y",
-                "-i",
-                str(pipe),
-                *encoder_args,
-                "-c:a",
-                "copy",
-                str(output_video),
-            ]
+            if has_audio:
+                cmd.extend(
+                    [
+                        "-af",
+                        filters.audio_filter,
+                        *encoder_args,
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "128k",
+                        "-movflags",
+                        "+faststart",
+                        str(output_video),
+                    ]
+                )
+            else:
+                cmd.extend(
+                    [
+                        *encoder_args,
+                        "-an",
+                        str(output_video),
+                    ]
+                )
 
-            proc = subprocess.Popen(filter_cmd, stderr=subprocess.PIPE)
-            subprocess.run(copy_cmd, check=True)
-            proc.communicate()
-
-        return output_video.exists()
+            logger.debug("Frame-removal ffmpeg command: %s", " ".join(cmd))
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return output_video.exists() and output_video.stat().st_size > 0
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Streaming frame removal failed: {e.stderr}")
+            return False
+        except ValueError as e:
+            logger.error(f"Invalid frame removal input: {e}")
+            return False

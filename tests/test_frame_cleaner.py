@@ -1,4 +1,5 @@
 import pytest
+import subprocess
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from typing import TypedDict
@@ -611,41 +612,43 @@ class TestFrameCleanerRefactored:
             patch(
                 "lx_anonymizer.video_processing.video_utils.detect_video_format"
             ) as mock_fmt,
-            patch("lx_anonymizer.video_processing.video_utils.named_pipe") as mock_pipe,
+            patch(
+                "lx_anonymizer.video_processing.video_utils.detect_video_frame_rate"
+            ) as mock_frame_rate,
+            patch.object(frame_cleaner, "_verify_video_output", return_value=True),
         ):
             # Setup mocks
             mock_fmt.return_value = {"can_stream_copy": True, "has_audio": True}
-            mock_pipe.return_value.__enter__.return_value = Path("/tmp/pipe")
+            mock_frame_rate.return_value = 30.0
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
 
             original = Path("in.mp4")
             output = Path("out.mp4")
             remove_indices = [10, 11, 12]
 
             # Execute
-            frame_cleaner.remove_frames_from_video_streaming(
+            ok = frame_cleaner.remove_frames_from_video_streaming(
                 original, remove_indices, output, total_frames=1000, use_named_pipe=True
             )
 
-            # Verify Popen (Filter process) arguments
-            assert mock_popen.called
-            filter_args = mock_popen.call_args[0][0]
+            assert ok is True
+            # Direct single-process FFmpeg path should avoid the named-pipe Popen.
+            assert not mock_popen.called
+            assert mock_run.called
+            ffmpeg_args = mock_run.call_args[0][0]
 
             # Check for select filter construction
             # vf should contain: select='not(eq(n\,10)+eq(n\,11)+eq(n\,12))'
-            filter_string = [arg for arg in filter_args if "select='not(" in arg][0]
-            assert "eq(n\\,10)" in filter_string
-            assert "eq(n\\,11)" in filter_string
-
-            # Verify Run (Copy process) arguments
-            assert mock_run.called
-            copy_args = next(
-                call.args[0]
-                for call in mock_run.call_args_list
-                if "copy" in call.args[0]
-            )
-            assert any(
-                isinstance(arg, str)
-                and (arg.startswith("-c") or arg in ("-codec", "-vcodec", "-acodec"))
-                for arg in copy_args
-            )
-            assert "copy" in copy_args  # Should enable stream copy from pipe
+            video_filter = ffmpeg_args[ffmpeg_args.index("-vf") + 1]
+            audio_filter = ffmpeg_args[ffmpeg_args.index("-af") + 1]
+            assert "eq(n\\,10)" in video_filter
+            assert "eq(n\\,11)" in video_filter
+            assert "between(t\\,0.333333333\\,0.433333333)" in audio_filter
+            assert "eq(n" not in audio_filter
+            assert "-c:v" in ffmpeg_args
+            assert ffmpeg_args[ffmpeg_args.index("-c:a") + 1] == "aac"

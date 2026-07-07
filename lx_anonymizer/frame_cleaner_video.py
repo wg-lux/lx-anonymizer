@@ -19,6 +19,10 @@ from lx_dtypes.models.contracts.video_processing import VideoEncoderConfig
 from lx_anonymizer.config import settings
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_utils
+from lx_anonymizer.video_processing.ffmpeg_filters import (
+    build_frame_drop_filters,
+    frame_ranges as build_frame_ranges,
+)
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 from lx_anonymizer.video_processing.video_processor import VideoProcessor
 
@@ -96,7 +100,10 @@ class FrameCleanerVideoMixin:
             "Removing %d frames using streaming method",
             len(plan.frames_to_remove),
         )
-        filters = self._build_frame_removal_filters(plan.frames_to_remove)
+        filters = self._build_frame_removal_filters(
+            plan.original_video,
+            plan.frames_to_remove,
+        )
         self._execute_frame_removal(plan=plan, filters=filters)
         return filters
 
@@ -119,9 +126,10 @@ class FrameCleanerVideoMixin:
         )
 
     def _build_frame_removal_filters(
-        self, frames_to_remove: list[int]
+        self, original_video: Path, frames_to_remove: list[int]
     ) -> FrameRemovalFilterArgs:
-        vf, af = self._build_frame_drop_filters(frames_to_remove)
+        frame_rate = video_utils.detect_video_frame_rate(original_video)
+        vf, af = self._build_frame_drop_filters(frames_to_remove, frame_rate)
         vf_args, af_args, filter_script_paths = self._build_filter_args(vf, af)
         return FrameRemovalFilterArgs(
             vf_args=vf_args,
@@ -139,15 +147,9 @@ class FrameCleanerVideoMixin:
             video_utils.detect_video_format(plan.original_video)
         )
         if plan.should_use_named_pipe:
-            self._remove_frames_via_named_pipe(
-                original_video=plan.original_video,
-                output_video=plan.output_video,
-                vf_args=filters.vf_args,
-                af_args=filters.af_args,
-                has_audio=video_format.has_audio,
-                ffmpeg_timeout=plan.ffmpeg_timeout,
+            logger.debug(
+                "Named-pipe frame removal requested; using single-process ffmpeg"
             )
-            return
 
         self._remove_frames_direct(
             original_video=plan.original_video,
@@ -350,6 +352,10 @@ class FrameCleanerVideoMixin:
         encoder_args = self.build_encoder_cmd("balanced")
         cmd = ["ffmpeg", "-nostdin", "-y", "-i", str(original_video), *vf_args]
         if has_audio:
+            if not af_args:
+                raise ValueError(
+                    "audio filter args are required when preserving audio during frame removal"
+                )
             cmd.extend(
                 [
                     *af_args,
@@ -478,42 +484,15 @@ class FrameCleanerVideoMixin:
 
     @staticmethod
     def _frame_ranges(indices: List[int]) -> List[Tuple[int, int]]:
-        clean = sorted({int(idx) for idx in indices if int(idx) >= 0})
-        if not clean:
-            return []
-        ranges: List[Tuple[int, int]] = []
-        start = clean[0]
-        end = clean[0]
-        for value in clean[1:]:
-            if value == end + 1:
-                end = value
-                continue
-            ranges.append((start, end))
-            start = value
-            end = value
-        ranges.append((start, end))
-        return ranges
+        return build_frame_ranges(indices)
 
-    def _build_frame_drop_filters(self, frames_to_remove: List[int]) -> Tuple[str, str]:
-        clean = sorted({int(idx) for idx in frames_to_remove if int(idx) >= 0})
-        if not clean:
-            return "select='1',setpts=N/FRAME_RATE/TB", "aselect='1',asetpts=N/SR/TB"
-
-        terms: List[str] = []
-        if len(clean) <= 64:
-            terms = [f"eq(n\\,{idx})" for idx in clean]
-        else:
-            ranges = self._frame_ranges(clean)
-            for start, end in ranges:
-                if start == end:
-                    terms.append(f"eq(n\\,{start})")
-                else:
-                    terms.append(f"between(n\\,{start}\\,{end})")
-
-        condition = "+".join(terms)
-        vf = f"select='not({condition})',setpts=N/FRAME_RATE/TB"
-        af = f"aselect='not({condition})',asetpts=N/SR/TB"
-        return vf, af
+    def _build_frame_drop_filters(
+        self,
+        frames_to_remove: List[int],
+        frame_rate: float = video_utils.DEFAULT_VIDEO_FRAME_RATE,
+    ) -> Tuple[str, str]:
+        filters = build_frame_drop_filters(frames_to_remove, frame_rate)
+        return filters.video_filter, filters.audio_filter
 
     def _build_filter_args(
         self, vf: str, af: str

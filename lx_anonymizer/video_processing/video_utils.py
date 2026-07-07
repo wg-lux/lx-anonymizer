@@ -1,8 +1,10 @@
 import json
+import math
 import os
 import subprocess
 import tempfile
 import logging
+from fractions import Fraction
 from pathlib import Path
 from typing import cast
 from contextlib import contextmanager
@@ -12,6 +14,7 @@ from lx_dtypes.models.contracts.video_format import VideoFormatInfo
 logger = logging.getLogger(__name__)
 
 DEFAULT_FFPROBE_TIMEOUT_SECONDS = 10.0
+DEFAULT_VIDEO_FRAME_RATE = 30.0
 
 UNKNOWN_VIDEO_FORMAT = VideoFormatInfo()
 
@@ -97,6 +100,79 @@ def detect_video_format(
         return UNKNOWN_VIDEO_FORMAT.model_dump()
 
 
+def detect_video_frame_rate(
+    video_path: Path,
+    *,
+    timeout_seconds: float = DEFAULT_FFPROBE_TIMEOUT_SECONDS,
+    default_frame_rate: float = DEFAULT_VIDEO_FRAME_RATE,
+) -> float:
+    """Return the first video stream's frame rate, falling back to 30 fps."""
+    fallback = _positive_finite_float(default_frame_rate) or DEFAULT_VIDEO_FRAME_RATE
+    try:
+        cmd = [
+            "ffprobe",
+            "-nostdin",
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=avg_frame_rate,r_frame_rate",
+            "-print_format",
+            "json",
+            str(video_path),
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout_seconds,
+        )
+        info = cast(dict[str, object], json.loads(result.stdout))
+        streams = _coerce_stream_list(_coerce_mapping(info).get("streams", []))
+        if not streams:
+            return fallback
+
+        video_stream = streams[0]
+        for key in ("avg_frame_rate", "r_frame_rate"):
+            frame_rate = parse_frame_rate(video_stream.get(key))
+            if frame_rate is not None:
+                return frame_rate
+        return fallback
+    except (
+        json.JSONDecodeError,
+        OSError,
+        TypeError,
+        ValueError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ) as e:
+        logger.warning(f"Frame-rate probe failed for {video_path}: {e}")
+        return fallback
+
+
+def parse_frame_rate(value: object) -> float | None:
+    """Parse ffprobe frame-rate values such as '30000/1001' or '30'."""
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, int | float):
+        return _positive_finite_float(float(value))
+
+    if not isinstance(value, str):
+        return None
+
+    stripped = value.strip()
+    if not stripped or stripped == "0/0" or stripped.upper() == "N/A":
+        return None
+
+    try:
+        return _positive_finite_float(float(Fraction(stripped)))
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
 @contextmanager
 def named_pipe(suffix: str = ".mp4"):
     """Creates a temporary FIFO for in-memory streaming."""
@@ -144,3 +220,9 @@ def _find_streams(
     return [
         stream for stream in streams if str(stream.get("codec_type", "")) == codec_type
     ]
+
+
+def _positive_finite_float(value: float) -> float | None:
+    if math.isfinite(value) and value > 0:
+        return value
+    return None
