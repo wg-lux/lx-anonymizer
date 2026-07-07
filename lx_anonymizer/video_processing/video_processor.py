@@ -198,6 +198,7 @@ class VideoProcessor:
                 )
 
             vf = ",".join(draw_boxes)
+            encoder_args = self.encoder.build_encoder_cmd("balanced")
             cmd = [
                 "ffmpeg",
                 "-nostdin",
@@ -206,11 +207,12 @@ class VideoProcessor:
                 str(input_video),
                 "-vf",
                 vf,
+                *encoder_args,
                 "-c:a",
                 "copy",
                 str(output_video),
             ]
-            logger.debug(f"Masking ffmpeg command: {' '.join(cmd)}")
+            logger.debug("Masking ffmpeg command: %s", " ".join(cmd))
             subprocess.run(cmd, capture_output=True, text=True, check=True)
             return output_video.exists() and output_video.stat().st_size > 0
         except Exception as e:
