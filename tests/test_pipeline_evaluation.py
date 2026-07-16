@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
 from lx_anonymizer.evaluation.pipeline_evaluation import (
     evaluate_feedback_alignment,
     evaluate_records,
+    evaluate_study_dataset,
     load_records,
 )
 
@@ -76,6 +78,32 @@ def test_evaluate_records_returns_expected_core_metrics() -> None:
     assert math.isclose(last_name.presence_f1, 1.0)
 
     assert math.isclose(result.macro_exact_match_rate, 0.5)
+
+
+def test_study_models_use_one_common_frozen_gold_cohort(tmp_path: Path) -> None:
+    gold = [
+        {"file": "f", "report_id": "1", "first_name": "Alice", "last_name": "Doe"},
+        {"file": "f", "report_id": "2", "first_name": "Bob", "last_name": "Smith"},
+    ]
+    predictions = {
+        "names_control.json": gold,
+        "names_regex.json": gold,
+        "names_deepseek.json": [gold[0]],
+    }
+    (tmp_path / "gold.json").write_text(json.dumps(gold), encoding="utf-8")
+    for filename, records in predictions.items():
+        (tmp_path / filename).write_text(json.dumps(records), encoding="utf-8")
+
+    results = evaluate_study_dataset(tmp_path)
+
+    assert len(results) == 3
+    assert {result.total_gold_records for result in results} == {1}
+    assert {result.total_prediction_records for result in results} == {1}
+    assert {result.matched_records for result in results} == {1}
+    assert {result.key_fields for result in results} == {("file", "report_id")}
+    assert all(
+        tuple(result.field_metrics) == ("first_name", "last_name") for result in results
+    )
 
 
 def test_evaluate_feedback_alignment_uses_text_change_when_no_explicit_prediction() -> (

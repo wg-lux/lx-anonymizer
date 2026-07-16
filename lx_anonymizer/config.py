@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     )
 
     # --- LLM Configuration ---
-    # Conservative library default: require explicit opt-in before doing network/model work.
-    LLM_ENABLED: bool = False
+    # Local Ollama is enabled by default for OCR and text recognition.
+    LLM_ENABLED: bool = True
     # When enabled, prefer a laptop-friendly local backend by default.
     LLM_PROVIDER: Literal["vllm", "ollama"] = "ollama"
     LLM_BASE_URL: str = ""
@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     LLM_MIN_TEXT_LENGTH: int = 32
     REPORT_LLM_MIN_TEXT_LENGTH: int = 64
     REPORT_OCR_CORRECTION_MIN_TEXT_LENGTH: int = 120
+    OLLAMA_OCR_ENABLED: bool = True
+    OLLAMA_OCR_CONFIDENCE: float = Field(default=0.5, ge=0.0, le=1.0)
 
     # --- Performance & Sampling ---
     MAX_FRAMES_TO_SAMPLE: int = 24
@@ -56,6 +58,7 @@ class Settings(BaseSettings):
     PHI_REGION_DETECTOR_CONFIDENCE: float = 0.35
     PHI_REGION_DETECTOR_NMS_THRESHOLD: float = 0.45
     PHI_REGION_DETECTOR_INPUT_SIZE: int = 640
+    PHI_REGION_DETECTOR_RESIZE_MODE: Literal["letterbox", "stretch"] = "letterbox"
     PHI_REGION_DETECTOR_BOX_FORMAT: Literal["yolo_xywh", "xyxy"] = "yolo_xywh"
     PHI_REGION_DETECTOR_SCORE_FORMAT: Literal["class_scores", "objectness"] = (
         "class_scores"

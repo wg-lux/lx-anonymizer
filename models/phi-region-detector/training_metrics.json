@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "run_name": "phi-yolov8n-radphi-synthetic-stickers-midi-refine-seed0-960-20260715",
+  "evaluation_scope": "internal patient-disjoint development validation",
+  "official_midi_b_test": false,
+  "metrics": {
+    "best_map50": {
+      "epoch": 39,
+      "value": 0.88879
+    },
+    "best_map50_95": {
+      "epoch": 43,
+      "value": 0.67799
+    }
+  },
+  "artifacts": {
+    "model.pt": {
+      "bytes": 6291818,
+      "sha256": "1b9766cc736ce8ba13271ea3b4f44e5af0778aec6d469a6c77a5820b7462b01e"
+    },
+    "model.onnx": {
+      "bytes": 12448498,
+      "sha256": "61c2b58e283733c391c577df36dce057d7424f5d611d27ae0867e30ff684a5bd"
+    }
+  }
+}

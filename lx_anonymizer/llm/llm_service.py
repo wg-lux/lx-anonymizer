@@ -1,20 +1,42 @@
+import base64
+from io import BytesIO
 import logging
-from typing import Optional
-from typing import Mapping, cast
+from collections.abc import Sequence
+from typing import Mapping, Optional, TypedDict, cast
 
 import requests
-from pydantic import ValidationError
-
+from PIL import Image
 from lx_anonymizer.config import settings
 from lx_dtypes.models.contracts.llm_service import (
     LLMChatMessagePayload,
     LLMChatOllamaPayload,
     LLMChatOllamaOptionsPayload,
     LLMChatOpenAIPayload,
-    LLMChatResponsePayload,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _OllamaVisionMessagePayload(TypedDict):
+    role: str
+    content: str
+    images: list[str]
+
+
+class _OllamaVisionOptionsPayload(TypedDict):
+    temperature: int
+    num_ctx: int
+
+
+class _OllamaVisionRequestPayload(TypedDict):
+    model: str
+    messages: list[_OllamaVisionMessagePayload]
+    stream: bool
+    options: _OllamaVisionOptionsPayload
+
+
+class LLMServiceError(RuntimeError):
+    """Raised when an LLM operation violates its provider contract."""
 
 
 class LLMService:
@@ -39,11 +61,12 @@ class LLMService:
             "Return only the corrected text, preserving names, dates, "
             "and identifiers when they are readable."
         )
+        request_payload = self._build_payload(system_prompt, prompt)
         response = requests.post(
             self._chat_endpoint(),
             timeout=self.timeout,
             headers={"Content-Type": "application/json"},
-            json=cast(dict[str, object], self._build_payload(system_prompt, prompt)),
+            json=cast(dict[str, object], request_payload.model_dump(mode="json")),
         )
         response.raise_for_status()
         payload: Mapping[str, object] = cast(Mapping[str, object], response.json())
@@ -78,18 +101,21 @@ class LLMService:
 
     @staticmethod
     def _extract_response_content(payload: Mapping[str, object]) -> str:
-        try:
-            parsed_payload = LLMChatResponsePayload.model_validate(payload)
-        except ValidationError:
+        ollama_content = _response_message_content(payload.get("message"))
+        if ollama_content is not None:
+            return ollama_content
+
+        choices = payload.get("choices")
+        if not isinstance(choices, Sequence) or isinstance(choices, (str, bytes)):
             return ""
-
-        if parsed_payload.message is not None:
-            return parsed_payload.message.content or ""
-
-        if not parsed_payload.choices:
+        if not choices:
             return ""
-
-        return parsed_payload.choices[0].message.content or ""
+        choice_values = cast(Sequence[object], choices)
+        first_choice = choice_values[0]
+        if not isinstance(first_choice, Mapping):
+            return ""
+        choice_mapping = cast(Mapping[object, object], first_choice)
+        return _response_message_content(choice_mapping.get("message")) or ""
 
     def correct_ocr_text(self, text: str) -> str:
         if not text:
@@ -110,3 +136,73 @@ class LLMService:
                 logger.warning("LLM OCR correction failed for one chunk: %s", exc)
                 corrected_chunks.append(chunk)
         return "".join(corrected_chunks)
+
+    def recognize_image(self, image: Image.Image, candidate_text: str = "") -> str:
+        """Transcribe visible text from an image with Ollama's vision endpoint."""
+        if self.provider != "ollama":
+            raise LLMServiceError("Vision OCR currently requires the Ollama provider")
+
+        prompt = (
+            "Transcribe every visible character in this medical image. Preserve "
+            "line breaks, names, dates, identifiers, punctuation, and original "
+            "spelling. Do not summarize, translate, infer, or add text. Return "
+            "only the transcription. Return [NO_TEXT] when no text is visible."
+        )
+        stripped_candidate = candidate_text.strip()
+        if stripped_candidate:
+            prompt += (
+                " A conventional OCR engine produced the candidate below. Use the "
+                "image as the source of truth and correct only recognition errors.\n\n"
+                f"OCR_CANDIDATE:\n{stripped_candidate}"
+            )
+
+        payload = self._build_ollama_vision_payload(image, prompt)
+        response = requests.post(
+            self._chat_endpoint(),
+            timeout=self.timeout,
+            headers={"Content-Type": "application/json"},
+            json=cast(dict[str, object], payload),
+        )
+        response.raise_for_status()
+        raw_response = response.json()
+        if not isinstance(raw_response, Mapping):
+            raise LLMServiceError("Ollama vision response must be a JSON object")
+        content = self._extract_response_content(
+            cast(Mapping[str, object], raw_response)
+        ).strip()
+        if content == "[NO_TEXT]":
+            return ""
+        return content
+
+    def _build_ollama_vision_payload(
+        self, image: Image.Image, prompt: str
+    ) -> _OllamaVisionRequestPayload:
+        encoded_image = _encode_image_as_png(image)
+        return {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [encoded_image],
+                }
+            ],
+            "stream": False,
+            "options": {"temperature": 0, "num_ctx": 8192},
+        }
+
+
+def _encode_image_as_png(image: Image.Image) -> str:
+    normalized = image.convert("RGB")
+    buffer = BytesIO()
+    normalized.save(buffer, format="PNG", optimize=True)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def _response_message_content(value: object) -> str | None:
+    """Project provider-specific message objects onto the stable content field."""
+    if not isinstance(value, Mapping):
+        return None
+    message = cast(Mapping[object, object], value)
+    content = message.get("content")
+    return content if isinstance(content, str) else None

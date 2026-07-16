@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeAlias, cast
 
@@ -171,4 +172,21 @@ def _load_tesseract_ocr_data(image: np.ndarray, custom_config: str) -> Tesseract
             image, output_type=Output.DICT, config=custom_config
         ),
     )
-    return TesseractOCRData.model_validate(raw_payload)
+    return normalize_tesseract_ocr_data(raw_payload)
+
+
+def normalize_tesseract_ocr_data(raw_payload: object) -> TesseractOCRData:
+    """Normalize pytesseract's larger dictionary at the integration boundary."""
+    if not isinstance(raw_payload, Mapping):
+        raise TypeError("pytesseract image_to_data output must be a mapping")
+
+    required_columns = ("left", "top", "width", "height", "conf", "text")
+    missing_columns = [key for key in required_columns if key not in raw_payload]
+    if missing_columns:
+        missing = ", ".join(missing_columns)
+        raise ValueError(f"pytesseract output is missing required columns: {missing}")
+
+    normalized_payload: dict[str, object] = {
+        key: raw_payload[key] for key in required_columns
+    }
+    return TesseractOCRData.model_validate(normalized_payload)

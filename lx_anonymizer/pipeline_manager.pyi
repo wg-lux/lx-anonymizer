@@ -1,7 +1,15 @@
 from pathlib import Path
 
 type ModifiedImageMap = dict[tuple[str, str], str]
+type BoundingBox = tuple[int, int, int, int]
 
+def detect_combined_text_boxes(
+    img_path: Path,
+    east_path: str,
+    min_confidence: float,
+    width: int,
+    height: int,
+) -> list[BoundingBox]: ...
 def process_images_with_OCR_and_NER(
     file_path: Path | str,
     east_path: str = ...,

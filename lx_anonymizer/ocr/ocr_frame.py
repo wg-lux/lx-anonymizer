@@ -19,6 +19,7 @@ _RapidOCRClass: Optional[type[Any]] = (
     None  # Umbenannt, um zu zeigen: Das ist die KLASSE
 )
 RAPIDOCR_BACKEND = "rapidocr"
+OLLAMA_OCR_BACKEND = "ollama-gemma4"
 RAPIDOCR_ACCELERATION_ENV = "LX_ANONYMIZER_RAPIDOCR_ACCELERATION"
 CUDA_EXECUTION_PROVIDER = "CUDAExecutionProvider"
 CPU_EXECUTION_PROVIDER = "CPUExecutionProvider"
@@ -157,6 +158,31 @@ class FrameOCR:
         Extract text + confidence + meta from a single frame.
         Always returns a (text, confidence, meta) tuple.
         """
+        traditional_result = self._extract_text_traditional(frame, roi, high_quality)
+        if not (
+            settings.LLM_ENABLED
+            and settings.OLLAMA_OCR_ENABLED
+            and settings.LLM_PROVIDER == "ollama"
+            and high_quality
+        ):
+            return traditional_result
+
+        try:
+            return self._extract_text_ollama(frame, roi, traditional_result)
+        except Exception as exc:
+            logger.warning(
+                "Gemma 4 vision OCR failed; retaining conventional OCR output: %s",
+                exc,
+            )
+            return traditional_result
+
+    def _extract_text_traditional(
+        self,
+        frame: np.ndarray,
+        roi: RoiInput,
+        high_quality: bool,
+    ) -> Tuple[str, float, Dict[str, Any]]:
+        """Run the deterministic OCR cascade used as source and safe fallback."""
         # Prefer RapidOCR: CPU-bound ONNX Runtime avoids GPU VRAM pressure.
         if self._rapidocr_available:
             try:
@@ -189,6 +215,52 @@ class FrameOCR:
         return self._extract_text_pytesseract(
             frame, cast(Optional[FlatRoi], flat_roi), high_quality
         )
+
+    def _extract_text_ollama(
+        self,
+        frame: np.ndarray,
+        roi: RoiInput,
+        traditional_result: Tuple[str, float, Dict[str, Any]],
+    ) -> Tuple[str, float, Dict[str, Any]]:
+        from lx_anonymizer.llm.llm_service import LLMService
+
+        candidate_text, candidate_confidence, candidate_metadata = traditional_result
+        roi_entries = self._normalize_roi_input(roi)
+        image_array = frame
+        if len(roi_entries) == 1:
+            image_array, _, _ = self._crop_frame(frame, roi_entries[0][1])
+        if image_array.ndim == 3:
+            image_array = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image_array).convert("RGB")
+
+        service = LLMService(
+            provider="ollama",
+            base_url=settings.resolved_llm_base_url,
+            model_name=settings.LLM_MODEL,
+            timeout=settings.LLM_TIMEOUT,
+        )
+        recognized_text = service.recognize_image(image, candidate_text=candidate_text)
+        if not recognized_text:
+            return traditional_result
+
+        confidence = (
+            candidate_confidence
+            if candidate_text
+            else float(settings.OLLAMA_OCR_CONFIDENCE)
+        )
+        metadata = dict(candidate_metadata)
+        metadata.update(
+            {
+                "backend": OLLAMA_OCR_BACKEND,
+                "method": "vision-ocr-with-conventional-candidate",
+                "model": settings.LLM_MODEL,
+                "candidate_backend": candidate_metadata.get("backend", "unknown"),
+                "confidence_source": (
+                    "conventional_ocr" if candidate_text else "configured_proxy"
+                ),
+            }
+        )
+        return recognized_text, confidence, metadata
 
     def _ensure_rapidocr_engine(self) -> None:
         if self.rapidocr_engine is not None:

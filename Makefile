@@ -4,7 +4,9 @@ TWINE_BIN ?= twine
 PYPI_DIST_DIR ?= dist
 PYPI_MANIFEST_PATH ?= Cargo.toml
 PYPI_INTERPRETER ?=
-PYPI_COMPATIBILITY ?= linux
+# Local Nix/Zig builds link against the host glibc. Release wheels are built
+# in CI with a manylinux container and can use the stricter manylinux target.
+PYPI_COMPATIBILITY ?= manylinux_2_34
 
 pypi-wheel:
 	@echo "Building Rust Backend Extension and Main Django Wheel with Zig/Manylinux..."
@@ -13,7 +15,7 @@ pypi-wheel:
 	unset _PYTHON_HOST_PLATFORM; \
 	$(MATURIN_BIN) build --release \
 		--zig \
-		--compatibility manylinux2014 \
+		--compatibility $(PYPI_COMPATIBILITY) \
 		--out $(PYPI_DIST_DIR)
 
 pypi-sdist:

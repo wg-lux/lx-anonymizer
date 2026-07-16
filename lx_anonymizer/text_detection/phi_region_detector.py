@@ -17,6 +17,7 @@ cv2_dnn = cast("_Cv2DnnModule", cv2.dnn)  # type: ignore[attr-defined]
 
 BoxFormat = Literal["yolo_xywh", "xyxy"]
 ScoreFormat = Literal["class_scores", "objectness"]
+ResizeMode = Literal["letterbox", "stretch"]
 
 
 class _DnnNet(Protocol):
@@ -60,6 +61,7 @@ class PhiRegionDetectorConfig:
     box_format: BoxFormat
     score_format: ScoreFormat
     allowed_class_ids: frozenset[int]
+    resize_mode: ResizeMode = "letterbox"
     expected_sha256: str | None = None
     required: bool = False
 
@@ -77,6 +79,7 @@ class PhiRegionDetectorConfig:
             box_format=settings.PHI_REGION_DETECTOR_BOX_FORMAT,
             score_format=settings.PHI_REGION_DETECTOR_SCORE_FORMAT,
             allowed_class_ids=_parse_class_ids(settings.PHI_REGION_DETECTOR_CLASS_IDS),
+            resize_mode=settings.PHI_REGION_DETECTOR_RESIZE_MODE,
             expected_sha256=(
                 settings.PHI_REGION_DETECTOR_MODEL_SHA256.strip().lower() or None
             ),
@@ -90,7 +93,8 @@ class CustomPhiRegionDetector:
 
     Contract:
     - model format: OpenCV DNN-readable ONNX
-    - input: resized RGB image, NCHW float32, 0..1
+    - input: letterboxed RGB image, NCHW float32, 0..1. Letterboxing matches
+      Ultralytics training and preserves the aspect ratio of medical images.
     - output rows: YOLO-like detections with box coords first
       - score_format=class_scores: [cx, cy, w, h, class_0, class_1, ...]
       - score_format=objectness: [cx, cy, w, h, objectness, class_0, ...]
@@ -111,9 +115,13 @@ class CustomPhiRegionDetector:
             self._net = cv2_dnn.readNet(str(self.config.model_path))
 
         rgb = np.asarray(image.convert("RGB"))
-        image_height, image_width = rgb.shape[:2]
-        blob = cv2_dnn.blobFromImage(
+        model_input, transform = _prepare_model_input(
             rgb,
+            input_size=self.config.input_size,
+            resize_mode=self.config.resize_mode,
+        )
+        blob = cv2_dnn.blobFromImage(
+            model_input,
             scalefactor=1.0 / 255.0,
             size=(self.config.input_size, self.config.input_size),
             mean=(0.0, 0.0, 0.0),
@@ -124,7 +132,7 @@ class CustomPhiRegionDetector:
         self._net.setInput(blob)
         outputs = self._net.forward()
         rows = _as_detection_rows(outputs)
-        boxes, scores = self._rows_to_boxes(rows, image_width, image_height)
+        boxes, scores = self._rows_to_boxes(rows, transform)
         return _nms_boxes(boxes, scores, self.config.nms_threshold)
 
     def _validate_config(self) -> None:
@@ -144,6 +152,10 @@ class CustomPhiRegionDetector:
             raise CustomPhiRegionDetectorError(
                 "PHI_REGION_DETECTOR_NMS_THRESHOLD must be between 0 and 1"
             )
+        if self.config.resize_mode not in ("letterbox", "stretch"):
+            raise CustomPhiRegionDetectorError(
+                "PHI_REGION_DETECTOR_RESIZE_MODE must be letterbox or stretch"
+            )
         if self.config.expected_sha256:
             actual = _sha256_file(self.config.model_path)
             if actual.lower() != self.config.expected_sha256:
@@ -155,8 +167,7 @@ class CustomPhiRegionDetector:
     def _rows_to_boxes(
         self,
         rows: np.ndarray,
-        image_width: int,
-        image_height: int,
+        transform: _InputTransform,
     ) -> tuple[list[tuple[int, int, int, int]], list[float]]:
         boxes: list[tuple[int, int, int, int]] = []
         scores: list[float] = []
@@ -176,9 +187,7 @@ class CustomPhiRegionDetector:
 
             box = _convert_box(
                 row[:4],
-                image_width=image_width,
-                image_height=image_height,
-                input_size=self.config.input_size,
+                transform=transform,
                 box_format=self.config.box_format,
             )
             if box is None:
@@ -299,12 +308,68 @@ def _score_row(row: np.ndarray, score_format: ScoreFormat) -> tuple[float, int]:
     return score, class_idx
 
 
+@dataclass(frozen=True)
+class _InputTransform:
+    image_width: int
+    image_height: int
+    input_size: int
+    scale_x: float
+    scale_y: float
+    offset_x: int
+    offset_y: int
+
+
+def _prepare_model_input(
+    rgb: np.ndarray,
+    *,
+    input_size: int,
+    resize_mode: ResizeMode,
+) -> tuple[np.ndarray, _InputTransform]:
+    image_height, image_width = rgb.shape[:2]
+    if image_width <= 0 or image_height <= 0:
+        raise CustomPhiRegionDetectorError("PHI detector input image must not be empty")
+
+    if resize_mode == "stretch":
+        resized = np.asarray(
+            Image.fromarray(rgb).resize(
+                (input_size, input_size), Image.Resampling.BILINEAR
+            )
+        )
+        return resized, _InputTransform(
+            image_width=image_width,
+            image_height=image_height,
+            input_size=input_size,
+            scale_x=input_size / image_width,
+            scale_y=input_size / image_height,
+            offset_x=0,
+            offset_y=0,
+        )
+
+    scale = min(input_size / image_width, input_size / image_height)
+    resized_width = max(1, min(input_size, round(image_width * scale)))
+    resized_height = max(1, min(input_size, round(image_height * scale)))
+    offset_x = (input_size - resized_width) // 2
+    offset_y = (input_size - resized_height) // 2
+    resized_image = Image.fromarray(rgb).resize(
+        (resized_width, resized_height), Image.Resampling.BILINEAR
+    )
+    canvas = Image.new("RGB", (input_size, input_size), (114, 114, 114))
+    canvas.paste(resized_image, (offset_x, offset_y))
+    return np.asarray(canvas), _InputTransform(
+        image_width=image_width,
+        image_height=image_height,
+        input_size=input_size,
+        scale_x=scale,
+        scale_y=scale,
+        offset_x=offset_x,
+        offset_y=offset_y,
+    )
+
+
 def _convert_box(
     coords: np.ndarray,
     *,
-    image_width: int,
-    image_height: int,
-    input_size: int,
+    transform: _InputTransform,
     box_format: BoxFormat,
 ) -> tuple[int, int, int, int] | None:
     values = [float(value) for value in coords]
@@ -320,22 +385,20 @@ def _convert_box(
         y2 = cy + height / 2
 
     if normalized:
-        x1 *= image_width
-        x2 *= image_width
-        y1 *= image_height
-        y2 *= image_height
-    else:
-        scale_x = image_width / float(input_size)
-        scale_y = image_height / float(input_size)
-        x1 *= scale_x
-        x2 *= scale_x
-        y1 *= scale_y
-        y2 *= scale_y
+        x1 *= transform.input_size
+        x2 *= transform.input_size
+        y1 *= transform.input_size
+        y2 *= transform.input_size
 
-    left = max(0, min(int(round(x1)), image_width))
-    top = max(0, min(int(round(y1)), image_height))
-    right = max(0, min(int(round(x2)), image_width))
-    bottom = max(0, min(int(round(y2)), image_height))
+    x1 = (x1 - transform.offset_x) / transform.scale_x
+    x2 = (x2 - transform.offset_x) / transform.scale_x
+    y1 = (y1 - transform.offset_y) / transform.scale_y
+    y2 = (y2 - transform.offset_y) / transform.scale_y
+
+    left = max(0, min(int(round(x1)), transform.image_width))
+    top = max(0, min(int(round(y1)), transform.image_height))
+    right = max(0, min(int(round(x2)), transform.image_width))
+    bottom = max(0, min(int(round(y2)), transform.image_height))
 
     if right <= left or bottom <= top:
         return None

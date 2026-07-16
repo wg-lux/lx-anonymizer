@@ -13,8 +13,10 @@ Separated from PDF processing logic to maintain clean architecture.
 
 import logging
 import re
-from datetime import date, datetime
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import date, datetime
+from enum import Enum
 from typing import Any, Optional, Tuple, cast
 
 import dateparser  # type: ignore[import-untyped]
@@ -37,6 +39,38 @@ from lx_anonymizer.sensitive_meta_interface import (
 )  # <<< integrate SensitiveMeta
 
 logger = logging.getLogger(__name__)
+
+
+class _DateRole(str, Enum):
+    DOB = "dob"
+    EXAMINATION = "examination_date"
+
+
+@dataclass(frozen=True)
+class _FrameDateCandidate:
+    value: date
+    start: int
+    end: int
+    role: _DateRole | None
+    followed_by_time: bool
+
+
+_FRAME_DATE_CANDIDATE_RE = re.compile(
+    r"(?<!\d)(?:"
+    r"\d{1,2}\s*(?P<separator>[.\-/])\s*\d{1,2}\s*"
+    r"(?P=separator)\s*\d{2,4}"
+    r"|\d{1,2}\s+\d{1,2}\s+\d{2,4}"
+    r")(?!\d)"
+)
+_DOB_LABEL_BEFORE_DATE_RE = re.compile(
+    r"(?:\bDOB|\bgeb(?:oren)?|Geb\.Dat(?:um)?|Geburtsdatum)\s*[.:\-]?\s*$",
+    re.IGNORECASE,
+)
+_EXAM_LABEL_BEFORE_DATE_RE = re.compile(
+    r"(?:\bDatum|\bDate|\bUntersuchung|\bExam(?:ination)?)\s*[.:\-]?\s*$",
+    re.IGNORECASE,
+)
+_TIME_AFTER_DATE_RE = re.compile(r"^\s+\d{1,2}[:.]\d{2}(?:[:.]\d{2})?")
 
 
 class FrameMetadataExtractor:
@@ -85,8 +119,9 @@ class FrameMetadataExtractor:
                 }
             )
 
-            # dob
-            dob = self._extract_date_of_birth(text)
+            # Resolve date roles together. Independent first-match extraction can
+            # otherwise assign the first overlay date to both DOB and exam date.
+            dob, exam_date = self._resolve_frame_dates(text)
             self.meta.safe_update(
                 {"dob": dob.isoformat() if isinstance(dob, date) else dob}
             )
@@ -96,7 +131,6 @@ class FrameMetadataExtractor:
             self.meta.safe_update({"casenumber": case_num})
 
             # exam date/time
-            exam_date = self._extract_examination_date(text)
             exam_time = self._extract_examination_time(text)
             self.meta.safe_update(
                 {
@@ -301,6 +335,109 @@ class FrameMetadataExtractor:
             logger.error(f"DOB extraction failed: {e}")
             return None
 
+    def _resolve_frame_dates(self, text: str) -> tuple[date | None, date | None]:
+        """Resolve DOB and examination date from one shared candidate set.
+
+        Explicit labels take precedence. A date immediately followed by a time is
+        treated as an examination timestamp. If an overlay contains multiple
+        otherwise-unlabelled dates, the oldest distinct date is the DOB and the
+        newest is the examination date. One candidate is never assigned to both
+        roles.
+        """
+        candidates = self._collect_frame_date_candidates(text)
+        if not candidates:
+            return None, None
+
+        dob = self._first_candidate_for_role(candidates, _DateRole.DOB)
+        examination = self._first_candidate_for_role(candidates, _DateRole.EXAMINATION)
+        if examination is None:
+            examination = next(
+                (candidate for candidate in candidates if candidate.followed_by_time),
+                None,
+            )
+
+        distinct_dates = sorted({candidate.value for candidate in candidates})
+        if dob is None:
+            dob = next(
+                (
+                    candidate
+                    for value in distinct_dates
+                    if examination is None or value != examination.value
+                    for candidate in candidates
+                    if candidate.value == value
+                ),
+                None,
+            )
+        if examination is None:
+            examination = next(
+                (
+                    candidate
+                    for value in reversed(distinct_dates)
+                    if dob is None or value != dob.value
+                    for candidate in candidates
+                    if candidate.value == value
+                ),
+                None,
+            )
+
+        if (
+            dob is not None
+            and examination is not None
+            and dob.value == examination.value
+        ):
+            # Preserve the explicitly supported role instead of duplicating an
+            # ambiguous single date into two metadata fields.
+            if dob.role is _DateRole.DOB:
+                examination = None
+            else:
+                dob = None
+
+        if (
+            dob is not None
+            and examination is not None
+            and dob.value > examination.value
+        ):
+            dob, examination = examination, dob
+
+        return (
+            dob.value if dob is not None else None,
+            examination.value if examination is not None else None,
+        )
+
+    def _collect_frame_date_candidates(
+        self, text: str
+    ) -> tuple[_FrameDateCandidate, ...]:
+        candidates: list[_FrameDateCandidate] = []
+        for match in _FRAME_DATE_CANDIDATE_RE.finditer(text):
+            parsed = self._parse_german_date(match.group(0))
+            if parsed is None:
+                continue
+            prefix = text[max(0, match.start() - 32) : match.start()]
+            suffix = text[match.end() : match.end() + 16]
+            role: _DateRole | None = None
+            if _DOB_LABEL_BEFORE_DATE_RE.search(prefix):
+                role = _DateRole.DOB
+            elif _EXAM_LABEL_BEFORE_DATE_RE.search(prefix):
+                role = _DateRole.EXAMINATION
+            candidates.append(
+                _FrameDateCandidate(
+                    value=parsed,
+                    start=match.start(),
+                    end=match.end(),
+                    role=role,
+                    followed_by_time=bool(_TIME_AFTER_DATE_RE.match(suffix)),
+                )
+            )
+        return tuple(candidates)
+
+    @staticmethod
+    def _first_candidate_for_role(
+        candidates: tuple[_FrameDateCandidate, ...], role: _DateRole
+    ) -> _FrameDateCandidate | None:
+        return next(
+            (candidate for candidate in candidates if candidate.role is role), None
+        )
+
     def _parse_compact_date(self, date_str: str) -> Optional[date]:
         try:
             digits = NON_DIGIT_RE.sub("", date_str)
@@ -417,8 +554,10 @@ class FrameMetadataExtractor:
 
     def _parse_german_date(self, date_str: str) -> Optional[date]:
         try:
-            normalized = (
-                MULTISPACE_RE.sub("", date_str).replace("/", ".").replace("-", ".")
+            normalized = re.sub(
+                r"\s*[.\-/]\s*|\s+",
+                ".",
+                date_str.strip(),
             )
             parsed = dateparser.parse(
                 normalized, languages=["de"], settings={"DATE_ORDER": "DMY"}

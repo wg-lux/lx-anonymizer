@@ -6,12 +6,27 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from collections.abc import Callable
-from typing import Any, Sequence, cast
+from typing import Any, Protocol, Sequence, cast
 
 
 class PhiRegionDetectorTrainingError(RuntimeError):
     """Raised when PHI-region detector training cannot be started or completed."""
+
+
+class _TrainerState(Protocol):
+    save_dir: object | None
+
+
+class _TrainingModel(Protocol):
+    trainer: _TrainerState | None
+
+    def train(self, **kwargs: object) -> object | None: ...
+
+    def export(self, **kwargs: object) -> str | Path: ...
+
+
+class _YoloFactory(Protocol):
+    def __call__(self, model: str) -> _TrainingModel: ...
 
 
 @dataclass(frozen=True)
@@ -30,6 +45,8 @@ class PhiRegionDetectorTrainingConfig:
     confidence_threshold: float = 0.35
     nms_threshold: float = 0.45
     class_ids: str = ""
+    seed: int = 0
+    deterministic: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "dataset_yaml", _coerce_local_path(self.dataset_yaml))
@@ -49,6 +66,8 @@ class PhiRegionDetectorTrainingConfig:
             raise PhiRegionDetectorTrainingError("workers must be >= 0")
         if self.patience < 0:
             raise PhiRegionDetectorTrainingError("patience must be >= 0")
+        if self.seed < 0:
+            raise PhiRegionDetectorTrainingError("seed must be >= 0")
         if not 0.0 <= self.confidence_threshold <= 1.0:
             raise PhiRegionDetectorTrainingError(
                 "confidence_threshold must be between 0 and 1"
@@ -80,10 +99,12 @@ def train_phi_region_detector(
             "starting this run."
         ) from exc
 
+    yolo_factory = cast(_YoloFactory, YOLO)
+
     run_name = config.run_name or _default_run_name()
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = YOLO(config.base_model)
+    model = yolo_factory(config.base_model)
     train_kwargs: dict[str, Any] = {
         "data": str(config.dataset_yaml),
         "epochs": config.epochs,
@@ -94,12 +115,13 @@ def train_phi_region_detector(
         "workers": config.workers,
         "patience": config.patience,
         "exist_ok": True,
+        "seed": config.seed,
+        "deterministic": config.deterministic,
     }
     if config.device.strip() and config.device != "auto":
         train_kwargs["device"] = config.device.strip()
 
-    train_model = cast(Callable[..., object | None], getattr(model, "train"))
-    training_result = train_model(**train_kwargs)
+    training_result = model.train(**train_kwargs)
     run_dir = _resolve_run_dir(training_result, model, config.output_dir, run_name)
     checkpoint_path = _find_checkpoint(run_dir)
     model_path = checkpoint_path
@@ -110,7 +132,7 @@ def train_phi_region_detector(
             raise PhiRegionDetectorTrainingError(
                 f"Training completed but no best/last checkpoint was found in {run_dir}"
             )
-        exported_model = YOLO(str(checkpoint_path))
+        exported_model = yolo_factory(str(checkpoint_path))
         exported_path = exported_model.export(
             format="onnx",
             imgsz=config.input_size,
@@ -143,6 +165,7 @@ def train_phi_region_detector(
             "PHI_REGION_DETECTOR_CONFIDENCE": config.confidence_threshold,
             "PHI_REGION_DETECTOR_NMS_THRESHOLD": config.nms_threshold,
             "PHI_REGION_DETECTOR_INPUT_SIZE": config.input_size,
+            "PHI_REGION_DETECTOR_RESIZE_MODE": "letterbox",
             "PHI_REGION_DETECTOR_BOX_FORMAT": "yolo_xywh",
             "PHI_REGION_DETECTOR_SCORE_FORMAT": "class_scores",
             "PHI_REGION_DETECTOR_CLASS_IDS": config.class_ids,
@@ -198,6 +221,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--confidence-threshold", type=float, default=0.35)
     parser.add_argument("--nms-threshold", type=float, default=0.45)
     parser.add_argument("--class-ids", default="")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--non-deterministic",
+        action="store_true",
+        help="Allow nondeterministic training kernels (faster on some accelerators).",
+    )
     parser.add_argument(
         "--skip-onnx-export",
         action="store_true",
@@ -224,6 +253,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         confidence_threshold=args.confidence_threshold,
         nms_threshold=args.nms_threshold,
         class_ids=args.class_ids,
+        seed=args.seed,
+        deterministic=not args.non_deterministic,
     )
     print(json.dumps(train_phi_region_detector(config), ensure_ascii=True))
     return 0
@@ -242,8 +273,8 @@ def _default_run_name() -> str:
 
 
 def _resolve_run_dir(
-    training_result: Any,
-    model: Any,
+    training_result: object | None,
+    model: _TrainingModel,
     output_dir: Path,
     run_name: str,
 ) -> Path:

@@ -1,5 +1,7 @@
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from enum import Enum
 from typing import Dict, Optional, Protocol, Tuple, TypedDict, Union, cast
 
 import pytesseract  # type: ignore[import-untyped]
@@ -17,6 +19,27 @@ OcrFunction = Callable[[Image.Image], Union[str, OcrTextConfidenceResult]]
 TesseractDataDict = Dict[str, list[str]]
 OcrResultsDict = Dict[str, str]
 ConfidenceScoresDict = Dict[str, float]
+
+
+class OcrEngine(str, Enum):
+    TESSERACT = "tesseract"
+    TROCR = "trocr"
+    DONUT = "donut"
+
+
+@dataclass(frozen=True)
+class EnsembleOcrResult:
+    text: str
+    selected_engine: OcrEngine
+    normalized_scores: dict[OcrEngine, float]
+
+
+def normalize_ocr_selection_score(engine: OcrEngine, raw_score: float) -> float:
+    """Convert every engine's selection signal to the closed interval [0, 1]."""
+    if raw_score < 0:
+        raise ValueError(f"OCR selection score cannot be negative: {raw_score}")
+    normalized = raw_score / 100.0 if engine is OcrEngine.TESSERACT else raw_score
+    return min(1.0, normalized)
 
 
 class _LineCandidate(TypedDict):
@@ -99,6 +122,16 @@ def ensemble_ocr(
     Returns:
         str - Combined OCR text result
     """
+    return ensemble_ocr_with_details(
+        image_path_or_object,
+        optimize_for_medical=optimize_for_medical,
+    ).text
+
+
+def ensemble_ocr_with_details(
+    image_path_or_object: Union[str, Image.Image], optimize_for_medical: bool = True
+) -> EnsembleOcrResult:
+    """Run the ensemble and retain comparable selection scores for evaluation."""
     # Load image if path is provided
     if isinstance(image_path_or_object, str):
         image = Image.open(image_path_or_object).convert("RGB")
@@ -171,10 +204,10 @@ def ensemble_ocr(
 
     # Donut OCR using imported function
     try:
-        from lx_anonymizer.ocr_donut import donut_full_image_ocr  # type: ignore[import-untyped]
+        from lx_anonymizer.ocr.ocr_donut import donut_full_image_ocr
 
         logger.info("Running Donut OCR with improved parameters")
-        text_donut = cast(str, donut_full_image_ocr(image_donut))
+        text_donut = donut_full_image_ocr(image_donut)
 
         # Improved evaluation: check actual content rather than just length
         # Count number of sentences and meaningful words
@@ -197,14 +230,22 @@ def ensemble_ocr(
         results["donut"] = ""
         confidence_scores["donut"] = 0
 
-    # Determine which result to use
-    best_engine = max(confidence_scores.items(), key=lambda x: x[1])[0]
+    normalized_scores = {
+        engine: normalize_ocr_selection_score(
+            engine,
+            confidence_scores.get(engine.value, 0.0),
+        )
+        for engine in OcrEngine
+    }
+    best_engine = max(normalized_scores, key=normalized_scores.__getitem__)
     logger.info(
-        f"Selected OCR engine: {best_engine} with confidence score {confidence_scores[best_engine]:.2f}"
+        "Selected OCR engine: %s with normalized selection score %.3f",
+        best_engine.value,
+        normalized_scores[best_engine],
     )
 
     # Apply post-processing to the selected result
-    selected_text = results[best_engine]
+    selected_text = results[best_engine.value]
 
     # Check if the selected text is empty or very short
     if len(selected_text.strip()) < 20:
@@ -219,7 +260,11 @@ def ensemble_ocr(
         logger.debug("Applying spell checking")
         selected_text = apply_spelling_correction(selected_text)
 
-    return selected_text
+    return EnsembleOcrResult(
+        text=selected_text,
+        selected_engine=best_engine,
+        normalized_scores=normalized_scores,
+    )
 
 
 def combine_ocr_results(results: Dict[str, str]) -> str:

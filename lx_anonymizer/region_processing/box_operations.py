@@ -5,6 +5,7 @@ The functions in this script define operations on coordinate
 bounding boxes in images.
 """
 
+from collections.abc import Sequence
 from typing import Any, List, Optional, Protocol, Tuple, cast
 
 import cv2
@@ -18,8 +19,42 @@ from lx_anonymizer.setup.custom_logger import get_logger
 Box = Tuple[int, int, int, int]
 # Define a type alias for OCR results (text, box)
 OcrResult = Tuple[str, Box]
+PixelArray = npt.NDArray[np.generic]
 
 logger = get_logger(__name__)
+
+
+def fill_boxes(
+    image: PixelArray,
+    boxes: Sequence[Box],
+    *,
+    fill_value: int | float = 0,
+) -> PixelArray:
+    """Return a copy with each ``(x1, y1, x2, y2)`` region filled.
+
+    Two-dimensional grayscale arrays and channel-last color arrays are
+    supported. Coordinates are clipped to the image boundary; malformed or
+    wholly out-of-bounds boxes fail loudly.
+    """
+    if image.ndim not in (2, 3):
+        raise ValueError(f"image must be 2D or channel-last 3D, got {image.shape}")
+    height, width = int(image.shape[0]), int(image.shape[1])
+    if height < 1 or width < 1:
+        raise ValueError("image dimensions must be positive")
+
+    filled = image.copy()
+    for box in boxes:
+        x1, y1, x2, y2 = box
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError(f"invalid box: {box}")
+        clipped_x1 = max(0, x1)
+        clipped_y1 = max(0, y1)
+        clipped_x2 = min(width, x2)
+        clipped_y2 = min(height, y2)
+        if clipped_x2 <= clipped_x1 or clipped_y2 <= clipped_y1:
+            raise ValueError(f"box is outside image bounds: {box}")
+        filled[clipped_y1:clipped_y2, clipped_x1:clipped_x2, ...] = fill_value
+    return filled
 
 
 class _NativeBoxOperations(Protocol):

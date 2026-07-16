@@ -13,9 +13,13 @@ agl-anonymizer-temp/*
 __pycache__/
 *.py[cod]
 *$py.class
-
+~/lx-anonymizer/midi-b-dataset/
 # C extensions
 *.so
+
+# Publication Word Documents
+*.docx
+docs/publication
 
 # data artefacts and large runtime outputs
 data/
@@ -195,3 +199,28 @@ cython_debug/
 /target
 /result
 /result-app
+
+# Model weights are published separately on Hugging Face.
+*.pt
+*.pth
+*.onnx
+*.engine
+*.safetensors
+
+# Downloaded datasets, medical images, and generated anonymization outputs.
+/midi-b-dataset/answer-key/
+/midi-b-dataset/TCIA_Data_Retriever-*.AppImage
+/midi-b-dataset/TCIA_Data_Retriever_*.zip
+/MIDI_validation_script/
+/output_DICOM_trees*/
+/.tmp-midi-*/
+/runs/
+*.dcm
+*.dicom
+*.db
+*.sqlite
+*.sqlite3
+
+# Large local installers and crash dumps.
+*.AppImage
+hs_err_pid*.log

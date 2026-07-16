@@ -393,48 +393,47 @@ def evaluate_pair_files(
 
 def evaluate_study_dataset(study_dir: Path | str) -> list[ScenarioEvaluation]:
     base = Path(study_dir)
+    frozen_gold_path = base / "gold.json"
+    prediction_paths = {
+        "control_vs_frozen_gold": base / "names_control.json",
+        "regex_vs_frozen_gold": base / "names_regex.json",
+        "deepseek_vs_frozen_gold": base / "names_deepseek.json",
+    }
+    if not frozen_gold_path.exists() or any(
+        not path.exists() for path in prediction_paths.values()
+    ):
+        raise FileNotFoundError(
+            "Paired study evaluation requires gold.json and every model prediction "
+            f"file in: {base}"
+        )
 
-    scenarios: list[tuple[str, Path, Path, tuple[str, ...]]] = [
-        (
-            "control_vs_gold",
-            base / "names_control.json",
-            base / "gold.json",
-            ("first_name", "last_name"),
-        ),
-        (
-            "regex_vs_gold_regex",
-            base / "names_regex.json",
-            base / "gold_regex.json",
-            ("first_name", "last_name"),
-        ),
-        (
-            "deepseek_vs_gold_deepseek",
-            base / "names_deepseek.json",
-            base / "gold_deepseek.json",
-            ("first_name", "last_name", "dob", "gender", "casenumber"),
-        ),
-    ]
+    key_fields = ("file", "report_id")
+    frozen_gold = load_records(frozen_gold_path)
+    gold_map, _ = _build_record_map(frozen_gold, key_fields)
+    prediction_maps: Dict[str, Dict[tuple[str, ...], Mapping[str, Any]]] = {}
+    for scenario_name, path in prediction_paths.items():
+        records = load_records(path)
+        prediction_maps[scenario_name], _ = _build_record_map(records, key_fields)
 
-    results: list[ScenarioEvaluation] = []
-    for scenario_name, pred_path, gold_path, fields in scenarios:
-        if not pred_path.exists() or not gold_path.exists():
-            continue
+    paired_keys = set(gold_map)
+    for prediction_map in prediction_maps.values():
+        paired_keys &= set(prediction_map)
+    if not paired_keys:
+        raise ValueError("Study datasets have no common frozen record cohort")
 
-        result = evaluate_pair_files(
-            prediction_path=pred_path,
-            gold_path=gold_path,
+    ordered_keys = sorted(paired_keys)
+    paired_gold = [gold_map[key] for key in ordered_keys]
+    fields = ("first_name", "last_name")
+    return [
+        evaluate_records(
+            predictions=[prediction_map[key] for key in ordered_keys],
+            gold=paired_gold,
             fields=fields,
             scenario=scenario_name,
-            key_fields=("file", "report_id"),
+            key_fields=key_fields,
         )
-        results.append(result)
-
-    if not results:
-        raise FileNotFoundError(
-            f"No known study-data evaluation pairs found in: {base}"
-        )
-
-    return results
+        for scenario_name, prediction_map in prediction_maps.items()
+    ]
 
 
 def _parse_bool(value: Any) -> bool | None:

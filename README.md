@@ -116,6 +116,16 @@ uv build --sdist
 uv run python scripts/audit_distribution.py dist/*.tar.gz
 ```
 
+If you build the local wheel on a non-manylinux host (for example Nix), pass the
+desired compatibility target explicitly:
+
+```bash
+make pypi-wheel PYPI_COMPATIBILITY=manylinux_2_34
+```
+
+CI uses `maturin --manylinux auto` via `PyO3/maturin-action` to produce the
+published Linux wheels.
+
 The published Python package remains the baseline install path, with optional
 feature sets enabled through extras such as `[ocr]`, `[llm]`, `[nlu]`, and
 `[training]`. Development and build tools such as `pre-commit`, `ziglang`, and
@@ -191,9 +201,10 @@ to use the degraded blank fallback.
 
 Start a compatible LLM server exposing either an OpenAI-compatible API or Ollama:
 ```bash
-# Default local setup used by the package examples
-ollama pull qwen2.5:7b-instruct
-ollama serve
+# Default local Gemma 4 setup used for OCR and text recognition
+bash scripts/provision_ollama_gemma4.sh
+# In a devenv shell, the equivalent task is:
+devenv tasks run ollama:provision-gemma4
 
 # Alternative high-throughput setup
 vllm serve Qwen/Qwen3.5-9B --port 8000

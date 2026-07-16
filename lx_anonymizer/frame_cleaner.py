@@ -1,5 +1,7 @@
 import logging
 import os
+import resource
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -23,6 +25,10 @@ from lx_dtypes.models.contracts.video_processing import (
 )
 
 from lx_anonymizer.anonymization.masking import MaskApplication
+from lx_anonymizer.anonymization.detector_video_masking import (
+    DetectorVideoMasker,
+    DetectorVideoMaskingSummary,
+)
 from lx_anonymizer.config import settings
 from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
 from lx_anonymizer.llm.factory import LLMFactory
@@ -38,6 +44,10 @@ from lx_anonymizer.metrics_provenance import (
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
 from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, RoiInput
+from lx_anonymizer.paper_metrics import (
+    VideoPaperEvaluationMetrics,
+    build_video_paper_evaluation_metrics,
+)
 from lx_anonymizer.regex_patterns import (
     LLM_AGE_TOKEN_RE,
     LLM_NARRATIVE_TOKEN_RE,
@@ -117,6 +127,10 @@ def _in_pytest_runtime() -> bool:
     return bool(
         os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("PYTEST_VERSION")
     )
+
+
+def _current_max_rss_kib() -> int:
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
 
 class FrameCleaner(FrameCleanerVideoMixin):
@@ -274,15 +288,22 @@ class FrameCleaner(FrameCleanerVideoMixin):
         Handles the cleaning of a video by removing or masking frames with sensitive information.
         """
         _ = device  # preserved argument for compatibility
+        total_started_at = time.perf_counter()
+        process_cpu_started_at = time.process_time()
+        rss_started_at = _current_max_rss_kib()
 
         self._reset_run_state()
 
+        staging_started_at = time.perf_counter()
         output_video, accumulated = self._prepare_clean_video_run(
             video_path=video_path,
             output_path=output_path,
         )
 
         total_frames, max_samples = self._prepare_video_sampling(video_path)
+        staging_seconds = time.perf_counter() - staging_started_at
+
+        anonymizer_started_at = time.perf_counter()
         analysis = self._run_frame_analysis(
             video_path=video_path,
             total_frames=total_frames,
@@ -314,8 +335,43 @@ class FrameCleaner(FrameCleanerVideoMixin):
             accumulated=accumulated,
             best_ocr_text=best_ocr_text,
         )
+        anonymizer_seconds = time.perf_counter() - anonymizer_started_at
+        total_seconds = time.perf_counter() - total_started_at
+        paper_evaluation_metrics = build_video_paper_evaluation_metrics(
+            total_seconds=total_seconds,
+            staging_seconds=staging_seconds,
+            anonymizer_seconds=anonymizer_seconds,
+            process_cpu_seconds=time.process_time() - process_cpu_started_at,
+            max_rss_kib_delta=max(0, _current_max_rss_kib() - rss_started_at),
+            total_frames=total_frames,
+            frames_processed=analysis.frames_processed,
+            sensitive_frame_count=len(sensitive_idx),
+            technique=technique,
+            high_quality_ocr=self.sampling_profile.high_quality_ocr,
+            early_stopping_enabled=self.sampling_profile.smart_early_stopping,
+            frame_observations=[
+                observation.model_dump(mode="json")
+                for observation in self.frame_observations
+            ],
+            sensitive_meta_payload=sensitive_meta_to_dict(self.sensitive_meta),
+        )
 
-        return output_video, self._build_final_video_meta()
+        return output_video, self._build_final_video_meta(
+            paper_evaluation_metrics=paper_evaluation_metrics
+        )
+
+    def mask_video_with_phi_detector(
+        self,
+        input_video: Path,
+        output_video: Path,
+    ) -> DetectorVideoMaskingSummary:
+        """Mask configured PHI-detector proposals on every decoded frame.
+
+        This is the correction/review path for detector-assisted masking.  It is
+        intentionally separate from sampled metadata accumulation and always
+        requires human validation of the resulting artifact.
+        """
+        return DetectorVideoMasker().mask_video(input_video, output_video)
 
     def _prepare_video_sampling(self, video_path: Path) -> tuple[int, int]:
         total_frames = self._get_total_frames(video_path)
@@ -361,7 +417,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
             100 * sensitive_ratio,
         )
 
-    def _build_final_video_meta(self) -> dict[str, object]:
+    def _build_final_video_meta(
+        self,
+        *,
+        paper_evaluation_metrics: VideoPaperEvaluationMetrics | None = None,
+    ) -> dict[str, object]:
         frame_observation_payloads: list[Mapping[str, object]] = [
             observation.model_dump(mode="json")
             for observation in self.frame_observations
@@ -389,6 +449,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
         payload = final_meta.model_dump(mode="json")
         for field_name, value in raw_sensitive_payload.items():
             payload.setdefault(field_name, value)
+        if paper_evaluation_metrics is not None:
+            payload["paper_evaluation_metrics"] = paper_evaluation_metrics.model_dump(
+                mode="json"
+            )
         return payload
 
     def _prepare_clean_video_run(

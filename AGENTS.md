@@ -1,7 +1,7 @@
 # This module has a strong focus on anonymizing video and image data
 - Main Entrypoint Video: /lx_anonymizer/frame_cleaner.py
 - Main Entrypoint for Reports:  /lx_anonymizer/report_reader.py
-- Study Data about the LLM usage in the pipeline: ./study-data
+- Study Data about the LLM usage in the pipeline: ./study_data
 
 ## The pipeline contains
 

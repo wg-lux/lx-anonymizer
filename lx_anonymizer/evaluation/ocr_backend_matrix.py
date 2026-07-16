@@ -24,10 +24,13 @@ from lx_anonymizer.config import settings
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.llm.llm_service import LLMService
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
-from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr
-from lx_anonymizer.ocr.ocr_frame import FrameOCR
+from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr_with_details
+from lx_anonymizer.ocr.ocr_frame import FrameOCR, RoiInput
 from lx_anonymizer.ocr.ocr_frame_tesserocr import get_tesseocr_processor
 from lx_anonymizer.ocr.ocr_preprocessing import optimize_image_for_medical_text
+from lx_anonymizer.text_detection.phi_region_detector import (
+    detect_phi_regions_from_settings,
+)
 
 if TYPE_CHECKING:
     from lx_anonymizer.report_reader import ReportReader
@@ -56,7 +59,8 @@ UTILITY_WEIGHTS: dict[str, float] = {
     "phi_field_recall": 0.35,
     "field_accuracy": 0.25,
     "text_score": 0.15,
-    "box_coverage": 0.10,
+    "box_coverage": 0.05,
+    "over_redaction_score": 0.05,
     "speed_score": 0.10,
     "stability_score": 0.05,
 }
@@ -64,6 +68,9 @@ PHI_RECALL_HARD_GATE = 0.95
 DEFAULT_REPORT_NATIVE_MIN_CHARS = 50
 DEFAULT_VIDEO_SPEED_TARGET_SECONDS = 0.50
 DEFAULT_REPORT_SPEED_TARGET_SECONDS = 5.00
+DEFAULT_MIN_SAMPLES_PER_MODALITY = 20
+DEFAULT_MIN_SUBJECTS = 5
+DEFAULT_MIN_SOURCE_GROUPS_PER_MODALITY = 3
 
 _WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
 _DIGIT_RE = re.compile(r"\d+")
@@ -85,6 +92,8 @@ class PipelineId(str, Enum):
     V2 = "V2"
     V3 = "V3"
     V4 = "V4"
+    V5 = "V5"
+    V6 = "V6"
     R1 = "R1"
     R2 = "R2"
     R3 = "R3"
@@ -253,10 +262,38 @@ class BoundingBox:
 
 
 @dataclass(frozen=True)
+class EvaluationCanvas:
+    width: int
+    height: int
+    page_index: int | None = None
+
+    @classmethod
+    def from_value(cls, value: object) -> "EvaluationCanvas":
+        if not isinstance(value, Mapping):
+            raise TypeError("ground_truth.image_dimensions entries must be objects")
+        mapping = cast(Mapping[object, object], value)
+        keys = {str(key): item for key, item in mapping.items()}
+        width = _required_int(keys.get("width"), "width")
+        height = _required_int(keys.get("height"), "height")
+        if width <= 0 or height <= 0:
+            raise ValueError("image dimensions must be positive")
+        return cls(
+            width=width,
+            height=height,
+            page_index=_optional_int(keys.get("page_index")),
+        )
+
+    @property
+    def area(self) -> int:
+        return self.width * self.height
+
+
+@dataclass(frozen=True)
 class GroundTruth:
     fields: FieldValues
     bounding_boxes: tuple[BoundingBox, ...]
     text: str
+    image_dimensions: tuple[EvaluationCanvas, ...] = ()
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "GroundTruth":
@@ -282,7 +319,21 @@ class GroundTruth:
             fields
         )
         boxes = tuple(BoundingBox.from_value(item) for item in box_values)
-        return cls(fields=fields, bounding_boxes=boxes, text=text)
+        raw_dimensions = value.get("image_dimensions", ())
+        if not isinstance(raw_dimensions, Sequence) or isinstance(
+            raw_dimensions, (str, bytes)
+        ):
+            raise TypeError("ground_truth.image_dimensions must be a sequence")
+        dimensions = tuple(
+            EvaluationCanvas.from_value(item)
+            for item in cast(Sequence[object], raw_dimensions)
+        )
+        return cls(
+            fields=fields,
+            bounding_boxes=boxes,
+            text=text,
+            image_dimensions=dimensions,
+        )
 
 
 @dataclass(frozen=True)
@@ -293,6 +344,8 @@ class GoldenSetItem:
     ground_truth: GroundTruth
     roi: JsonObject | None
     tags: tuple[str, ...]
+    subject_id: str | None = None
+    source_group_id: str | None = None
 
     @classmethod
     def from_mapping(
@@ -302,6 +355,7 @@ class GoldenSetItem:
         input_type = _parse_input_type(
             _required_string(value.get("input_type"), "input_type")
         )
+
         path_value = _first_present(value, ("source_path", "path", "file_path"))
         source_path = Path(_required_string(path_value, "source_path")).expanduser()
         if not source_path.is_absolute():
@@ -332,7 +386,79 @@ class GoldenSetItem:
             ground_truth=ground_truth,
             roi=roi,
             tags=tags,
+            subject_id=_optional_string(value.get("subject_id")),
+            source_group_id=_optional_string(value.get("source_group_id")),
         )
+
+
+@dataclass(frozen=True)
+class GoldenSetAudit:
+    sample_count: int
+    subject_count: int
+    source_group_count: int
+    issues: tuple[str, ...]
+
+    @property
+    def benchmark_ready(self) -> bool:
+        return not self.issues
+
+
+def audit_golden_set(
+    items: Sequence[GoldenSetItem],
+    *,
+    min_samples_per_modality: int = DEFAULT_MIN_SAMPLES_PER_MODALITY,
+    min_subjects: int = DEFAULT_MIN_SUBJECTS,
+    min_source_groups_per_modality: int = DEFAULT_MIN_SOURCE_GROUPS_PER_MODALITY,
+) -> GoldenSetAudit:
+    """Reject integration fixtures masquerading as independent model benchmarks."""
+    if min_samples_per_modality <= 0 or min_subjects <= 0:
+        raise ValueError("golden-set diversity thresholds must be positive")
+    if min_source_groups_per_modality <= 0:
+        raise ValueError("min_source_groups_per_modality must be positive")
+
+    issues: list[str] = []
+    missing_subjects = sum(item.subject_id is None for item in items)
+    missing_groups = sum(item.source_group_id is None for item in items)
+    if missing_subjects:
+        issues.append(f"{missing_subjects} samples are missing subject_id")
+    if missing_groups:
+        issues.append(f"{missing_groups} samples are missing source_group_id")
+
+    subject_ids = {item.subject_id for item in items if item.subject_id is not None}
+    source_group_ids = {
+        item.source_group_id for item in items if item.source_group_id is not None
+    }
+    if len(subject_ids) < min_subjects:
+        issues.append(
+            f"only {len(subject_ids)} independent subjects; require at least {min_subjects}"
+        )
+
+    for input_type in InputType:
+        modality_items = [item for item in items if item.input_type is input_type]
+        if not modality_items:
+            continue
+        if len(modality_items) < min_samples_per_modality:
+            issues.append(
+                f"{input_type.value} has {len(modality_items)} samples; "
+                f"require at least {min_samples_per_modality}"
+            )
+        modality_groups = {
+            item.source_group_id
+            for item in modality_items
+            if item.source_group_id is not None
+        }
+        if len(modality_groups) < min_source_groups_per_modality:
+            issues.append(
+                f"{input_type.value} has {len(modality_groups)} independent source groups; "
+                f"require at least {min_source_groups_per_modality}"
+            )
+
+    return GoldenSetAudit(
+        sample_count=len(items),
+        subject_count=len(subject_ids),
+        source_group_count=len(source_group_ids),
+        issues=tuple(issues),
+    )
 
 
 @dataclass(frozen=True)
@@ -358,6 +484,9 @@ class UtilityMetrics:
     field_accuracy: float
     text_score: float
     box_coverage: float
+    false_positive_region_fraction: float
+    non_phi_area_removed_fraction: float | None
+    over_redaction_score: float
     speed_score: float
     stability_score: float
     utility_score: float
@@ -369,6 +498,9 @@ class UtilityMetrics:
             "field_accuracy": self.field_accuracy,
             "text_score": self.text_score,
             "box_coverage": self.box_coverage,
+            "false_positive_region_fraction": self.false_positive_region_fraction,
+            "non_phi_area_removed_fraction": self.non_phi_area_removed_fraction,
+            "over_redaction_score": self.over_redaction_score,
             "speed_score": self.speed_score,
             "stability_score": self.stability_score,
             "utility_score": self.utility_score,
@@ -420,11 +552,13 @@ class EvaluationResult:
         row["predicted_bounding_boxes"] = [
             box.to_dict() for box in self.prediction.bounding_boxes
         ]
-        row["pipeline_details"] = self.prediction.details
-
         if include_sensitive_output:
             row["recognized_text"] = self.prediction.text
             row["predicted_fields"] = dict(self.prediction.fields)
+            # Backend details may contain raw OCR snippets (for example per-ROI
+            # text and word-level recognition results), so they belong behind
+            # the same explicit sensitive-output boundary.
+            row["pipeline_details"] = self.prediction.details
         return row
 
 
@@ -442,6 +576,9 @@ class SummaryRow:
     mean_field_accuracy: float
     mean_text_score: float
     mean_box_coverage: float
+    mean_false_positive_region_fraction: float
+    mean_non_phi_area_removed_fraction: float | None
+    mean_over_redaction_score: float
     mean_speed_score: float
     mean_stability_score: float
     mean_latency_ms: float
@@ -462,6 +599,9 @@ class SummaryRow:
             "mean_field_accuracy": self.mean_field_accuracy,
             "mean_text_score": self.mean_text_score,
             "mean_box_coverage": self.mean_box_coverage,
+            "mean_false_positive_region_fraction": self.mean_false_positive_region_fraction,
+            "mean_non_phi_area_removed_fraction": self.mean_non_phi_area_removed_fraction,
+            "mean_over_redaction_score": self.mean_over_redaction_score,
             "mean_speed_score": self.mean_speed_score,
             "mean_stability_score": self.mean_stability_score,
             "mean_latency_ms": self.mean_latency_ms,
@@ -521,6 +661,26 @@ class OcrBackendMatrixEvaluator:
                 runner=self._run_video_full_frame_baseline,
             ),
             PipelineSpec(
+                pipeline_id=PipelineId.V5,
+                input_type=InputType.VIDEO_FRAME,
+                name="Production FrameOCR Cascade",
+                description=(
+                    "Exact public FrameOCR production call: RapidOCR recognition with "
+                    "the configured TesseOCR/PyTesseract and optional vision-LLM fallbacks."
+                ),
+                runner=self._run_video_production_frame_ocr,
+            ),
+            PipelineSpec(
+                pipeline_id=PipelineId.V6,
+                input_type=InputType.VIDEO_FRAME,
+                name="Production FrameOCR + PHI Detector",
+                description=(
+                    "Exact public FrameOCR production call with additive regions from "
+                    "the configured production PHI detector."
+                ),
+                runner=self._run_video_production_frame_ocr_phi_detector,
+            ),
+            PipelineSpec(
                 pipeline_id=PipelineId.R1,
                 input_type=InputType.TEXT_REPORT,
                 name="Native Extraction",
@@ -569,6 +729,7 @@ class OcrBackendMatrixEvaluator:
         return results
 
     def evaluate_one(self, item: GoldenSetItem, spec: PipelineSpec) -> EvaluationResult:
+        self._reset_sample_extractors()
         rss_before = _current_rss_mb()
         started_at = time.perf_counter()
         prediction: PipelinePrediction | None = None
@@ -621,6 +782,11 @@ class OcrBackendMatrixEvaluator:
             prediction=prediction_for_row,
             error=error,
         )
+
+    def _reset_sample_extractors(self) -> None:
+        """Start each benchmark case with document-local metadata state."""
+        self._report_reader = None
+        self._frame_metadata_extractor = None
 
     def _report_reader_instance(self) -> ReportReader:
         if self._report_reader is None:
@@ -730,6 +896,60 @@ class OcrBackendMatrixEvaluator:
         details: JsonObject = {"psm": 11, "structural_layout_assistance": False}
         return self._frame_prediction(text=text, boxes=boxes, details=details)
 
+    def _run_video_production_frame_ocr(
+        self, item: GoldenSetItem
+    ) -> PipelinePrediction:
+        frame = _load_frame(item.source_path)
+        frame_ocr = self._frame_ocr_instance()
+        text, confidence, metadata = frame_ocr.extract_text_from_frame(
+            frame,
+            cast(RoiInput, item.roi),
+            high_quality=True,
+        )
+        boxes = _boxes_from_frame_metadata(metadata)
+        details: JsonObject = {
+            "configuration": "production_frame_ocr_public_api",
+            "confidence": confidence,
+            "metadata": _json_safe_mapping(metadata),
+        }
+        return self._frame_prediction(text=text, boxes=boxes, details=details)
+
+    def _run_video_production_frame_ocr_phi_detector(
+        self, item: GoldenSetItem
+    ) -> PipelinePrediction:
+        frame = _load_frame(item.source_path)
+        frame_ocr = self._frame_ocr_instance()
+        text, confidence, metadata = frame_ocr.extract_text_from_frame(
+            frame,
+            cast(RoiInput, item.roi),
+            high_quality=True,
+        )
+        ocr_boxes = _boxes_from_frame_metadata(metadata)
+        phi_boxes = tuple(
+            BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
+            for x1, y1, x2, y2 in detect_phi_regions_from_settings(
+                self._frame_image_for_phi_detection(frame)
+            )
+        )
+        details: JsonObject = {
+            "configuration": "production_frame_ocr_plus_phi_detector",
+            "confidence": confidence,
+            "ocr_box_count": len(ocr_boxes),
+            "phi_detector_box_count": len(phi_boxes),
+            "metadata": _json_safe_mapping(metadata),
+        }
+        return self._frame_prediction(
+            text=text,
+            boxes=(*ocr_boxes, *phi_boxes),
+            details=details,
+        )
+
+    @staticmethod
+    def _frame_image_for_phi_detection(frame: FrameArray) -> Image.Image:
+        if frame.ndim == 2:
+            return Image.fromarray(frame).convert("RGB")
+        return _pil_from_frame(frame)
+
     def _frame_prediction(
         self,
         *,
@@ -778,8 +998,20 @@ class OcrBackendMatrixEvaluator:
 
         text_parts: list[str] = []
         all_boxes: list[BoundingBox] = []
+        page_details: list[JsonObject] = []
         for page_index, image in enumerate(images):
-            text_parts.append(ensemble_ocr(image))
+            ensemble_result = ensemble_ocr_with_details(image)
+            text_parts.append(ensemble_result.text)
+            page_details.append(
+                {
+                    "page_index": page_index,
+                    "selected_engine": ensemble_result.selected_engine.value,
+                    "normalized_selection_scores": {
+                        engine.value: score
+                        for engine, score in ensemble_result.normalized_scores.items()
+                    },
+                }
+            )
             _, page_boxes = _pytesseract_pil_ocr(
                 image,
                 config="--oem 1 --psm 6",
@@ -791,6 +1023,7 @@ class OcrBackendMatrixEvaluator:
         details: JsonObject = {
             "page_count": len(images),
             "box_source": "pytesseract_reference_boxes",
+            "ensemble_pages": page_details,
         }
         return self._report_prediction(
             text=text,
@@ -911,6 +1144,18 @@ def calculate_utility_metrics(
     field_accuracy = _field_accuracy(prediction.fields, ground_truth.fields)
     text_score = _text_similarity_score(prediction.text, ground_truth.text)
     box_coverage = _box_coverage(prediction.bounding_boxes, ground_truth.bounding_boxes)
+    false_positive_region_fraction, non_phi_area_removed_fraction = (
+        _over_redaction_metrics(
+            prediction.bounding_boxes,
+            ground_truth.bounding_boxes,
+            ground_truth.image_dimensions,
+        )
+    )
+    over_redaction_score = 1.0 - false_positive_region_fraction
+    if non_phi_area_removed_fraction is not None:
+        over_redaction_score = (
+            over_redaction_score + (1.0 - non_phi_area_removed_fraction)
+        ) / 2.0
     speed_score = _speed_score(latency_seconds, speed_target_seconds)
     stability_score = _stability_score(
         process_succeeded=process_succeeded,
@@ -925,6 +1170,7 @@ def calculate_utility_metrics(
             + UTILITY_WEIGHTS["field_accuracy"] * field_accuracy
             + UTILITY_WEIGHTS["text_score"] * text_score
             + UTILITY_WEIGHTS["box_coverage"] * box_coverage
+            + UTILITY_WEIGHTS["over_redaction_score"] * over_redaction_score
             + UTILITY_WEIGHTS["speed_score"] * speed_score
             + UTILITY_WEIGHTS["stability_score"] * stability_score
         )
@@ -933,6 +1179,13 @@ def calculate_utility_metrics(
         field_accuracy=round(field_accuracy, 6),
         text_score=round(text_score, 6),
         box_coverage=round(box_coverage, 6),
+        false_positive_region_fraction=round(false_positive_region_fraction, 6),
+        non_phi_area_removed_fraction=(
+            round(non_phi_area_removed_fraction, 6)
+            if non_phi_area_removed_fraction is not None
+            else None
+        ),
+        over_redaction_score=round(over_redaction_score, 6),
         speed_score=round(speed_score, 6),
         stability_score=round(stability_score, 6),
         utility_score=round(utility_score, 6),
@@ -974,6 +1227,18 @@ def aggregate_results(results: Sequence[EvaluationResult]) -> list[SummaryRow]:
                 mean_box_coverage=_mean_metric(
                     scoring_group, lambda result: result.metrics.box_coverage
                 ),
+                mean_false_positive_region_fraction=_mean_metric(
+                    scoring_group,
+                    lambda result: result.metrics.false_positive_region_fraction,
+                ),
+                mean_non_phi_area_removed_fraction=_mean_optional_metric(
+                    scoring_group,
+                    lambda result: result.metrics.non_phi_area_removed_fraction,
+                ),
+                mean_over_redaction_score=_mean_metric(
+                    scoring_group,
+                    lambda result: result.metrics.over_redaction_score,
+                ),
                 mean_speed_score=_mean_metric(
                     scoring_group, lambda result: result.metrics.speed_score
                 ),
@@ -1009,7 +1274,7 @@ def render_summary_table(rows: Sequence[SummaryRow]) -> str:
             continue
         lines.append(f"{input_type.label}")
         lines.append(
-            "rank pipeline utility recall field_acc text box speed stability ok/fail/skip latency_ms"
+            "rank pipeline utility recall field_acc text box overredact speed stability ok/fail/skip latency_ms"
         )
         for rank, row in enumerate(modality_rows, start=1):
             lines.append(
@@ -1022,6 +1287,7 @@ def render_summary_table(rows: Sequence[SummaryRow]) -> str:
                         f"{row.mean_field_accuracy:.3f}",
                         f"{row.mean_text_score:.3f}",
                         f"{row.mean_box_coverage:.3f}",
+                        f"{row.mean_over_redaction_score:.3f}",
                         f"{row.mean_speed_score:.3f}",
                         f"{row.mean_stability_score:.3f}",
                         f"{row.succeeded}/{row.failed}/{row.skipped}",
@@ -1071,6 +1337,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=DEFAULT_REPORT_NATIVE_MIN_CHARS,
         help="Minimum native report text length before R1 is considered successful.",
     )
+    parser.add_argument(
+        "--allow-integration-fixture",
+        action="store_true",
+        help=(
+            "Run despite golden-set diversity failures. Results are suitable for "
+            "integration checks, not model ranking."
+        ),
+    )
     return parser
 
 
@@ -1082,6 +1356,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     items = load_golden_set(cast(Path, args.golden_set))
     if not items:
         parser.error("golden set manifest is empty")
+    golden_set_audit = audit_golden_set(items)
+    if not golden_set_audit.benchmark_ready and not cast(
+        bool, args.allow_integration_fixture
+    ):
+        parser.error(
+            "golden set is not benchmark-ready: "
+            + "; ".join(golden_set_audit.issues)
+            + ". Use --allow-integration-fixture only for smoke/integration runs."
+        )
 
     evaluator = OcrBackendMatrixEvaluator(
         report_native_min_chars=cast(int, args.report_native_min_chars)
@@ -1283,6 +1566,128 @@ def _box_coverage(
     for expected in expected_boxes:
         total += max(predicted.iou(expected) for predicted in predicted_boxes)
     return total / len(expected_boxes)
+
+
+def _over_redaction_metrics(
+    predicted_boxes: Sequence[BoundingBox],
+    expected_boxes: Sequence[BoundingBox],
+    image_dimensions: Sequence[EvaluationCanvas],
+) -> tuple[float, float | None]:
+    predicted_area = _union_box_area(predicted_boxes)
+    overlap_area = _union_box_area(_box_intersections(predicted_boxes, expected_boxes))
+    false_positive_area = max(0, predicted_area - overlap_area)
+    false_positive_fraction = (
+        false_positive_area / predicted_area if predicted_area else 0.0
+    )
+
+    if not image_dimensions:
+        return false_positive_fraction, None
+
+    clipped_predictions = _clip_boxes_to_canvases(predicted_boxes, image_dimensions)
+    clipped_expected = _clip_boxes_to_canvases(expected_boxes, image_dimensions)
+    canvas_area = sum(canvas.area for canvas in image_dimensions)
+    expected_area = _union_box_area(clipped_expected)
+    non_phi_area = max(0, canvas_area - expected_area)
+    clipped_false_positive_area = max(
+        0,
+        _union_box_area(clipped_predictions)
+        - _union_box_area(_box_intersections(clipped_predictions, clipped_expected)),
+    )
+    removed_fraction = (
+        min(1.0, clipped_false_positive_area / non_phi_area) if non_phi_area else 0.0
+    )
+    return false_positive_fraction, removed_fraction
+
+
+def _box_intersections(
+    left_boxes: Sequence[BoundingBox], right_boxes: Sequence[BoundingBox]
+) -> tuple[BoundingBox, ...]:
+    intersections: list[BoundingBox] = []
+    for left in left_boxes:
+        for right in right_boxes:
+            if (
+                left.page_index is not None
+                and right.page_index is not None
+                and left.page_index != right.page_index
+            ):
+                continue
+            x1 = max(left.x1, right.x1)
+            y1 = max(left.y1, right.y1)
+            x2 = min(left.x2, right.x2)
+            y2 = min(left.y2, right.y2)
+            if x2 > x1 and y2 > y1:
+                intersections.append(
+                    BoundingBox(
+                        x1=x1,
+                        y1=y1,
+                        x2=x2,
+                        y2=y2,
+                        page_index=(
+                            left.page_index
+                            if left.page_index is not None
+                            else right.page_index
+                        ),
+                    )
+                )
+    return tuple(intersections)
+
+
+def _clip_boxes_to_canvases(
+    boxes: Sequence[BoundingBox], canvases: Sequence[EvaluationCanvas]
+) -> tuple[BoundingBox, ...]:
+    clipped: list[BoundingBox] = []
+    for box in boxes:
+        for canvas in canvases:
+            if (
+                box.page_index is not None
+                and canvas.page_index is not None
+                and box.page_index != canvas.page_index
+            ):
+                continue
+            x1 = max(0, box.x1)
+            y1 = max(0, box.y1)
+            x2 = min(canvas.width, box.x2)
+            y2 = min(canvas.height, box.y2)
+            if x2 > x1 and y2 > y1:
+                clipped.append(
+                    BoundingBox(
+                        x1=x1,
+                        y1=y1,
+                        x2=x2,
+                        y2=y2,
+                        page_index=canvas.page_index,
+                    )
+                )
+    return tuple(clipped)
+
+
+def _union_box_area(boxes: Sequence[BoundingBox]) -> int:
+    total = 0
+    pages = {box.page_index for box in boxes}
+    for page_index in pages:
+        page_boxes = [box for box in boxes if box.page_index == page_index]
+        x_edges = sorted({edge for box in page_boxes for edge in (box.x1, box.x2)})
+        for left, right in zip(x_edges, x_edges[1:], strict=False):
+            if right <= left:
+                continue
+            intervals = sorted(
+                (box.y1, box.y2)
+                for box in page_boxes
+                if box.x1 < right and box.x2 > left
+            )
+            if not intervals:
+                continue
+            covered_height = 0
+            start, end = intervals[0]
+            for next_start, next_end in intervals[1:]:
+                if next_start > end:
+                    covered_height += end - start
+                    start, end = next_start, next_end
+                else:
+                    end = max(end, next_end)
+            covered_height += end - start
+            total += (right - left) * covered_height
+    return total
 
 
 def _speed_score(latency_seconds: float, target_seconds: float) -> float:
@@ -1559,6 +1964,16 @@ def _mean_metric(
     return round(sum(selector(result) for result in results) / len(results), 6)
 
 
+def _mean_optional_metric(
+    results: Sequence[EvaluationResult],
+    selector: Callable[[EvaluationResult], float | None],
+) -> float | None:
+    values = [value for result in results if (value := selector(result)) is not None]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 6)
+
+
 def _first_present(mapping: Mapping[str, object], keys: Sequence[str]) -> object | None:
     for key in keys:
         if key in mapping:
@@ -1647,7 +2062,9 @@ def _write_jsonl(stream: TextIO, row: Mapping[str, object]) -> None:
 
 __all__ = [
     "BoundingBox",
+    "EvaluationCanvas",
     "GoldenSetItem",
+    "GoldenSetAudit",
     "GroundTruth",
     "InputType",
     "OcrBackendMatrixEvaluator",
@@ -1658,6 +2075,7 @@ __all__ = [
     "SummaryRow",
     "UtilityMetrics",
     "aggregate_results",
+    "audit_golden_set",
     "calculate_utility_metrics",
     "load_golden_set",
     "main",

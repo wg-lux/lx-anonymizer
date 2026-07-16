@@ -102,3 +102,43 @@ def test_custom_phi_region_detector_filters_class_ids(
     regions = detector.detect(Image.new("RGB", (100, 100), "white"))
 
     assert regions == [(20, 20, 30, 30)]
+
+
+@pytest.mark.parametrize(
+    ("model_box", "expected"),
+    [
+        ([50.0, 50.0, 60.0, 30.0, 0.9], (20, 10, 80, 40)),
+        ([0.5, 0.5, 0.6, 0.3, 0.9], (20, 10, 80, 40)),
+    ],
+)
+def test_custom_phi_region_detector_reverses_letterbox_for_wide_images(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    model_box: list[float],
+    expected: tuple[int, int, int, int],
+) -> None:
+    model_path = tmp_path / "phi_detector.onnx"
+    model_path.write_bytes(b"fake model")
+    fake_net = _FakeNet(np.array([[model_box]], dtype=np.float32))
+
+    def fake_read_net(_: str) -> _FakeNet:
+        return fake_net
+
+    monkeypatch.setattr(phi_region_detector.cv2_dnn, "readNet", fake_read_net)
+
+    detector = CustomPhiRegionDetector(
+        PhiRegionDetectorConfig(
+            model_path=model_path,
+            confidence_threshold=0.5,
+            nms_threshold=0.45,
+            input_size=100,
+            box_format="yolo_xywh",
+            score_format="class_scores",
+            allowed_class_ids=frozenset(),
+        )
+    )
+
+    regions = detector.detect(Image.new("RGB", (100, 50), "white"))
+
+    assert fake_net.input_shape == (1, 3, 100, 100)
+    assert regions == [expected]

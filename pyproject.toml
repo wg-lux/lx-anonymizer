@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.9.3.0"
+version = "0.9.3.2"
 
 authors = [
   {name = "Max Hild", email = "maxhild10@gmail.com"},
@@ -44,7 +44,6 @@ dependencies = [
   "rapidfuzz>=3.13.0",
   "requests>=2.32.3",
   "spacy==3.8.3",
-  "de-core-news-sm==3.8.0",
   "tenacity>=9.1.2",
   "lx-dtypes==0.2.0",
   "tesserocr>=2.9.1",
@@ -54,6 +53,8 @@ dependencies = [
   "transformers==4.45.0",
   "verovio>=5.1.0",
   "tiktoken>=0.9.0",
+  "ziglang>=0.15.2",
+  "click>=8.4.2",
 ]
 description = "OCR-driven anonymization pipeline for medical reports and endoscopy frames"
 keywords = ["anonymization", "medical", "ocr", "nlp", "privacy"]
@@ -69,6 +70,9 @@ Homepage = "https://github.com/wg-lux/lx-anonymizer"
 "Issue Tracker" = "https://github.com/wg-lux/lx-anonymizer/issues"
 
 [project.optional-dependencies]
+evaluation = [
+  "pydicom>=3.0.0",
+]
 dev = [
   "build>=1.3.0",
   "flake8>=7.1.1",
@@ -83,6 +87,7 @@ dev = [
   "types-requests>=2.32.4.20260107",
   "uv>=0.4.17",
   "ziglang>=0.15.2",
+  "tcia-utils>=3.3.4",
 ]
 
 # CPU-only PyTorch-dependent feature set.
@@ -109,6 +114,12 @@ gpu = [
 
 [project.scripts]
 lx-anonymizer = "lx_anonymizer.cli:main"
+lx-anonymizer-evaluate-midi-b = "lx_anonymizer.evaluation.midi_b:main"
+lx-anonymizer-export-dicom = "lx_anonymizer.dicom_anonymization:main"
+lx-anonymizer-generate-phi-data = "lx_anonymizer.training.synthetic_phi_frames:main"
+lx-anonymizer-generate-endoscopy-stickers = "lx_anonymizer.training.synthetic_endoscopy_stickers:main"
+lx-anonymizer-generate-midi-b-phi-data = "lx_anonymizer.training.midi_b_phi_dataset:main"
+lx-anonymizer-generate-radphi-data = "lx_anonymizer.training.radphi_dataset:main"
 lx-anonymizer-train-phi = "lx_anonymizer.text_detection.phi_region_detector_training:main"
 
 [tool.uv.extra-build-dependencies]
@@ -125,6 +136,7 @@ url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv]
+environments = ["sys_platform == 'linux'"]
 conflicts = [
   [
     { extra = "cpu" },
@@ -170,4 +182,3 @@ torchvision = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu128", extra = "gpu" },
 ]
-de-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl" }

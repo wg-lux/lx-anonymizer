@@ -7,77 +7,49 @@
 }:
 let
   python = pkgs.python312;
-  rustSrc = lib.cleanSourceWith {
-    src = ./.;
-    filter =
-      path: type:
-      let
-        rel = lib.removePrefix "${toString ./.}/" (toString path);
-        base = builtins.baseNameOf (toString path);
-        ignoredBaseNames = [
-          ".devenv"
-          ".direnv"
-          ".env"
-          ".git"
-          ".mypy_cache"
-          ".pytest_cache"
-          ".ruff_cache"
-          ".venv"
-          "__pycache__"
-          "result"
-          "target"
-        ];
-        ignoredPrefixes = [
-          "dist/"
-          "logs/"
-        ];
-      in
-      !(builtins.elem base ignoredBaseNames || lib.any (prefix: lib.hasPrefix prefix rel) ignoredPrefixes);
+
+  # Avoid repeated inline evaluations by binding the override once
+  tesseractCustom = pkgs.tesseract.override {
+    enableLanguages = [
+      "eng"
+      "deu"
+    ];
   };
 
-  buildInputs = with pkgs; [
-    python
-    python312Packages.tkinter
+  # 1. Pure C-libraries that need to be in LD_LIBRARY_PATH
+  libs = with pkgs; [
     stdenv.cc.cc
-    git
-    direnv
     glib
     zlib
     libglvnd
-    ollama
-    cmake
-    gcc
-    pkg-config
-    protobuf
     libGL
+    libxcb
   ];
 
-  runtimePackages = with pkgs; [
+  # 2. Build-time tools (DO NOT evaluate library paths for these)
+  buildTools = with pkgs; [
     git
-    cudaPackages.cuda_nvcc
-    stdenv.cc.cc
-    glib
-    zlib
-    (tesseract.override {
-      enableLanguages = [
-        "eng"
-        "deu"
-      ];
-    })
-    ollama
-    uv
-    python312Packages.pip
-    libglvnd
+    direnv
     cmake
     gcc
     pkg-config
     protobuf
-    python312Packages.sentencepiece
-    ffmpeg_6-headless
-    maturin
     cargo
     rustc
-    libxcb
+    maturin
+    uv
+  ];
+
+  # 3. Rest of the runtime/shell packages
+  otherPackages = with pkgs; [
+    python
+    python312Packages.pip
+    python312Packages.tkinter
+    python312Packages.sentencepiece
+    ollama
+    cudaPackages.cuda_nvcc
+    tesseractCustom
+    ffmpeg_6-headless
   ];
 in
 {
@@ -89,46 +61,52 @@ in
     version = "3.12";
     uv = {
       enable = true;
-      sync.enable = true;
+      sync = {
+        enable = true;
+        extras = [
+          "dev"
+          "evaluation"
+        ];
+      };
     };
   };
 
   languages.rust.enable = true;
 
-  packages = lib.unique (buildInputs ++ runtimePackages);
+  # Avoid lib.unique. Concatenating lists directly is instant.
+  packages = buildTools ++ libs ++ otherPackages;
 
-  # devenv 2 outputs only become useful for Python once pyproject-nix is added
-  # via `devenv inputs add pyproject-nix github:pyproject-nix/pyproject.nix --follows nixpkgs`.
-  # devenv resolves pythonApp and nativeDrv using the best practise resolve by using the config option
-  outputs =
-    lib.optionalAttrs (inputs ? pyproject-nix) (
-      let
-        pythonApp = config.languages.python.import ./. { };
-        nativeDrv = config.languages.rust.import ./. { };
-        nativeLibDrv = lib.getLib nativeDrv;
+  # pyproject-nix & rust imports are only evaluated if outputs are specifically requested
+  outputs = lib.optionalAttrs (inputs ? pyproject-nix) (
+    let
+      pythonApp = config.languages.python.import ./. { };
+      nativeDrv = config.languages.rust.import ./. { };
+      nativeLibDrv = lib.getLib nativeDrv;
 
-        nativeApp = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
-          mkdir -p "$out/${python.sitePackages}/lx_anonymizer"
-          native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
-          test -n "$native_lib"
-          cp "$native_lib" "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
-        '';
-      in
-      {
-        python = pythonApp;
-        app = pythonApp;
-      }
-    );
+      nativeApp = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
+        mkdir -p "$out/${python.sitePackages}/lx_anonymizer"
+        native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
+        test -n "$native_lib"
+        cp "$native_lib" "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
+      '';
+    in
+    {
+      python = pythonApp;
+      app = pythonApp;
+    }
+  );
 
   env = {
+    # Point only to the lightweight 'libs' list.
+    # This prevents Nix from walking the recursive trees of gcc, rustc, and cuda_nvcc.
     LD_LIBRARY_PATH =
-      with pkgs;
       "/run/opengl-driver/lib:/run/opengl-driver-32/lib"
       + ":/usr/lib/wsl/lib"
       + ":/usr/lib/x86_64-linux-gnu"
       + ":/usr/lib"
-      + ":${lib.makeLibraryPath runtimePackages}";
-    OLLAMA_HOST = "0.0.0.0";
+      + ":${lib.makeLibraryPath libs}";
+
+    OLLAMA_HOST = "127.0.0.1:11434";
     PYTORCH_ALLOC_CONF = "expandable_segments:True";
     PYO3_PYTHON = "${python}/bin/python";
     UV_PYTHON = lib.mkForce "${python}/bin/python";
@@ -137,17 +115,8 @@ in
   scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
 
   scripts.env-setup.exec = ''
-    export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${
-      with pkgs; lib.makeLibraryPath buildInputs
-    }"
-    export TESSDATA_PREFIX="${
-      pkgs.tesseract.override {
-        enableLanguages = [
-          "eng"
-          "deu"
-        ];
-      }
-    }/share"
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${lib.makeLibraryPath libs}"
+    export TESSDATA_PREFIX="${tesseractCustom}/share"
   '';
 
   scripts.uvs.exec = ''
@@ -155,25 +124,16 @@ in
   '';
 
   processes = {
-    ollama-pull-deepseek-model.exec = "ollama pull deepseek-r1:1.5b&";
-    ollama-run-deepseek-model.exec = "ollama run deepseek-r1:1.5b";
-    ollama-verify.exec = "curl http://127.0.0.1:11434/api/models";
+    ollama-gemma4-provision.exec = "bash scripts/provision_ollama_gemma4.sh";
+    ollama-verify.exec = "curl --fail http://127.0.0.1:11434/api/tags";
   };
 
   tasks = {
     "ollama:serve".exec = "export OLLAMA_DEBUG=1 && ollama serve";
+    "ollama:provision-gemma4".exec = "bash scripts/provision_ollama_gemma4.sh";
   };
 
   enterShell = ''
-    SYNC_CMD='uv sync --extra dev --extra gpu'
-
-    if [ ! -d ".devenv/state/venv" ]; then
-       echo "Virtual environment not found. Running initial uv sync..."
-       $SYNC_CMD || echo "Error: Initial uv sync failed. Please check network and pyproject.toml."
-    else
-       echo "Syncing Python dependencies with uv..."
-       $SYNC_CMD --quiet || echo "Warning: uv sync failed. Environment might be outdated."
-    fi
 
     ACTIVATED=false
     if [ -f ".devenv/state/venv/bin/activate" ]; then

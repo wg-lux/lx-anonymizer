@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "architecture": "yolov8n",
+  "task": "object-detection",
+  "class_names": {
+    "0": "phi"
+  },
+  "input": {
+    "color_space": "RGB",
+    "height": 960,
+    "width": 960,
+    "resize_mode": "letterbox"
+  },
+  "output": {
+    "box_format": "yolo_xywh",
+    "score_format": "class_scores"
+  },
+  "inference_defaults": {
+    "confidence_threshold": 0.05,
+    "nms_iou_threshold": 0.45
+  }
+}

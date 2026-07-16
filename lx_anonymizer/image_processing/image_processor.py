@@ -49,7 +49,27 @@ def _run_ocr_text_extraction(image: Image.Image) -> str:
         getattr(pytesseract, "image_to_string", None),
     )
     raw_output = image_to_string(image)
-    return _coerce_tesseract_output(raw_output)
+    conventional_text = _coerce_tesseract_output(raw_output)
+    if not (
+        settings.LLM_ENABLED
+        and settings.OLLAMA_OCR_ENABLED
+        and settings.LLM_PROVIDER == "ollama"
+    ):
+        return conventional_text
+
+    try:
+        from lx_anonymizer.llm.llm_service import LLMService
+
+        recognized_text = LLMService(
+            provider="ollama",
+            base_url=settings.resolved_llm_base_url,
+            model_name=settings.LLM_MODEL,
+            timeout=settings.LLM_TIMEOUT,
+        ).recognize_image(image, candidate_text=conventional_text)
+        return recognized_text or conventional_text
+    except Exception as exc:
+        logger.warning("Gemma 4 vision OCR failed; using Tesseract output: %s", exc)
+        return conventional_text
 
 
 _typed_process_images_with_OCR_and_NER: ProcessImagesCallable = cast(

@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import pymupdf  # type: ignore[import-untyped]
+from PIL import Image
 from lx_anonymizer.anonymization.blur import blur_function
 from lx_anonymizer.region_processing.box_operations import (
     close_to_box,
@@ -38,6 +39,7 @@ from lx_anonymizer.ocr.ocr import (
     trocr_on_boxes,
 )
 from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
+from lx_anonymizer.llm.llm_service import LLMService
 from lx_anonymizer.config import settings
 from lx_anonymizer.ner.spacy_NER import spacy_NER_German
 from lx_anonymizer.text_detection.tesseract_text_detection import (
@@ -172,6 +174,27 @@ def _run_llm_image_analysis(img_path: Path) -> Dict[str, object]:
         logger.warning(f"Failed to extract OCR text: {e}")
         ocr_text = ""
 
+    if (
+        settings.LLM_ENABLED
+        and settings.OLLAMA_OCR_ENABLED
+        and settings.LLM_PROVIDER == "ollama"
+    ):
+        try:
+            with Image.open(img_path) as image:
+                recognized_text = LLMService(
+                    provider="ollama",
+                    base_url=settings.resolved_llm_base_url,
+                    model_name=settings.LLM_MODEL,
+                    timeout=settings.LLM_TIMEOUT,
+                ).recognize_image(image, candidate_text=ocr_text)
+            ocr_text = recognized_text or ocr_text
+        except Exception as exc:
+            logger.warning(
+                "Gemma 4 vision OCR failed during image analysis; "
+                "using Tesseract output: %s",
+                exc,
+            )
+
     if not ocr_text:
         return {}
 
@@ -183,7 +206,7 @@ def _run_llm_image_analysis(img_path: Path) -> Dict[str, object]:
     return sensitive_meta.to_dict()
 
 
-def _detect_combined_text_boxes(
+def detect_combined_text_boxes(
     img_path: Path,
     east_path: str,
     min_confidence: float,
@@ -196,8 +219,15 @@ def _detect_combined_text_boxes(
     tesseract_boxes, _ = tesseract_text_detection(
         img_path, min_confidence, width, height
     )
-    craft_boxes, _ = craft_text_detection(img_path, min_confidence, width, height)
-    return cast(List[BoundingBox], east_boxes + tesseract_boxes + craft_boxes)
+    craft_boxes: List[BoundingBox] = []
+    if CRAFT_AVAILABLE:
+        craft_boxes, _ = craft_text_detection(img_path, min_confidence, width, height)
+    else:
+        logger.info("CRAFT is unavailable; continuing with EAST and Tesseract")
+    return east_boxes + tesseract_boxes + craft_boxes
+
+
+_detect_combined_text_boxes = detect_combined_text_boxes
 
 
 def _run_ocr_for_boxes(
@@ -346,23 +376,22 @@ def process_images_with_OCR_and_NER(
                         blurred_image_path, last_name_box, background_color
                     )
 
-            combined_boxes = _detect_combined_text_boxes(
+            combined_boxes = detect_combined_text_boxes(
                 img_path, east_path, min_confidence, width, height
             )
             all_ocr_results, all_ocr_confidences = _run_ocr_for_boxes(
                 img_path, combined_boxes
             )
 
-            for (phrase, phrase_box), ocr_confidence in zip(
-                all_ocr_results, all_ocr_confidences
-            ):
-                # Skip blur operations if requested
-                if skip_blur:
-                    # Just collect OCR results without blurring
-                    combined_results.append((phrase, phrase_box, ocr_confidence, []))
-                    continue
-
-                # Normal processing path with fuzzy correction and blurring
+            if skip_blur:
+                combined_results.extend(
+                    (phrase, phrase_box, ocr_confidence, [])
+                    for (phrase, phrase_box), ocr_confidence in zip(
+                        all_ocr_results, all_ocr_confidences
+                    )
+                )
+            else:
+                full_text_candidates = [phrase for phrase, _box in all_ocr_results]
                 (
                     blurred_image_path,
                     modified_images_map,
@@ -379,7 +408,7 @@ def process_images_with_OCR_and_NER(
                     combined_boxes=combined_boxes,
                     first_name_box=first_name_box,
                     last_name_box=last_name_box,
-                    full_text_candidates=phrase,
+                    full_text_candidates=full_text_candidates,
                 )
                 gender_pars.extend(updated_genders)
 

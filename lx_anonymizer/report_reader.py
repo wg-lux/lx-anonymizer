@@ -33,12 +33,13 @@ from lx_anonymizer.ocr.ocr import (
     tesseract_full_image_ocr,
 )  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
+from lx_anonymizer.paper_metrics import build_report_paper_evaluation_metrics
 from lx_anonymizer.report_reader_extraction import (
     LLMExtractorProtocol,
     ReportReaderExtractionMixin,
 )
 from lx_anonymizer.report_reader_settings import get_report_reader_settings
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, sensitive_meta_to_dict
 from lx_anonymizer.setup.custom_logger import logger
 
 
@@ -310,7 +311,7 @@ class ReportReader(ReportReaderExtractionMixin):
         return ReportProcessResult(
             text=text,
             anonymized_text=anonymized_text,
-            report_meta=self.sensitive_meta.to_dict(),
+            report_meta=self._build_final_report_output_meta(report_meta),
             anonymized_pdf_path=anonymized_pdf_path,
         )
 
@@ -319,6 +320,16 @@ class ReportReader(ReportReaderExtractionMixin):
         return (
             request.text is not None and not request.pdf_path and not request.image_path
         )
+
+    def _build_final_report_output_meta(
+        self, report_meta: Mapping[str, object]
+    ) -> dict[str, object]:
+        payload = sensitive_meta_to_dict(self.sensitive_meta)
+        payload.update(dict(report_meta))
+        payload["paper_evaluation_metrics"] = build_report_paper_evaluation_metrics(
+            report_meta
+        ).model_dump(mode="json")
+        return payload
 
     @staticmethod
     def _empty_process_result(
@@ -410,18 +421,42 @@ class ReportReader(ReportReaderExtractionMixin):
     def _ocr_image(
         self, pil_image: Image.Image, *, page_num: int, use_ensemble: bool
     ) -> str:
+        conventional_text = ""
         if use_ensemble:
             try:
-                return ensemble_ocr(pil_image)
+                conventional_text = ensemble_ocr(pil_image)
             except Exception as exc:
                 logger.error("Ensemble OCR failed on page %d: %s", page_num, exc)
-        try:
-            text_part, _ = tesseract_full_image_ocr(pil_image)
-            logger.info("Tesseract OCR successful for page %d", page_num)
-            return text_part
-        except Exception as exc:
-            logger.error("Tesseract OCR failed on page %d: %s", page_num, exc)
-            return ""
+        if not conventional_text:
+            try:
+                conventional_text, _ = tesseract_full_image_ocr(pil_image)
+                logger.info("Tesseract OCR successful for page %d", page_num)
+            except Exception as exc:
+                logger.error("Tesseract OCR failed on page %d: %s", page_num, exc)
+
+        if (
+            settings.LLM_ENABLED
+            and settings.OLLAMA_OCR_ENABLED
+            and settings.LLM_PROVIDER == "ollama"
+            and getattr(self, "ollama_available", False)
+        ):
+            try:
+                recognized_text = LLMService(
+                    provider="ollama",
+                    base_url=settings.resolved_llm_base_url,
+                    model_name=settings.LLM_MODEL,
+                    timeout=settings.LLM_TIMEOUT,
+                ).recognize_image(pil_image, candidate_text=conventional_text)
+                if recognized_text:
+                    logger.info("Gemma 4 vision OCR successful for page %d", page_num)
+                    return recognized_text
+            except Exception as exc:
+                logger.warning(
+                    "Gemma 4 vision OCR failed on page %d; using conventional OCR: %s",
+                    page_num,
+                    exc,
+                )
+        return conventional_text
 
     def _correct_ocr_text_if_enabled(self, text: str) -> str:
         if not text:

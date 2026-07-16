@@ -2,7 +2,7 @@ import pytest
 import subprocess
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 import numpy as np
 import numpy.typing as npt
 from lx_dtypes.models.meta.VideoMeta import FrameProcessResult, VideoMeta
@@ -222,6 +222,20 @@ class TestFrameCleanerRefactored:
             assert video_meta.first_name is not None
             # Fill-only semantics preserve the first nonblank value.
             assert video_meta.last_name == "Smith"
+            paper_metrics_value = meta["paper_evaluation_metrics"]
+            assert isinstance(paper_metrics_value, dict)
+            paper_metrics = cast(dict[str, object], paper_metrics_value)
+            runtime = paper_metrics["runtime"]
+            assert isinstance(runtime, dict)
+            runtime_payload = cast(dict[str, object], runtime)
+            assert runtime_payload["total_frames"] == 100
+            assert runtime_payload["frames_processed"] == 3
+            assert runtime_payload["sensitive_frame_count"] == 2
+            assert runtime_payload["technique"] == "remove_frames"
+            quality = paper_metrics["deidentification_quality"]
+            assert isinstance(quality, dict)
+            quality_payload = cast(dict[str, object], quality)
+            assert quality_payload["measurement_status"] == "requires_human_validation"
 
     def test_clean_video_continues_when_probe_reports_zero_dimensions(
         self,

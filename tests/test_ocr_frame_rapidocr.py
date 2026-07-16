@@ -7,9 +7,11 @@ import time
 import numpy as np
 import pytest
 from numpy.typing import NDArray
+from PIL import Image
 
 from lx_anonymizer.ocr import ocr_frame as ocr_mod
 from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, NestedRoi
+from lx_anonymizer.llm.llm_service import LLMService
 
 
 @dataclass
@@ -28,6 +30,40 @@ class FakeRapidOCREngine:
     def __call__(self, image: NDArray[np.uint8]) -> FakeRapidOCROutput:
         self.input_shapes.append(image.shape)
         return self.outputs.pop(0)
+
+
+def test_gemma4_refines_conventional_ocr_and_preserves_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def recognize_image(
+        self: LLMService, image: Image.Image, candidate_text: str = ""
+    ) -> str:
+        observed["size"] = image.size
+        observed["candidate"] = candidate_text
+        return "Patient Müller"
+
+    monkeypatch.setattr(LLMService, "recognize_image", recognize_image)
+    frame_ocr = FrameOCR.__new__(FrameOCR)
+    conventional = (
+        "Patient Muller",
+        0.82,
+        {"backend": "rapidocr", "method": "rapidocr"},
+    )
+
+    text, confidence, metadata = frame_ocr._extract_text_ollama(
+        np.zeros((100, 200, 3), dtype=np.uint8),
+        {"x": 20, "y": 30, "width": 40, "height": 20},
+        conventional,
+    )
+
+    assert text == "Patient Müller"
+    assert confidence == 0.82
+    assert observed == {"size": (40, 20), "candidate": "Patient Muller"}
+    assert metadata["backend"] == "ollama-gemma4"
+    assert metadata["candidate_backend"] == "rapidocr"
+    assert metadata["confidence_source"] == "conventional_ocr"
 
 
 def _frame_ocr_with_engine(engine: FakeRapidOCREngine) -> FrameOCR:
@@ -115,6 +151,7 @@ def test_rapidocr_nested_rois_crop_and_offset_boxes() -> None:
 def test_rapidocr_lazy_initialization_is_locked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(ocr_mod.settings, "OLLAMA_OCR_ENABLED", False)
     init_count = 0
     init_count_lock = threading.Lock()
 

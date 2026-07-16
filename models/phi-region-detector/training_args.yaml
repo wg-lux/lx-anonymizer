@@ -1,0 +1,28 @@
+task: detect
+base_architecture: yolov8n
+classes:
+  0: phi
+epochs: 50
+patience: 12
+batch: 2
+imgsz: 960
+device: cuda
+workers: 0
+optimizer: AdamW
+seed: 0
+deterministic: true
+amp: true
+lr0: 0.0002
+lrf: 0.1
+weight_decay: 0.0005
+warmup_epochs: 1.0
+close_mosaic: 5
+mosaic: 0.1
+hsv_s: 0.05
+hsv_v: 0.1
+translate: 0.02
+scale: 0.1
+export:
+  format: onnx
+  simplify: true
+  dynamic: false
