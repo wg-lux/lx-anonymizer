@@ -1,10 +1,11 @@
+import hashlib
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Optional, cast
-import os
+
 import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
 from faker import Faker
-from PIL import Image
 from lx_dtypes.models.meta.ReportMeta import (
     ReportAnonymizerProvenance,
     ReportMeta,
@@ -13,6 +14,7 @@ from lx_dtypes.models.meta.ReportMeta import (
     ReportReaderFlags,
     ReportRedactionSummary,
 )
+from PIL import Image
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
 from lx_anonymizer.anonymization.sensitive_region_cropper import (
@@ -34,6 +36,13 @@ from lx_anonymizer.ocr.ocr import (
 )  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
 from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
 from lx_anonymizer.paper_metrics import build_report_paper_evaluation_metrics
+from lx_anonymizer.report_contracts import (
+    AnonymizationArtifactError,
+    ArtifactAlreadyExistsError,
+    ReportAnonymizationRequestV2,
+    ReportAnonymizationResultV2,
+    SourceIdentityMismatchError,
+)
 from lx_anonymizer.report_reader_extraction import (
     LLMExtractorProtocol,
     ReportReaderExtractionMixin,
@@ -263,6 +272,129 @@ class ReportReader(ReportReaderExtractionMixin):
             anonymized_pdf_output_path=anonymized_pdf_output_path,
         )
         return self._process_report_request(request).as_tuple()
+
+    @staticmethod
+    def _report_file_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(chunk_size):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _report_file_identity(path: Path) -> tuple[int, int, int, int]:
+        stat_result = path.stat(follow_symlinks=False)
+        return (
+            int(stat_result.st_dev),
+            int(stat_result.st_ino),
+            int(stat_result.st_size),
+            int(stat_result.st_mtime_ns),
+        )
+
+    @staticmethod
+    def _sync_file(path: Path) -> None:
+        with path.open("rb") as handle:
+            os.fsync(handle.fileno())
+
+    @staticmethod
+    def _sync_directory_best_effort(path: Path) -> None:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        try:
+            descriptor = os.open(path, flags)
+        except OSError:
+            return
+        try:
+            os.fsync(descriptor)
+        except OSError:
+            return
+        finally:
+            os.close(descriptor)
+
+    def process_report_v2(
+        self,
+        request: ReportAnonymizationRequestV2,
+    ) -> ReportAnonymizationResultV2:
+        """Process one immutable report snapshot into an attempt-local artifact."""
+        source_identity_before = self._report_file_identity(request.source_path)
+        if source_identity_before[2] != request.source_size_bytes:
+            raise SourceIdentityMismatchError(
+                "source size does not match ReportAnonymizationRequestV2"
+            )
+        if self._report_file_sha256(request.source_path) != request.source_sha256:
+            raise SourceIdentityMismatchError(
+                "source hash does not match ReportAnonymizationRequestV2"
+            )
+
+        attempt_name = str(request.attempt_id)
+        temporary_path = request.output_directory / f".{attempt_name}.part.pdf"
+        artifact_path = request.output_directory / f"{attempt_name}.pdf"
+        if temporary_path.exists() or artifact_path.exists():
+            raise ArtifactAlreadyExistsError(
+                f"attempt output already exists: {attempt_name}"
+            )
+
+        process_request = ReportProcessRequest(
+            pdf_path=request.source_path,
+            image_path=None,
+            use_ensemble=request.options.use_ensemble,
+            verbose=request.options.verbose,
+            use_llm=request.options.use_llm,
+            text=None,
+            create_anonymized_pdf=True,
+            anonymized_pdf_output_path=temporary_path,
+        )
+        succeeded = False
+        try:
+            result = self._process_report_request(process_request)
+            produced_path = result.anonymized_pdf_path
+            if (
+                produced_path is None
+                or produced_path.resolve() != temporary_path.resolve()
+            ):
+                raise AnonymizationArtifactError(
+                    "report pipeline did not return the assigned attempt artifact"
+                )
+            if not temporary_path.is_file() or temporary_path.is_symlink():
+                raise AnonymizationArtifactError(
+                    "report pipeline did not produce a regular PDF artifact"
+                )
+            with temporary_path.open("rb") as handle:
+                if handle.read(5) != b"%PDF-":
+                    raise AnonymizationArtifactError(
+                        "report pipeline produced an invalid PDF header"
+                    )
+
+            source_identity_after = self._report_file_identity(request.source_path)
+            if source_identity_after != source_identity_before:
+                raise SourceIdentityMismatchError(
+                    "source identity changed during report anonymization"
+                )
+            if self._report_file_sha256(request.source_path) != request.source_sha256:
+                raise SourceIdentityMismatchError(
+                    "source content changed during report anonymization"
+                )
+
+            artifact_size = temporary_path.stat().st_size
+            artifact_sha256 = self._report_file_sha256(temporary_path)
+            self._sync_file(temporary_path)
+            os.link(temporary_path, artifact_path)
+            temporary_path.unlink()
+            self._sync_directory_best_effort(request.output_directory)
+            result_v2 = ReportAnonymizationResultV2(
+                attempt_id=request.attempt_id,
+                source_sha256=request.source_sha256,
+                original_text=result.text,
+                anonymized_text=result.anonymized_text,
+                extracted_metadata=dict(result.report_meta),
+                artifact_path=artifact_path,
+                artifact_sha256=artifact_sha256,
+                artifact_size_bytes=artifact_size,
+            )
+            succeeded = True
+            return result_v2
+        finally:
+            if not succeeded:
+                temporary_path.unlink(missing_ok=True)
 
     def _process_report_request(
         self, request: ReportProcessRequest
