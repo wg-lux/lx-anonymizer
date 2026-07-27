@@ -1,6 +1,7 @@
 import logging
 import os
 import resource
+import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -9,7 +10,11 @@ from typing import Any, Generator, List, Mapping, cast
 
 import cv2
 import numpy as np
-from PIL import Image
+from lx_dtypes.models.contracts.llm_extractor import LLMFrameDataPayload
+from lx_dtypes.models.contracts.video_processing import (
+    VideoEncoderConfig,
+    VideoMaskConfig,
+)
 from lx_dtypes.models.meta.VideoMeta import (
     FrameAnalysisResult,
     FrameCleanerAccumulatedMeta,
@@ -18,18 +23,15 @@ from lx_dtypes.models.meta.VideoMeta import (
     FrameProcessResult,
     VideoMeta,
 )
-from lx_dtypes.models.contracts.llm_extractor import LLMFrameDataPayload
-from lx_dtypes.models.contracts.video_processing import (
-    VideoEncoderConfig,
-    VideoMaskConfig,
-)
+from PIL import Image
 
-from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.anonymization.detector_video_masking import (
     DetectorVideoMasker,
     DetectorVideoMaskingSummary,
 )
+from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.config import settings
+from lx_anonymizer.frame_cleaner_video import FrameCleanerVideoMixin
 from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
 from lx_anonymizer.llm.factory import LLMFactory
 from lx_anonymizer.llm.llm_extractor import (
@@ -63,7 +65,6 @@ from lx_anonymizer.text_detection.phi_region_detector import (
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_encoder, video_processor
-from lx_anonymizer.frame_cleaner_video import FrameCleanerVideoMixin
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self.default_mask_config: VideoMaskConfig | None = None
         self._mask_video_streaming = None
         self._create_mask_config_from_roi = None
+        self._run_lock = threading.Lock()
 
         self._init_core_components()
         self._log_hf_cache_status()
@@ -276,6 +278,33 @@ class FrameCleaner(FrameCleanerVideoMixin):
         return min(configured, total_frames)
 
     def clean_video(
+        self,
+        video_path: Path,
+        endoscope_image_roi: Mapping[str, object] | None,
+        endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
+        output_path: Path | None = None,
+        technique: str = "mask_overlay",
+        device: str | None = "olympus_cv_1500",
+    ) -> tuple[Path, dict[str, object]]:
+        """Run exactly one video on this mutable FrameCleaner instance."""
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError(
+                "FrameCleaner instances are single-run resources and must not be "
+                "shared by concurrent video attempts."
+            )
+        try:
+            return self._clean_video_owned(
+                video_path=video_path,
+                endoscope_image_roi=endoscope_image_roi,
+                endoscope_data_roi_nested=endoscope_data_roi_nested,
+                output_path=output_path,
+                technique=technique,
+                device=device,
+            )
+        finally:
+            self._run_lock.release()
+
+    def _clean_video_owned(
         self,
         video_path: Path,
         endoscope_image_roi: Mapping[str, object] | None,

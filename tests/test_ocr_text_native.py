@@ -1,4 +1,8 @@
-from lx_anonymizer._native import native
+from lx_anonymizer._native import (
+    available_native_capabilities,
+    native,
+    require_native_capabilities,
+)
 from lx_anonymizer.ocr import ocr_frame_tesserocr as ocr_mod
 
 
@@ -61,3 +65,15 @@ def test_native_fuzzy_match_best_prefers_expected_candidate_when_available():
 
     assert best_match == "Patlent John Doe"
     assert ratio >= 0.5
+
+
+def test_native_capability_contract_fails_closed_for_missing_requirement():
+    capabilities = available_native_capabilities()
+    require_native_capabilities(capabilities)
+
+    try:
+        require_native_capabilities({"capability_that_does_not_exist"})
+    except RuntimeError as exc:
+        assert "capability_that_does_not_exist" in str(exc)
+    else:
+        raise AssertionError("missing native capability must fail closed")

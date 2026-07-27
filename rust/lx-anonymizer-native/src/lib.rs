@@ -12,6 +12,17 @@ use strsim::jaro_winkler;
 const EXPECTED_OCR_CHARS: &str =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß0123456789 .,:;/-()[]";
 const OCR_VOWELS: &str = "aeiouäöüAEIOUÄÖÜ";
+const NATIVE_ABI_VERSION: u32 = 1;
+
+#[pyfunction]
+fn native_abi_version() -> u32 {
+    NATIVE_ABI_VERSION
+}
+
+#[pyfunction]
+fn native_capabilities() -> Vec<&'static str> {
+    vec!["ocr_text_v1", "parallel_fuzzy_match_v1", "roi_box_ops_v1"]
+}
 
 fn time_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -513,6 +524,8 @@ fn fuzzy_match_best<'py>(
 
 #[pymodule]
 fn _lx_anonymizer_native(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(native_abi_version, m)?)?;
+    m.add_function(wrap_pyfunction!(native_capabilities, m)?)?;
     m.add_function(wrap_pyfunction!(filter_empty_boxes_native, m)?)?;
     m.add_function(wrap_pyfunction!(combine_boxes_native, m)?)?;
     m.add_function(wrap_pyfunction!(close_to_box_native, m)?)?;

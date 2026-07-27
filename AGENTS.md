@@ -15,6 +15,34 @@ Anonymization Strategy: Blurring + NER.
 
 Standardized Output: /home/admin/lx-anonymizer/lx_anonymizer/sensitive_meta_interface.py
 
+## Mandatory video concurrency contract
+
+Before changing `frame_cleaner.py`, `frame_cleaner_video.py`,
+`video_processing/`, native Rust video helpers, FFmpeg or FFprobe execution,
+temporary video files, output naming, cancellation, retry, or resource
+parallelism, read and preserve:
+
+- `docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md`;
+- the canonical sibling-repository contract
+  `/home/admin/endoreg-db/docs/video_import_concurrency_contract.md`;
+- `/home/admin/endoreg-db/docs/video_storage_normalization.md`;
+- `/home/admin/endoreg-db/feature-tracking/VideoStorageNormalization.yml`.
+
+`endoreg-db` owns durable attempts, leases, fencing, encrypted storage,
+publication, and cleanup. `lx-anonymizer` processes exactly one immutable source
+into one unpublished attempt-owned candidate. Do not add competing persistence,
+locking, publication, or retry authority here.
+
+A `FrameCleaner` instance contains mutable per-video state and must not be used
+concurrently. Create one instance per attempt until run state is separated into
+a typed invocation object and shared model components have explicit thread- and
+process-safety tests.
+
+Every FFmpeg process, named pipe, temporary directory, and output path must have
+one attempt owner, bounded cancellation, and deterministic cleanup. Integrity
+failures must raise loudly; boolean failure returns and silent fallback must not
+turn a partial artifact into apparent success.
+
 ## Type-first engineering rules
 
 Use types as a primary safety rail. This project uses strict Pyright. For code
