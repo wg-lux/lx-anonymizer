@@ -2,17 +2,20 @@ import json
 import logging
 import os
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+from fractions import Fraction
 from pathlib import Path
-from typing import Mapping, cast
+from typing import cast
 
 from lx_dtypes.models.contracts.video_processing import (
     VideoMaskConfig,
     VideoMaskRegionCore,
 )
-from lx_anonymizer.video_processing.video_encoder import VideoEncoder
+
 from lx_anonymizer.video_processing import video_utils
+from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,7 @@ class MaskApplication:
         output_video: Path,
         use_named_pipe: bool = False,
         mode: MaskMode | str = MaskMode.PRESERVE_DIMENSIONS,
+        source_frame_rate: Fraction | None = None,
     ) -> bool:
         """
         Apply video masking using a streaming FFmpeg command.
@@ -66,6 +70,9 @@ class MaskApplication:
             output_video: Path for output masked video
             use_named_pipe: Whether to use named pipes for streaming (currently not implemented)
             mode: preserve_dimensions or crop
+            source_frame_rate: Exact probed source rate, retained for validation
+                and observability while source presentation timestamps remain
+                authoritative.
 
         Returns:
             True if masking succeeded, False otherwise
@@ -75,6 +82,7 @@ class MaskApplication:
             logger.debug("Named pipe functionality requested but not yet implemented")
 
         try:
+            frame_rate = self._validated_source_frame_rate(source_frame_rate)
             mask_mode = self._coerce_mask_mode(mode)
             region = self._resolve_mask_region(input_video, mask_config)
             if region is None:
@@ -96,15 +104,16 @@ class MaskApplication:
                 "-vf",
                 vf,
                 *encoder_args,
-                "-c:a",
-                "copy",
+                "-an",
+                "-fps_mode",
+                "passthrough",
                 "-movflags",
                 "+faststart",
                 str(output_video),
             ]
 
             logger.info(
-                "Mask ROI configured=(x=%d,y=%d,w=%d,h=%d) effective=(x=%d,y=%d,w=%d,h=%d) input_dimensions=%dx%d mode=%s",
+                "Mask ROI configured=(x=%d,y=%d,w=%d,h=%d) effective=(x=%d,y=%d,w=%d,h=%d) input_dimensions=%dx%d mode=%s source_frame_rate=%s",
                 region.configured_x,
                 region.configured_y,
                 region.configured_width,
@@ -116,6 +125,11 @@ class MaskApplication:
                 region.image_width,
                 region.image_height,
                 mask_mode.value,
+                (
+                    f"{frame_rate.numerator}/{frame_rate.denominator}"
+                    if frame_rate is not None
+                    else "unavailable"
+                ),
             )
             logger.info("Using mask filter: %s", vf)
             logger.debug("FFmpeg command: %s", " ".join(cmd))
@@ -152,6 +166,16 @@ class MaskApplication:
         except (OSError, IOError) as e:
             logger.error("File operation failed during masking: %s", e)
             return False
+
+    @staticmethod
+    def _validated_source_frame_rate(
+        source_frame_rate: Fraction | None,
+    ) -> Fraction | None:
+        if source_frame_rate is None:
+            return None
+        if source_frame_rate <= 0:
+            raise ValueError("source_frame_rate must be a positive rational frame rate")
+        return source_frame_rate
 
     @staticmethod
     def _ensure_output_parent(output_video: Path) -> None:
@@ -413,6 +437,7 @@ class MaskApplication:
             str(input_video),
             "-c",
             "copy",
+            "-an",
             "-movflags",
             "+faststart",
             str(output_video),

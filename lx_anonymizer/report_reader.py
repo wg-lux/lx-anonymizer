@@ -1,10 +1,12 @@
 import hashlib
 import os
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Optional, cast
+from typing import Optional, Protocol, cast
 
 import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
+import pymupdf  # type: ignore[import-untyped]
 from faker import Faker
 from lx_dtypes.models.meta.ReportMeta import (
     ReportAnonymizerProvenance,
@@ -16,6 +18,7 @@ from lx_dtypes.models.meta.ReportMeta import (
 )
 from PIL import Image
 
+from lx_anonymizer import __version__ as lx_anonymizer_version
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
 from lx_anonymizer.anonymization.sensitive_region_cropper import (
     SensitiveRegionCropper,
@@ -39,8 +42,12 @@ from lx_anonymizer.paper_metrics import build_report_paper_evaluation_metrics
 from lx_anonymizer.report_contracts import (
     AnonymizationArtifactError,
     ArtifactAlreadyExistsError,
+    OperationDeadlineExceededError,
+    ReportAnonymizationPhase,
+    ReportAnonymizationProvenanceV2,
     ReportAnonymizationRequestV2,
     ReportAnonymizationResultV2,
+    ReportArtifactValidationV2,
     SourceIdentityMismatchError,
 )
 from lx_anonymizer.report_reader_extraction import (
@@ -50,6 +57,21 @@ from lx_anonymizer.report_reader_extraction import (
 from lx_anonymizer.report_reader_settings import get_report_reader_settings
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, sensitive_meta_to_dict
 from lx_anonymizer.setup.custom_logger import logger
+
+
+class _PdfValidationPage(Protocol):
+    def get_text(self) -> str: ...
+
+
+class _PdfValidationDocument(Protocol):
+    is_pdf: bool
+    needs_pass: bool
+    page_count: int
+    is_repaired: bool
+
+    def load_page(self, page_number: int) -> _PdfValidationPage: ...
+
+    def close(self) -> None: ...
 
 
 class ReportReader(ReportReaderExtractionMixin):
@@ -315,6 +337,10 @@ class ReportReader(ReportReaderExtractionMixin):
         request: ReportAnonymizationRequestV2,
     ) -> ReportAnonymizationResultV2:
         """Process one immutable report snapshot into an attempt-local artifact."""
+        self._raise_if_report_deadline_expired(
+            request,
+            phase=ReportAnonymizationPhase.VALIDATE_REQUEST,
+        )
         if (
             request.output_directory.is_symlink()
             or not request.output_directory.is_dir()
@@ -357,7 +383,15 @@ class ReportReader(ReportReaderExtractionMixin):
         )
         succeeded = False
         try:
+            self._raise_if_report_deadline_expired(
+                request,
+                phase=ReportAnonymizationPhase.EXTRACT_TEXT,
+            )
             result = self._process_report_request(process_request)
+            self._raise_if_report_deadline_expired(
+                request,
+                phase=ReportAnonymizationPhase.VALIDATE_ARTIFACT,
+            )
             produced_path = result.anonymized_pdf_path
             if (
                 produced_path is None
@@ -370,11 +404,7 @@ class ReportReader(ReportReaderExtractionMixin):
                 raise AnonymizationArtifactError(
                     "report pipeline did not produce a regular PDF artifact"
                 )
-            with temporary_path.open("rb") as handle:
-                if handle.read(5) != b"%PDF-":
-                    raise AnonymizationArtifactError(
-                        "report pipeline produced an invalid PDF header"
-                    )
+            artifact_validation = self._validate_report_pdf_artifact(temporary_path)
 
             source_identity_after = self._report_file_identity(request.source_path)
             if source_identity_after != source_identity_before:
@@ -389,6 +419,10 @@ class ReportReader(ReportReaderExtractionMixin):
             artifact_size = temporary_path.stat().st_size
             artifact_sha256 = self._report_file_sha256(temporary_path)
             self._sync_file(temporary_path)
+            self._raise_if_report_deadline_expired(
+                request,
+                phase=ReportAnonymizationPhase.WRITE_ARTIFACT,
+            )
             try:
                 os.link(temporary_path, artifact_path)
             except FileExistsError as exc:
@@ -397,21 +431,94 @@ class ReportReader(ReportReaderExtractionMixin):
                 ) from exc
             temporary_path.unlink()
             self._sync_directory_best_effort(request.output_directory)
+            provenance_payload = result.report_meta.get("anonymizer_provenance")
+            legacy_provenance = ReportAnonymizerProvenance.model_validate(
+                provenance_payload if isinstance(provenance_payload, Mapping) else {}
+            )
+            used_llm = (
+                request.options.use_llm
+                if request.options.use_llm is not None
+                else self.llm_available
+            )
+            anonymizer_version = legacy_provenance.anonymizer_version
+            if anonymizer_version == "unknown":
+                anonymizer_version = lx_anonymizer_version
             result_v2 = ReportAnonymizationResultV2(
                 attempt_id=request.attempt_id,
                 source_sha256=request.source_sha256,
                 original_text=result.text,
                 anonymized_text=result.anonymized_text,
-                extracted_metadata=dict(result.report_meta),
+                extracted_metadata=SensitiveMeta.model_validate(result.report_meta),
                 artifact_path=artifact_path,
                 artifact_sha256=artifact_sha256,
                 artifact_size_bytes=artifact_size,
+                artifact_validation=artifact_validation,
+                provenance=ReportAnonymizationProvenanceV2(
+                    anonymizer_version=anonymizer_version,
+                    detector_sources=tuple(legacy_provenance.detector_sources),
+                    model_names=tuple(legacy_provenance.model_names),
+                    model_versions=dict(legacy_provenance.model_versions),
+                    proposal_counts=dict(legacy_provenance.proposal_counts),
+                    used_llm=used_llm,
+                    deterministic=not used_llm,
+                ),
             )
             succeeded = True
             return result_v2
         finally:
             if not succeeded:
                 temporary_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _raise_if_report_deadline_expired(
+        request: ReportAnonymizationRequestV2,
+        *,
+        phase: ReportAnonymizationPhase,
+    ) -> None:
+        deadline = request.deadline_monotonic_ns
+        if deadline is not None and time.monotonic_ns() >= deadline:
+            raise OperationDeadlineExceededError(
+                f"report anonymization deadline exceeded before {phase.value}"
+            )
+
+    @staticmethod
+    def _validate_report_pdf_artifact(path: Path) -> ReportArtifactValidationV2:
+        try:
+            document = cast(_PdfValidationDocument, pymupdf.open(str(path)))
+            try:
+                if not bool(document.is_pdf):
+                    raise AnonymizationArtifactError(
+                        "report pipeline output is not a PDF document"
+                    )
+                if bool(document.needs_pass):
+                    raise AnonymizationArtifactError(
+                        "report pipeline output must not be password protected"
+                    )
+                page_count = int(document.page_count)
+                if page_count <= 0:
+                    raise AnonymizationArtifactError(
+                        "report pipeline output has no pages"
+                    )
+                for page_number in range(page_count):
+                    document.load_page(page_number).get_text()
+                repaired = bool(document.is_repaired)
+            finally:
+                document.close()
+        except AnonymizationArtifactError:
+            raise
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise AnonymizationArtifactError(
+                "report pipeline produced a structurally invalid PDF artifact"
+            ) from exc
+
+        if repaired:
+            raise AnonymizationArtifactError(
+                "report pipeline produced a PDF requiring structural repair"
+            )
+        return ReportArtifactValidationV2(
+            page_count=page_count,
+            repaired=False,
+        )
 
     def _process_report_request(
         self, request: ReportProcessRequest

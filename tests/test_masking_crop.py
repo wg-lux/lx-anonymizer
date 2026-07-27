@@ -1,6 +1,7 @@
-from pathlib import Path
 import subprocess
-from typing import Mapping
+from collections.abc import Mapping
+from fractions import Fraction
+from pathlib import Path
 
 import pytest
 from lx_dtypes.models.contracts.video_processing import VideoMaskConfig
@@ -139,14 +140,39 @@ def test_mask_video_streaming_preserves_dimensions_by_default(
 
     mask_config = _legacy_mask_config(x=551, y=1, width=1500, height=1081)
 
-    ok = mask_app.mask_video_streaming(input_video, mask_config, output_video)
+    ok = mask_app.mask_video_streaming(
+        input_video,
+        mask_config,
+        output_video,
+        source_frame_rate=Fraction(30000, 1001),
+    )
 
     assert ok is True
+    assert captured["cmd"][captured["cmd"].index("-fps_mode") + 1] == "passthrough"
+    assert "-r" not in captured["cmd"]
+    assert "-fpsmax" not in captured["cmd"]
+    assert all(not value.startswith("fps=") for value in captured["cmd"])
     vf_idx = captured["cmd"].index("-vf") + 1
     assert captured["cmd"][vf_idx] == (
         "drawbox=0:0:551:ih:color=black@1:t=fill,drawbox=0:0:iw:1:color=black@1:t=fill"
     )
     assert calls == [input_video, output_video]
+
+
+def test_mask_video_streaming_rejects_non_positive_source_frame_rate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(VideoEncoder, "_detect_nvenc_support", _disable_nvenc)
+    mask_app = MaskApplication(preferred_encoder={"type": "cpu"})
+
+    with pytest.raises(ValueError, match="source_frame_rate"):
+        mask_app.mask_video_streaming(
+            tmp_path / "input.mp4",
+            _mask_config(),
+            tmp_path / "output.mp4",
+            source_frame_rate=Fraction(0, 1),
+        )
 
 
 def test_mask_video_streaming_creates_output_parent(

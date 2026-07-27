@@ -3,10 +3,12 @@ import os
 import resource
 import threading
 import time
+from collections.abc import Generator, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from fractions import Fraction
 from pathlib import Path
-from typing import Any, Generator, List, Mapping, cast
+from typing import Any, List, cast
 
 import cv2
 import numpy as np
@@ -282,6 +284,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         video_path: Path,
         endoscope_image_roi: Mapping[str, object] | None,
         endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
+        source_frame_rate: Fraction,
         output_path: Path | None = None,
         technique: str = "mask_overlay",
         device: str | None = "olympus_cv_1500",
@@ -297,6 +300,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 video_path=video_path,
                 endoscope_image_roi=endoscope_image_roi,
                 endoscope_data_roi_nested=endoscope_data_roi_nested,
+                source_frame_rate=source_frame_rate,
                 output_path=output_path,
                 technique=technique,
                 device=device,
@@ -309,6 +313,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         video_path: Path,
         endoscope_image_roi: Mapping[str, object] | None,
         endoscope_data_roi_nested: dict[str, dict[str, int | None]] | None,
+        source_frame_rate: Fraction,
         output_path: Path | None = None,
         technique: str = "mask_overlay",
         device: str | None = "olympus_cv_1500",
@@ -358,6 +363,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
             sensitive_idx=sensitive_idx,
             total_frames=total_frames,
             endoscope_image_roi=endoscope_image_roi,
+            source_frame_rate=source_frame_rate,
         )
 
         accumulated = self._finalize_video_metadata(
@@ -628,6 +634,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         sensitive_idx: list[int],
         total_frames: int,
         endoscope_image_roi: Mapping[str, object] | None,
+        source_frame_rate: Fraction,
     ) -> Path:
         if technique == "remove_frames":
             return self._apply_frame_removal(
@@ -642,6 +649,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 video_path=video_path,
                 output_video=output_video,
                 endoscope_image_roi=endoscope_image_roi,
+                source_frame_rate=source_frame_rate,
             )
 
         if technique == "extract_only":
@@ -679,6 +687,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         video_path: Path,
         output_video: Path,
         endoscope_image_roi: Mapping[str, object] | None,
+        source_frame_rate: Fraction,
     ) -> Path:
         logger.info("Using masking strategy.")
         mask_cfg = self._mask_config_for_roi(endoscope_image_roi)
@@ -688,6 +697,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
             mask_cfg.model_dump(),
             output_video,
             use_named_pipe=True,
+            source_frame_rate=source_frame_rate,
         )
         if not ok:
             raise RuntimeError(

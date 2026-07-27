@@ -78,14 +78,12 @@ def test_detector_video_masker_finalizes_playable_output(
     output = tmp_path / "anonymized.mp4"
     _write_test_video(source, frames=2)
 
-    def copy_video_without_audio(
-        masked_video: Path, _original_video: Path, output_video: Path
-    ) -> None:
+    def copy_video_without_audio(masked_video: Path, output_video: Path) -> None:
         shutil.copyfile(masked_video, output_video)
 
     monkeypatch.setattr(
         DetectorVideoMasker,
-        "_mux_original_audio",
+        "_finalize_video_only",
         staticmethod(copy_video_without_audio),
     )
     summary = DetectorVideoMasker(lambda _image: [(4, 4, 20, 16)]).mask_video(

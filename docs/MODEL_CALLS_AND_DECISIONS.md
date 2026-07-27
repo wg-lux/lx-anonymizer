@@ -197,9 +197,10 @@ rule patterns rather than generic named-entity labels
 (`ner/spacy_extractor.py:353-537`).
 
 The spaCy model is loaded once. The default is `de_core_news_sm`. If it is absent,
-the code may explicitly download it when auto-download is enabled, fail loudly in
-strict/clinical mode, or use a degraded blank German pipeline otherwise
-(`ner/spacy_extractor.py:95-279`).
+the code downloads it with the current Python interpreter by default, fails loudly
+if that download does not produce a loadable model, or uses a degraded blank
+German pipeline when auto-download is explicitly disabled outside
+strict/clinical mode (`ner/spacy_extractor.py:95-279`).
 
 Decision after the patient extractor:
 

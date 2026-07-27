@@ -43,6 +43,7 @@ class VideoProcessor:
                     str(input_video),
                     "-c",
                     "copy",
+                    "-an",
                     "-avoid_negative_ts",
                     "make_zero",
                     str(output_video),
@@ -65,8 +66,7 @@ class VideoProcessor:
                     "-i",
                     str(input_video),
                     *encoder_args,
-                    "-c:a",
-                    "copy",
+                    "-an",
                     str(output_video),
                 ]
                 logger.info(
@@ -111,8 +111,7 @@ class VideoProcessor:
                 "ultrafast",
                 "-crf",
                 "23",
-                "-c:a",
-                "copy",
+                "-an",
                 "-avoid_negative_ts",
                 "make_zero",
                 str(output_video),
@@ -135,7 +134,7 @@ class VideoProcessor:
         output_video: Path,
         target_pixel_format: str = "yuv420p",
     ) -> bool:
-        """Fast conversion of pixel format only, keeping audio via copy."""
+        """Fast conversion of the video pixel format with audio removed."""
         try:
             # Use the encoder command builder from the video_encoder component
             encoder_args = self.encoder.build_encoder_cmd("balanced")
@@ -149,8 +148,7 @@ class VideoProcessor:
                 "-vf",
                 f"format={target_pixel_format}",
                 *encoder_args,
-                "-c:a",
-                "copy",
+                "-an",
                 "-avoid_negative_ts",
                 "make_zero",
                 str(output_video),
@@ -216,8 +214,7 @@ class VideoProcessor:
                 "-vf",
                 vf,
                 *encoder_args,
-                "-c:a",
-                "copy",
+                "-an",
                 "-movflags",
                 "+faststart",
                 str(output_video),
@@ -254,6 +251,7 @@ class VideoProcessor:
             "0",
             "-pix_fmt",
             "rgb24",
+            "-an",
             str(output_dir / "frame_%04d.png"),
         ]
 
@@ -270,8 +268,6 @@ class VideoProcessor:
         try:
             frame_rate = video_utils.detect_video_frame_rate(input_video)
             filters = build_frame_drop_filters(frames, frame_rate)
-            format_info = video_utils.detect_video_format(input_video)
-            has_audio = bool(format_info.get("has_audio", False))
             encoder_args = self.encoder.build_encoder_cmd("balanced")
 
             cmd = [
@@ -282,31 +278,12 @@ class VideoProcessor:
                 str(input_video),
                 "-vf",
                 filters.video_filter,
+                *encoder_args,
+                "-an",
+                "-movflags",
+                "+faststart",
+                str(output_video),
             ]
-
-            if has_audio:
-                cmd.extend(
-                    [
-                        "-af",
-                        filters.audio_filter,
-                        *encoder_args,
-                        "-c:a",
-                        "aac",
-                        "-b:a",
-                        "128k",
-                        "-movflags",
-                        "+faststart",
-                        str(output_video),
-                    ]
-                )
-            else:
-                cmd.extend(
-                    [
-                        *encoder_args,
-                        "-an",
-                        str(output_video),
-                    ]
-                )
 
             logger.debug("Frame-removal ffmpeg command: %s", " ".join(cmd))
             subprocess.run(cmd, capture_output=True, text=True, check=True)

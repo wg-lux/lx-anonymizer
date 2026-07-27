@@ -4,7 +4,7 @@ import os
 import threading
 import time
 from collections.abc import Mapping, Sequence
-from typing import Any, Dict, Optional, TypeAlias, Tuple, TypedDict, cast
+from typing import Any, Dict, Literal, Optional, TypeAlias, Tuple, TypedDict, cast
 
 import cv2
 import numpy as np
@@ -60,6 +60,7 @@ except ImportError:
 FlatRoi: TypeAlias = dict[str, int | None]
 NestedRoi: TypeAlias = dict[str, FlatRoi]
 RoiInput: TypeAlias = NestedRoi | FlatRoi | list[object] | None
+OcrResultStatus: TypeAlias = Literal["text_detected", "no_text_detected"]
 
 
 class PytesseractData(TypedDict):
@@ -158,23 +159,61 @@ class FrameOCR:
         Extract text + confidence + meta from a single frame.
         Always returns a (text, confidence, meta) tuple.
         """
-        traditional_result = self._extract_text_traditional(frame, roi, high_quality)
+        traditional_result = self._with_tracking_metadata(
+            self._extract_text_traditional(frame, roi, high_quality)
+        )
         if not (
             settings.LLM_ENABLED
             and settings.OLLAMA_OCR_ENABLED
             and settings.LLM_PROVIDER == "ollama"
             and high_quality
         ):
+            self._log_ocr_result(traditional_result)
             return traditional_result
 
         try:
-            return self._extract_text_ollama(frame, roi, traditional_result)
+            result = self._with_tracking_metadata(
+                self._extract_text_ollama(frame, roi, traditional_result)
+            )
         except Exception as exc:
             logger.warning(
                 "Gemma 4 vision OCR failed; retaining conventional OCR output: %s",
                 exc,
             )
-            return traditional_result
+            result = traditional_result
+        self._log_ocr_result(result)
+        return result
+
+    @staticmethod
+    def _with_tracking_metadata(
+        result: Tuple[str, float, Dict[str, Any]],
+    ) -> Tuple[str, float, Dict[str, Any]]:
+        text, confidence, raw_metadata = result
+        normalized_text = text.strip()
+        metadata = dict(raw_metadata)
+        status: OcrResultStatus = (
+            "text_detected" if normalized_text else "no_text_detected"
+        )
+        metadata.update(
+            {
+                "status": status,
+                "text_chars": len(normalized_text),
+            }
+        )
+        return text, confidence, metadata
+
+    @staticmethod
+    def _log_ocr_result(result: Tuple[str, float, Dict[str, Any]]) -> None:
+        _text, confidence, metadata = result
+        logger.debug(
+            "Frame OCR completed: backend=%s status=%s text_chars=%d "
+            "confidence=%.3f regions=%s",
+            metadata.get("backend", "unknown"),
+            metadata.get("status", "unknown"),
+            int(metadata.get("text_chars", 0)),
+            confidence,
+            metadata.get("regions", "unknown"),
+        )
 
     def _extract_text_traditional(
         self,
@@ -442,6 +481,20 @@ class FrameOCR:
 
             text = "\n".join(all_texts)
             avg_conf = sum(all_confs) / len(all_confs) if all_confs else 0.0
+            if not text:
+                (
+                    text,
+                    avg_conf,
+                    all_regions,
+                    full_frame_elapsed,
+                ) = self._run_rapidocr(frame, None)
+                metadata.update(
+                    {
+                        "method": "rapidocr+full-frame-fallback",
+                        "roi_fallback_reason": "no_text_detected",
+                        "full_frame_elapse": full_frame_elapsed,
+                    }
+                )
             metadata.update(self._rapidocr_metadata(text, avg_conf, all_regions, t0))
             return text, avg_conf, metadata
 
@@ -557,7 +610,13 @@ class FrameOCR:
         regions: list[dict[str, Any]],
         started_at: float,
     ) -> Dict[str, Any]:
+        normalized_text = text.strip()
+        status: OcrResultStatus = (
+            "text_detected" if normalized_text else "no_text_detected"
+        )
         return {
+            "status": status,
+            "text_chars": len(normalized_text),
             "words": len(text.split()),
             "avg_conf": avg_conf,
             "confidence": avg_conf,

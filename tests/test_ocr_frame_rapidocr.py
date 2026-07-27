@@ -16,7 +16,7 @@ from lx_anonymizer.llm.llm_service import LLMService
 
 @dataclass
 class FakeRapidOCROutput:
-    boxes: NDArray[np.float32]
+    boxes: NDArray[np.float32] | None
     txts: tuple[str, ...]
     scores: tuple[float, ...]
     elapse: float = 0.01
@@ -146,6 +146,70 @@ def test_rapidocr_nested_rois_crop_and_offset_boxes() -> None:
     assert metadata["text_regions"][0]["bbox"] == [21, 32, 31, 38]
     assert metadata["text_regions"][1]["bbox"] == [103, 54, 123, 60]
     assert engine.input_shapes == [(20, 40), (25, 50)]
+
+
+def test_rapidocr_retries_full_frame_when_rois_detect_no_text() -> None:
+    engine = FakeRapidOCREngine(
+        [
+            FakeRapidOCROutput(
+                boxes=None,
+                txts=(),
+                scores=(),
+            ),
+            FakeRapidOCROutput(
+                boxes=np.array(
+                    [[[5, 5], [80, 5], [80, 15], [5, 15]]],
+                    dtype=np.float32,
+                ),
+                txts=("Patient Mueller",),
+                scores=(0.95,),
+                elapse=0.12,
+            ),
+        ]
+    )
+    frame_ocr = _frame_ocr_with_engine(engine)
+
+    text, confidence, metadata = frame_ocr._extract_text_rapidocr(
+        np.zeros((100, 200), dtype=np.uint8),
+        roi={"x": 20, "y": 30, "width": 40, "height": 20},
+    )
+
+    assert text == "Patient Mueller"
+    assert confidence == 0.95
+    assert metadata["method"] == "rapidocr+full-frame-fallback"
+    assert metadata["roi_fallback_reason"] == "no_text_detected"
+    assert metadata["status"] == "text_detected"
+    assert metadata["text_chars"] == len("Patient Mueller")
+    assert metadata["regions"] == 1
+    assert engine.input_shapes == [(20, 40), (100, 200)]
+
+
+def test_public_ocr_result_tracks_no_text_without_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ocr_mod.settings, "OLLAMA_OCR_ENABLED", False)
+    engine = FakeRapidOCREngine(
+        [
+            FakeRapidOCROutput(
+                boxes=None,
+                txts=(),
+                scores=(),
+            )
+        ]
+    )
+    frame_ocr = _frame_ocr_with_engine(engine)
+    frame_ocr._rapidocr_available = True
+
+    text, confidence, metadata = frame_ocr.extract_text_from_frame(
+        np.zeros((100, 200), dtype=np.uint8),
+        roi=None,
+    )
+
+    assert text == ""
+    assert confidence == 0.0
+    assert metadata["status"] == "no_text_detected"
+    assert metadata["text_chars"] == 0
+    assert metadata["regions"] == 0
 
 
 def test_rapidocr_lazy_initialization_is_locked(

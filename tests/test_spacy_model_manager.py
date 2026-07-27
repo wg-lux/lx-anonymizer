@@ -1,4 +1,6 @@
-from typing import Iterator
+import subprocess
+import sys
+from collections.abc import Iterator
 
 import pytest
 from pytest import MonkeyPatch
@@ -17,6 +19,7 @@ def _configure_nonclinical_spacy_env(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.delenv(SpacyModelManager.SETTINGS_STRICT_MODEL_ENV, raising=False)
     monkeypatch.delenv(SpacyModelManager.PROFILE_ENV, raising=False)
     monkeypatch.setenv("MODE", "production")
+    monkeypatch.setattr(spacy_extractor.settings, "SPACY_AUTO_DOWNLOAD", False)
 
 
 @pytest.fixture(autouse=True)
@@ -118,6 +121,59 @@ def test_auto_download_reports_model_still_missing_after_download(
         SpacyModelManager.get_model("de_core_news_sm")
 
     assert downloads == ["de_core_news_sm"]
+
+
+def test_download_model_uses_current_python_runtime(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    commands: list[tuple[list[str], bool]] = []
+    cache_invalidated = False
+
+    def fake_run(command: list[str], *, check: bool) -> None:
+        commands.append((command, check))
+
+    def fake_invalidate_caches() -> None:
+        nonlocal cache_invalidated
+        cache_invalidated = True
+
+    monkeypatch.setattr(spacy_extractor.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        spacy_extractor.importlib,
+        "invalidate_caches",
+        fake_invalidate_caches,
+    )
+
+    SpacyModelManager._download_model(  # pyright: ignore[reportPrivateUsage]
+        "de_core_news_sm"
+    )
+
+    assert commands == [
+        (
+            [
+                sys.executable,
+                "-m",
+                "spacy",
+                "download",
+                "de_core_news_sm",
+            ],
+            True,
+        )
+    ]
+    assert cache_invalidated is True
+
+
+def test_download_model_reports_subprocess_failure(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def fake_run(command: list[str], *, check: bool) -> None:
+        raise subprocess.CalledProcessError(returncode=23, cmd=command)
+
+    monkeypatch.setattr(spacy_extractor.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="exit code 23"):
+        SpacyModelManager._download_model(  # pyright: ignore[reportPrivateUsage]
+            "de_core_news_sm"
+        )
 
 
 def test_invalid_spacy_boolean_env_value_raises(monkeypatch: MonkeyPatch) -> None:

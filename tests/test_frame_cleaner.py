@@ -1,10 +1,12 @@
-import pytest
 import subprocess
-from unittest.mock import patch, MagicMock
+from fractions import Fraction
 from pathlib import Path
 from typing import TypedDict, cast
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import numpy.typing as npt
+import pytest
 from lx_dtypes.models.meta.VideoMeta import FrameProcessResult, VideoMeta
 
 # Adjust import based on your actual package structure
@@ -197,6 +199,7 @@ class TestFrameCleanerRefactored:
                 video_path=video_path,
                 endoscope_image_roi=None,
                 endoscope_data_roi_nested=None,
+                source_frame_rate=Fraction(25, 1),
                 output_path=output_path,
                 technique="remove_frames",
             )
@@ -280,6 +283,7 @@ class TestFrameCleanerRefactored:
                 video_path=video_path,
                 endoscope_image_roi=None,
                 endoscope_data_roi_nested=None,
+                source_frame_rate=Fraction(25, 1),
                 output_path=output_path,
                 technique="extract_only",
             )
@@ -317,7 +321,11 @@ class TestFrameCleanerRefactored:
                     ocr_confidence=0.9,
                 ),
             ) as mock_process,
-            patch.object(frame_cleaner, "_mask_video_streaming", return_value=True),
+            patch.object(
+                frame_cleaner,
+                "_mask_video_streaming",
+                return_value=True,
+            ) as mock_mask,
             patch("cv2.VideoCapture") as mock_cv2,
         ):
             mock_cv2_instance = MagicMock()
@@ -328,12 +336,17 @@ class TestFrameCleanerRefactored:
                 video_path=video_path,
                 endoscope_image_roi=None,
                 endoscope_data_roi_nested=None,
+                source_frame_rate=Fraction(30000, 1001),
                 output_path=output_path,
                 technique="mask_overlay",
             )
 
         assert result_path == output_path
         assert mock_process.call_count == 1
+        assert mock_mask.call_args.kwargs["source_frame_rate"] == Fraction(
+            30000,
+            1001,
+        )
         video_meta = VideoMeta.model_validate(meta)
         assert video_meta.first_name == "Thomas"
         assert video_meta.last_name == "Lux"
@@ -609,6 +622,7 @@ class TestFrameCleanerRefactored:
                     video_path=video_path,
                     endoscope_image_roi=None,
                     endoscope_data_roi_nested=None,
+                    source_frame_rate=Fraction(25, 1),
                     output_path=output_path,
                     technique="mask_overlay",
                 )
@@ -659,10 +673,9 @@ class TestFrameCleanerRefactored:
             # Check for select filter construction
             # vf should contain: select='not(eq(n\,10)+eq(n\,11)+eq(n\,12))'
             video_filter = ffmpeg_args[ffmpeg_args.index("-vf") + 1]
-            audio_filter = ffmpeg_args[ffmpeg_args.index("-af") + 1]
             assert "eq(n\\,10)" in video_filter
             assert "eq(n\\,11)" in video_filter
-            assert "between(t\\,0.333333333\\,0.433333333)" in audio_filter
-            assert "eq(n" not in audio_filter
             assert "-c:v" in ffmpeg_args
-            assert ffmpeg_args[ffmpeg_args.index("-c:a") + 1] == "aac"
+            assert "-an" in ffmpeg_args
+            assert "-af" not in ffmpeg_args
+            assert "-c:a" not in ffmpeg_args

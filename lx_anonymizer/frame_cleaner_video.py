@@ -11,7 +11,6 @@ import numpy as np
 from lx_dtypes.models.meta.VideoMeta import (
     FrameRemovalFilterArgs,
     FrameRemovalPlan,
-    VideoFormatProbe,
     VideoRoiBox,
 )
 from lx_dtypes.models.contracts.video_processing import VideoEncoderConfig
@@ -129,11 +128,13 @@ class FrameCleanerVideoMixin:
         self, original_video: Path, frames_to_remove: list[int]
     ) -> FrameRemovalFilterArgs:
         frame_rate = video_utils.detect_video_frame_rate(original_video)
-        vf, af = self._build_frame_drop_filters(frames_to_remove, frame_rate)
-        vf_args, af_args, filter_script_paths = self._build_filter_args(vf, af)
+        video_filter = build_frame_drop_filters(
+            frames_to_remove, frame_rate
+        ).video_filter
+        vf_args, filter_script_paths = self._build_filter_args(video_filter)
         return FrameRemovalFilterArgs(
             vf_args=vf_args,
-            af_args=af_args,
+            af_args=[],
             filter_script_paths=filter_script_paths,
         )
 
@@ -143,9 +144,6 @@ class FrameCleanerVideoMixin:
         plan: FrameRemovalPlan,
         filters: FrameRemovalFilterArgs,
     ) -> None:
-        video_format = VideoFormatProbe.model_validate(
-            video_utils.detect_video_format(plan.original_video)
-        )
         if plan.should_use_named_pipe:
             logger.debug(
                 "Named-pipe frame removal requested; using single-process ffmpeg"
@@ -155,8 +153,6 @@ class FrameCleanerVideoMixin:
             original_video=plan.original_video,
             output_video=plan.output_video,
             vf_args=filters.vf_args,
-            af_args=filters.af_args,
-            has_audio=video_format.has_audio,
             ffmpeg_timeout=plan.ffmpeg_timeout,
         )
 
@@ -187,8 +183,6 @@ class FrameCleanerVideoMixin:
         original_video: Path,
         output_video: Path,
         vf_args: List[str],
-        af_args: List[str],
-        has_audio: bool,
         ffmpeg_timeout: int,
     ) -> None:
         """
@@ -202,8 +196,6 @@ class FrameCleanerVideoMixin:
                     original_video=original_video,
                     pipe_path=pipe_path,
                     vf_args=vf_args,
-                    af_args=af_args,
-                    has_audio=has_audio,
                 )
                 copy_cmd = self._named_pipe_copy_cmd(
                     pipe_path=pipe_path,
@@ -229,12 +221,16 @@ class FrameCleanerVideoMixin:
         original_video: Path,
         pipe_path: Path,
         vf_args: list[str],
-        af_args: list[str],
-        has_audio: bool,
     ) -> list[str]:
-        cmd = ["ffmpeg", "-nostdin", "-y", "-i", str(original_video), *vf_args]
-        if has_audio:
-            cmd.extend(af_args)
+        cmd = [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-i",
+            str(original_video),
+            *vf_args,
+            "-an",
+        ]
         cmd.extend(["-f", "matroska", str(pipe_path)])
         return cmd
 
@@ -250,6 +246,7 @@ class FrameCleanerVideoMixin:
             str(pipe_path),
             "-c",
             "copy",
+            "-an",
             "-movflags",
             "+faststart",
             str(output_video),
@@ -316,8 +313,6 @@ class FrameCleanerVideoMixin:
         original_video: Path,
         output_video: Path,
         vf_args: List[str],
-        af_args: List[str],
-        has_audio: bool,
         ffmpeg_timeout: int,
     ) -> None:
         """
@@ -327,8 +322,6 @@ class FrameCleanerVideoMixin:
             original_video=original_video,
             output_video=output_video,
             vf_args=vf_args,
-            af_args=af_args,
-            has_audio=has_audio,
         )
 
         logger.info(
@@ -346,35 +339,22 @@ class FrameCleanerVideoMixin:
         original_video: Path,
         output_video: Path,
         vf_args: list[str],
-        af_args: list[str],
-        has_audio: bool,
     ) -> list[str]:
         encoder_args = self.build_encoder_cmd("balanced")
-        cmd = ["ffmpeg", "-nostdin", "-y", "-i", str(original_video), *vf_args]
-        if has_audio:
-            if not af_args:
-                raise ValueError(
-                    "audio filter args are required when preserving audio during frame removal"
-                )
-            cmd.extend(
-                [
-                    *af_args,
-                    *encoder_args,
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "128k",
-                    "-movflags",
-                    "+faststart",
-                    str(output_video),
-                ]
-            )
-            return cmd
-
+        cmd = [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-i",
+            str(original_video),
+            *vf_args,
+            "-an",
+        ]
         cmd.extend(
             [
                 *encoder_args,
-                "-an",
+                "-movflags",
+                "+faststart",
                 str(output_video),
             ]
         )
@@ -486,29 +466,12 @@ class FrameCleanerVideoMixin:
     def _frame_ranges(indices: List[int]) -> List[Tuple[int, int]]:
         return build_frame_ranges(indices)
 
-    def _build_frame_drop_filters(
-        self,
-        frames_to_remove: List[int],
-        frame_rate: float = video_utils.DEFAULT_VIDEO_FRAME_RATE,
-    ) -> Tuple[str, str]:
-        filters = build_frame_drop_filters(frames_to_remove, frame_rate)
-        return filters.video_filter, filters.audio_filter
+    def _build_filter_args(self, video_filter: str) -> Tuple[List[str], List[Path]]:
+        if len(video_filter) < 8000:
+            return ["-vf", video_filter], []
 
-    def _build_filter_args(
-        self, vf: str, af: str
-    ) -> Tuple[List[str], List[str], List[Path]]:
-        if len(vf) + len(af) < 8000:
-            return ["-vf", vf], ["-af", af], []
-
-        script_paths: List[Path] = []
-        vf_script = self._write_filter_script(vf, "vf")
-        af_script = self._write_filter_script(af, "af")
-        script_paths.extend([vf_script, af_script])
-        return (
-            ["-filter_script:v", str(vf_script)],
-            ["-filter_script:a", str(af_script)],
-            script_paths,
-        )
+        vf_script = self._write_filter_script(video_filter, "vf")
+        return ["-filter_script:v", str(vf_script)], [vf_script]
 
     @staticmethod
     def _write_filter_script(content: str, prefix: str) -> Path:

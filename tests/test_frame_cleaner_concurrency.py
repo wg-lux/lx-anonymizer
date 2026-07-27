@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ def test_frame_cleaner_rejects_concurrent_instance_reuse(tmp_path: Path) -> None
                 video_path=tmp_path / "input.mp4",
                 endoscope_image_roi=None,
                 endoscope_data_roi_nested=None,
+                source_frame_rate=Fraction(25, 1),
             )
     finally:
         cleaner._run_lock.release()  # pyright: ignore[reportPrivateUsage]

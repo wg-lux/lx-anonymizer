@@ -252,7 +252,14 @@ class FrameMetadataExtractor:
             result_meta.safe_update(inferred)
             merged = result_meta.to_dict()
 
-        logger.info(f"Merged metadata: {merged}")
+        populated_fields = sorted(
+            key for key, value in merged.items() if self._is_nonblank(value)
+        )
+        logger.debug(
+            "Metadata merge completed: populated_field_count=%d populated_fields=%s",
+            len(populated_fields),
+            populated_fields,
+        )
         return merged
 
     # ---------- helpers ----------

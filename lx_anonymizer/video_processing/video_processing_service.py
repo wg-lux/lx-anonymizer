@@ -32,6 +32,7 @@ class VideoProcessingService:
             str(input_video),
             "-c",
             "copy",
+            "-an",
             str(output_video),
         ]
         logger.info(f"Stream copy video: {input_video} -> {output_video}")
@@ -80,8 +81,7 @@ class VideoProcessingService:
                 str(input_video),
                 "-vf",
                 vf,
-                "-c:a",
-                "copy",
+                "-an",
                 str(output_video),
             ]
             logger.debug(f"Masking ffmpeg command: {' '.join(cmd)}")
@@ -107,6 +107,7 @@ class VideoProcessingService:
                     "-y",
                     "-i",
                     str(input_video),
+                    "-an",
                     str(tmpdir_path / "frame_%05d.png"),
                 ]
                 subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
@@ -130,6 +131,7 @@ class VideoProcessingService:
                     "libx264",
                     "-pix_fmt",
                     "yuv420p",
+                    "-an",
                     str(output_video),
                 ]
                 subprocess.run(

@@ -1375,7 +1375,7 @@ requires-dist = [
     { name = "gender-guesser", specifier = ">=0.4.0" },
     { name = "hezar", marker = "extra == 'cpu'", specifier = ">=0.42.0" },
     { name = "hezar", marker = "extra == 'gpu'", specifier = ">=0.42.0" },
-    { name = "lx-dtypes", specifier = ">=0.2.1" },
+    { name = "lx-dtypes", specifier = ">=0.2.8" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18.2" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "onnxruntime", specifier = ">=1.25.1" },
@@ -1424,7 +1424,7 @@ provides-extras = ["evaluation", "dev", "cpu", "gpu"]
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.1"
+version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1447,9 +1447,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/11/25608ca577ff89e4190025020548fd127fba90c06be97e1b7373168f1379/lx_dtypes-0.2.1.tar.gz", hash = "sha256:68a990ef63eb0c55c272f5c63459c6f9e9682acb15696be34ccf4e51dccdee4a", size = 2086274, upload-time = "2026-07-17T14:41:41.715Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/6d/9d272538ecc43f392482999c32a0070e5a136863249d996b8cdcba700c2b/lx_dtypes-0.2.8.tar.gz", hash = "sha256:ee5774e330d0a539ec1f58a8b74a6a85596cf523f4d254f8b57e5565c6d382ab", size = 2097763, upload-time = "2026-07-27T08:26:23.54Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/a9/dc3067b3b92ea78a5ebdb05e04f815411c62eb69375b9e9c133b22c61026/lx_dtypes-0.2.1-py3-none-any.whl", hash = "sha256:d0dfcc22bbaa93db5740ce82ab76494e9f9aa4fcc5e0ffbdffcd7bd1e3d99d59", size = 633557, upload-time = "2026-07-17T14:41:38.218Z" },
+    { url = "https://files.pythonhosted.org/packages/61/9c/c39ef8cd97be09293f01ea13aeb3d9ef2581c2e7f0803af22344d8f720c1/lx_dtypes-0.2.8-py3-none-any.whl", hash = "sha256:cc9177c896fe2d4035afa15b625ec855a480aecd33ae249077739f54974130bc", size = 645147, upload-time = "2026-07-27T08:26:19.508Z" },
 ]
 
 [[package]]

@@ -1,9 +1,11 @@
-import re
+import importlib
 import os
+import re
+import subprocess
+import sys
 from datetime import datetime
 from typing import (
     Any,
-    Callable,
     Final,
     Mapping,
     Optional,
@@ -20,7 +22,6 @@ from spacy.matcher import Matcher
 from spacy.tokens import Span, Token
 
 from lx_anonymizer.config import settings
-from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ner.determine_gender import determine_gender
 from lx_anonymizer.regex_patterns import (
     DATE_8_DIGIT_RE,
@@ -29,6 +30,7 @@ from lx_anonymizer.regex_patterns import (
     REPORT_ENTRY_DATE_RE,
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -223,16 +225,26 @@ class SpacyModelManager:
     @classmethod
     def _download_model(cls, model_name: str) -> None:
         try:
-            from spacy.cli.download import download as download_model  # type: ignore[reportUnknownVariableType]
-
-            download = cast(Callable[[str], None], download_model)
-            download(model_name)
-        except SystemExit as exc:
+            subprocess.run(
+                [sys.executable, "-m", "spacy", "download", model_name],
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 "spaCy model download failed with exit code "
-                f"{exc.code!r}. Install '{model_name}' in the runtime environment "
+                f"{exc.returncode!r}. Install '{model_name}' in the runtime "
+                "environment "
                 f"or disable {cls.AUTO_DOWNLOAD_ENV}/{cls.SETTINGS_AUTO_DOWNLOAD_ENV}."
             ) from exc
+        except OSError as exc:
+            raise RuntimeError(
+                "Could not start the current Python runtime to download spaCy model "
+                f"'{model_name}': {exc}."
+            ) from exc
+
+        # The package was installed into the running interpreter's environment.
+        # Refresh finder caches before the immediate spacy.load() retry.
+        importlib.invalidate_caches()
 
     @classmethod
     def _download_did_not_make_model_loadable_message(cls, model_name: str) -> str:

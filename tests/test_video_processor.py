@@ -81,13 +81,9 @@ def test_mask_video_uses_configured_encoder(
         "-vf",
     ]
     video_codec_index = captured_cmd.index("-c:v")
-    audio_codec_index = captured_cmd.index("-c:a")
     assert captured_cmd[video_codec_index : video_codec_index + 2] == [
         "-c:v",
         "libx264",
     ]
-    assert video_codec_index < audio_codec_index
-    assert captured_cmd[audio_codec_index : audio_codec_index + 2] == [
-        "-c:a",
-        "copy",
-    ]
+    assert "-an" in captured_cmd
+    assert "-c:a" not in captured_cmd

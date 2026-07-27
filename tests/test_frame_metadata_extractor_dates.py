@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
@@ -60,3 +62,25 @@ def test_unlabelled_overlay_dates_use_older_date_as_dob() -> None:
 
     assert metadata["dob"] == "1994-03-21"
     assert metadata["examination_date"] == "2024-02-15"
+
+
+def test_metadata_merge_tracking_reports_fields_without_nullable_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    extractor = FrameMetadataExtractor()
+
+    with caplog.at_level(logging.DEBUG):
+        merged = extractor.merge_metadata(
+            {"file_path": "video.mp4"},
+            {"first_name": "Thomas"},
+        )
+
+    assert merged["first_name"] == "Thomas"
+    tracking_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Metadata merge completed:")
+    ]
+    assert len(tracking_messages) == 1
+    assert "first_name" in tracking_messages[0]
+    assert "None" not in tracking_messages[0]

@@ -186,18 +186,18 @@ Settings are loaded from environment variables and an optional `.env` file. See
 [`SETTINGS.md`](SETTINGS.md) for a quick overview and example configuration.
 
 ## Model downloads
-The default German spaCy model is `de_core_news_sm`. Source installs with `uv`
-use the locked model wheel automatically. If you are running in another
-environment and see a missing-model error, install it explicitly:
+The default German spaCy model is `de_core_news_sm`. On first use, LX Anonymizer
+loads the model if it is installed and otherwise downloads it with the same
+Python interpreter that is running the application. To pre-install it, run:
 ```bash
 python -m spacy download de_core_news_sm
 ```
 
 Clinical/strict deployments fail loudly when the configured model is missing.
-For non-clinical local development you can either install the model, set
-`LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD=1` or `SPACY_AUTO_DOWNLOAD=True` to allow an
-explicit runtime download, or unset `LX_ANONYMIZER_SPACY_STRICT`/`SPACY_STRICT`
-to use the degraded blank fallback.
+Automatic download is enabled by default. Set
+`LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD=0` or `SPACY_AUTO_DOWNLOAD=False` to disable
+network installation. Outside clinical/strict profiles, disabling it permits
+the degraded blank fallback.
 
 Start a compatible LLM server exposing either an OpenAI-compatible API or Ollama:
 ```bash

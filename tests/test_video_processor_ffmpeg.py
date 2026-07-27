@@ -91,7 +91,7 @@ def test_extract_frames_uses_fast_png_settings(
     assert "-q:v" not in captured_cmd
 
 
-def test_remove_frames_streaming_uses_single_process_time_based_audio_filter(
+def test_remove_frames_streaming_uses_single_process_and_removes_audio(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -142,12 +142,9 @@ def test_remove_frames_streaming_uses_single_process_time_based_audio_filter(
     assert "-f" not in captured_cmd
     assert "matroska" not in captured_cmd
     assert "-vf" in captured_cmd
-    assert "-af" in captured_cmd
+    assert "-af" not in captured_cmd
+    assert "-an" in captured_cmd
 
     video_filter = captured_cmd[captured_cmd.index("-vf") + 1]
-    audio_filter = captured_cmd[captured_cmd.index("-af") + 1]
     assert "eq(n\\,10)" in video_filter
-    assert "between(t\\,0.333333333\\,0.433333333)" in audio_filter
-    assert "eq(n" not in audio_filter
     assert captured_cmd[captured_cmd.index("-c:v") + 1] == "libx264"
-    assert captured_cmd[captured_cmd.index("-c:a") + 1] == "aac"

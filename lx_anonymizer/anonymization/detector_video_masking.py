@@ -51,7 +51,7 @@ class DetectorVideoMasker:
         ) as temp_dir:
             video_only = Path(temp_dir) / "masked-video.mp4"
             summary = self._mask_frames(input_video, video_only)
-            self._mux_original_audio(video_only, input_video, output_video)
+            self._finalize_video_only(video_only, output_video)
 
         if not output_video.is_file() or output_video.stat().st_size <= 0:
             raise RuntimeError("Detector-assisted video output is missing or empty")
@@ -133,26 +133,18 @@ class DetectorVideoMasker:
         )
 
     @staticmethod
-    def _mux_original_audio(
-        masked_video: Path, original_video: Path, output_video: Path
-    ) -> None:
+    def _finalize_video_only(masked_video: Path, output_video: Path) -> None:
         command = [
             "ffmpeg",
             "-nostdin",
             "-y",
             "-i",
             str(masked_video),
-            "-i",
-            str(original_video),
             "-map",
             "0:v:0",
-            "-map",
-            "1:a?",
             "-c:v",
             "copy",
-            "-c:a",
-            "aac",
-            "-shortest",
+            "-an",
             "-movflags",
             "+faststart",
             str(output_video),

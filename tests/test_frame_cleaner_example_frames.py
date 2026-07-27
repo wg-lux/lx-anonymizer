@@ -1,10 +1,10 @@
+from fractions import Fraction
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import numpy.typing as npt
 import pytest
-
 
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
@@ -69,6 +69,7 @@ def test_example_frames_populate_sensitive_meta_text_fields() -> None:
             video_path=Path("dummy_input.mp4"),
             endoscope_image_roi=None,
             endoscope_data_roi_nested=None,
+            source_frame_rate=Fraction(25, 1),
             output_path=Path("dummy_output.mp4"),
             technique="extract_only",
         )
