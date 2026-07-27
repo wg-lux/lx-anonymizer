@@ -315,6 +315,13 @@ class ReportReader(ReportReaderExtractionMixin):
         request: ReportAnonymizationRequestV2,
     ) -> ReportAnonymizationResultV2:
         """Process one immutable report snapshot into an attempt-local artifact."""
+        if (
+            request.output_directory.is_symlink()
+            or not request.output_directory.is_dir()
+        ):
+            raise AnonymizationArtifactError(
+                "attempt output directory is no longer a regular directory"
+            )
         source_identity_before = self._report_file_identity(request.source_path)
         if source_identity_before[2] != request.source_size_bytes:
             raise SourceIdentityMismatchError(
@@ -328,7 +335,12 @@ class ReportReader(ReportReaderExtractionMixin):
         attempt_name = str(request.attempt_id)
         temporary_path = request.output_directory / f".{attempt_name}.part.pdf"
         artifact_path = request.output_directory / f"{attempt_name}.pdf"
-        if temporary_path.exists() or artifact_path.exists():
+        if (
+            temporary_path.exists()
+            or temporary_path.is_symlink()
+            or artifact_path.exists()
+            or artifact_path.is_symlink()
+        ):
             raise ArtifactAlreadyExistsError(
                 f"attempt output already exists: {attempt_name}"
             )
@@ -377,7 +389,12 @@ class ReportReader(ReportReaderExtractionMixin):
             artifact_size = temporary_path.stat().st_size
             artifact_sha256 = self._report_file_sha256(temporary_path)
             self._sync_file(temporary_path)
-            os.link(temporary_path, artifact_path)
+            try:
+                os.link(temporary_path, artifact_path)
+            except FileExistsError as exc:
+                raise ArtifactAlreadyExistsError(
+                    f"attempt output already exists: {attempt_name}"
+                ) from exc
             temporary_path.unlink()
             self._sync_directory_best_effort(request.output_directory)
             result_v2 = ReportAnonymizationResultV2(
