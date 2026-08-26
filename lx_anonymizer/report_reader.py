@@ -332,6 +332,15 @@ class ReportReader(ReportReaderExtractionMixin):
         finally:
             os.close(descriptor)
 
+    @staticmethod
+    def _sensitive_meta_from_report_output(
+        report_meta: Mapping[str, object],
+    ) -> SensitiveMeta:
+        """Project clinical fields from report output that also has diagnostics."""
+        sensitive_meta = SensitiveMeta()
+        sensitive_meta.safe_update(report_meta)
+        return sensitive_meta
+
     def process_report_v2(
         self,
         request: ReportAnonymizationRequestV2,
@@ -448,7 +457,9 @@ class ReportReader(ReportReaderExtractionMixin):
                 source_sha256=request.source_sha256,
                 original_text=result.text,
                 anonymized_text=result.anonymized_text,
-                extracted_metadata=SensitiveMeta.model_validate(result.report_meta),
+                extracted_metadata=self._sensitive_meta_from_report_output(
+                    result.report_meta
+                ),
                 artifact_path=artifact_path,
                 artifact_sha256=artifact_sha256,
                 artifact_size_bytes=artifact_size,

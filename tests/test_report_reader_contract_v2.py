@@ -74,7 +74,11 @@ def _reader_with_fake_pipeline() -> ReportReader:
         return ReportProcessResult(
             text="original",
             anonymized_text="anonymized",
-            report_meta={"patient_first_name": "ANON"},
+            report_meta={
+                "patient_first_name": "ANON",
+                "cropping_enabled": False,
+                "paper_evaluation_metrics": {"schema_version": "1.0"},
+            },
             anonymized_pdf_path=output_path,
         )
 
