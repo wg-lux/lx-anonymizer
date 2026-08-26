@@ -5,12 +5,16 @@ video imports. The canonical cross-repository contract and all implementation
 status are owned by the `endoreg-db` feature
 `video_storage_normalization`, specifically:
 
-- `endoreg-db/docs/video_import_concurrency_contract.md`;
-- `endoreg-db/docs/video_storage_normalization.md`;
-- `endoreg-db/feature-tracking/VideoStorageNormalization.yml`.
+- [cross-repository concurrency contract](https://github.com/wg-lux/endoreg-db/blob/main/docs/video_import_concurrency_contract.md);
+- [video storage normalization runbook](https://github.com/wg-lux/endoreg-db/blob/main/docs/video_storage_normalization.md);
+- [VideoStorageNormalization feature definition](https://github.com/wg-lux/endoreg-db/blob/main/feature-tracking/VideoStorageNormalization.yml).
 
 This document is an implementation reference, not an independent roadmap or
-completion tracker.
+completion tracker. It may make the component rules stricter, but it may not
+reassign durable state, storage, publication, retry, or cleanup ownership. If
+the documents conflict, the `endoreg-db` contract and feature definition
+prevail. Boundary changes must update both contracts and record the paired
+repository revisions in review evidence.
 
 ## Component Role
 

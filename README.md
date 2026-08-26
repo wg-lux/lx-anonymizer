@@ -389,7 +389,9 @@ See [`tests/test_report_reader_init.py`](tests/test_report_reader_init.py) and [
 - **Hardware Detection**: Automatically detects and uses available hardware acceleration (NVENC, QuickSync)
 
 ## Data directories
-By default, outputs live in `~/etc/lx-anonymizer/{data,temp}`. Adjust them in [`lx_anonymizer/directory_setup.py`](lx_anonymizer/directory_setup.py). Clean `temp` regularly to avoid large intermediate artefacts.
+By default, outputs live in `~/etc/lx-anonymizer/{data,temp}`. Adjust them in
+[`lx_anonymizer/setup/directory_setup.py`](lx_anonymizer/setup/directory_setup.py).
+Clean `temp` regularly to avoid large intermediate artefacts.
 
 ## Development workflow
 - **Code quality**: `uv run flake8` for linting and formatting

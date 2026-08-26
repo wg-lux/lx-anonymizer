@@ -84,3 +84,26 @@ def test_metadata_merge_tracking_reports_fields_without_nullable_payload(
     assert len(tracking_messages) == 1
     assert "first_name" in tracking_messages[0]
     assert "None" not in tracking_messages[0]
+
+
+def test_metadata_merge_projects_clinical_fields_from_ocr_diagnostics() -> None:
+    merged = FrameMetadataExtractor().merge_metadata(
+        {
+            "backend": "rapidocr",
+            "method": "rapidocr+roi",
+            "roi_count": 2,
+            "roi_0": "15/02/2024 09:51:09",
+            "roi_0_elapse": 0.7,
+            "text_regions": [{"text": "Thomas"}],
+            "processing_time": 1.8,
+        },
+        {
+            "first_name": "Thomas",
+            "examination_date": "2024-02-15",
+        },
+    )
+
+    assert merged["first_name"] == "Thomas"
+    assert merged["examination_date"] == "2024-02-15"
+    assert "backend" not in merged
+    assert "text_regions" not in merged

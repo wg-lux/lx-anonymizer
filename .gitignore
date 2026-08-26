@@ -224,3 +224,6 @@ cython_debug/
 # Large local installers and crash dumps.
 *.AppImage
 hs_err_pid*.log
+
+# Browser captures may contain credentials, request bodies, or patient context.
+*.har

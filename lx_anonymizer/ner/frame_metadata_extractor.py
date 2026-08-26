@@ -217,9 +217,12 @@ class FrameMetadataExtractor:
           * newer date → examination_date
           * older date → dob
         """
-        # Start from existing, then apply new safely
-        result_meta = SensitiveMeta.from_dict(existing or {})
-        result_meta.safe_update(new or {})
+        # OCR backends include diagnostic keys alongside clinical fields.
+        # SensitiveMeta.safe_update is the explicit mixed-payload boundary; using
+        # it also remains compatible with older lx-dtypes releases.
+        result_meta = SensitiveMeta()
+        result_meta.safe_update(existing)
+        result_meta.safe_update(new)
 
         merged = result_meta.to_dict()
 
