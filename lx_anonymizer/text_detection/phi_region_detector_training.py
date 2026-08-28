@@ -3,14 +3,40 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, Sequence, cast
+from typing import Any, Protocol, Sequence, TypedDict, cast
+
+from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetectorConfig
 
 
 class PhiRegionDetectorTrainingError(RuntimeError):
     """Raised when PHI-region detector training cannot be started or completed."""
+
+
+class PhiRegionDetectorRuntimeSettings(TypedDict):
+    PHI_REGION_DETECTOR_MODEL_PATH: str
+    PHI_REGION_DETECTOR_MODEL_SHA256: str
+    PHI_REGION_DETECTOR_CONFIDENCE: float
+    PHI_REGION_DETECTOR_NMS_THRESHOLD: float
+    PHI_REGION_DETECTOR_INPUT_SIZE: int
+    PHI_REGION_DETECTOR_RESIZE_MODE: str
+    PHI_REGION_DETECTOR_BOX_FORMAT: str
+    PHI_REGION_DETECTOR_SCORE_FORMAT: str
+    PHI_REGION_DETECTOR_CLASS_IDS: str
+
+
+class PhiRegionDetectorTrainingArtifact(TypedDict):
+    kind: str
+    path: str
+    checksum_sha256: str
+    bytes: int
+
+
+class PhiRegionDetectorTrainingSummary(TypedDict):
+    status: str
+    artifacts: list[PhiRegionDetectorTrainingArtifact]
 
 
 class _TrainerState(Protocol):
@@ -78,25 +104,80 @@ class PhiRegionDetectorTrainingConfig:
             )
 
 
+@dataclass(frozen=True)
+class PhiRegionDetectorTrainingResult:
+    """Typed, serializable bridge from a training run to runtime processing."""
+
+    model_path: Path
+    model_sha256: str
+    checkpoint_path: Path | None
+    onnx_path: Path | None
+    meta_path: Path
+    training_result_path: Path
+    run_dir: Path
+    settings: PhiRegionDetectorRuntimeSettings
+    config: dict[str, object]
+    training_result: PhiRegionDetectorTrainingSummary
+
+    def detector_config(self, *, required: bool = True) -> PhiRegionDetectorConfig:
+        """Create the checksum-pinned config accepted by every processing strand."""
+        if self.onnx_path is None:
+            raise PhiRegionDetectorTrainingError(
+                "A runtime detector config requires an exported ONNX artifact"
+            )
+        return PhiRegionDetectorConfig(
+            model_path=self.model_path,
+            confidence_threshold=self.settings["PHI_REGION_DETECTOR_CONFIDENCE"],
+            nms_threshold=self.settings["PHI_REGION_DETECTOR_NMS_THRESHOLD"],
+            input_size=self.settings["PHI_REGION_DETECTOR_INPUT_SIZE"],
+            box_format="yolo_xywh",
+            score_format="class_scores",
+            allowed_class_ids=_parse_class_ids(
+                self.settings["PHI_REGION_DETECTOR_CLASS_IDS"]
+            ),
+            resize_mode="letterbox",
+            expected_sha256=self.model_sha256,
+            required=required,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "model_path": str(self.model_path),
+            "model_sha256": self.model_sha256,
+            "checkpoint_path": (
+                str(self.checkpoint_path) if self.checkpoint_path else None
+            ),
+            "onnx_path": str(self.onnx_path) if self.onnx_path else None,
+            "meta_path": str(self.meta_path),
+            "training_result_path": str(self.training_result_path),
+            "run_dir": str(self.run_dir),
+            "settings": dict(self.settings),
+            "config": dict(self.config),
+            "training_result": {
+                "status": self.training_result["status"],
+                "artifacts": [dict(item) for item in self.training_result["artifacts"]],
+            },
+        }
+
+
 def train_phi_region_detector(
     config: PhiRegionDetectorTrainingConfig,
-) -> dict[str, Any]:
+) -> PhiRegionDetectorTrainingResult:
     """
     Train a YOLO-style PHI-region detector and export the OpenCV DNN ONNX artifact.
 
     The resulting ONNX file matches the runtime contract in
     `phi_region_detector.py`: RGB input, square image size, YOLO xywh boxes, and
-    class-score rows. Training dependencies are intentionally optional so normal
-    anonymizer deployments do not pull a full training stack.
+    class-score rows. Training is part of the standard installation so continuous
+    model-improvement loops can use the same package as runtime processing.
     """
 
     try:
         from ultralytics import YOLO  # type: ignore[import-not-found]
     except ImportError as exc:
         raise PhiRegionDetectorTrainingError(
-            "PHI detector training requires the optional dependency `ultralytics`. "
-            "Install it with `pip install lx-anonymizer[training]` before "
-            "starting this run."
+            "The standard installation is incomplete: PHI detector training "
+            "requires the bundled `ultralytics` dependency."
         ) from exc
 
     yolo_factory = cast(_YoloFactory, YOLO)
@@ -151,40 +232,27 @@ def train_phi_region_detector(
     meta_path = run_dir / "phi_region_detector_meta.json"
     training_result_path = run_dir / "phi_region_detector_training_result.json"
 
-    result: dict[str, Any] = {
-        "model_path": str(model_path),
-        "model_sha256": model_sha256,
-        "checkpoint_path": str(checkpoint_path) if checkpoint_path else None,
-        "onnx_path": str(onnx_path) if onnx_path else None,
-        "meta_path": str(meta_path),
-        "training_result_path": str(training_result_path),
-        "run_dir": str(run_dir),
-        "settings": {
-            "PHI_REGION_DETECTOR_MODEL_PATH": str(model_path),
-            "PHI_REGION_DETECTOR_MODEL_SHA256": model_sha256,
-            "PHI_REGION_DETECTOR_CONFIDENCE": config.confidence_threshold,
-            "PHI_REGION_DETECTOR_NMS_THRESHOLD": config.nms_threshold,
-            "PHI_REGION_DETECTOR_INPUT_SIZE": config.input_size,
-            "PHI_REGION_DETECTOR_RESIZE_MODE": "letterbox",
-            "PHI_REGION_DETECTOR_BOX_FORMAT": "yolo_xywh",
-            "PHI_REGION_DETECTOR_SCORE_FORMAT": "class_scores",
-            "PHI_REGION_DETECTOR_CLASS_IDS": config.class_ids,
-        },
-        "config": _jsonable_config(config),
-        "training_result": {
-            "status": "success",
-            "artifacts": [
-                {
-                    "kind": "checkpoint" if onnx_path is None else "model",
-                    "path": str(model_path),
-                    "checksum_sha256": model_sha256,
-                    "bytes": model_path.stat().st_size,
-                }
-            ],
-        },
+    runtime_settings: PhiRegionDetectorRuntimeSettings = {
+        "PHI_REGION_DETECTOR_MODEL_PATH": str(model_path),
+        "PHI_REGION_DETECTOR_MODEL_SHA256": model_sha256,
+        "PHI_REGION_DETECTOR_CONFIDENCE": config.confidence_threshold,
+        "PHI_REGION_DETECTOR_NMS_THRESHOLD": config.nms_threshold,
+        "PHI_REGION_DETECTOR_INPUT_SIZE": config.input_size,
+        "PHI_REGION_DETECTOR_RESIZE_MODE": "letterbox",
+        "PHI_REGION_DETECTOR_BOX_FORMAT": "yolo_xywh",
+        "PHI_REGION_DETECTOR_SCORE_FORMAT": "class_scores",
+        "PHI_REGION_DETECTOR_CLASS_IDS": config.class_ids,
     }
+    artifacts: list[PhiRegionDetectorTrainingArtifact] = [
+        {
+            "kind": "checkpoint" if onnx_path is None else "model",
+            "path": str(model_path),
+            "checksum_sha256": model_sha256,
+            "bytes": model_path.stat().st_size,
+        }
+    ]
     if checkpoint_path and checkpoint_path != model_path:
-        result["training_result"]["artifacts"].append(
+        artifacts.append(
             {
                 "kind": "checkpoint",
                 "path": str(checkpoint_path),
@@ -193,11 +261,24 @@ def train_phi_region_detector(
             }
         )
 
+    result = PhiRegionDetectorTrainingResult(
+        model_path=model_path,
+        model_sha256=model_sha256,
+        checkpoint_path=checkpoint_path,
+        onnx_path=onnx_path,
+        meta_path=meta_path,
+        training_result_path=training_result_path,
+        run_dir=run_dir,
+        settings=runtime_settings,
+        config=_jsonable_config(config),
+        training_result={"status": "success", "artifacts": artifacts},
+    )
+
     meta_path.write_text(
-        json.dumps(result, indent=2, ensure_ascii=True), encoding="utf-8"
+        json.dumps(result.to_dict(), indent=2, ensure_ascii=True), encoding="utf-8"
     )
     training_result_path.write_text(
-        json.dumps(result["training_result"], indent=2, ensure_ascii=True),
+        json.dumps(result.training_result, indent=2, ensure_ascii=True),
         encoding="utf-8",
     )
     return result
@@ -256,7 +337,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
         deterministic=not args.non_deterministic,
     )
-    print(json.dumps(train_phi_region_detector(config), ensure_ascii=True))
+    print(json.dumps(train_phi_region_detector(config).to_dict(), ensure_ascii=True))
     return 0
 
 
@@ -305,11 +386,29 @@ def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def _jsonable_config(config: PhiRegionDetectorTrainingConfig) -> dict[str, Any]:
-    data = asdict(config)
-    data["dataset_yaml"] = str(config.dataset_yaml)
-    data["output_dir"] = str(config.output_dir)
-    return data
+def _jsonable_config(config: PhiRegionDetectorTrainingConfig) -> dict[str, object]:
+    return {
+        "dataset_yaml": str(config.dataset_yaml),
+        "output_dir": str(config.output_dir),
+        "base_model": config.base_model,
+        "run_name": config.run_name,
+        "epochs": config.epochs,
+        "batch_size": config.batch_size,
+        "input_size": config.input_size,
+        "device": config.device,
+        "workers": config.workers,
+        "patience": config.patience,
+        "export_onnx": config.export_onnx,
+        "confidence_threshold": config.confidence_threshold,
+        "nms_threshold": config.nms_threshold,
+        "class_ids": config.class_ids,
+        "seed": config.seed,
+        "deterministic": config.deterministic,
+    }
+
+
+def _parse_class_ids(value: str) -> frozenset[int]:
+    return frozenset(int(part.strip()) for part in value.split(",") if part.strip())
 
 
 if __name__ == "__main__":

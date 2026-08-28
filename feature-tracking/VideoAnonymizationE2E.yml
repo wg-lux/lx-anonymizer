@@ -1,0 +1,89 @@
+schema_version: "1.0"
+id: video_anonymization_e2e
+name: Video anonymization end-to-end assurance
+description: >-
+  Attempt-scoped, fail-closed test coverage for the public FrameCleaner video
+  boundary and the real OpenCV/FFmpeg anonymization path.
+owners:
+  - lx-anonymizer maintainers
+production_critical: true
+tracking:
+  state: completed
+  history:
+    - at: "2026-08-28T11:36:06+02:00"
+      by: codex-video-aaa-20260828
+      state: completed
+      note: Real-media and fail-closed public-boundary coverage verified.
+source_documents:
+  - path: docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+    disposition: normative
+    note: Defines immutable input, candidate ownership, isolation, and cleanup rules.
+definition_of_done:
+  - id: public_video_boundary
+    category: data_integrity
+    title: Public video invocations fail closed at ownership boundaries
+    acceptance:
+      - Missing, empty, non-regular, and symbolic-link sources are rejected before processing.
+      - Pre-existing, suffixless, or source-equal output paths are rejected before processing.
+      - Non-positive rational source frame rates are rejected before processing.
+      - Failed processing removes only the invocation-owned partial candidate and preserves the source.
+      - Frame-removal and masking failures raise instead of returning apparent success.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/python
+        - -m
+        - pytest
+        - tests/test_video_anonymization_e2e.py
+        - -q
+      timeout_seconds: 300
+    assessment:
+      status: verified
+      evidence:
+        - kind: code
+          reference: lx_anonymizer/frame_cleaner.py
+        - kind: test
+          reference: tests/test_video_anonymization_e2e.py
+        - kind: command
+          reference: >-
+            .devenv/state/venv/bin/python -m pytest
+            tests/test_video_anonymization_e2e.py -q (11 passed)
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright (0 errors, 8 existing warnings)
+      assessed_by: codex-video-aaa-20260828
+      assessed_at: "2026-08-28T11:36:06+02:00"
+  - id: real_media_pipeline
+    category: functionality
+    title: Real media crosses the complete local anonymization pipeline
+    acceptance:
+      - A real source is decoded, analyzed through FrameCleaner, masked by FFmpeg, and probed again.
+      - The candidate preserves dimensions and frame count, removes audio, and visibly blacks pixels outside the ROI.
+      - The immutable source digest is unchanged and the returned metadata validates against VideoMeta.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/python
+        - -m
+        - pytest
+        - tests/test_video_anonymization_e2e.py
+        - -q
+      timeout_seconds: 300
+    assessment:
+      status: verified
+      evidence:
+        - kind: test
+          reference: >-
+            tests/test_video_anonymization_e2e.py::test_clean_video_masks_real_media_and_preserves_the_attempt_contract
+        - kind: command
+          reference: >-
+            .devenv/state/venv/bin/python -m pytest -q
+            (310 passed, 3 skipped in 39.15s)
+        - kind: command
+          reference: >-
+            .devenv/state/venv/bin/ruff check tests/test_video_anonymization_e2e.py
+            tests/test_frame_cleaner.py tests/test_frame_cleaner_example_frames.py
+            (passed)
+      assessed_by: codex-video-aaa-20260828
+      assessed_at: "2026-08-28T11:36:06+02:00"

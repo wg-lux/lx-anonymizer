@@ -4,19 +4,19 @@ from lx_dtypes.models.contracts.report_anonymization import (
     REPORT_ANONYMIZATION_CONTRACT_VERSION,
     ReportAnonymizationContractVersion,
     ReportAnonymizationErrorCode,
-    ReportAnonymizationFailureV2,
+    ReportAnonymizationFailure,
     ReportAnonymizationOptions,
     ReportAnonymizationPhase,
-    ReportAnonymizationProvenanceV2,
-    ReportAnonymizationRequestV2,
-    ReportAnonymizationResultV2,
+    ReportAnonymizationProvenance,
+    ReportAnonymizationRequest,
+    ReportAnonymizationResult,
     ReportAnonymizationWarningCode,
-    ReportAnonymizationWarningV2,
-    ReportArtifactValidationV2,
+    ReportAnonymizationWarning,
+    ReportArtifactValidation,
 )
 
 
-"""Compatibility imports and runtime errors for report anonymization v2.
+"""Canonical shared imports and runtime errors for report anonymization.
 
 The serializable contract is owned by lx_dtypes. Runtime exceptions remain in
 lx-anonymizer because they describe local execution behavior, not persisted or
@@ -56,15 +56,15 @@ __all__ = [
     "ReportAnonymizationContractVersion",
     "ReportAnonymizationError",
     "ReportAnonymizationErrorCode",
-    "ReportAnonymizationFailureV2",
+    "ReportAnonymizationFailure",
     "ReportAnonymizationOptions",
     "ReportAnonymizationPhase",
-    "ReportAnonymizationProvenanceV2",
-    "ReportAnonymizationRequestV2",
-    "ReportAnonymizationResultV2",
+    "ReportAnonymizationProvenance",
+    "ReportAnonymizationRequest",
+    "ReportAnonymizationResult",
     "ReportAnonymizationWarningCode",
-    "ReportAnonymizationWarningV2",
-    "ReportArtifactValidationV2",
+    "ReportAnonymizationWarning",
+    "ReportArtifactValidation",
     "ReportContractError",
     "SourceIdentityMismatchError",
 ]

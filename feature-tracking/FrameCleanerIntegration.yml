@@ -1,0 +1,54 @@
+schema_version: "1.0"
+id: frame_cleaner_integration
+name: FrameCleaner application integration
+description: >-
+  Maintain the public FrameCleaner boundary as the typed, fail-closed
+  lx-anonymizer implementation used by attempt-scoped video import workflows.
+owners:
+  - lx-anonymizer maintainers
+production_critical: true
+source_documents:
+  - path: docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+    disposition: normative
+    note: Defines the local component boundary and links to the canonical endoreg-db contract.
+invariants:
+  - A FrameCleaner instance is mutable per-video state and is never shared by concurrent attempts.
+  - Input media is immutable and output is one unpublished attempt-owned candidate.
+  - Integrity, FFmpeg, FFprobe, masking, and cancellation failures raise loudly and clean only invocation-owned temporary artifacts.
+definition_of_done:
+  - id: typed_public_boundary
+    category: requirements
+    title: FrameCleaner exposes a typed invocation and result boundary
+    acceptance:
+      - Public inputs are normalized once and invalid paths, frame rates, and ownership combinations are rejected before processing.
+      - Video metadata and sampled-frame observations validate against lx-dtypes models.
+      - Input-dependent return values are explicit and do not use unstructured dictionaries as the internal contract.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pyright]
+      timeout_seconds: 600
+  - id: real_media_pipeline
+    category: functionality
+    title: Real video crosses decode, analysis, masking, and verification
+    acceptance:
+      - A real source is decoded, sampled through FrameCleaner, masked by FFmpeg, and probed again.
+      - The candidate preserves required video properties and visibly masks pixels outside the selected ROI.
+      - The source digest remains unchanged throughout successful and failing invocations.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_video_anonymization_e2e.py, -q]
+      timeout_seconds: 600
+  - id: attempt_isolation
+    category: data_integrity
+    title: Concurrent attempts remain isolated and fail closed
+    acceptance:
+      - Concurrent use of one FrameCleaner instance is rejected.
+      - Every subprocess, temporary directory, named pipe, and output path has one invocation owner and bounded cancellation.
+      - Failed processing removes only the invocation-owned partial candidate and cannot report apparent success.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_frame_cleaner_concurrency.py, tests/test_video_anonymization_e2e.py, -q]
+      timeout_seconds: 600

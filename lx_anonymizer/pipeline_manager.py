@@ -9,14 +9,33 @@ import numpy as np
 import numpy.typing as npt
 import pymupdf  # type: ignore[import-untyped]
 from PIL import Image
+
 from lx_anonymizer.anonymization.blur import blur_function
+from lx_anonymizer.config import settings
+from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
+from lx_anonymizer.llm.llm_service import LLMService
+from lx_anonymizer.ner.flair_NER import flair_NER_German
+from lx_anonymizer.ner.spacy_NER import spacy_NER_German
+from lx_anonymizer.nlp.fuzzy_matching import (
+    correct_box_for_new_text,
+    fuzzy_match_snippet,
+)
+from lx_anonymizer.ocr.ocr import (
+    tesseract_full_image_ocr,
+    tesseract_on_boxes,
+    trocr_on_boxes,
+)
+from lx_anonymizer.pseudonymization.names_generator import (
+    gender_and_handle_device_names,
+    gender_and_handle_separate_names,
+)
 from lx_anonymizer.region_processing.box_operations import (
     close_to_box,
     filter_empty_boxes,
     find_or_create_close_box,
     get_dominant_color,
 )
-
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.setup.device_reader import read_background_color, read_name_boxes
 from lx_anonymizer.setup.directory_setup import (
@@ -24,28 +43,13 @@ from lx_anonymizer.setup.directory_setup import (
     create_temp_directory,
 )
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
-from lx_anonymizer.ner.flair_NER import flair_NER_German
-from lx_anonymizer.nlp.fuzzy_matching import (
-    correct_box_for_new_text,
-    fuzzy_match_snippet,
+from lx_anonymizer.text_detection.phi_region_detector import (
+    PhiRegionDetector,
+    detect_phi_regions,
 )
-from lx_anonymizer.pseudonymization.names_generator import (
-    gender_and_handle_device_names,
-    gender_and_handle_separate_names,
-)
-from lx_anonymizer.ocr.ocr import (
-    tesseract_full_image_ocr,
-    tesseract_on_boxes,
-    trocr_on_boxes,
-)
-from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
-from lx_anonymizer.llm.llm_service import LLMService
-from lx_anonymizer.config import settings
-from lx_anonymizer.ner.spacy_NER import spacy_NER_German
 from lx_anonymizer.text_detection.tesseract_text_detection import (
     tesseract_text_detection,
 )
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 # Import CRAFT text detection if available (requires hezar)
 try:
@@ -212,6 +216,8 @@ def detect_combined_text_boxes(
     min_confidence: float,
     width: int,
     height: int,
+    region_detector: PhiRegionDetector | None = None,
+    phi_regions: Sequence[BoundingBox] | None = None,
 ) -> List[BoundingBox]:
     east_boxes, _ = east_text_detection(
         img_path, east_path, min_confidence, width, height
@@ -224,7 +230,12 @@ def detect_combined_text_boxes(
         craft_boxes, _ = craft_text_detection(img_path, min_confidence, width, height)
     else:
         logger.info("CRAFT is unavailable; continuing with EAST and Tesseract")
-    return east_boxes + tesseract_boxes + craft_boxes
+    if phi_regions is None:
+        with Image.open(img_path) as source_image:
+            phi_regions = detect_phi_regions(
+                source_image.convert("RGB"), region_detector
+            )
+    return east_boxes + tesseract_boxes + craft_boxes + list(phi_regions)
 
 
 _detect_combined_text_boxes = detect_combined_text_boxes
@@ -311,6 +322,7 @@ def process_images_with_OCR_and_NER(
     height: int = 320,
     skip_blur: bool = False,
     skip_reassembly: bool = False,
+    region_detector: PhiRegionDetector | None = None,
 ) -> Tuple[ModifiedImageMap, ProcessingResult]:
     """
     Process images with OCR and NER.
@@ -376,8 +388,26 @@ def process_images_with_OCR_and_NER(
                         blurred_image_path, last_name_box, background_color
                     )
 
+            with Image.open(img_path) as detector_image:
+                phi_regions = detect_phi_regions(
+                    detector_image.convert("RGB"), region_detector
+                )
+            if not skip_blur:
+                for phi_region in phi_regions:
+                    blurred_image_path = blur_function(
+                        blurred_image_path,
+                        phi_region,
+                        background_color,
+                    )
+
             combined_boxes = detect_combined_text_boxes(
-                img_path, east_path, min_confidence, width, height
+                img_path,
+                east_path,
+                min_confidence,
+                width,
+                height,
+                region_detector,
+                phi_regions,
             )
             all_ocr_results, all_ocr_confidences = _run_ocr_for_boxes(
                 img_path, combined_boxes

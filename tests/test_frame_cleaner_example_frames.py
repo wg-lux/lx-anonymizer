@@ -29,7 +29,7 @@ def _sensitive_meta_text_fields() -> list[str]:
 
 
 @pytest.mark.integration
-def test_example_frames_populate_sensitive_meta_text_fields() -> None:
+def test_example_frames_populate_sensitive_meta_text_fields(tmp_path: Path) -> None:
     """
     Run the FrameCleaner extraction pipeline on example frames and
     report which SensitiveMeta text fields are populated.
@@ -56,6 +56,8 @@ def test_example_frames_populate_sensitive_meta_text_fields() -> None:
         pytest.skip("Example frames exist but none could be loaded by cv2.imread")
 
     frame_cleaner = FrameCleaner(use_llm=False)
+    video_path = tmp_path / "dummy_input.mp4"
+    video_path.write_bytes(b"source")
 
     with (
         patch.object(frame_cleaner, "_iter_video", return_value=stream_frames),
@@ -66,11 +68,11 @@ def test_example_frames_populate_sensitive_meta_text_fields() -> None:
         mock_cap.get.return_value = float(len(stream_frames))
 
         _, meta = frame_cleaner.clean_video(
-            video_path=Path("dummy_input.mp4"),
+            video_path=video_path,
             endoscope_image_roi=None,
             endoscope_data_roi_nested=None,
             source_frame_rate=Fraction(25, 1),
-            output_path=Path("dummy_output.mp4"),
+            output_path=tmp_path / "dummy_output.mp4",
             technique="extract_only",
         )
 
@@ -90,7 +92,7 @@ def test_example_frames_populate_sensitive_meta_text_fields() -> None:
     populated_high_signal = [k for k in high_signal_fields if populated.get(k)]
 
     baseline_fields = {"file_path", "center"}
-    non_baseline_populated = [k for k in populated.keys() if k not in baseline_fields]
+    non_baseline_populated = [k for k in populated if k not in baseline_fields]
 
     # Diagnostic integration behavior:
     # These example frames may be too degraded / non-textual for reliable OCR.

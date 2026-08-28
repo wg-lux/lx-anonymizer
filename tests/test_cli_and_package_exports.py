@@ -1,6 +1,9 @@
 import argparse
+import json
 import sys
+from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
 
@@ -10,12 +13,20 @@ from lx_anonymizer import settings as settings_module
 from lx_anonymizer.config import Settings, settings
 
 
-def test_build_parser_defaults_and_required_args() -> None:
+def test_build_parser_lists_commands() -> None:
     parser = cli.build_parser()
     assert isinstance(parser, argparse.ArgumentParser)
+    help_text = parser.format_help()
+    assert "image" in help_text
+    assert "report" in help_text
+    assert "evaluate-midi-b" in help_text
+    assert "train-phi" in help_text
 
-    args = parser.parse_args(["-i", "input.png"])
-    assert args.image == "input.png"
+
+def test_build_image_parser_defaults_and_legacy_input() -> None:
+    args = cli.build_image_parser().parse_args(["-i", "input.png"])
+    assert args.input is None
+    assert args.legacy_input == Path("input.png")
     assert args.east is None
     assert args.device == "olympus_cv_1500"
     assert args.validation is False
@@ -52,14 +63,11 @@ def test_cli_main_success_path(
     monkeypatch.setitem(
         sys.modules, "lx_anonymizer.setup.custom_logger", fake_logger_module
     )
-    monkeypatch.setattr(
-        sys,
-        "argv",
+    rc = cli.main(
         [
-            "lx-anonymizer",
-            "-i",
+            "image",
             "input.pdf",
-            "-east",
+            "--east",
             "model.pb",
             "-d",
             "default",
@@ -71,15 +79,15 @@ def test_cli_main_success_path(
             "-e",
             "480",
             "-v",
-        ],
+        ]
     )
-
-    rc = cli.main()
     out = capsys.readouterr().out
 
     assert rc == 0
     assert logger_calls == [True]
-    assert pipeline_calls == [("input.pdf", "model.pb", "default", True, 0.7, 640, 480)]
+    assert pipeline_calls == [
+        ("input.pdf", Path("model.pb"), "default", True, 0.7, 640, 480)
+    ]
     assert "done" in out
 
 
@@ -97,10 +105,109 @@ def test_cli_main_missing_dependency_exits_with_code_2(
     monkeypatch.setitem(
         sys.modules, "lx_anonymizer.setup.custom_logger", fake_logger_module
     )
-    monkeypatch.setattr(sys, "argv", ["lx-anonymizer", "-i", "input.pdf"])
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["-i", "input.pdf"])
+    assert exc_info.value.code == 2
+
+
+def test_cli_delegates_utility_subcommand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+    fake_module = ModuleType("lx_anonymizer.evaluation.midi_b")
+
+    def fake_main(argv: object = None) -> int:
+        calls.append(argv)
+        return 7
+
+    fake_module.main = fake_main  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "lx_anonymizer.evaluation.midi_b", fake_module)
+
+    assert cli.main(["evaluate-midi-b", "--help"]) == 7
+    assert calls == [["--help"]]
+
+
+def test_report_command_builds_typed_attempt_and_prints_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "report.pdf"
+    source.write_bytes(b"%PDF-1.4\nexample")
+    output_directory = tmp_path / "attempt"
+    captured: dict[str, object] = {}
+
+    fake_contracts = ModuleType("lx_anonymizer.report_contracts")
+
+    class FakeOptions:
+        def __init__(self, **values: object) -> None:
+            captured["options"] = values
+
+    class FakeRequest:
+        def __init__(self, **values: object) -> None:
+            captured["request"] = values
+
+    fake_contracts.ReportAnonymizationOptions = FakeOptions  # type: ignore[attr-defined]
+    fake_contracts.ReportAnonymizationRequest = FakeRequest  # type: ignore[attr-defined]
+
+    fake_reader = ModuleType("lx_anonymizer.report_reader")
+
+    class FakeResult:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {"artifact_path": str(output_directory / "candidate.pdf")}
+
+    class FakeReportReader:
+        def __init__(self, *, locale: str | None) -> None:
+            captured["locale"] = locale
+
+        def process_report(self, request: object) -> FakeResult:
+            captured["processed_request"] = request
+            return FakeResult()
+
+    fake_reader.ReportReader = FakeReportReader  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "lx_anonymizer.report_contracts", fake_contracts)
+    monkeypatch.setitem(sys.modules, "lx_anonymizer.report_reader", fake_reader)
+
+    assert (
+        cli.main(
+            [
+                "report",
+                str(source),
+                "--output-directory",
+                str(output_directory),
+                "--locale",
+                "de_DE",
+                "--ensemble",
+                "--no-llm",
+            ]
+        )
+        == 0
+    )
+
+    request_values = cast(dict[str, object], captured["request"])
+    assert request_values["source_path"] == source.resolve()
+    assert request_values["source_size_bytes"] == source.stat().st_size
+    assert request_values["output_directory"] == output_directory.resolve()
+    assert captured["options"] == {
+        "use_ensemble": True,
+        "verbose": True,
+        "use_llm": False,
+    }
+    assert captured["locale"] == "de_DE"
+    assert json.loads(capsys.readouterr().out)["artifact_path"].endswith(
+        "candidate.pdf"
+    )
+
+
+@pytest.mark.parametrize("suffix", [".png", ".txt", ""])
+def test_report_command_rejects_non_pdf_input(tmp_path: Path, suffix: str) -> None:
+    source = tmp_path / f"report{suffix}"
+    source.write_bytes(b"not a PDF")
 
     with pytest.raises(SystemExit) as exc_info:
-        cli.main()
+        cli.main(["report", str(source), "-o", str(tmp_path / "output")])
+
     assert exc_info.value.code == 2
 
 

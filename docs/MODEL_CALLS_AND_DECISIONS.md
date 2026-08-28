@@ -309,7 +309,7 @@ The selected technique does not invoke another learned model
 ```text
 construct ReportReader
   -> load spaCy extractors and probe provider model availability
-  -> obtain text from caller, PDF text layer, or image Tesseract OCR
+  -> verify the immutable PDF snapshot and obtain its text layer
   -> if document text is shorter than 50 characters:
        render pages
        -> ensemble OCR or Tesseract
@@ -329,26 +329,18 @@ examiner, endoscope, examination), `SensitiveRegionCropper`, and `Anonymizer`
 (`report_reader.py:55-125`). The shared spaCy loading/fallback behavior is the
 same as described for `FrameCleaner`.
 
-Unlike `FrameCleaner`, report initialization always calls the LLM factory; it
-does not gate provider discovery on `LLM_ENABLED` (`report_reader.py:127-155`).
-If a current model is available, `llm_available` is true.
+Like `FrameCleaner`, report initialization gates provider discovery on
+`LLM_ENABLED`. If discovery is enabled and a current model is available,
+`llm_available` is true.
 
 ### Initial text acquisition
 
-The input precedence is text, then PDF, then image (`report_reader.py:346-360`):
-
-- Caller-provided text causes no OCR call.
-- PDF text is extracted with pdfplumber, with no model inference
-  (`report_reader_extraction.py:109-133`).
-- A direct image input immediately makes a full-image Tesseract call with PSM 6
-  and also obtains word boxes (`report_reader.py:362-369`;
-  `ocr/ocr.py:235-259`).
-
-Text-only requests skip the OCR fallback. For PDF/image requests, text with at
-least 50 non-whitespace characters is accepted as-is. Shorter text triggers page
-rendering and the fallback below (`report_reader.py:371-397`). Thus a direct image
-can be OCRed a second time when its first Tesseract result is shorter than 50
-characters.
+The canonical request identifies exactly one immutable PDF snapshot. Its text is
+extracted with pdfplumber, with no model inference
+(`report_reader_extraction.py:109-133`). Text with at least 50 non-whitespace
+characters is accepted as-is. Shorter text triggers page rendering and the
+fallback below. Direct image and caller-provided text inputs are not part of the
+canonical processing contract.
 
 If final OCR text is shorter than 10 characters, non-text-only processing returns
 without metadata extraction or anonymization.
@@ -493,9 +485,9 @@ redaction re-detects content from page images.
 
 ### Alternate report cropping and visualization paths
 
-`ReportReader.process_report_with_cropping()` first runs the normal
-`process_report()` flow and then, when cropping is enabled and a PDF is present,
-uses `SensitiveRegionCropper.crop_sensitive_regions()`
+`ReportReader.process_report_with_cropping()` runs the shared internal extraction
+flow and then, when cropping is enabled and a PDF is present, uses
+`SensitiveRegionCropper.crop_sensitive_regions()`
 (`report_reader_extraction.py:389-543`). This is a separate path from the EAST
 redactor:
 

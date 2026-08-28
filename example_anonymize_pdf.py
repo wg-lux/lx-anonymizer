@@ -4,50 +4,56 @@ Example script showing how to use ReportReader to create anonymized PDFs
 with sensitive regions blackened out.
 """
 
+import hashlib
 from pathlib import Path
+from uuid import uuid4
 
+from lx_anonymizer.report_contracts import (
+    ReportAnonymizationOptions,
+    ReportAnonymizationRequest,
+)
 from lx_anonymizer.report_reader import ReportReader
 
 
-def example_basic_anonymization():
-    """Example: Process report with text anonymization only (no PDF masking)"""
-    print("=" * 60)
-    print("Example 1: Text Anonymization Only")
-    print("=" * 60)
-
-    reader = ReportReader()
-
-    # Process report - returns text only
-    original_text, anonymized_text, metadata, anonymized_pdf = reader.process_report(
-        pdf_path="path/to/report.pdf",
-        create_anonymized_pdf=False,  # Default: no PDF masking
+def _request(
+    source_path: Path,
+    output_directory: Path,
+    *,
+    use_llm: bool | None = None,
+) -> ReportAnonymizationRequest:
+    source_bytes = source_path.read_bytes()
+    output_directory.mkdir(parents=True, exist_ok=True)
+    return ReportAnonymizationRequest(
+        attempt_id=uuid4(),
+        source_path=source_path,
+        source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+        source_size_bytes=len(source_bytes),
+        output_directory=output_directory,
+        options=ReportAnonymizationOptions(use_llm=use_llm),
     )
 
-    print(f"Extracted metadata: {metadata.keys()}")
-    print(f"Anonymized PDF created: {anonymized_pdf is not None}")
 
-
-def example_pdf_with_masking():
-    """Example: Process report and create PDF with sensitive regions blackened"""
+def example_pdf_anonymization() -> None:
+    """Process one immutable PDF into an attempt-owned anonymized artifact."""
     print("\n" + "=" * 60)
     print("Example 2: PDF with Blackened Sensitive Regions")
     print("=" * 60)
 
     reader = ReportReader()
 
-    # Process report and create anonymized PDF
-    original_text, anonymized_text, metadata, anonymized_pdf = reader.process_report(
-        pdf_path="path/to/report.pdf",
-        create_anonymized_pdf=True,  # Enable PDF masking!
-        anonymized_pdf_output_path="output/report_anonymized.pdf",  # Optional: custom path
+    result = reader.process_report(
+        _request(
+            Path("path/to/report.pdf"),
+            Path("output/attempt"),
+        )
     )
 
-    print(f"Extracted metadata: {metadata.keys()}")
-    print(f"Anonymized PDF created: {anonymized_pdf}")
-    print(f"Anonymized PDF path in metadata: {metadata.get('anonymized_pdf_path')}")
+    print(f"Extracted metadata: {result.extracted_metadata.model_fields_set}")
+    print(f"Anonymized PDF created: {result.artifact_path}")
+    print(f"Artifact SHA-256: {result.artifact_sha256}")
 
 
-def example_with_cropping():
+def example_with_cropping() -> None:
     """Example: Advanced processing with region cropping"""
     print("\n" + "=" * 60)
     print("Example 3: Advanced Processing with Cropping")
@@ -68,7 +74,7 @@ def example_with_cropping():
     print(f"Anonymized PDF: {anonymized_pdf}")
 
 
-def example_llm_extraction():
+def example_llm_extraction() -> None:
     """Example: Use LLM for enhanced metadata extraction"""
     print("\n" + "=" * 60)
     print("Example 4: LLM-Enhanced Extraction with PDF Masking")
@@ -76,32 +82,31 @@ def example_llm_extraction():
 
     reader = ReportReader()
 
-    # Use LLM for better metadata extraction + create masked PDF
-    original_text, anonymized_text, metadata, anonymized_pdf = reader.process_report(
-        pdf_path="path/to/report.pdf",
-        use_llm=True,  # Use provider-backed LLM metadata extraction
-        create_anonymized_pdf=True,  # Create masked PDF
+    result = reader.process_report(
+        _request(
+            Path("path/to/report.pdf"),
+            Path("output/llm-attempt"),
+            use_llm=True,
+        )
     )
 
     print(f"LLM available: {reader.llm_available}")
     print(f"Ollama available: {reader.ollama_available}")
-    print(f"Extracted metadata: {metadata.keys()}")
-    print(f"Anonymized PDF: {anonymized_pdf}")
+    print(f"Extracted metadata: {result.extracted_metadata.model_fields_set}")
+    print(f"Anonymized PDF: {result.artifact_path}")
 
 
 if __name__ == "__main__":
     print("ReportReader PDF Anonymization Examples")
     print("=" * 60)
     print("\nThese examples show different ways to anonymize medical reports:")
-    print("1. Text-only anonymization (fast)")
-    print("2. PDF with blackened sensitive regions (recommended)")
-    print("3. Advanced with region cropping (for analysis)")
-    print("4. LLM-enhanced extraction (if Ollama available)")
+    print("1. Canonical PDF anonymization")
+    print("2. Advanced region cropping (for analysis)")
+    print("3. LLM-enhanced extraction (if a provider is available)")
     print("\n" + "=" * 60)
 
     # Uncomment to run examples:
-    # example_basic_anonymization()
-    # example_pdf_with_masking()
+    # example_pdf_anonymization()
     # example_with_cropping()
     # example_llm_extraction()
 

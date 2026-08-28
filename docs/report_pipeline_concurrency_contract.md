@@ -40,7 +40,7 @@ liegen.
 
 ```python
 class ReportAnonymizationRequest(BaseModel):
-    contract_version: Literal["report_anonymization_v2"]
+    contract_version: Literal["report_anonymization"]
     attempt_id: UUID
     source_path: Path
     source_sha256: str
@@ -67,8 +67,8 @@ vom Host zugesicherten Hash nicht still neu interpretieren.
 ## Ergebnisvertrag
 
 ```python
-class ReportAnonymizationResultV2(BaseModel):
-    contract_version: Literal["report_anonymization_v2"]
+class ReportAnonymizationResult(BaseModel):
+    contract_version: Literal["report_anonymization"]
     attempt_id: UUID
     source_sha256: str
     original_text: str
@@ -213,24 +213,20 @@ Eine zentrale Funktion wie `native_capabilities()` ermöglicht dem Host, den
 installierten Wheel-Vertrag zu prüfen. Die `.pyi`-Datei wird aus dem Rust-Code
 generiert und in Continuous Integration auf einen leeren Diff geprüft.
 
-## Kompatibilität
+## Kanonische API
 
-`report_anonymization_v2` wird additiv neben dem bisherigen
-`ReportReader.process_report(...)` eingeführt. Der Kompatibilitätsadapter:
-
-- übersetzt den alten Aufruf genau einmal in das neue Request-Modell;
-- gibt weiterhin das bestehende Vier-Tupel zurück;
-- enthält keine eigene Anonymisierungs- oder Speicherlogik;
-- erzeugt eine Deprecation-Warnung ohne Patientendaten;
-- wird erst entfernt, wenn `endoreg-db` keine unterstützte Version mehr mit
-  dem Altvertrag betreibt.
+`ReportReader.process_report(request)` ist der einzige öffentliche,
+produktionsfähige Verarbeitungsvertrag. Lose optionale Parameter, Tupelrückgaben
+und Laufzeit-Fallbacks auf ältere Reader-Verträge sind nicht unterstützt. Eine
+Bibliothek ohne den kanonischen Vertrag ist nicht bereit für den Berichtsimport
+und muss beim Integrationscheck laut scheitern.
 
 Die unterstützte Matrix muss mindestens enthalten:
 
 | Host | Bibliothek | Vertrag | Erwartung |
 | --- | --- | --- | --- |
-| aktuelle `endoreg-db`-Version | älteste unterstützte `lx-anonymizer`-Version | Altadapter oder v2 | Vertragstest erfolgreich |
-| aktuelle `endoreg-db`-Version | aktuelle `lx-anonymizer`-Version | v2 | alle Capability- und Parallelitätstests erfolgreich |
+| aktuelle `endoreg-db`-Version | älteste unterstützte `lx-anonymizer`-Version | kanonisch | Vertragstest erfolgreich |
+| aktuelle `endoreg-db`-Version | aktuelle `lx-anonymizer`-Version | kanonisch | alle Capability- und Parallelitätstests erfolgreich |
 | Produktionsprofil mit fehlender Pflichtfähigkeit | beliebig | unvollständig | Readiness schlägt fehl |
 
 Konkrete Versionsnummern werden in der Release-Konfiguration gepflegt, nicht

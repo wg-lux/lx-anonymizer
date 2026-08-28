@@ -3,19 +3,20 @@ from pathlib import Path
 from typing import Callable, TypeAlias, cast
 
 import cv2
-import pytesseract  # type: ignore
 import numpy as np
+import pytesseract  # type: ignore
+from lx_dtypes.models.contracts.image_processing import ImageProcessingResultPayload
 from PIL import Image
 
 from lx_anonymizer.config import settings
+from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
+from lx_anonymizer.pipeline_manager import process_images_with_OCR_and_NER
 from lx_anonymizer.sensitive_meta_interface import (
     SensitiveMeta,
     sensitive_meta_to_dict,
 )
-from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
-from lx_anonymizer.pipeline_manager import process_images_with_OCR_and_NER
 from lx_anonymizer.setup.custom_logger import get_logger
-from lx_dtypes.models.contracts.image_processing import ImageProcessingResultPayload
+from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetector
 
 logger = get_logger(__name__)
 
@@ -25,7 +26,8 @@ OcrTextOutput: TypeAlias = bytes | str | dict[str, bytes | str]
 ModifiedImageMap: TypeAlias = dict[tuple[str, str], str]
 ProcessPipelineResult: TypeAlias = tuple[ModifiedImageMap, dict[str, object]]
 ProcessImagesCallable: TypeAlias = Callable[
-    [Path, str, str, float, int, int, bool, bool], ProcessPipelineResult
+    [Path, str, str, float, int, int, bool, bool, PhiRegionDetector | None],
+    ProcessPipelineResult,
 ]
 OcrToStringCallable: TypeAlias = Callable[[Image.Image], OcrTextOutput]
 
@@ -90,6 +92,7 @@ def process_image(
     skip_blur: bool = False,
     skip_reassembly: bool = False,
     disable_llm: bool = False,
+    region_detector: PhiRegionDetector | None = None,
 ) -> tuple[Path, dict[str, object]]:
     """
     Process a single image or PDF page
@@ -169,6 +172,7 @@ def process_image(
         height,
         skip_blur,
         skip_reassembly,
+        region_detector,
     )
     modified_images_map = pipeline_result_tuple[0]
     pipeline_result = pipeline_result_tuple[1]

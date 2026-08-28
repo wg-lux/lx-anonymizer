@@ -67,24 +67,20 @@ flake outputs. You do not need to commit or publish local `result` or
 pip install lx-anonymizer
 ```
 
-The base package installs the public API, CLI, PDF/image processing, spaCy-based
-metadata extraction, and PyTesseract fallback OCR. Install extras only when you
-need the corresponding feature set:
+The base package installs the public API, CLI, PDF/image processing, detector
+training, spaCy-based metadata extraction, and PyTesseract fallback OCR. Install
+extras only when you need the corresponding hardware or development feature set:
 ```bash
-pip install "lx-anonymizer[ocr]"      # RapidOCR, TesserOCR, TrOCR, CRAFT helpers
-pip install "lx-anonymizer[llm]"      # LLM client-side helpers
-pip install "lx-anonymizer[nlu]"      # Flair NER
-pip install "lx-anonymizer[training]" # PHI-region detector training helpers
-pip install "lx-anonymizer[django]"   # Django integration
 pip install "lx-anonymizer[dev]"      # local development tooling
+pip install "lx-anonymizer[cpu]"      # CPU PyTorch wheel selection
+pip install "lx-anonymizer[gpu]"      # CUDA PyTorch wheel selection
 ```
 
 ### From source
 ```bash
 git clone https://github.com/wg-lux/lx-anonymizer.git
 cd lx-anonymizer
-uv sync
-uv sync --extra cpu  # CPU-only PyTorch-dependent features
+uv sync --extra dev --extra cpu  # development + CPU PyTorch stack
 uv sync --extra gpu  # CUDA 12.8 PyTorch-dependent features
 ```
 
@@ -126,10 +122,9 @@ make pypi-wheel PYPI_COMPATIBILITY=manylinux_2_34
 CI uses `maturin --manylinux auto` via `PyO3/maturin-action` to produce the
 published Linux wheels.
 
-The published Python package remains the baseline install path, with optional
-feature sets enabled through extras such as `[ocr]`, `[llm]`, `[nlu]`, and
-`[training]`. Development and build tools such as `pre-commit`, `ziglang`, and
-type stub packages are intentionally kept out of the runtime dependency set.
+The published Python package is the complete baseline install path. Only
+hardware-specific PyTorch wheel selection and development/build tools remain in
+extras; type stubs and test tools stay outside the runtime dependency set.
 
 ### Native extension
 
@@ -217,46 +212,137 @@ The EAST detector now downloads on first use, not on import. TrOCR and other opt
 
 ### CLI Usage
 
-#### Image / PDF Pipeline
+Install the package, then use `lx-anonymizer --help` as the single command
+index. Every workflow has its own help page:
+
 ```bash
-# Process a single image or PDF with the packaged console script
-lx-anonymizer -i report.pdf
+# List all image, report, evaluation, dataset, export, and training commands
+lx-anonymizer --help
 
-# Use a custom EAST model and device profile
-lx-anonymizer -i frame.png -east /models/frozen_east_text_detection.pb -d olympus_cv_1500
-
-# Return validation metadata in addition to the output path
-lx-anonymizer -i report.pdf -V
+# Show options for one workflow without importing or running the pipeline
+lx-anonymizer report --help
+lx-anonymizer evaluate-midi-b --help
 ```
 
-**Useful CLI options:**
-- `-d/--device` selects the device profile used for ROI handling.
-- `-c/--min-confidence`, `-w/--width`, and `-e/--height` tune EAST detection.
-- `-V/--validation` returns extra validation metadata.
-- `python -m lx_anonymizer.cli --help` shows the same CLI help as `lx-anonymizer --help`.
+#### Image / PDF Pixel Pipeline
+
+```bash
+# Process a single image or PDF
+lx-anonymizer image frame.png
+
+# Use a custom EAST model and device profile
+lx-anonymizer image frame.png \
+  --east /models/frozen_east_text_detection.pb \
+  --device olympus_cv_1500
+
+# Return validation metadata in addition to the output path
+lx-anonymizer image report.pdf --validation
+
+# The historical spelling remains available
+lx-anonymizer -i frame.png
+```
+
+#### Report Pipeline
+
+The report command validates the source snapshot and writes one unpublished PDF
+candidate to an attempt-owned directory. Its standard output is one JSON object,
+which can be consumed directly by shell tooling.
+
+```bash
+lx-anonymizer report report.pdf \
+  --output-directory ./attempt-output \
+  --no-llm
+
+# Optional extraction modes and a caller-supplied attempt identity
+lx-anonymizer report report.pdf \
+  --output-directory ./attempt-output \
+  --attempt-id 12345678-1234-5678-1234-567812345678 \
+  --ensemble \
+  --llm
+```
+
+The output directory may be new or existing, but the generated attempt artifact
+must not already exist. A new UUID is generated when `--attempt-id` is omitted.
+
+#### Evaluation, Export, Dataset, and Training Tools
+
+The previously separate console scripts are also available as subcommands:
+
+```bash
+lx-anonymizer evaluate-midi-b --help
+lx-anonymizer export-dicom --help
+lx-anonymizer generate-phi-data --help
+lx-anonymizer generate-endoscopy-stickers --help
+lx-anonymizer generate-midi-b-phi-data --help
+lx-anonymizer generate-radphi-data --help
+lx-anonymizer train-phi --help
+```
+
+The historical `lx-anonymizer-evaluate-midi-b`,
+`lx-anonymizer-export-dicom`, `lx-anonymizer-generate-*`, and
+`lx-anonymizer-train-phi` executables remain as compatibility aliases.
+`python -m lx_anonymizer.cli` provides the same command interface.
+
+Video import is deliberately not exposed as a standalone production shell
+workflow. `endoreg-db` owns durable attempts, leases, encrypted staging,
+validation, and publication; it creates one `FrameCleaner` per attempt and uses
+the Python API described below.
 
 ### Python API
 
-It is recommended to call the python api. Here, the main integration is with the endoreg-db package that is tightly integrated with lx-anonymizer to provide a private medical database.
+The three central strands use the same shape: construct a typed request, then
+call `processor.process(request)` to receive a typed result with an
+`artifact_path`. The historical `main(...)`, `clean_video(...)`, and
+`process_report(...)` methods remain compatibility wrappers.
+
+#### Image/PDF API
+
+```python
+from pathlib import Path
+
+from lx_anonymizer import ImageAnonymizer
+from lx_anonymizer.processing_contracts import ImageAnonymizationRequest
+
+attempt_directory = Path("/path/to/image-attempt")
+attempt_directory.mkdir(parents=True)
+result = ImageAnonymizer().process(
+    ImageAnonymizationRequest(
+        source_path=Path("/path/to/image.png"),
+        output_directory=attempt_directory,
+    )
+)
+print(result.artifact_path, result.metadata)
+```
 
 #### ReportReader API
 ```python
+import hashlib
+from pathlib import Path
+from uuid import uuid4
+
 from lx_anonymizer import ReportReader
+from lx_anonymizer.report_contracts import (
+    ReportAnonymizationOptions,
+    ReportAnonymizationRequest,
+)
 
-# Basic usage
+source_path = Path("/path/to/report.pdf")
+source_bytes = source_path.read_bytes()
+attempt_directory = Path("/path/to/attempt")
+attempt_directory.mkdir(parents=True)
+
+request = ReportAnonymizationRequest(
+    attempt_id=uuid4(),
+    source_path=source_path,
+    source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+    source_size_bytes=len(source_bytes),
+    output_directory=attempt_directory,
+    options=ReportAnonymizationOptions(use_ensemble=True, use_llm=True),
+)
+
 reader = ReportReader(locale="de_DE")
-original, anonymized, meta, pdf_path = reader.process_report(
-    pdf_path="/path/to/report.pdf",
-    use_ensemble=True,
-    use_llm=True,
-)
-
-# Create anonymized PDF with blackened sensitive regions
-original, anonymized, meta, anonymized_pdf = reader.process_report(
-    pdf_path="/path/to/report.pdf",
-    create_anonymized_pdf=True,
-    anonymized_pdf_output_path="/path/to/output.pdf"
-)
+result = reader.process(request)
+print(result.artifact_path, result.artifact_sha256)
 
 # Advanced processing with region cropping
 original, anonymized, meta, cropped_regions, anonymized_pdf = reader.process_report_with_cropping(
@@ -267,8 +353,8 @@ original, anonymized, meta, cropped_regions, anonymized_pdf = reader.process_rep
 )
 ```
 
-`ReportReader` is the report-oriented entry point for PDFs, report screenshots, and
-pre-extracted raw text.
+`ReportReader` is the canonical report-oriented entry point for immutable PDF
+snapshots.
 
 `ReportReader(...)` constructor:
 - `report_root_path`: optional base path for report assets.
@@ -277,24 +363,17 @@ pre-extracted raw text.
 - `flags`: optional parsing markers merged with `DEFAULT_SETTINGS["flags"]`.
 - `text_date_format`: output format used for anonymized date text.
 
-`process_report(...)` accepts one primary content source:
-- `pdf_path`: use `pdfplumber` first, then OCR fallback when extracted text is too short.
-- `image_path`: OCR a single report image.
-- `text`: process already extracted text directly without file OCR.
+`process(...)` (and its compatibility alias `process_report(...)`) accepts one strictly validated
+`ReportAnonymizationRequest`. The caller supplies the immutable source identity,
+an attempt-owned output directory, and processing options. The method always
+creates and validates an anonymized PDF without choosing a canonical publication
+path.
 
-`process_report(...)` parameters:
-- `use_ensemble`: enable ensemble OCR on OCR fallback paths.
-- `use_llm`: `True` to try provider-backed extraction, `False` to force SpaCy/regex, `None` to use the instance default.
-- `create_anonymized_pdf`: render a blackened PDF output for PDF inputs.
-- `anonymized_pdf_output_path`: optional explicit path for that anonymized PDF.
+It returns a frozen `ReportAnonymizationResult` containing original and
+anonymized text, typed sensitive metadata, the attempt-local artifact path,
+artifact size and SHA-256, structural PDF validation, and anonymizer provenance.
 
-`process_report(...)` returns:
-- `original_text`: extracted or provided source text.
-- `anonymized_text`: anonymized text output.
-- `report_meta`: metadata dict in the standardized sensitive-meta shape.
-- `anonymized_pdf_path`: `Path | None` for generated anonymized PDFs.
-
-`process_report_with_cropping(...)` extends `process_report(...)` with:
+`process_report_with_cropping(...)` is a separate diagnostic helper with:
 - `crop_output_dir`: where cropped sensitive regions are written.
 - `crop_sensitive_regions`: enable or disable crop extraction.
 - `anonymization_output_dir`: output directory for the crop-based anonymized PDF.
@@ -308,27 +387,25 @@ pre-extracted raw text.
 
 #### FrameCleaner API
 ```python
-from lx_anonymizer.frame_cleaner import FrameCleaner
+from fractions import Fraction
 from pathlib import Path
 
-# Initialize with hardware acceleration
-cleaner = FrameCleaner(use_llm=True)
+from lx_anonymizer.frame_cleaner import FrameCleaner
+from lx_anonymizer.processing_contracts import VideoAnonymizationRequest
 
-# Clean video with mask overlay (preserves all frames)
-cleaned_path, metadata = cleaner.clean_video(
-    video_path=Path("endoscopy.mp4"),
-    endoscope_image_roi={"x": 550, "y": 0, "width": 1350, "height": 1080},
-    endoscope_data_roi_nested={"patient_info": {"x": 10, "y": 10, "width": 300, "height": 50}},
-    technique="mask_overlay"
+result = FrameCleaner(use_llm=True).process(
+    VideoAnonymizationRequest(
+        source_path=Path("endoscopy.mp4"),
+        output_path=Path("attempt/candidate.mp4"),
+        source_frame_rate=Fraction(25, 1),
+        endoscope_image_roi={"x": 550, "y": 0, "width": 1350, "height": 1080},
+        endoscope_data_roi_nested={
+            "patient_info": {"x": 10, "y": 10, "width": 300, "height": 50}
+        },
+        technique="mask_overlay",
+    )
 )
-
-# Remove sensitive frames entirely
-cleaned_path, metadata = cleaner.clean_video(
-    video_path=Path("endoscopy.mp4"),
-    endoscope_image_roi=roi_config,
-    endoscope_data_roi_nested=data_roi_config,
-    technique="remove_frames"
-)
+print(result.artifact_path, result.metadata)
 ```
 
 `FrameCleaner` is the video-oriented entry point for endoscopy footage and
@@ -354,6 +431,35 @@ frame-level overlays.
 `clean_video(...)` returns:
 - `output_video_path`: resulting video path. With `extract_only`, this is still the path chosen for the run.
 - `sensitive_meta`: accumulated metadata dictionary extracted from sampled frames.
+
+#### Retraining and using the region detector
+
+Training is included in the standard installation. Its typed result creates the
+checksum-pinned runtime configuration accepted by every strand:
+
+```python
+from pathlib import Path
+
+from lx_anonymizer import ImageAnonymizer, ReportReader
+from lx_anonymizer.frame_cleaner import FrameCleaner
+from lx_anonymizer.text_detection.phi_region_detector import CustomPhiRegionDetector
+from lx_anonymizer.text_detection.phi_region_detector_training import (
+    PhiRegionDetectorTrainingConfig,
+    train_phi_region_detector,
+)
+
+training = train_phi_region_detector(
+    PhiRegionDetectorTrainingConfig(
+        dataset_yaml=Path("datasets/phi/data.yaml"),
+        output_dir=Path("runs/phi"),
+    )
+)
+detector = CustomPhiRegionDetector(training.detector_config(required=True))
+
+image_processor = ImageAnonymizer(region_detector=detector)
+video_processor = FrameCleaner(region_detector=detector)
+report_processor = ReportReader(region_detector=detector)
+```
 
 ROI guidance:
 - Use `endoscope_image_roi` for the main picture area that may need masking.

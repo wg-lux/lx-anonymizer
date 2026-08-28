@@ -5,10 +5,11 @@ LX Anonymizer package for anonymizing medical reports and images.
 import importlib.metadata
 from typing import TYPE_CHECKING
 
-__all__ = ["ReportReader", "FrameCleaner", "__version__"]
+__all__ = ["ImageAnonymizer", "ReportReader", "FrameCleaner", "__version__"]
 
 if TYPE_CHECKING:
     from lx_anonymizer.frame_cleaner import FrameCleaner
+    from lx_anonymizer.main_with_reassembly import ImageAnonymizer
     from lx_anonymizer.report_reader import ReportReader
 
 try:
@@ -18,6 +19,10 @@ except importlib.metadata.PackageNotFoundError:
 
 
 def __getattr__(name: str):
+    if name == "ImageAnonymizer":
+        from lx_anonymizer.main_with_reassembly import ImageAnonymizer
+
+        return ImageAnonymizer
     if name == "FrameCleaner":
         from lx_anonymizer.frame_cleaner import FrameCleaner
 

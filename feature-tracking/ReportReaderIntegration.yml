@@ -1,0 +1,58 @@
+schema_version: "1.0"
+id: report_reader_integration
+name: ReportReader application integration
+description: >-
+  Maintain ReportReader as the typed, fail-closed lx-anonymizer boundary for
+  extracting metadata and producing anonymized report artifacts from immutable
+  attempt-owned inputs.
+owners:
+  - lx-anonymizer maintainers
+production_critical: true
+source_documents:
+  - path: docs/report_pipeline_concurrency_contract.md
+    disposition: normative
+    note: Defines local processing ownership and the endoreg-db integration boundary.
+  - path: docs/MODEL_CALLS_AND_DECISIONS.md
+    disposition: reference
+    note: Documents OCR, NER, and LLM decision points and capability behavior.
+invariants:
+  - ReportReader processes immutable caller-owned input and returns typed metadata plus an unpublished attempt-owned result.
+  - Durable attempts, leases, fencing, retries, publication, and clinical identity persistence remain outside lx-anonymizer.
+  - Invalid input, contract mismatch, extraction failure, and artifact-integrity failure raise loudly without exposing partial output as success.
+definition_of_done:
+  - id: typed_public_boundary
+    category: requirements
+    title: ReportReader exposes versioned typed request and result contracts
+    acceptance:
+      - External flags and request payloads are normalized once into strict lx-dtypes models.
+      - Results identify the report anonymization contract version and validate metadata and artifact state before return.
+      - Unsupported contract versions and invalid known fields fail validation rather than being silently retained.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_report_reader_contract.py, -q]
+      timeout_seconds: 600
+  - id: report_pipeline
+    category: functionality
+    title: Representative reports cross extraction and anonymization boundaries
+    acceptance:
+      - Supported PDF and image inputs exercise decoding, OCR or text extraction, metadata resolution, and anonymized artifact creation.
+      - Returned metadata propagates through the public result without unvalidated intermediate dictionaries.
+      - Source artifacts remain unchanged during successful and failing invocations.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_report_reader_example_report.py, tests/test_report_reader_contract.py, -q]
+      timeout_seconds: 600
+  - id: capability_and_failure_policy
+    category: data_integrity
+    title: Optional model capabilities and failures remain explicit
+    acceptance:
+      - LLM enablement requires a configured and available provider and is observable in initialization behavior.
+      - Named deterministic OCR, NER, or regex behavior remains available only where the documented capability profile permits it.
+      - Processing failures clean only invocation-owned temporary artifacts and cannot return an apparently complete result.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_report_reader_init.py, tests/test_report_reader_ollama_ocr.py, -q]
+      timeout_seconds: 600

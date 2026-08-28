@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     )
 
     # --- LLM Configuration ---
-    # Local Ollama is enabled by default for OCR and text recognition.
+    # Probe the configured provider by default. ReportReader only enables LLM
+    # processing when that provider is reachable and exposes a usable model.
     LLM_ENABLED: bool = True
     # When enabled, prefer a laptop-friendly local backend by default.
     LLM_PROVIDER: Literal["vllm", "ollama"] = "ollama"

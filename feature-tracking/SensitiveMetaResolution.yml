@@ -1,0 +1,50 @@
+schema_version: "1.0"
+id: sensitive_meta_resolution
+name: Sensitive metadata resolution
+description: >-
+  Stable typed resolution of mixed OCR, NER, report, and LLM metadata payloads
+  at the lx-anonymizer boundary.
+owners:
+  - lx-anonymizer maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+  - path: lx_anonymizer/sensitive_meta_interface.py
+    disposition: normative
+    note: Defines local compatibility behavior around the shared lx_dtypes model.
+definition_of_done:
+  - id: robust_mixed_payload_resolution
+    category: functionality
+    title: Mixed sensitive metadata resolves without partial or untyped state
+    acceptance:
+      - Unknown upstream fields are projected out at the named compatibility boundary.
+      - Blank and null-equivalent values cannot downgrade populated metadata.
+      - Reversed birth and examination dates are corrected after strict date parsing.
+      - Invalid updates are atomic and preserve the typed state model and metadata identity.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/python
+        - -m
+        - pytest
+        - tests/test_sensitive_meta_interface.py
+        - -q
+      timeout_seconds: 300
+    assessment:
+      status: verified
+      evidence:
+        - kind: code
+          reference: lx_anonymizer/sensitive_meta_interface.py
+        - kind: test
+          reference: tests/test_sensitive_meta_interface.py
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright (0 errors)
+        - kind: command
+          reference: focused metadata and consumer tests (84 passed)
+        - kind: command
+          reference: full pytest suite (299 passed, 3 skipped)
+      assessed_by: codex-sensitive-meta-robust-20260827
+      assessed_at: "2026-08-27T11:11:00+02:00"

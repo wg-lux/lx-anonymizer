@@ -1,8 +1,14 @@
+import hashlib
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 
+from lx_anonymizer.report_contracts import (
+    ReportAnonymizationOptions,
+    ReportAnonymizationRequest,
+)
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
@@ -18,7 +24,7 @@ def _sensitive_meta_fields() -> list[str]:
 
 
 @pytest.mark.integration
-def test_example_report_populates_sensitive_meta_fields() -> None:
+def test_example_report_populates_sensitive_meta_fields(tmp_path: Path) -> None:
     """
     Run ReportReader on an example report PDF and verify metadata/text propagation.
 
@@ -37,11 +43,22 @@ def test_example_report_populates_sensitive_meta_fields() -> None:
     ):
         reader = ReportReader()
 
-    original_text, anonymized_text, meta, _ = reader.process_report(
-        pdf_path=pdf_path,
-        use_llm=False,  # force SpaCy/regex path for deterministic local test
-        create_anonymized_pdf=False,
+    source_bytes = pdf_path.read_bytes()
+    output_directory = tmp_path / "attempt"
+    output_directory.mkdir()
+    result = reader.process_report(
+        ReportAnonymizationRequest(
+            attempt_id=uuid4(),
+            source_path=pdf_path,
+            source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+            source_size_bytes=len(source_bytes),
+            output_directory=output_directory,
+            options=ReportAnonymizationOptions(use_llm=False),
+        )
     )
+    original_text = result.original_text
+    anonymized_text = result.anonymized_text
+    meta = result.extracted_metadata.model_dump(mode="json")
 
     if not meta:
         pytest.xfail(

@@ -1,0 +1,81 @@
+schema_version: '1.0'
+id: cli_entrypoints
+name: Discoverable shell entrypoints
+description: >-
+  Provide one discoverable lx-anonymizer command with safe standalone report
+  and image workflows plus grouped access to repository utilities.
+owners:
+  - lx-anonymizer maintainers
+production_critical: false
+tracking:
+  state: active
+  history: []
+source_documents:
+  - path: README.md
+    disposition: reference
+    note: Installation and shell-command examples.
+definition_of_done:
+  - id: command_discovery
+    category: usability
+    title: Users can discover every supported shell workflow from one command
+    acceptance:
+      - lx-anonymizer --help lists the image, report, evaluation, export, dataset, and training commands.
+      - Every listed command provides command-specific help without running its workflow.
+      - Historical standalone console scripts and the lx-anonymizer -i form remain compatible.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/pytest
+        - tests/test_cli_and_package_exports.py
+        - -q
+      timeout_seconds: 120
+    assessment:
+      status: verified
+      evidence:
+        - kind: command
+          reference: .devenv/state/venv/bin/pytest tests/test_cli_and_package_exports.py -q (13 passed)
+        - kind: command
+          reference: >-
+            .devenv/state/venv/bin/python -m lx_anonymizer.cli COMMAND --help
+            completed for every listed command
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright (0 errors; 8 pre-existing warnings)
+        - kind: command
+          reference: >-
+            .devenv/state/venv/bin/ruff check lx_anonymizer/cli.py
+            tests/test_cli_and_package_exports.py (passed)
+      assessed_by: codex-cli-entrypoints-20260828
+      assessed_at: '2026-08-28T12:00:29+02:00'
+  - id: safe_processing_boundaries
+    category: data_integrity
+    title: Shell processing respects report and video ownership boundaries
+    acceptance:
+      - The report command validates an immutable regular PDF and writes one attempt-owned unpublished candidate.
+      - The report command emits the typed result as JSON for shell automation.
+      - Direct production video import is not presented as an lx-anonymizer shell workflow because durable attempt ownership belongs to endoreg-db.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/pytest
+        - tests/test_cli_and_package_exports.py
+        - -q
+      timeout_seconds: 120
+    assessment:
+      status: verified
+      evidence:
+        - kind: test
+          reference: >-
+            tests/test_cli_and_package_exports.py::test_report_command_builds_typed_attempt_and_prints_json
+        - kind: test
+          reference: >-
+            tests/test_cli_and_package_exports.py::test_report_command_rejects_non_pdf_input
+        - kind: review
+          reference: >-
+            docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md;
+            /home/admin/endoreg-db/docs/video_import_concurrency_contract.md;
+            /home/admin/endoreg-db/docs/video_storage_normalization.md;
+            /home/admin/endoreg-db/feature-tracking/VideoStorageNormalization.yml
+      assessed_by: codex-cli-entrypoints-20260828
+      assessed_at: '2026-08-28T12:00:29+02:00'

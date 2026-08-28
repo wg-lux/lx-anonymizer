@@ -133,6 +133,7 @@ class TestFrameCleanerRefactored:
         self,
         frame_cleaner: FrameCleaner,
         mock_frame: npt.NDArray[np.uint8],
+        tmp_path: Path,
     ) -> None:
         """
         Test clean_video by mocking _iter_video.
@@ -141,8 +142,9 @@ class TestFrameCleanerRefactored:
         FrameCleaner pipeline:
         Iteration -> Processing -> Metadata Merge -> Decision -> Output
         """
-        video_path = Path("input.mp4")
-        output_path = Path("output.mp4")
+        video_path = tmp_path / "input.mp4"
+        output_path = tmp_path / "output.mp4"
+        video_path.write_bytes(b"source")
 
         # Define 3 frames to be yielded by the generator
         # Frame 0: Sensitive
@@ -155,6 +157,10 @@ class TestFrameCleanerRefactored:
             (1, mock_frame, 1),
             (2, mock_frame, 1),
         ]
+
+        def write_removed_candidate(*_args: object, **_kwargs: object) -> bool:
+            output_path.write_bytes(b"candidate")
+            return True
 
         # Patch internal dependencies
         with (
@@ -193,6 +199,7 @@ class TestFrameCleanerRefactored:
             mock_cv2_instance = MagicMock()
             mock_cv2.return_value = mock_cv2_instance
             mock_cv2_instance.get.return_value = 100.0
+            mock_remove.side_effect = write_removed_candidate
 
             # EXECUTE
             result_path, meta = frame_cleaner.clean_video(
@@ -245,6 +252,7 @@ class TestFrameCleanerRefactored:
         frame_cleaner: FrameCleaner,
         mock_frame: npt.NDArray[np.uint8],
         mock_central_video_format: MagicMock,
+        tmp_path: Path,
     ) -> None:
         video_format: VideoFormat = {
             "video_codec": "unknown",
@@ -257,8 +265,9 @@ class TestFrameCleanerRefactored:
         }
         mock_central_video_format.return_value = video_format
 
-        video_path = Path("input.mp4")
-        output_path = Path("output.mp4")
+        video_path = tmp_path / "input.mp4"
+        output_path = tmp_path / "output.mp4"
+        video_path.write_bytes(b"source")
         mock_stream_data: list[StreamItem] = [(0, mock_frame, 1)]
 
         with (
@@ -295,9 +304,11 @@ class TestFrameCleanerRefactored:
         self,
         frame_cleaner: FrameCleaner,
         mock_frame: npt.NDArray[np.uint8],
+        tmp_path: Path,
     ) -> None:
-        video_path = Path("input.mp4")
-        output_path = Path("output.mp4")
+        video_path = tmp_path / "input.mp4"
+        output_path = tmp_path / "output.mp4"
+        video_path.write_bytes(b"source")
         complete_metadata = {
             "first_name": "Thomas",
             "last_name": "Lux",
@@ -308,6 +319,10 @@ class TestFrameCleanerRefactored:
             (1, mock_frame, 1),
             (2, mock_frame, 1),
         ]
+
+        def write_masked_candidate(*_args: object, **_kwargs: object) -> bool:
+            output_path.write_bytes(b"candidate")
+            return True
 
         with (
             patch.object(frame_cleaner, "_iter_video", return_value=mock_stream_data),
@@ -331,6 +346,7 @@ class TestFrameCleanerRefactored:
             mock_cv2_instance = MagicMock()
             mock_cv2.return_value = mock_cv2_instance
             mock_cv2_instance.get.return_value = 100.0
+            mock_mask.side_effect = write_masked_candidate
 
             result_path, meta = frame_cleaner.clean_video(
                 video_path=video_path,
@@ -593,9 +609,11 @@ class TestFrameCleanerRefactored:
         self,
         frame_cleaner: FrameCleaner,
         mock_frame: npt.NDArray[np.uint8],
+        tmp_path: Path,
     ) -> None:
-        video_path = Path("input.mp4")
-        output_path = Path("output.mp4")
+        video_path = tmp_path / "input.mp4"
+        output_path = tmp_path / "output.mp4"
+        video_path.write_bytes(b"source")
         mock_stream_data: list[StreamItem] = [(0, mock_frame, 1)]
 
         with (

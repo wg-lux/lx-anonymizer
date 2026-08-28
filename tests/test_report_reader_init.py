@@ -1,9 +1,10 @@
+from collections.abc import Mapping, Sequence
 from contextlib import ExitStack
-from typing import Mapping, Sequence, cast
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-
+from lx_anonymizer.config import settings
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.setup.private_settings import DEFAULT_SETTINGS
 
@@ -15,6 +16,7 @@ def _build_report_reader_without_heavy_init(
     employee_last_names: Sequence[str] | None = None,
     flags: Mapping[str, object] | None = None,
     text_date_format: str | None = None,
+    llm_factory: MagicMock | None = None,
 ) -> ReportReader:
     """
     Construct ReportReader while patching expensive/external initializers.
@@ -65,7 +67,7 @@ def _build_report_reader_without_heavy_init(
         stack.enter_context(
             patch(
                 "lx_anonymizer.report_reader.LLMFactory.create_metadata_extractor",
-                return_value=MagicMock(),
+                llm_factory or MagicMock(),
             )
         )
         return ReportReader(
@@ -105,6 +107,53 @@ def test_report_reader_init_no_nameerror_regression() -> None:
         _build_report_reader_without_heavy_init()
     except NameError as exc:  # regression guard for invalid flags expression
         pytest.fail(f"ReportReader.__init__ raised unexpected NameError: {exc}")
+
+
+def test_report_reader_skips_provider_initialization_when_llm_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    llm_factory = MagicMock()
+    monkeypatch.setattr(settings, "LLM_ENABLED", False)
+
+    reader = _build_report_reader_without_heavy_init(llm_factory=llm_factory)
+
+    llm_factory.assert_not_called()
+    assert reader.llm_available is False
+    assert reader.ollama_available is False
+    assert reader.llm_extractor is None
+
+
+def test_report_reader_enables_reachable_provider_with_available_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    extractor = MagicMock()
+    extractor.current_model = {"name": "available-model"}
+    llm_factory = MagicMock(return_value=extractor)
+    monkeypatch.setattr(settings, "LLM_ENABLED", True)
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
+
+    reader = _build_report_reader_without_heavy_init(llm_factory=llm_factory)
+
+    llm_factory.assert_called_once_with()
+    assert reader.llm_available is True
+    assert reader.ollama_available is True
+    assert reader.llm_extractor is extractor
+
+
+def test_report_reader_uses_local_fallback_when_provider_has_no_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    extractor = MagicMock()
+    extractor.current_model = None
+    llm_factory = MagicMock(return_value=extractor)
+    monkeypatch.setattr(settings, "LLM_ENABLED", True)
+
+    reader = _build_report_reader_without_heavy_init(llm_factory=llm_factory)
+
+    llm_factory.assert_called_once_with()
+    assert reader.llm_available is False
+    assert reader.ollama_available is False
+    assert reader.llm_extractor is None
 
 
 def test_report_reader_init_merges_partial_flags_and_normalizes_cutoff_types() -> None:

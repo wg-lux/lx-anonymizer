@@ -1,9 +1,12 @@
 from collections.abc import Mapping
 from typing import cast
 from unittest.mock import Mock, patch
+
 import pytest
-from lx_dtypes.models.meta.ReportMeta import ReportReaderFlags
+from lx_dtypes.models.meta.ReportMeta import ReportProcessRequest, ReportReaderFlags
 from lx_dtypes.models.meta.VideoMeta import FrameCleanerAccumulatedMeta
+
+from lx_anonymizer.anonymization.text_anonymizer import anonymize_text
 from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
@@ -83,6 +86,7 @@ def _report_reader_stub() -> ReportReader:
     rr.endoscope_extractor = cast(_EndoscopeExtractor, _EndoscopeExtractorStub())
     rr.llm_available = False
     rr.llm_extractor = None
+    rr.patient_pseudonym_resolver = None
     return rr
 
 
@@ -214,7 +218,11 @@ def test_report_reader_anonymize_report_passes_config():
         "lx_anonymizer.anonymization.text_anonymizer.anonymize_text",
         return_value="anon",
     ) as mock_anon:
-        result = rr.anonymize_report("raw text", {"first_name": "Max"})
+        result = rr.anonymize_report(
+            "raw text",
+            {"first_name": "Max"},
+            patient_pseudonym=("Klara", "Kanonisch"),
+        )
 
     assert result == "anon"
     kwargs = mock_anon.call_args.kwargs
@@ -223,6 +231,48 @@ def test_report_reader_anonymize_report_passes_config():
     assert kwargs["text_date_format"] == "%d.%m.%Y"
     assert kwargs["lower_cut_off_flags"] == []
     assert kwargs["upper_cut_off_flags"] == []
+    assert kwargs["patient_pseudonym"] == ("Klara", "Kanonisch")
+
+
+def test_report_reader_uses_resolved_patient_pseudonym_for_anonymized_text():
+    rr = _report_reader_stub()
+    rr.patient_pseudonym_resolver = Mock(return_value=("Klara", "Kanonisch"))
+    rr._load_report_text = Mock(return_value="Max Muster")  # pyright: ignore[reportPrivateUsage,reportAttributeAccessIssue]
+    rr._extract_or_default_report_meta = Mock(  # pyright: ignore[reportPrivateUsage,reportAttributeAccessIssue]
+        return_value={"first_name": "Max", "last_name": "Muster"}
+    )
+    rr._maybe_create_anonymized_pdf = Mock(  # pyright: ignore[reportPrivateUsage,reportAttributeAccessIssue]
+        return_value=(None, {"first_name": "Max", "last_name": "Muster"})
+    )
+    rr._finalize_report_meta = Mock(  # pyright: ignore[reportPrivateUsage,reportAttributeAccessIssue]
+        return_value={"first_name": "Max", "last_name": "Muster"}
+    )
+    rr._build_final_report_output_meta = Mock(return_value={})  # pyright: ignore[reportPrivateUsage,reportAttributeAccessIssue]
+
+    with patch.object(
+        rr, "anonymize_report", return_value="Klara Kanonisch"
+    ) as anonymize:
+        result = rr._process_report_request(  # pyright: ignore[reportPrivateUsage]
+            ReportProcessRequest(text="Max Muster")
+        )
+
+    rr.patient_pseudonym_resolver.assert_called_once_with(rr.sensitive_meta)
+    assert anonymize.call_args.kwargs["patient_pseudonym"] == (
+        "Klara",
+        "Kanonisch",
+    )
+    assert result.anonymized_text == "Klara Kanonisch"
+
+
+def test_text_anonymizer_uses_one_explicit_patient_pseudonym():
+    result = anonymize_text(
+        text="Max Muster; Muster, Max",
+        report_meta={"first_name": "Max", "last_name": "Muster"},
+        patient_pseudonym=("Klara", "Kanonisch"),
+        anonymize_dates=False,
+    )
+
+    assert result == "Klara Kanonisch; Kanonisch, Klara"
 
 
 def test_report_reader_shared_llm_wrapper_success_and_failure_paths():

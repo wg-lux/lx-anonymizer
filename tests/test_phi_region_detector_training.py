@@ -89,14 +89,19 @@ def test_phi_region_detector_training_exports_onnx_with_settings(
         )
     )
 
-    model_path = Path(result["model_path"])
+    model_path = result.model_path
     assert model_path.name == "best.onnx"
     assert model_path.exists()
-    assert result["settings"]["PHI_REGION_DETECTOR_MODEL_PATH"] == str(model_path)
-    assert result["settings"]["PHI_REGION_DETECTOR_MODEL_SHA256"]
-    assert result["settings"]["PHI_REGION_DETECTOR_INPUT_SIZE"] == 640
-    assert result["settings"]["PHI_REGION_DETECTOR_RESIZE_MODE"] == "letterbox"
-    assert result["config"]["seed"] == 0
-    assert result["config"]["deterministic"] is True
-    assert Path(result["meta_path"]).exists()
-    assert Path(result["training_result_path"]).exists()
+    assert result.settings["PHI_REGION_DETECTOR_MODEL_PATH"] == str(model_path)
+    assert result.settings["PHI_REGION_DETECTOR_MODEL_SHA256"]
+    assert result.settings["PHI_REGION_DETECTOR_INPUT_SIZE"] == 640
+    assert result.settings["PHI_REGION_DETECTOR_RESIZE_MODE"] == "letterbox"
+    assert result.config["seed"] == 0
+    assert result.config["deterministic"] is True
+    assert result.meta_path.exists()
+    assert result.training_result_path.exists()
+
+    runtime_config = result.detector_config()
+    assert runtime_config.model_path == model_path
+    assert runtime_config.expected_sha256 == result.model_sha256
+    assert runtime_config.required is True

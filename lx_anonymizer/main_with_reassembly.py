@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Literal, overload
 from uuid import uuid4
+
+from lx_dtypes.models.contracts.image_processing import ImageProcessingResultPayload
 
 from lx_anonymizer.hardware.gpu_management import clear_gpu_memory
 from lx_anonymizer.image_processing.image_loader import get_image_paths
@@ -13,13 +16,16 @@ from lx_anonymizer.image_processing.pdf_operations import (
     convert_image_to_pdf,
     merge_pdfs,
 )
+from lx_anonymizer.processing_contracts import (
+    ImageAnonymizationRequest,
+    ImageAnonymizationResult,
+)
 from lx_anonymizer.setup.custom_logger import configure_global_logger, get_logger
 from lx_anonymizer.setup.directory_setup import (
     create_results_directory,
     create_temp_directory,
 )
-from lx_dtypes.models.contracts.image_processing import ImageProcessingResultPayload
-
+from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetector
 
 """
 Main Function
@@ -84,6 +90,76 @@ class ImageProcessingError(Exception):
     pass
 
 
+class ImageAnonymizer:
+    """Typed image/PDF processing strand with an injectable region detector."""
+
+    def __init__(self, region_detector: PhiRegionDetector | None = None) -> None:
+        self.region_detector = region_detector
+
+    def process(
+        self,
+        request: ImageAnonymizationRequest,
+    ) -> ImageAnonymizationResult:
+        clear_gpu_memory()
+        east_model_path = request.east_model_path or Path(
+            "frozen_east_text_detection.pb"
+        )
+        with temp_directory_manager() as (temp_dir, _base_dir, _csv_dir):
+            image_paths = get_image_paths(request.source_path, temp_dir)
+            processed_pdf_paths: list[Path] = []
+            typed_result: ImageProcessingResultPayload | None = None
+
+            for image_path in image_paths:
+                if not image_path.is_file():
+                    raise ImageProcessingError(
+                        f"Image path does not exist: {image_path}"
+                    )
+                processed_image_path, raw_result = process_image(
+                    image_path,
+                    east_model_path,
+                    request.device,
+                    request.min_confidence,
+                    request.detector_width,
+                    request.detector_height,
+                    request.output_directory,
+                    temp_dir,
+                    region_detector=self.region_detector,
+                )
+                typed_result = ImageProcessingResultPayload.model_validate(raw_result)
+                if request.source_path.suffix.casefold() == ".pdf":
+                    temporary_pdf = temp_dir / f"temporary_pdf_{uuid4()}.pdf"
+                    convert_image_to_pdf(processed_image_path, temporary_pdf)
+                    processed_pdf_paths.append(temporary_pdf)
+                else:
+                    processed_pdf_paths.append(processed_image_path)
+
+            if not processed_pdf_paths or typed_result is None:
+                raise ImageProcessingError("No processed images were generated.")
+
+            if request.source_path.suffix.casefold() == ".pdf":
+                artifact_path = (
+                    request.output_directory / f"final_document_{uuid4()}.pdf"
+                )
+                merge_pdfs(list(processed_pdf_paths), artifact_path)
+            else:
+                processed_path = processed_pdf_paths[0]
+                artifact_path = request.output_directory / (
+                    f"final_image_{uuid4()}{request.source_path.suffix.casefold()}"
+                )
+                shutil.copy2(processed_path, artifact_path)
+
+            if not artifact_path.is_file() or artifact_path.stat().st_size <= 0:
+                raise ImageProcessingError(
+                    f"Image pipeline did not produce a non-empty artifact: {artifact_path}"
+                )
+            get_logger(__name__).info("Output Path: %s", artifact_path)
+            return ImageAnonymizationResult(
+                source_path=request.source_path,
+                artifact_path=artifact_path,
+                metadata=typed_result,
+            )
+
+
 @overload
 def main(
     image_or_pdf_path: str | Path,
@@ -93,6 +169,7 @@ def main(
     min_confidence: float,
     width: int,
     height: int,
+    region_detector: PhiRegionDetector | None = None,
 ) -> Path: ...
 
 
@@ -105,6 +182,7 @@ def main(
     min_confidence: float = 0.5,
     width: int = 320,
     height: int = 320,
+    region_detector: PhiRegionDetector | None = None,
 ) -> tuple[Path, AnonymizationPayload, Path]: ...
 
 
@@ -116,106 +194,31 @@ def main(
     min_confidence: float = 0.5,
     width: int = 320,
     height: int = 320,
+    region_detector: PhiRegionDetector | None = None,
 ) -> MainResult:
-    logger = get_logger(__name__)
     source_path = Path(image_or_pdf_path)
-    east_model_path = east_path or Path("frozen_east_text_detection.pb")
 
     try:
-        clear_gpu_memory()
-        with temp_directory_manager() as (temp_dir, _base_dir, _csv_dir):
-            results_dir = create_results_directory()
-            image_paths = get_image_paths(source_path, temp_dir)
-
-            processed_pdf_paths: list[Path] = []
-            anonymization_data: AnonymizationPayload = {}
-
-            for img_path in image_paths:
-                processed_image_path: Path
-                success = False
-
-                try:
-                    if not img_path.exists():
-                        raise ImageProcessingError(
-                            f"Image path does not exist: {img_path}"
-                        )
-
-                    processed_image_path, result = process_image(
-                        img_path,
-                        east_model_path,
-                        device,
-                        min_confidence,
-                        width,
-                        height,
-                        results_dir,
-                        temp_dir,
-                    )
-                    typed_result = ImageProcessingResultPayload.model_validate(result)
-                    anonymization_data = typed_result.model_dump()
-                    success = True
-
-                except (ImageProcessingError, RuntimeError, ValueError) as exc:
-                    logger.info(
-                        f"Error processing with original path: {exc}, trying local path"
-                    )
-                    try:
-                        root_dir = Path(__file__).resolve().parent
-                        local_img_path = root_dir / img_path
-                        logger.info(f"Trying local path: {local_img_path}")
-
-                        if not local_img_path.exists():
-                            raise ImageProcessingError(
-                                f"Local image path does not exist: {local_img_path}"
-                            )
-
-                        processed_image_path, result = process_image(
-                            local_img_path,
-                            east_model_path,
-                            device,
-                            min_confidence,
-                            width,
-                            height,
-                            results_dir,
-                            temp_dir,
-                        )
-                        typed_result = ImageProcessingResultPayload.model_validate(
-                            result
-                        )
-                        anonymization_data = typed_result.model_dump()
-                        success = True
-
-                    except Exception as local_error:
-                        logger.error(f"Error processing with local path: {local_error}")
-                        raise ImageProcessingError(
-                            f"Failed to process image with both paths: {exc}, local error: {local_error}"
-                        )
-
-                if success:
-                    if source_path.suffix.lower() == ".pdf":
-                        temp_pdf_path = temp_dir / f"temporary_pdf_{uuid4()}.pdf"
-                        convert_image_to_pdf(processed_image_path, temp_pdf_path)
-                        processed_pdf_paths.append(temp_pdf_path)
-                    else:
-                        processed_pdf_paths.append(processed_image_path)
-
-            if not processed_pdf_paths:
-                raise ImageProcessingError("No processed images were generated.")
-
-            if source_path.suffix.lower() == ".pdf":
-                final_pdf_path = results_dir / f"final_document_{uuid4()}.pdf"
-                merge_inputs: list[str | Path] = list(processed_pdf_paths)
-                merge_pdfs(merge_inputs, final_pdf_path)
-                output_path = final_pdf_path
-            else:
-                output_path = processed_pdf_paths[0]
-
-            logger.info(f"Output Path: {output_path}")
-            if not validation:
-                return output_path
-            return output_path, anonymization_data, source_path
+        request = ImageAnonymizationRequest(
+            source_path=source_path,
+            output_directory=create_results_directory(),
+            east_model_path=east_path,
+            device=device,
+            min_confidence=min_confidence,
+            detector_width=width,
+            detector_height=height,
+        )
+        result = ImageAnonymizer(region_detector=region_detector).process(request)
+        if not validation:
+            return result.artifact_path
+        return (
+            result.artifact_path,
+            result.metadata.model_dump(),
+            result.source_path,
+        )
 
     except Exception as exc:
-        raise ImageProcessingError(f"Processing failed: {str(exc)}")
+        raise ImageProcessingError(f"Processing failed: {exc}") from exc
 
 
 if __name__ == "__main__":

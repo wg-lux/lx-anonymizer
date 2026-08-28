@@ -49,6 +49,8 @@ def test_combined_text_detection_skips_unavailable_craft(
 
     monkeypatch.setattr(pipeline_manager, "craft_text_detection", unexpected_craft)
 
-    boxes = detect_combined_text_boxes(Path("image.png"), "east.pb", 0.5, 320, 320)
+    boxes = detect_combined_text_boxes(
+        Path("image.png"), "east.pb", 0.5, 320, 320, phi_regions=[]
+    )
 
     assert boxes == [(1, 2, 3, 4), (5, 6, 7, 8)]

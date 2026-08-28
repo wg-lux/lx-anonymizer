@@ -1,12 +1,12 @@
 import math
+from collections.abc import Mapping
 from datetime import date
-from typing import Mapping, cast
+from typing import cast
 
 import pytest
-from pydantic import BaseModel
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, SensitiveMetaState
 
 
 def test_init_normalizes_blanks_and_trims() -> None:
@@ -132,6 +132,30 @@ def test_safe_update_swaps_exam_and_birth_dates_when_order_is_invalid() -> None:
     assert meta.examination_date is not None
     assert meta.dob.isoformat() == "1994-03-21"
     assert meta.examination_date.isoformat() == "2024-02-15"
+
+
+def test_safe_update_preserves_typed_state_and_identity() -> None:
+    meta = SensitiveMeta(first_name="Alice")
+    original_uuid = meta.uuid
+
+    meta.safe_update({"last_name": "Doe"})
+
+    assert meta.uuid == original_uuid
+    assert isinstance(meta.sensitive_meta_state, SensitiveMetaState)
+    assert meta.state.sensitive_meta == str(original_uuid)
+
+
+def test_legacy_birth_date_is_swapped_with_examination_date() -> None:
+    meta = SensitiveMeta.model_validate(
+        {
+            "birth_date": "15.02.2024",
+            "examination_date": "21.03.1994",
+            "unrelated_report_field": "ignored",
+        }
+    )
+
+    assert meta.dob == date(1994, 3, 21)
+    assert meta.examination_date == date(2024, 2, 15)
 
 
 @pytest.mark.parametrize(

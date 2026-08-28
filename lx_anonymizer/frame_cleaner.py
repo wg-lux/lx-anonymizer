@@ -1,6 +1,7 @@
 import logging
 import os
 import resource
+import stat
 import threading
 import time
 from collections.abc import Generator, Mapping
@@ -52,6 +53,10 @@ from lx_anonymizer.paper_metrics import (
     VideoPaperEvaluationMetrics,
     build_video_paper_evaluation_metrics,
 )
+from lx_anonymizer.processing_contracts import (
+    VideoAnonymizationRequest,
+    VideoAnonymizationResult,
+)
 from lx_anonymizer.regex_patterns import (
     LLM_AGE_TOKEN_RE,
     LLM_NARRATIVE_TOKEN_RE,
@@ -62,13 +67,26 @@ from lx_anonymizer.regex_patterns import (
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, sensitive_meta_to_dict
 from lx_anonymizer.text_detection.phi_region_detector import (
-    detect_phi_regions_from_settings,
+    PhiRegionDetector,
+    detect_phi_regions,
 )
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_encoder, video_processor
 
 logger = logging.getLogger(__name__)
+
+
+class VideoAnonymizationError(RuntimeError):
+    """Base error for a video invocation that cannot produce a valid candidate."""
+
+
+class InvalidVideoInputError(VideoAnonymizationError):
+    """The caller-provided source violates the immutable-input contract."""
+
+
+class VideoOutputCollisionError(VideoAnonymizationError):
+    """The caller-provided candidate path is not exclusively owned by this run."""
 
 
 class FrameCleanerQualityProfile(str, Enum):
@@ -148,6 +166,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         use_llm: bool | None = None,
         quality_profile: FrameCleanerQualityProfile | str | None = None,
         sampling_profile: FrameCleanerSamplingProfile | None = None,
+        region_detector: PhiRegionDetector | None = None,
     ):
         self.use_minicpm = use_minicpm
         self.minicpm_config: dict[str, object] = dict(minicpm_config or {})
@@ -163,6 +182,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self._mask_video_streaming = None
         self._create_mask_config_from_roi = None
         self._run_lock = threading.Lock()
+        self.region_detector = region_detector
 
         self._init_core_components()
         self._log_hf_cache_status()
@@ -296,17 +316,119 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 "shared by concurrent video attempts."
             )
         try:
-            return self._clean_video_owned(
+            candidate_path = self._validate_video_invocation(
                 video_path=video_path,
-                endoscope_image_roi=endoscope_image_roi,
-                endoscope_data_roi_nested=endoscope_data_roi_nested,
-                source_frame_rate=source_frame_rate,
                 output_path=output_path,
+                source_frame_rate=source_frame_rate,
                 technique=technique,
-                device=device,
             )
+            try:
+                result_path, metadata = self._clean_video_owned(
+                    video_path=video_path,
+                    endoscope_image_roi=endoscope_image_roi,
+                    endoscope_data_roi_nested=endoscope_data_roi_nested,
+                    source_frame_rate=source_frame_rate,
+                    output_path=output_path,
+                    technique=technique,
+                    device=device,
+                )
+                if technique != "extract_only" and (
+                    result_path != candidate_path
+                    or not candidate_path.is_file()
+                    or candidate_path.stat().st_size <= 0
+                ):
+                    raise VideoAnonymizationError(
+                        "Video anonymization did not produce the expected non-empty "
+                        f"candidate: {candidate_path}"
+                    )
+                return result_path, metadata
+            except BaseException:
+                if technique != "extract_only":
+                    candidate_path.unlink(missing_ok=True)
+                raise
         finally:
             self._run_lock.release()
+
+    def process(
+        self,
+        request: VideoAnonymizationRequest,
+    ) -> VideoAnonymizationResult:
+        """Process one typed request using the shared processing-strand shape."""
+        result_path, raw_metadata = self.clean_video(
+            video_path=request.source_path,
+            endoscope_image_roi=request.endoscope_image_roi,
+            endoscope_data_roi_nested=request.endoscope_data_roi_nested,
+            source_frame_rate=request.source_frame_rate,
+            output_path=request.output_path,
+            technique=request.technique,
+            device=request.device,
+        )
+        return VideoAnonymizationResult(
+            source_path=request.source_path,
+            artifact_path=(
+                None if request.technique == "extract_only" else result_path
+            ),
+            metadata=VideoMeta.model_validate(raw_metadata),
+        )
+
+    @staticmethod
+    def _validate_video_invocation(
+        *,
+        video_path: Path,
+        output_path: Path | None,
+        source_frame_rate: Fraction,
+        technique: str,
+    ) -> Path:
+        supported_techniques = {"mask_overlay", "remove_frames", "extract_only"}
+        if technique not in supported_techniques:
+            supported = ", ".join(sorted(supported_techniques))
+            raise ValueError(
+                f"Unknown video anonymization technique {technique!r}; expected one "
+                f"of: {supported}."
+            )
+        if source_frame_rate <= 0:
+            raise ValueError("source_frame_rate must be a positive rational value")
+
+        if video_path.is_symlink():
+            raise InvalidVideoInputError(
+                f"Video source must not be a symbolic link: {video_path}"
+            )
+        try:
+            source_stat = video_path.stat()
+        except FileNotFoundError as exc:
+            raise InvalidVideoInputError(
+                f"Video source does not exist: {video_path}"
+            ) from exc
+        except OSError as exc:
+            raise InvalidVideoInputError(
+                f"Video source cannot be inspected: {video_path}"
+            ) from exc
+
+        if not stat.S_ISREG(source_stat.st_mode):
+            raise InvalidVideoInputError(
+                f"Video source must be a regular file: {video_path}"
+            )
+        if source_stat.st_size <= 0:
+            raise InvalidVideoInputError(f"Video source is empty: {video_path}")
+
+        candidate_path = output_path or video_path.with_stem(f"{video_path.stem}_anony")
+        if technique == "extract_only":
+            return candidate_path
+
+        if not candidate_path.suffix:
+            raise VideoOutputCollisionError(
+                "Video candidate path must retain a media suffix so FFmpeg can "
+                f"select a container: {candidate_path}"
+            )
+        if candidate_path.absolute() == video_path.absolute():
+            raise VideoOutputCollisionError(
+                "Video candidate path must differ from the immutable source path."
+            )
+        if candidate_path.exists() or candidate_path.is_symlink():
+            raise VideoOutputCollisionError(
+                f"Video candidate path already exists: {candidate_path}"
+            )
+        return candidate_path
 
     def _clean_video_owned(
         self,
@@ -406,7 +528,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         intentionally separate from sampled metadata accumulation and always
         requires human validation of the resulting artifact.
         """
-        return DetectorVideoMasker().mask_video(input_video, output_video)
+        return DetectorVideoMasker(
+            detector=lambda image: detect_phi_regions(image, self.region_detector)
+        ).mask_video(input_video, output_video)
 
     def _prepare_video_sampling(self, video_path: Path) -> tuple[int, int]:
         total_frames = self._get_total_frames(video_path)
@@ -656,11 +780,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
             logger.info("Extraction-only mode: skipping video modification.")
             return video_path
 
-        logger.warning(
-            "Unknown cleaning technique '%s'. Returning original output path.",
-            technique,
-        )
-        return output_video
+        raise ValueError(f"Unknown video anonymization technique: {technique!r}")
 
     def _apply_frame_removal(
         self,
@@ -678,7 +798,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
             total_frames=total_frames,
         )
         if not ok:
-            logger.error("Frame removal failed.")
+            raise VideoAnonymizationError(
+                "Frame removal failed before a valid video candidate was produced."
+            )
         return output_video
 
     def _apply_mask_overlay(
@@ -965,7 +1087,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self, gray_frame: np.ndarray
     ) -> list[dict[str, object]]:
         image = self._frame_image_for_phi_detection(gray_frame)
-        regions = detect_phi_regions_from_settings(image)
+        regions = detect_phi_regions(
+            image,
+            getattr(self, "region_detector", None),
+        )
         phi_regions: list[dict[str, object]] = []
         for x1, y1, x2, y2 in regions:
             width = max(0, int(x2) - int(x1))

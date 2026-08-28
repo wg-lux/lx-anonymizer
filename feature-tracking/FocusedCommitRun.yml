@@ -1,0 +1,30 @@
+schema_version: "1.0"
+id: focused_commit_run
+name: Focused commit run
+description: >-
+  Records this focused change request as a single-surface-area update so follow-up
+  work remains explicit, scoped, and reviewable.
+owners:
+  - codex-agent-2026-08-28
+production_critical: false
+source_documents:
+  - path: AGENTS.md
+    disposition: normative
+    note: Source guidance for this repository and requested work mode.
+invariants:
+  - Scope is limited to feature-tracking `.yml` files while no functional code change is requested.
+  - The change is a single-purpose and self-contained metadata update.
+definition_of_done:
+  - id: scoped_change
+    category: process
+    title: Scope remains constrained to feature tracking
+    acceptance:
+      - Exactly one metadata file is added under `feature-tracking/`.
+      - No non-`.yml` file types are modified by this change.
+    required: true
+  - id: auditability
+    category: process
+    title: Work is auditable
+    acceptance:
+      - The new entry contains a stable owner token and explicit completion criteria.
+    required: true

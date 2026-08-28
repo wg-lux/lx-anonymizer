@@ -1,12 +1,12 @@
 import random
 import re
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Callable, Iterable, Mapping, Sequence
 
 from faker import Faker
-
 from lx_dtypes.models.contracts.text_anonymization import TextAnonymizationMeta
+
 from lx_anonymizer.regex_patterns import ISO_DATE_RE, LONG_NUMBER_RE
 from lx_anonymizer.setup.custom_logger import get_logger
 
@@ -189,6 +189,7 @@ def anonymize_text(
     verbose: bool = False,
     *,
     anonymize_dates: bool = True,
+    patient_pseudonym: tuple[str, str] | None = None,
 ) -> str:
     """
     Safer, deterministic anonymization:
@@ -236,8 +237,13 @@ def anonymize_text(
     pl = meta.last_name
 
     # Generate deterministic pseudonyms
-    pseudo_pf = fake.first_name() if pf else None
-    pseudo_pl = fake.last_name() if pl else None
+    canonical_first_name, canonical_last_name = patient_pseudonym or (None, None)
+    pseudo_pf = canonical_first_name if pf and canonical_first_name else None
+    pseudo_pl = canonical_last_name if pl and canonical_last_name else None
+    if pf and pseudo_pf is None:
+        pseudo_pf = fake.first_name()
+    if pl and pseudo_pl is None:
+        pseudo_pl = fake.last_name()
 
     # Replace "First Last" (combined) before single parts to avoid partial breaks
     if pf and pl:

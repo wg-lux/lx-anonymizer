@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-import tempfile
 import inspect
-from pathlib import Path
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, Dict, Optional, Protocol, cast
 
 import pymupdf  # type: ignore[import-untyped]
 from PIL import Image, ImageDraw
 
-from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 import lx_anonymizer.image_processing.pdf_operations as pdf_operations
-from lx_anonymizer.region_processing.box_operations import Box, OcrResult
+from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 from lx_anonymizer.metrics_provenance import summarize_pdf_redactions
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
+from lx_anonymizer.region_processing.box_operations import Box, OcrResult
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
 from lx_anonymizer.text_detection.phi_region_detector import (
     CustomPhiRegionDetectorError,
+    PhiRegionDetector,
+    detect_phi_regions,
     detect_phi_regions_from_settings,
 )
 
@@ -194,9 +196,10 @@ def convert_pdf_to_images(pdf_path: str | Path) -> list[Image.Image]:
 
 
 class Anonymizer:
-    def __init__(self) -> None:
+    def __init__(self, region_detector: PhiRegionDetector | None = None) -> None:
         self.sensitive_cropper = SensitiveRegionCropper()
         self.last_redaction_summary: dict[str, object] | None = None
+        self.region_detector = region_detector
 
     def _default_output_path(self, input_path: str, suffix: str = "_anonymized") -> str:
         path = Path(input_path)
@@ -213,7 +216,10 @@ class Anonymizer:
         east_height: int = 640,
         language: str = "deu+eng",
     ) -> list[tuple[int, int, int, int]]:
-        custom_regions: list[Box] = detect_phi_regions_from_settings(image)
+        if self.region_detector is None:
+            custom_regions: list[Box] = detect_phi_regions_from_settings(image)
+        else:
+            custom_regions = detect_phi_regions(image, self.region_detector)
 
         logger.debug("Running EAST text detection")
         text_boxes: list[Box]

@@ -1,0 +1,112 @@
+schema_version: "1.0"
+id: processing_strand_standardization
+name: Central processing strand standardization
+description: >-
+  Present image, video, and report anonymization through consistent typed
+  process methods and one injectable, retrainable PHI-region detector boundary.
+owners:
+  - lx-anonymizer maintainers
+production_critical: true
+tracking:
+  state: completed
+  history:
+    - at: "2026-08-28T12:27:38+02:00"
+      state: completed
+      note: >-
+        Standardized all three Python processing strands, made the detector
+        injectable and retrainable, moved detector tooling into base
+        dependencies, and passed the type, focused, and full regression gates.
+source_documents:
+  - path: docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+    disposition: normative
+    note: Video processing remains attempt-scoped compute with caller-owned output.
+  - path: feature-tracking/FrameCleanerIntegration.yml
+    disposition: reference
+    note: Existing FrameCleaner type and failure requirements remain mandatory.
+  - path: feature-tracking/ReportReaderIntegration.yml
+    disposition: reference
+    note: Existing ReportReader artifact and source-integrity requirements remain mandatory.
+definition_of_done:
+  - id: consistent_python_api
+    category: usability
+    title: Image, video, and report strands expose the same processing shape
+    acceptance:
+      - Each public strand accepts one strict typed request through a process method and returns one strict typed result.
+      - Results expose the unpublished artifact path and typed metadata without unstructured tuples at the new boundary.
+      - Historical main, clean_video, and process_report entrypoints remain compatible wrappers.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/python
+        - -m
+        - pytest
+        - tests/test_processing_strands.py
+        - -q
+      timeout_seconds: 300
+    assessment:
+      status: verified
+      evidence:
+        - >-
+          lx_anonymizer/processing_contracts.py defines strict image and video
+          request/result models; ImageAnonymizer, FrameCleaner, and ReportReader
+          expose process(request) while retaining their historical entrypoints.
+        - >-
+          tests/test_processing_strands.py passed as part of the focused lane
+          (23 passed) and the final full suite (324 passed, 3 skipped).
+  - id: retrainable_region_detector
+    category: functionality
+    title: One detector contract spans training and every processing strand
+    acceptance:
+      - Image, FrameCleaner, and ReportReader accept the same PHI-region detector protocol without mutating global settings.
+      - Detector training returns a typed result that constructs a checksum-pinned runtime configuration.
+      - Explicit detector failures remain fail-closed while the documented optional settings-based detector remains additive.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/python
+        - -m
+        - pytest
+        - tests/test_phi_region_detector.py
+        - tests/test_phi_region_detector_training.py
+        - tests/test_processing_strands.py
+        - -q
+      timeout_seconds: 300
+    assessment:
+      status: verified
+      evidence:
+        - >-
+          PhiRegionDetector is accepted by ImageAnonymizer, FrameCleaner, and
+          ReportReader, and explicit detector errors propagate fail-closed.
+        - >-
+          PhiRegionDetectorTrainingResult.detector_config() returns a
+          checksum-pinned runtime configuration; focused detector and strand
+          tests passed.
+  - id: maintenance_gate
+    category: maintainability
+    title: Standardization remains type-safe and documented
+    acceptance:
+      - Shared request, result, and detector types are defined once and imported by the three strands.
+      - Strict Pyright and the focused processing tests pass before the full test suite.
+      - README examples use the consistent process API and show how a retrained detector is loaded.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/pyright
+      timeout_seconds: 600
+    assessment:
+      status: verified
+      evidence:
+        - >-
+          uv sync --extra dev --extra cpu completed with ultralytics in base
+          project dependencies, ONNX export provisioned up front, and no
+          dedicated training extra.
+        - >-
+          Strict Pyright completed with 0 errors and 8 pre-existing warnings;
+          the final full pytest suite completed with 324 passed and 3 skipped
+          in 65.75 seconds.
+        - >-
+          Ruff passed for the new contract and processing-strand tests, and
+          git diff --check reported no whitespace errors.

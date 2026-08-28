@@ -9,7 +9,7 @@ from uuid import uuid4
 import pymupdf  # type: ignore[import-untyped]
 import pytest
 from lx_dtypes.models.contracts.report_anonymization import (
-    ReportAnonymizationRequestV2 as SharedReportAnonymizationRequestV2,
+    ReportAnonymizationRequest as SharedReportAnonymizationRequest,
 )
 from lx_dtypes.models.meta.ReportMeta import ReportProcessRequest, ReportProcessResult
 
@@ -17,7 +17,7 @@ from lx_anonymizer.report_contracts import (
     AnonymizationArtifactError,
     ArtifactAlreadyExistsError,
     OperationDeadlineExceededError,
-    ReportAnonymizationRequestV2,
+    ReportAnonymizationRequest,
     SourceIdentityMismatchError,
 )
 from lx_anonymizer.report_reader import ReportReader
@@ -46,9 +46,9 @@ def _request(
     *,
     source: Path,
     output_directory: Path,
-) -> ReportAnonymizationRequestV2:
+) -> ReportAnonymizationRequest:
     payload = source.read_bytes()
-    return ReportAnonymizationRequestV2(
+    return ReportAnonymizationRequest(
         attempt_id=uuid4(),
         source_path=source,
         source_sha256=hashlib.sha256(payload).hexdigest(),
@@ -89,11 +89,15 @@ def _reader_with_fake_pipeline() -> ReportReader:
     return reader
 
 
-def test_report_v2_compatibility_import_is_the_shared_contract() -> None:
-    assert ReportAnonymizationRequestV2 is SharedReportAnonymizationRequestV2
+def test_process_report_is_the_canonical_processing_method() -> None:
+    assert hasattr(ReportReader, "process_report")
 
 
-def test_process_report_v2_publishes_attempt_local_validated_artifact(
+def test_report_contract_import_is_the_shared_contract() -> None:
+    assert ReportAnonymizationRequest is SharedReportAnonymizationRequest
+
+
+def test_process_report_publishes_attempt_local_validated_artifact(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "source.pdf"
@@ -102,9 +106,9 @@ def test_process_report_v2_publishes_attempt_local_validated_artifact(
     output_directory.mkdir()
     request = _request(source=source, output_directory=output_directory)
 
-    result = _reader_with_fake_pipeline().process_report_v2(request)
+    result = _reader_with_fake_pipeline().process_report(request)
 
-    assert result.contract_version == "report_anonymization_v2"
+    assert result.contract_version == "report_anonymization"
     assert result.attempt_id == request.attempt_id
     assert result.source_sha256 == request.source_sha256
     assert result.artifact_path.parent == output_directory
@@ -122,7 +126,7 @@ def test_process_report_v2_publishes_attempt_local_validated_artifact(
     assert not (output_directory / f".{request.attempt_id}.part.pdf").exists()
 
 
-def test_process_report_v2_rejects_source_identity_mismatch(tmp_path: Path) -> None:
+def test_process_report_rejects_source_identity_mismatch(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     output_directory = tmp_path / "attempt"
     source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
@@ -131,10 +135,10 @@ def test_process_report_v2_rejects_source_identity_mismatch(tmp_path: Path) -> N
     source.write_bytes(b"%PDF-1.4\nchanged\n%%EOF\n")
 
     with pytest.raises(SourceIdentityMismatchError):
-        _reader_with_fake_pipeline().process_report_v2(request)
+        _reader_with_fake_pipeline().process_report(request)
 
 
-def test_process_report_v2_refuses_existing_attempt_output(tmp_path: Path) -> None:
+def test_process_report_refuses_existing_attempt_output(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     output_directory = tmp_path / "attempt"
     source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
@@ -144,12 +148,12 @@ def test_process_report_v2_refuses_existing_attempt_output(tmp_path: Path) -> No
     existing.write_bytes(b"existing")
 
     with pytest.raises(ArtifactAlreadyExistsError):
-        _reader_with_fake_pipeline().process_report_v2(request)
+        _reader_with_fake_pipeline().process_report(request)
 
     assert existing.read_bytes() == b"existing"
 
 
-def test_report_v2_request_rejects_output_symlink(tmp_path: Path) -> None:
+def test_report_request_rejects_output_symlink(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     real_output = tmp_path / "real-output"
     linked_output = tmp_path / "linked-output"
@@ -161,7 +165,7 @@ def test_report_v2_request_rejects_output_symlink(tmp_path: Path) -> None:
         _request(source=source, output_directory=linked_output)
 
 
-def test_process_report_v2_rejects_expired_deadline(tmp_path: Path) -> None:
+def test_process_report_rejects_expired_deadline(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     output_directory = tmp_path / "attempt"
     source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
@@ -171,10 +175,10 @@ def test_process_report_v2_rejects_expired_deadline(tmp_path: Path) -> None:
     )
 
     with pytest.raises(OperationDeadlineExceededError):
-        _reader_with_fake_pipeline().process_report_v2(request)
+        _reader_with_fake_pipeline().process_report(request)
 
 
-def test_process_report_v2_rejects_structurally_invalid_pdf(tmp_path: Path) -> None:
+def test_process_report_rejects_structurally_invalid_pdf(tmp_path: Path) -> None:
     source = tmp_path / "source.pdf"
     output_directory = tmp_path / "attempt"
     source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
@@ -203,4 +207,4 @@ def test_process_report_v2_rejects_structurally_invalid_pdf(tmp_path: Path) -> N
     )
 
     with pytest.raises(AnonymizationArtifactError, match="structurally invalid"):
-        reader.process_report_v2(request)
+        reader.process_report(request)

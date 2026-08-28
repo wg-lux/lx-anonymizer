@@ -44,10 +44,10 @@ from lx_anonymizer.report_contracts import (
     ArtifactAlreadyExistsError,
     OperationDeadlineExceededError,
     ReportAnonymizationPhase,
-    ReportAnonymizationProvenanceV2,
-    ReportAnonymizationRequestV2,
-    ReportAnonymizationResultV2,
-    ReportArtifactValidationV2,
+    ReportAnonymizationProvenance,
+    ReportAnonymizationRequest,
+    ReportAnonymizationResult,
+    ReportArtifactValidation,
     SourceIdentityMismatchError,
 )
 from lx_anonymizer.report_reader_extraction import (
@@ -57,6 +57,7 @@ from lx_anonymizer.report_reader_extraction import (
 from lx_anonymizer.report_reader_settings import get_report_reader_settings
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, sensitive_meta_to_dict
 from lx_anonymizer.setup.custom_logger import logger
+from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetector
 
 
 class _PdfValidationPage(Protocol):
@@ -72,6 +73,12 @@ class _PdfValidationDocument(Protocol):
     def load_page(self, page_number: int) -> _PdfValidationPage: ...
 
     def close(self) -> None: ...
+
+
+class PatientPseudonymResolver(Protocol):
+    """Resolve the application-owned display pseudonym for extracted metadata."""
+
+    def __call__(self, sensitive_meta: SensitiveMeta) -> tuple[str, str]: ...
 
 
 class ReportReader(ReportReaderExtractionMixin):
@@ -91,6 +98,8 @@ class ReportReader(ReportReaderExtractionMixin):
         employee_last_names: Sequence[str] | None = None,
         flags: Mapping[str, object] | None = None,
         text_date_format: Optional[str] = None,
+        region_detector: PhiRegionDetector | None = None,
+        patient_pseudonym_resolver: PatientPseudonymResolver | None = None,
     ):
         """
         Initialize the report reader.
@@ -134,6 +143,7 @@ class ReportReader(ReportReaderExtractionMixin):
         self.flags = self._resolve_flags(flags)
         self.fake = Faker(locale=self.locale)
         self.gender_detector = gender_detector.Detector(case_sensitive=True)
+        self.patient_pseudonym_resolver = patient_pseudonym_resolver
 
         # Initialize extractors
         self.patient_extractor = PatientDataExtractor()
@@ -145,7 +155,7 @@ class ReportReader(ReportReaderExtractionMixin):
         self.sensitive_cropper = SensitiveRegionCropper()
 
         # Initialize Anonymizer
-        self.anonymizer = Anonymizer()
+        self.anonymizer = Anonymizer(region_detector=region_detector)
 
         # Initialize provider-backed extractor
         self.llm_extractor: LLMExtractorProtocol | None = None
@@ -155,11 +165,22 @@ class ReportReader(ReportReaderExtractionMixin):
         # initialize global sensitive meta
         self.sensitive_meta = SensitiveMeta()
 
+        if not settings.LLM_ENABLED:
+            logger.info(
+                "LLM processing is disabled; ReportReader will use the "
+                "SpaCy/regex report metadata backend."
+            )
+        else:
+            self._initialize_llm_extractor()
+
+    def _initialize_llm_extractor(self) -> None:
+        """Initialize the configured provider or retain the local safe fallback."""
         try:
-            self.llm_extractor = LLMFactory.create_metadata_extractor()
+            extractor = LLMFactory.create_metadata_extractor()
 
             # Check if models are available
-            if self.llm_extractor and self.llm_extractor.current_model:
+            if extractor.current_model:
+                self.llm_extractor = extractor
                 self.llm_available = True
                 self.ollama_available = settings.LLM_PROVIDER == "ollama"
                 logger.info(
@@ -262,39 +283,6 @@ class ReportReader(ReportReaderExtractionMixin):
             merged.update(update)
         return cls._validated_report_meta(merged)
 
-    def process_report(
-        self,
-        pdf_path: str | os.PathLike[str] | Path | None = None,
-        image_path: str | os.PathLike[str] | Path | None = None,
-        use_ensemble: bool = False,
-        verbose: bool = True,
-        use_llm: bool | None = None,
-        text: str | None = None,
-        create_anonymized_pdf: bool = False,
-        anonymized_pdf_output_path: str | os.PathLike[str] | Path | None = None,
-    ) -> tuple[str, str, dict[str, object], Path | None]:
-        """
-        Process a report by extracting text, metadata, and creating an anonymized version.
-        """
-        pdf_path = Path(pdf_path) if pdf_path is not None else None
-        image_path = Path(image_path) if image_path is not None else None
-        anonymized_pdf_output_path = (
-            Path(anonymized_pdf_output_path)
-            if anonymized_pdf_output_path is not None
-            else None
-        )
-        request = ReportProcessRequest(
-            pdf_path=pdf_path,
-            image_path=image_path,
-            use_ensemble=use_ensemble,
-            verbose=verbose,
-            use_llm=use_llm,
-            text=text,
-            create_anonymized_pdf=create_anonymized_pdf,
-            anonymized_pdf_output_path=anonymized_pdf_output_path,
-        )
-        return self._process_report_request(request).as_tuple()
-
     @staticmethod
     def _report_file_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
         digest = hashlib.sha256()
@@ -341,11 +329,14 @@ class ReportReader(ReportReaderExtractionMixin):
         sensitive_meta.safe_update(report_meta)
         return sensitive_meta
 
-    def process_report_v2(
+    def process_report(
         self,
-        request: ReportAnonymizationRequestV2,
-    ) -> ReportAnonymizationResultV2:
-        """Process one immutable report snapshot into an attempt-local artifact."""
+        request: ReportAnonymizationRequest,
+    ) -> ReportAnonymizationResult:
+        """Process one immutable report snapshot into an attempt-local artifact.
+
+        This is the canonical report-anonymization API.
+        """
         self._raise_if_report_deadline_expired(
             request,
             phase=ReportAnonymizationPhase.VALIDATE_REQUEST,
@@ -360,11 +351,11 @@ class ReportReader(ReportReaderExtractionMixin):
         source_identity_before = self._report_file_identity(request.source_path)
         if source_identity_before[2] != request.source_size_bytes:
             raise SourceIdentityMismatchError(
-                "source size does not match ReportAnonymizationRequestV2"
+                "source size does not match ReportAnonymizationRequest"
             )
         if self._report_file_sha256(request.source_path) != request.source_sha256:
             raise SourceIdentityMismatchError(
-                "source hash does not match ReportAnonymizationRequestV2"
+                "source hash does not match ReportAnonymizationRequest"
             )
 
         attempt_name = str(request.attempt_id)
@@ -396,12 +387,12 @@ class ReportReader(ReportReaderExtractionMixin):
                 request,
                 phase=ReportAnonymizationPhase.EXTRACT_TEXT,
             )
-            result = self._process_report_request(process_request)
+            process_result = self._process_report_request(process_request)
             self._raise_if_report_deadline_expired(
                 request,
                 phase=ReportAnonymizationPhase.VALIDATE_ARTIFACT,
             )
-            produced_path = result.anonymized_pdf_path
+            produced_path = process_result.anonymized_pdf_path
             if (
                 produced_path is None
                 or produced_path.resolve() != temporary_path.resolve()
@@ -440,31 +431,27 @@ class ReportReader(ReportReaderExtractionMixin):
                 ) from exc
             temporary_path.unlink()
             self._sync_directory_best_effort(request.output_directory)
-            provenance_payload = result.report_meta.get("anonymizer_provenance")
+            provenance_payload = process_result.report_meta.get("anonymizer_provenance")
             legacy_provenance = ReportAnonymizerProvenance.model_validate(
                 provenance_payload if isinstance(provenance_payload, Mapping) else {}
             )
-            used_llm = (
-                request.options.use_llm
-                if request.options.use_llm is not None
-                else self.llm_available
-            )
+            used_llm = request.options.use_llm is not False and self.llm_available
             anonymizer_version = legacy_provenance.anonymizer_version
             if anonymizer_version == "unknown":
                 anonymizer_version = lx_anonymizer_version
-            result_v2 = ReportAnonymizationResultV2(
+            result = ReportAnonymizationResult(
                 attempt_id=request.attempt_id,
                 source_sha256=request.source_sha256,
-                original_text=result.text,
-                anonymized_text=result.anonymized_text,
+                original_text=process_result.text,
+                anonymized_text=process_result.anonymized_text,
                 extracted_metadata=self._sensitive_meta_from_report_output(
-                    result.report_meta
+                    process_result.report_meta
                 ),
                 artifact_path=artifact_path,
                 artifact_sha256=artifact_sha256,
                 artifact_size_bytes=artifact_size,
                 artifact_validation=artifact_validation,
-                provenance=ReportAnonymizationProvenanceV2(
+                provenance=ReportAnonymizationProvenance(
                     anonymizer_version=anonymizer_version,
                     detector_sources=tuple(legacy_provenance.detector_sources),
                     model_names=tuple(legacy_provenance.model_names),
@@ -475,14 +462,21 @@ class ReportReader(ReportReaderExtractionMixin):
                 ),
             )
             succeeded = True
-            return result_v2
+            return result
         finally:
             if not succeeded:
                 temporary_path.unlink(missing_ok=True)
 
+    def process(
+        self,
+        request: ReportAnonymizationRequest,
+    ) -> ReportAnonymizationResult:
+        """Process a typed request using the shared processing-strand shape."""
+        return self.process_report(request)
+
     @staticmethod
     def _raise_if_report_deadline_expired(
-        request: ReportAnonymizationRequestV2,
+        request: ReportAnonymizationRequest,
         *,
         phase: ReportAnonymizationPhase,
     ) -> None:
@@ -493,7 +487,7 @@ class ReportReader(ReportReaderExtractionMixin):
             )
 
     @staticmethod
-    def _validate_report_pdf_artifact(path: Path) -> ReportArtifactValidationV2:
+    def _validate_report_pdf_artifact(path: Path) -> ReportArtifactValidation:
         try:
             document = cast(_PdfValidationDocument, pymupdf.open(str(path)))
             try:
@@ -526,7 +520,7 @@ class ReportReader(ReportReaderExtractionMixin):
             raise AnonymizationArtifactError(
                 "report pipeline produced a PDF requiring structural repair"
             )
-        return ReportArtifactValidationV2(
+        return ReportArtifactValidation(
             page_count=page_count,
             repaired=False,
         )
@@ -561,7 +555,16 @@ class ReportReader(ReportReaderExtractionMixin):
         )
         self.sensitive_meta.safe_update(report_meta)
 
-        anonymized_text = self.anonymize_report(text=text, report_meta=report_meta)
+        patient_pseudonym = (
+            self.patient_pseudonym_resolver(self.sensitive_meta)
+            if self.patient_pseudonym_resolver is not None
+            else None
+        )
+        anonymized_text = self.anonymize_report(
+            text=text,
+            report_meta=report_meta,
+            patient_pseudonym=patient_pseudonym,
+        )
         anonymized_pdf_path, report_meta = self._maybe_create_anonymized_pdf(
             request=request,
             report_meta=report_meta,
@@ -765,7 +768,13 @@ class ReportReader(ReportReaderExtractionMixin):
         return text
 
     def _should_use_provider_llm(self, request: ReportProcessRequest) -> bool:
-        return self.llm_available if request.use_llm is None else request.use_llm
+        requested = settings.LLM_ENABLED if request.use_llm is None else request.use_llm
+        if requested and not self.llm_available:
+            logger.warning(
+                "LLM report processing was requested but the configured provider "
+                "is unavailable; using SpaCy/regex metadata extraction."
+            )
+        return requested and self.llm_available
 
     def _extract_or_default_report_meta(
         self, *, text: str, pdf_path: Path | None, use_provider_llm: bool

@@ -8,19 +8,19 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import pdfplumber
-from PIL import Image
 from lx_dtypes.models.meta.ReportMeta import (
     ReportCropInfo,
     ReportCroppingRequest,
     ReportEndoscopeInfo,
-    ReportExaminerInfo,
     ReportExaminationInfo,
+    ReportExaminerInfo,
     ReportMeta,
-    ReportReaderFlags,
     ReportPatientInfo,
     ReportProcessRequest,
+    ReportProcessResult,
+    ReportReaderFlags,
 )
-from lx_dtypes.models import SensitiveMeta
+from PIL import Image
 
 from lx_anonymizer.anonymization import text_anonymizer
 from lx_anonymizer.config import settings
@@ -33,12 +33,13 @@ from lx_anonymizer.ner.spacy_extractor import (
 )
 from lx_anonymizer.ner.spacy_ner_fallback import extract_patient_info_from_text
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
-from lx_anonymizer.region_processing.box_operations import OcrResult
 from lx_anonymizer.regex_patterns import (
     EXAMINATION_LINE_RE,
     EXAMINER_LINE_RE,
     PATIENT_LINE_RE,
 )
+from lx_anonymizer.region_processing.box_operations import OcrResult
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import logger
 
 
@@ -346,7 +347,13 @@ class ReportReaderExtractionMixin:
             logger.warning(f"{extractor_name} LLM extraction error: {e}")
             return {}
 
-    def anonymize_report(self, text: str, report_meta: Mapping[str, object]) -> str:
+    def anonymize_report(
+        self,
+        text: str,
+        report_meta: Mapping[str, object],
+        *,
+        patient_pseudonym: tuple[str, str] | None = None,
+    ) -> str:
         """Anonymize the report text using the extracted metadata."""
         anonymized_text = text_anonymizer.anonymize_text(
             text=text,
@@ -358,6 +365,7 @@ class ReportReaderExtractionMixin:
             first_names=self.employee_first_names,
             last_names=self.employee_last_names,
             apply_cutoffs=True,
+            patient_pseudonym=patient_pseudonym,
         )
         return anonymized_text
 
@@ -419,16 +427,10 @@ class ReportReaderExtractionMixin:
             anonymization_output_dir=anonymization_output_dir,
         )
         process_request = request.process_request()
-        original_text, anonymized_text, report_meta, _ = self.process_report(
-            pdf_path=process_request.pdf_path,
-            image_path=process_request.image_path,
-            use_ensemble=process_request.use_ensemble,
-            verbose=process_request.verbose,
-            use_llm=process_request.use_llm,
-            text=process_request.text,
-            create_anonymized_pdf=process_request.create_anonymized_pdf,
-            anonymized_pdf_output_path=process_request.anonymized_pdf_output_path,
-        )
+        process_result = self._process_report_request(process_request)
+        original_text = process_result.text
+        anonymized_text = process_result.anonymized_text
+        report_meta = process_result.report_meta
         cropped_regions_info, anonymized_pdf_path, report_meta = (
             self._apply_cropping_to_report_meta(request, report_meta)
         )
@@ -592,17 +594,9 @@ class ReportReaderExtractionMixin:
     def _partial_report_meta(data: Mapping[str, object]) -> dict[str, object]:
         raise NotImplementedError
 
-    def process_report(
-        self,
-        pdf_path: str | os.PathLike[str] | Path | None = None,
-        image_path: str | os.PathLike[str] | Path | None = None,
-        use_ensemble: bool = False,
-        verbose: bool = True,
-        use_llm: bool | None = None,
-        text: str | None = None,
-        create_anonymized_pdf: bool = False,
-        anonymized_pdf_output_path: str | os.PathLike[str] | Path | None = None,
-    ) -> tuple[str, str, dict[str, object], Path | None]:
+    def _process_report_request(
+        self, request: ReportProcessRequest
+    ) -> ReportProcessResult:
         raise NotImplementedError
 
     def _load_report_text(self, request: ReportProcessRequest) -> str | None:
