@@ -1580,7 +1580,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.4.0"
+version = "0.9.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "certifi", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1593,6 +1593,7 @@ dependencies = [
     { name = "onnx", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "onnxruntime", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "opencv-python-headless", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "pandas", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pdfplumber", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pillow", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pydantic", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1627,7 +1628,6 @@ dev = [
     { name = "flake8", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "mypy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "opencv-stubs", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
-    { name = "pandas", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pre-commit", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pyright", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pytest", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1672,7 +1672,7 @@ requires-dist = [
     { name = "onnxruntime-gpu", marker = "extra == 'gpu'", specifier = ">=1.26.0" },
     { name = "opencv-python-headless", specifier = ">=4.10.0.84" },
     { name = "opencv-stubs", marker = "extra == 'dev'", specifier = ">=0.1.1" },
-    { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.3.3" },
+    { name = "pandas", specifier = ">=2.3.3" },
     { name = "pdfplumber", specifier = ">=0.11.7" },
     { name = "pillow", specifier = ">=10.4.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1" },

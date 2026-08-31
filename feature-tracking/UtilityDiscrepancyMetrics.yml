@@ -1,0 +1,70 @@
+schema_version: "1.0"
+id: utility_discrepancy_metrics
+name: Quantitative release-table utility discrepancy
+description: >-
+  Measures categorical and ordered feature-distribution changes between an
+  original table and a candidate privacy-preserving release.
+owners:
+  - codex-utility-metrics-20260831
+production_critical: true
+tracking:
+  state: verified
+  history:
+    - state: verified
+      at: "2026-08-31T12:29:00+02:00"
+      by: codex-utility-metrics-20260831
+source_documents:
+  - path: lx_anonymizer/metrics/utility.py
+    disposition: normative
+    note: Defines typed feature configuration, distances, aggregation, and auditing.
+invariants:
+  - Categorical discrepancies are finite Jensen--Shannon divergences with explicit missing-value handling.
+  - Continuous and ordinal discrepancies are empirical one-dimensional Wasserstein distances.
+  - Feature weights are finite, non-negative, and sum to one.
+  - Invalid or empty feature distributions fail loudly.
+definition_of_done:
+  - id: feature_metrics
+    category: functionality
+    title: Feature-level utility discrepancies are quantitative and normalized
+    acceptance:
+      - Categorical features use Jensen--Shannon divergence over aligned support.
+      - Continuous and ordinal features use configurable normalized 1-Wasserstein distance.
+    required: true
+  - id: aggregate_audit
+    category: functionality
+    title: Aggregate discrepancy supports release threshold auditing
+    acceptance:
+      - The aggregate equals the weighted sum of configured feature discrepancies.
+      - The result records whether the inclusive tau_max threshold is satisfied.
+    required: true
+  - id: typed_dataframe_boundary
+    category: quality
+    title: DataFrame configuration and invalid inputs are type-safe and tested
+    acceptance:
+      - Strict Pyright reports no errors.
+      - Focused pytest coverage verifies metric axioms, suppression, weighting, and thresholds.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/python
+        - -m
+        - pytest
+        - tests/test_metrics.py
+        - -q
+      timeout_seconds: 300
+    assessment:
+      status: verified
+      evidence:
+        - kind: code
+          reference: lx_anonymizer/metrics/utility.py
+        - kind: test
+          reference: tests/test_metrics.py
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright (0 errors)
+        - kind: command
+          reference: focused and compatibility tests (21 passed)
+        - kind: command
+          reference: ruff check and format check (passed)
+      assessed_by: codex-utility-metrics-20260831
+      assessed_at: "2026-08-31T12:29:00+02:00"
