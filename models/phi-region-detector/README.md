@@ -10,7 +10,11 @@ tags:
   - onnx
 ---
 
-# LX Anonymizer PHI region detector
+# LX Anonymizer PHI-region detector
+
+This file documents the checked-in model artifact. The general training
+workflow is in [`docs/phi-region-detector-training.md`](../../docs/phi-region-detector-training.md);
+the public project entry point is [`README.md`](../../README.md).
 
 This is the recall-oriented YOLOv8n region detector used as an additive
 safeguard by [lx-anonymizer](https://github.com/wg-lux/lx-anonymizer). It

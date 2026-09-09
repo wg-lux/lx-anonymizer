@@ -1,5 +1,9 @@
 # Releasing LX Anonymizer
 
+This is a maintainer procedure, not an end-user installation guide. Start with
+the [root README](README.md) for installation and the
+[documentation index](docs/README.md) for related developer guidance.
+
 This guide describes how to cut a new release to PyPI and GitHub.
 
 ## Prerequisites

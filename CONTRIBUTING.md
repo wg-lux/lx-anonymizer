@@ -2,6 +2,9 @@
 
 Thanks for taking the time to contribute! This guide explains how to propose improvements, report bugs, and ship new features safely.
 
+The [documentation index](docs/README.md) explains where user guidance,
+operational contracts, and evaluation records belong.
+
 ## Table of Contents
 - [Project scope](#project-scope)
 - [Ways to help](#ways-to-help)

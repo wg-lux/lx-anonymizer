@@ -1,4 +1,8 @@
-# Settings
+# Configuration reference
+
+This is the canonical configuration reference for LX Anonymizer. For a first
+run, follow the [root README](README.md); for the complete documentation map,
+see [docs/README.md](docs/README.md).
 
 LX Anonymizer reads configuration from environment variables and an optional `.env`
 file in the repository root. The settings are defined in `lx_anonymizer/config.py`

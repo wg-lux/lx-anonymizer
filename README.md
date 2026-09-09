@@ -177,8 +177,11 @@ The release workflow publishes:
 - an sdist built with `python -m build --sdist`
 
 ## Configuration
+
 Settings are loaded from environment variables and an optional `.env` file. See
-[`SETTINGS.md`](SETTINGS.md) for a quick overview and example configuration.
+[`SETTINGS.md`](SETTINGS.md) for the complete reference and example
+configuration. The [documentation index](docs/README.md) links to the developer,
+operations, contract, and evaluation guides.
 
 ## Model downloads
 The default German spaCy model is `de_core_news_sm`. On first use, LX Anonymizer
@@ -500,38 +503,34 @@ By default, outputs live in `~/etc/lx-anonymizer/{data,temp}`. Adjust them in
 Clean `temp` regularly to avoid large intermediate artefacts.
 
 ## Development workflow
-- **Code quality**: `uv run flake8` for linting and formatting
-- **Testing**:
-  - CPU-friendly tests: `uv run pytest -m "not gpu"`
-  - GPU-accelerated tests: `uv run pytest -m gpu` (requires CUDA-capable hardware)
-  - Integration tests: `uv run pytest tests/test_cli_integration.py`
-  - Frame processing tests: `uv run pytest tests/test_frame_cleaner.py`
-- **Performance profiling**: Use `--log-level DEBUG` for detailed timing information
-- **Build**: `uv run python -m build --sdist` for local sdist validation; GitHub Actions builds release wheels
-- **Full validation**: `scripts/run_checks.sh` for comprehensive local testing
+
+The shortest supported validation path is:
+
+```bash
+uv sync --extra dev --extra cpu
+.devenv/state/venv/bin/pyright
+uv run pytest -m "not gpu"
+uv run flake8
+```
+
+Use `scripts/run_checks.sh` for the repository's full local check sequence. GPU
+and LLM tests are opt-in (`-m gpu` and `-m llm`). See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the contributor workflow and
+[`docs/README.md`](docs/README.md) for the detailed developer contracts.
 
 ## Testing Medical Workflows
 - **ReportReader**: Test with sample medical PDFs in German and English
 - **FrameCleaner**: Validate with endoscopic video files (MP4, AVI formats supported)
 - **Integration**: Use `example_anonymize_pdf.py` for end-to-end testing scenarios
 
-## Project roadmap
-1. **Release Management**:
-   - Continue hardening native-wheel publishing across release targets
-   - Continue separating optional GPU/LLM workloads behind extras
-   - Extend release automation with GitHub release notes and TestPyPI promotion flow
-2. **API Enhancement**:
-   - Expose REST/gRPC service with validation UI
-   - WebSocket support for real-time video processing
-   - Enhanced batch processing APIs
-3. **Performance & Scalability**:
-   - Distributed processing support for large video collections
-   - Advanced caching mechanisms for repeated processing
-   - Multi-GPU support for FrameCleaner operations
-4. **Medical Workflow Integration**:
-   - DICOM support for medical imaging workflows
-   - HL7 FHIR integration for healthcare systems
-   - Advanced medical entity recognition models
+## Project status
+
+LX Anonymizer is beta software for research and production integration work. It
+must not be treated as a guarantee that every sensitive element has been
+removed. Review the output and validate it for the intended clinical or
+secondary-use workflow before release. Current work is tracked in the
+repository's feature-tracking YAML files and in dated evaluation records under
+[`docs/`](docs/).
 
 ## Contributing
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution guidelines, testing instructions, and communication channels.

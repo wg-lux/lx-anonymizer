@@ -1,4 +1,7 @@
-# What `devenv.nix` Does
+# Development environment and Nix outputs
+
+This guide is for contributors and downstream Nix/devenv consumers. For the
+quickest installation, start with the [root README](README.md).
 
 The repository uses [devenv](https://devenv.sh/) for two related jobs:
 
