@@ -15,36 +15,39 @@ import json
 import logging
 import re
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from collections.abc import Iterable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from types import TracebackType
 from typing import Optional, Self, Sequence, cast
 
 import requests
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from tenacity import retry, stop_after_attempt, wait_fixed
-from lx_dtypes.models.contracts.llm_service import (
-    LLMChatMessagePayload,
-    LLMChatOllamaPayload,
-    LLMChatOllamaOptionsPayload,
-    LLMChatOpenAIPayload,
-    LLMChatResponsePayload,
-)
 from lx_dtypes.models.contracts.llm_extractor import (
     LLMEnrichedMetadataPayload,
+    LLMEvaluationResultPayload,
     LLMFrameContextPayload,
     LLMFrameDataPayload,
     LLMMetadataCacheStatsPayload,
     LLMModelInfoPayload,
-    LLMTextTimelineEntryPayload,
     LLMTemporalAnalysisPayload,
-    LLMEvaluationResultPayload,
+    LLMTextTimelineEntryPayload,
     LLMVllmModelsPayload,
+)
+from lx_dtypes.models.contracts.llm_service import (
+    LLMChatMessagePayload,
+    LLMChatOllamaOptionsPayload,
+    LLMChatOllamaPayload,
+    LLMChatOpenAIPayload,
+    LLMChatResponsePayload,
 )
 from lx_dtypes.models.contracts.text_anonymization import (
     LLMMetadataPayload,
 )
 from lx_dtypes.models.meta.VideoMeta import FrameCollectionItem
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from tenacity import retry, stop_after_attempt, wait_fixed
+
+from lx_anonymizer.config import settings
+from lx_anonymizer.llm.connection import request_options, resolve_connection
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 # Konfiguriere Logging
@@ -90,6 +93,8 @@ class _OllamaModelTagPayload(BaseModel):
     digest: str | None = None
     details: _OllamaModelDetailsPayload | None = None
     capabilities: list[str] | None = None
+    remote_host: str | None = None
+    remote_model: str | None = None
 
     @model_validator(mode="after")
     def _require_identifier(self) -> Self:
@@ -120,7 +125,13 @@ class _OllamaTagsPayload(BaseModel):
 
 def _parse_ollama_model_names(raw_models_json: object) -> list[str]:
     models_payload = _OllamaTagsPayload.model_validate(raw_models_json)
-    return [model.identifier for model in models_payload.models]
+    return [
+        model.identifier
+        for model in models_payload.models
+        if not model.remote_host
+        and not model.remote_model
+        and not model.identifier.endswith(":cloud")
+    ]
 
 
 def _coerce_str_object_map(value: object) -> dict[str, object] | None:
@@ -247,27 +258,35 @@ class LLMMetadataExtractor:
         self,
         base_url: Optional[str] = None,
         enable_cache: bool = True,
-        provider: str = "ollama",
+        provider: Optional[str] = None,
         preferred_model: Optional[str] = None,
         model_timeout: Optional[int] = None,
     ):
-        self.provider = (provider or "ollama").strip().lower()
-        if self.provider not in {"ollama", "vllm"}:
-            logger.warning(
-                "Unknown LLM provider %s, falling back to ollama.",
-                self.provider,
-            )
-            self.provider = "ollama"
-        self.base_url = (base_url or self._default_base_url()).rstrip("/")
+        self.provider, self.base_url = resolve_connection(provider, base_url)
         self.chat_endpoint = self._build_chat_endpoint()
+        self.preferred_model: str | None = (
+            settings.LLM_MODEL if preferred_model is None else preferred_model
+        ).strip()
+        self.preferred_timeout: int | None = (
+            settings.LLM_TIMEOUT if model_timeout is None else model_timeout
+        )
+        if not self.preferred_model:
+            raise ValueError("LLM_MODEL must not be empty")
+        if not 1 <= self.preferred_timeout <= 120:
+            raise ValueError("LLM timeout must be between 1 and 120 seconds")
         self.available_models_retry = False
         self.available_models = self._check_available_models()
         self.current_model: _LLMModelConfig | None = None
         self.cache = MetadataCache() if enable_cache else None
         self.sensitive_meta = SensitiveMeta()
-        self.preferred_model = preferred_model
-        self.preferred_timeout = model_timeout
 
+        if (
+            self.provider == "ollama"
+            and self.preferred_model
+            and ":" not in self.preferred_model.rsplit("/", 1)[-1]
+            and f"{self.preferred_model}:latest" in self.available_models
+        ):
+            self.preferred_model = f"{self.preferred_model}:latest"
         self._initialize_best_model()
 
     def _require_current_model(self) -> _LLMModelConfig:
@@ -290,17 +309,18 @@ class LLMMetadataExtractor:
 
     def _check_available_models(self) -> list[str]:
         """Überprüft, welche Modelle verfügbar sind."""
-        if self.available_models_retry:
+        if not settings.LLM_ENABLED or self.available_models_retry:
             return []
 
         self.available_models_retry = False
+        transport = request_options(self.base_url)
         try:
             model_endpoint = (
                 f"{self.base_url.rstrip('/')}/api/tags"
                 if self.provider == "ollama"
                 else f"{self.base_url.rstrip('/')}/v1/models"
             )
-            response = requests.get(model_endpoint, timeout=5)
+            response = requests.get(model_endpoint, timeout=5, **transport)
             if response.status_code == 200:
                 raw_models_json = response.json()
 
@@ -360,6 +380,7 @@ class LLMMetadataExtractor:
                 "Bevorzugtes Modell nicht verfuegbar: %s",
                 self.preferred_model,
             )
+            return
 
         for model_config in ModelConfig.get_models_by_priority():
             if model_config.name in self.available_models:
@@ -443,6 +464,9 @@ OCR_TEXT_END"""
             requests.RequestException: Bei API-Fehlern
             requests.Timeout: Bei Timeouts
         """
+        if not settings.LLM_ENABLED:
+            raise RuntimeError("LLM functionality is disabled")
+        transport = request_options(self.base_url)
         timeout = 10
         try:
             assert self.current_model is not None
@@ -458,6 +482,7 @@ OCR_TEXT_END"""
                 json=payload.model_dump(),
                 headers={"Content-Type": "application/json"},
                 timeout=timeout,
+                **transport,
             )
 
             if response.status_code == 200:
@@ -474,7 +499,7 @@ OCR_TEXT_END"""
 
                 return result
             else:
-                error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                error_msg = f"HTTP {response.status_code}"
                 logger.error(f"❌ API-Fehler: {error_msg}")
                 raise requests.RequestException(error_msg)
 
@@ -558,7 +583,7 @@ OCR_TEXT_END"""
         Returns:
             True wenn ein nächstes Modell verfügbar ist, False sonst
         """
-        if not self.current_model:
+        if self.preferred_model or not self.current_model:
             return False
 
         current_priority = self.current_model.priority
@@ -618,7 +643,8 @@ OCR_TEXT_END"""
 
         for model_config in ModelConfig.get_models_by_priority():
             if (
-                model_config.name in self.available_models
+                not self.preferred_model
+                and model_config.name in self.available_models
                 and model_config.name not in seen_model_names
             ):
                 available_model_configs.append(model_config)
@@ -957,9 +983,7 @@ OCR_TEXT_END"""
 
     def _get_fastest_available_model(self) -> _LLMModelConfig | None:
         """Gibt das schnellste verfügbare Modell zurück."""
-        if self.preferred_model and (
-            self.preferred_model in self.available_models or not self.available_models
-        ):
+        if self.preferred_model and (self.preferred_model in self.available_models):
             model_config = next(
                 (
                     m
@@ -978,6 +1002,9 @@ OCR_TEXT_END"""
                 timeout=self.preferred_timeout or 30,
                 description="Preferred model",
             )
+
+        if self.preferred_model:
+            return None
 
         for model_config in ModelConfig.get_models_by_priority():
             if model_config.name in self.available_models:

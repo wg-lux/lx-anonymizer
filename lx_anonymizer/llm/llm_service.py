@@ -1,18 +1,20 @@
 import base64
-from io import BytesIO
 import logging
 from collections.abc import Sequence
+from io import BytesIO
 from typing import Mapping, Optional, TypedDict, cast
 
 import requests
-from PIL import Image
-from lx_anonymizer.config import settings
 from lx_dtypes.models.contracts.llm_service import (
     LLMChatMessagePayload,
-    LLMChatOllamaPayload,
     LLMChatOllamaOptionsPayload,
+    LLMChatOllamaPayload,
     LLMChatOpenAIPayload,
 )
+from PIL import Image
+
+from lx_anonymizer.config import settings
+from lx_anonymizer.llm.connection import request_options, resolve_connection
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +51,19 @@ class LLMService:
         model_name: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> None:
-        self.provider = (provider or settings.LLM_PROVIDER or "vllm").strip().lower()
-        resolved_base_url = base_url or settings.resolved_llm_base_url
-        self.base_url = resolved_base_url.rstrip("/")
-        self.model_name = model_name or settings.LLM_MODEL
-        self.timeout = timeout or settings.LLM_TIMEOUT
+        self.provider, self.base_url = resolve_connection(provider, base_url)
+        self.model_name = (
+            settings.LLM_MODEL if model_name is None else model_name
+        ).strip()
+        self.timeout = settings.LLM_TIMEOUT if timeout is None else timeout
+        if not self.model_name:
+            raise ValueError("LLM_MODEL must not be empty")
+        if not 1 <= self.timeout <= 120:
+            raise ValueError("LLM timeout must be between 1 and 120 seconds")
 
     def _chat(self, prompt: str) -> str:
+        if not settings.LLM_ENABLED:
+            raise LLMServiceError("LLM functionality is disabled")
         system_prompt = (
             "You correct OCR text from German medical reports. "
             "Return only the corrected text, preserving names, dates, "
@@ -65,6 +73,7 @@ class LLMService:
         response = requests.post(
             self._chat_endpoint(),
             timeout=self.timeout,
+            **request_options(self.base_url),
             headers={"Content-Type": "application/json"},
             json=cast(dict[str, object], request_payload.model_dump(mode="json")),
         )
@@ -139,6 +148,8 @@ class LLMService:
 
     def recognize_image(self, image: Image.Image, candidate_text: str = "") -> str:
         """Transcribe visible text from an image with Ollama's vision endpoint."""
+        if not settings.LLM_ENABLED:
+            raise LLMServiceError("LLM functionality is disabled")
         if self.provider != "ollama":
             raise LLMServiceError("Vision OCR currently requires the Ollama provider")
 
@@ -160,6 +171,7 @@ class LLMService:
         response = requests.post(
             self._chat_endpoint(),
             timeout=self.timeout,
+            **request_options(self.base_url),
             headers={"Content-Type": "application/json"},
             json=cast(dict[str, object], payload),
         )

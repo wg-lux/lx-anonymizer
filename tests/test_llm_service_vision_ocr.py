@@ -46,7 +46,7 @@ def test_ollama_vision_ocr_sends_png_and_candidate(
     monkeypatch.setattr(llm_service.requests, "post", fake_post)
     service = LLMService(
         provider="ollama",
-        base_url="http://ollama.internal:11434",
+        base_url="http://127.0.0.1:11434",
         model_name="gemma4:e2b",
         timeout=12,
     )
@@ -56,7 +56,7 @@ def test_ollama_vision_ocr_sends_png_and_candidate(
     )
 
     assert result == "ID 123"
-    assert captured["url"] == "http://ollama.internal:11434/api/chat"
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
     payload = cast(dict[str, object], captured["json"])
     assert payload["model"] == "gemma4:e2b"
     messages = cast(list[dict[str, object]], payload["messages"])
@@ -109,14 +109,14 @@ def test_ollama_text_correction_serializes_typed_payload(
     monkeypatch.setattr(llm_service.requests, "post", fake_post)
     service = LLMService(
         provider="ollama",
-        base_url="http://ollama.internal:11434",
+        base_url="http://127.0.0.1:11434",
         model_name="gemma4:e2b",
     )
 
     result = service.correct_ocr_text("Patlent Lux")
 
     assert result == "Patient Lux"
-    assert captured["url"] == "http://ollama.internal:11434/api/chat"
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
     payload = cast(dict[str, object], captured["json"])
     assert payload["model"] == "gemma4:e2b"
     assert isinstance(payload["messages"], list)

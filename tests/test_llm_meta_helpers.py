@@ -198,7 +198,7 @@ def test_check_available_models_uses_metadata_rich_ollama_tags_parser(
         ]
     }
 
-    def fake_get(url: str, timeout: float) -> _ResponseStub:
+    def fake_get(url: str, timeout: float, **kwargs: object) -> _ResponseStub:
         assert url == "http://127.0.0.1:11434/api/tags"
         assert timeout == 5
         return _ResponseStub(payload)
@@ -429,16 +429,14 @@ def test_extract_response_content_supports_vllm_choices_shape():
     assert content == '{"first_name":"Max"}'
 
 
-def test_get_fastest_available_model_uses_preferred_even_without_listing():
+def test_get_fastest_available_model_requires_listing():
     extractor = _extractor_stub(
         available_models=[],
         preferred_model="Qwen/Qwen2.5-3B-Instruct",
         preferred_timeout=42,
     )
     model = extractor._get_fastest_available_model()  # pyright: ignore[reportPrivateUsage]
-    assert model is not None
-    assert model.name == "Qwen/Qwen2.5-3B-Instruct"
-    assert model.timeout == 42
+    assert model is None
 
 
 def test_frame_sampling_optimizer_decisions_and_duplicate_skip():

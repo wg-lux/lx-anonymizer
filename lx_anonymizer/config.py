@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     LLM_PROVIDER: Literal["vllm", "ollama"] = "ollama"
     LLM_BASE_URL: str = ""
     LLM_MODEL: str = "lx-gemma4-e2b-json"
-    LLM_TIMEOUT: int = 120
+    LLM_TIMEOUT: int = Field(default=120, ge=1, le=120)
+    LLM_CA_FILE: str = ""
+    LLM_CLIENT_CERT_FILE: str = ""
+    LLM_CLIENT_KEY_FILE: str = ""
     LLM_MAX_CALLS_PER_VIDEO: int = 1
     LLM_MIN_TEXT_LENGTH: int = 32
     REPORT_LLM_MIN_TEXT_LENGTH: int = 64
