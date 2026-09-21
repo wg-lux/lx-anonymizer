@@ -5,7 +5,7 @@
   "source": "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl",
   "files": {
     "LICENSE": "3933c176979b68bc6d0bcc902c7d6c130f1d127f476f17ba5cdba8d99cfd0012",
-    "LICENSES_SOURCES": "0c3ab78745569d848b7c83a486183bce42b9643561084d6d6f67eb0229c79869",
+    "LICENSES_SOURCES": "2c5cde0156a6801412dd198671112d5d0ae4d434f16f638a34fc66ad25a3f4c1",
     "README.md": "913e7904f4efe8179680352bdaa7419c6a0095794f6ae704df5b08908339af60",
     "accuracy.json": "49900302b424ef5e379daa9ab9bb4df35c39944b95adfe081a5a381a31157bcd",
     "attribute_ruler/patterns": "6241300d1efc3b0263997a4a429ce4692f85a7c71470394c6b07371186ea93ba",
