@@ -9,23 +9,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Protocol, TypedDict, cast
+from typing import TypedDict, cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 
-Box = tuple[int, int, int, int]
-SplitName = str
-ImageArray = npt.NDArray[np.uint8]
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
+from lx_anonymizer.runtime_types import PydicomReader
 
 
 class SyntheticPhiGenerationError(RuntimeError):
     """Raised when a reproducible synthetic dataset cannot be generated."""
-
-
-class _PydicomModule(Protocol):
-    def dcmread(self, path: str | Path, **kwargs: object) -> object: ...
 
 
 class _AnnotationRecord(TypedDict):
@@ -422,7 +417,7 @@ def _file_size(path: Path) -> int:
 def _select_manageable_sources(paths: Sequence[Path], limit: int) -> list[Path]:
     ordered = sorted(paths, key=lambda path: (_file_size(path), path))
     selected: list[Path] = []
-    pydicom: _PydicomModule | None = None
+    pydicom: PydicomReader | None = None
     for path in ordered:
         if path.suffix.lower() == ".dcm":
             if pydicom is None:
@@ -448,7 +443,7 @@ def _select_manageable_sources(paths: Sequence[Path], limit: int) -> list[Path]:
 
 def _assign_patient_splits(
     patient_keys: Sequence[str], train_fraction: float, validation_fraction: float
-) -> dict[str, SplitName]:
+) -> dict[str, str]:
     count = len(patient_keys)
     train_count = max(1, int(count * train_fraction))
     validation_count = int(count * validation_fraction)
@@ -637,14 +632,14 @@ def _safe_filename(value: str) -> str:
     return safe[:180].strip("_") or "frame"
 
 
-def _load_pydicom() -> _PydicomModule:
+def _load_pydicom() -> PydicomReader:
     try:
         import pydicom  # type: ignore[import-untyped]
     except ImportError as exc:
         raise SyntheticPhiGenerationError(
             "DICOM frame generation requires pydicom; install the evaluation extra"
         ) from exc
-    return cast(_PydicomModule, pydicom)
+    return cast(PydicomReader, pydicom)
 
 
 if __name__ == "__main__":

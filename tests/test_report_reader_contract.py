@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 from types import MethodType, TracebackType
 from typing import Protocol, Self, cast
+from unittest.mock import patch
 from uuid import uuid4
 
 import pymupdf  # type: ignore[import-untyped]
@@ -21,6 +22,7 @@ from lx_anonymizer.report_contracts import (
     SourceIdentityMismatchError,
 )
 from lx_anonymizer.report_reader import ReportReader
+from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 
 class _WritablePdfPage(Protocol):
@@ -91,6 +93,72 @@ def _reader_with_fake_pipeline() -> ReportReader:
 
 def test_process_report_is_the_canonical_processing_method() -> None:
     assert hasattr(ReportReader, "process_report")
+
+
+@pytest.mark.parametrize("late_name", [None, "", "unknown", "Conflicting"])
+def test_process_report_returns_collected_best_prediction(
+    tmp_path: Path, late_name: str | None
+) -> None:
+    # Arrange: collected evidence and a later partial extraction using report aliases.
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
+    output_directory = tmp_path / "attempt"
+    output_directory.mkdir()
+    request = _request(source=source, output_directory=output_directory)
+    reader = object.__new__(ReportReader)
+    reader.llm_available = False
+    reader.patient_pseudonym_resolver = None
+    reader.sensitive_meta = SensitiveMeta(first_name="Previous patient")
+
+    def extract(text: str, pdf_path: Path | None) -> dict[str, object]:
+        reader.sensitive_meta.safe_update(
+            {"first_name": "Anna", "last_name": "Muster", "dob": "1980-02-03"}
+        )
+        return {
+            "patient_first_name": late_name,
+            "patient_last_name": late_name,
+            "examination_date": "2026-09-01",
+            "endoscope_sn": "SN-123",
+        }
+
+    def create_pdf(
+        *, request: ReportProcessRequest, report_meta: dict[str, object]
+    ) -> tuple[Path, dict[str, object]]:
+        output_path = request.anonymized_pdf_output_path
+        assert isinstance(output_path, Path)
+        with cast(_WritablePdfDocument, pymupdf.open()) as document:
+            page = document.new_page()
+            page.insert_text((72, 72), "Anonymized report")
+            document.save(str(output_path))
+        return output_path, report_meta
+
+    with (
+        patch.object(
+            reader, "_load_report_text", return_value="Anna Muster report text"
+        ),
+        patch.object(
+            reader,
+            "_apply_ocr_fallback_if_needed",
+            return_value="Anna Muster report text",
+        ),
+        patch.object(reader, "extract_report_meta", side_effect=extract),
+        patch.object(reader, "anonymize_report", return_value="Anonymized report"),
+        patch.object(reader, "_maybe_create_anonymized_pdf", side_effect=create_pdf),
+    ):
+        # Act: exercise real collection, finalization and the public typed boundary.
+        result = reader.process_report(request)
+
+    # Assert: raw predictions survive anonymization and previous-run state is reset.
+    prediction = result.extracted_metadata
+    assert prediction.first_name == "Anna"
+    assert prediction.last_name == "Muster"
+    assert prediction.dob is not None
+    assert prediction.dob.isoformat() == "1980-02-03"
+    assert prediction.examination_date is not None
+    assert prediction.examination_date.isoformat() == "2026-09-01"
+    assert prediction.endoscope_sn == "SN-123"
+    assert prediction.first_name == reader.sensitive_meta.first_name
+    assert prediction.dob == reader.sensitive_meta.dob
 
 
 def test_report_contract_import_is_the_shared_contract() -> None:

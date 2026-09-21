@@ -38,10 +38,9 @@ LX Anonymizer will return a sensitive meta compliant dict when running either of
 - Python 3.12+
 - Linux or macOS (Windows support is experimental)
 - NVIDIA GPU recommended for real-time video anonymization (CUDA 12.x). CPU-only processing works but is slower.
+- spaCy `de_core_news_sm` 3.8.0 for German NER is bundled with source and wheel
+  installations; no separate model install is needed.
 - Optional extras:
-  - spaCy `de_core_news_sm` model for German NER. Source installs with `uv`
-    use the locked model wheel; other runtime environments may need an explicit
-    install.
   - Torch vision/audio for video OCR workloads
   - local or remote LLM-backed metadata extraction
 
@@ -184,18 +183,19 @@ configuration. The [documentation index](docs/README.md) links to the developer,
 operations, contract, and evaluation guides.
 
 ## Model downloads
-The default German spaCy model is `de_core_news_sm`. On first use, LX Anonymizer
-loads the model if it is installed and otherwise downloads it with the same
-Python interpreter that is running the application. To pre-install it, run:
-```bash
-python -m spacy download de_core_news_sm
-```
+The default German spaCy model, `de_core_news_sm` 3.8.0, ships as package data.
+It loads directly from the installed package and works offline, including after
+`uv sync` or a fresh wheel install. A missing or corrupt bundled model raises an
+error requiring package reinstallation; it never triggers a download or a blank
+NER pipeline. The upstream MIT license, source attribution and file checksums
+are retained under `lx_anonymizer/resources/spacy/`.
 
-Clinical/strict deployments fail loudly when the configured model is missing.
-Automatic download is enabled by default. Set
-`LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD=0` or `SPACY_AUTO_DOWNLOAD=False` to disable
-network installation. Outside clinical/strict profiles, disabling it permits
-the degraded blank fallback.
+`LX_ANONYMIZER_SPACY_MODEL` still selects an external custom model. Install custom
+models during environment provisioning. Automatic downloading is disabled by
+default; the existing `LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD=1` opt-in applies only to
+external models. Clinical/strict deployments reject missing custom models;
+nonclinical custom-model configurations retain the documented blank fallback.
+See `feature-tracking/SpacyModelPackaging.yml` for the packaging contract.
 
 Start a compatible LLM server exposing either an OpenAI-compatible API or Ollama:
 ```bash

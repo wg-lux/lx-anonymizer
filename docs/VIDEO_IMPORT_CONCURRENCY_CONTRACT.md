@@ -36,6 +36,41 @@ Those responsibilities remain in `endoreg-db`. A successful
 `FrameCleaner.clean_video` return never means that a canonical artifact may be
 published.
 
+## Exhaustive patient metadata analysis
+
+Endoreg video import selects `FrameCleaner(quality_profile="exhaustive")`.
+This requires the matching lx-anonymizer implementation; deploy the caller and
+compute package together. Existing sampled profiles remain available for
+explicit callers, but cannot establish coverage of single-frame overlays.
+
+The exhaustive profile decodes every source frame sequentially, without a
+sample cap or metadata-driven early stopping. RapidOCR receives the full source
+image, including regions outside configured endoscope coordinates. It does not
+invoke a vision language model per frame or silently switch OCR backends after
+failure. Decoded frame counts must match the declared source frame count.
+
+One previous pixel buffer allows reuse of OCR only for exactly identical
+consecutive images. An invocation-local least-recently-used cache avoids
+repeating metadata extraction for identical text. Both caches reset per video;
+the pixel buffer is released on success or failure. Optional video-level
+language-model candidates retain at most `max_retained_texts` entries (128 by
+default), after metadata accumulation. `max_retained_observations` bounds frame
+evidence (100,000 by default); exceeding it raises rather than silently dropping
+observations. Callers can supply an explicitly sized `FrameCleanerSamplingProfile`.
+The profile also sets `ocr_inference_threads` (two by default) for each ONNX
+Runtime inference session and limits inter-operator execution to one thread,
+avoiding automatic per-session CPU pools multiplied across import attempts.
+The auxiliary PHI-region proposal detector keeps its bounded sampling schedule
+(`max_frames_to_sample`); it never gates OCR. The result's `frame_analysis`
+records that detector's sample budget and processed count separately. The
+dedicated every-frame detector masking API is unchanged.
+
+This profile changes metadata analysis coverage. It preserves the existing
+masking strategy and does not establish clinical OCR recall or masking accuracy.
+See `exhaustive_metadata_analysis` in the linked FrameCleaner feature definition
+for regression evidence. Deployment performance and recall require representative
+videos on the target hardware.
+
 ## Current Concurrency Limitation
 
 `FrameCleaner` contains mutable per-video state:

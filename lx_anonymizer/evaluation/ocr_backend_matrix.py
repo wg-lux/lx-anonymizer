@@ -12,12 +12,11 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, TextIO, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TextIO, TypeAlias, cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image
 
 from lx_anonymizer.config import settings
@@ -28,6 +27,7 @@ from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr_with_details
 from lx_anonymizer.ocr.ocr_frame import FrameOCR, RoiInput
 from lx_anonymizer.ocr.ocr_frame_tesserocr import get_tesseocr_processor
 from lx_anonymizer.ocr.ocr_preprocessing import optimize_image_for_medical_text
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 from lx_anonymizer.text_detection.phi_region_detector import (
     detect_phi_regions_from_settings,
 )
@@ -44,7 +44,6 @@ PhiField: TypeAlias = Literal[
 ]
 FieldValues: TypeAlias = dict[PhiField, str | None]
 JsonObject: TypeAlias = dict[str, object]
-FrameArray: TypeAlias = npt.NDArray[np.uint8]
 PipelineStatus: TypeAlias = Literal["ok", "failed", "skipped"]
 
 PHI_FIELDS: tuple[PhiField, ...] = (
@@ -100,50 +99,15 @@ class PipelineId(str, Enum):
     R4 = "R4"
 
 
-class TesseractData(TypedDict):
-    text: list[str]
-    left: list[int | str]
-    top: list[int | str]
-    width: list[int | str]
-    height: list[int | str]
-    conf: list[int | str]
-
-
-class _TesseractOutput(Protocol):
-    DICT: object
-
-
-class _PytesseractModule(Protocol):
-    Output: _TesseractOutput
-
-    def image_to_string(
-        self,
-        image: Image.Image,
-        *,
-        config: str = "",
-        lang: str | None = None,
-    ) -> str | bytes: ...
-
-    def image_to_data(
-        self,
-        image: Image.Image,
-        *,
-        config: str = "",
-        output_type: object,
-        lang: str | None = None,
-    ) -> TesseractData: ...
-
-
 class _Cv2Runtime(Protocol):
     IMREAD_COLOR: int
     COLOR_BGR2RGB: int
 
-    def imread(self, filename: str, flags: int) -> FrameArray | None: ...
+    def imread(self, filename: str, flags: int) -> ImageArray | None: ...
 
-    def cvtColor(self, src: FrameArray, code: int) -> FrameArray: ...
+    def cvtColor(self, src: ImageArray, code: int) -> ImageArray: ...
 
 
-_PYTESSERACT = cast(_PytesseractModule, pytesseract)
 _CV2 = cast(_Cv2Runtime, cv2)
 
 
@@ -945,7 +909,7 @@ class OcrBackendMatrixEvaluator:
         )
 
     @staticmethod
-    def _frame_image_for_phi_detection(frame: FrameArray) -> Image.Image:
+    def _frame_image_for_phi_detection(frame: ImageArray) -> Image.Image:
         if frame.ndim == 2:
             return Image.fromarray(frame).convert("RGB")
         return _pil_from_frame(frame)
@@ -1758,16 +1722,16 @@ def _pytesseract_pil_ocr(
 ) -> tuple[str, tuple[BoundingBox, ...]]:
     image_for_tesseract = _pytesseract_prepare_image(image)
     if lang is None:
-        data = _PYTESSERACT.image_to_data(
+        data = pytesseract.image_to_data(
             image_for_tesseract,
             config=config,
-            output_type=_PYTESSERACT.Output.DICT,
+            output_type=pytesseract.Output.DICT,
         )
     else:
-        data = _PYTESSERACT.image_to_data(
+        data = pytesseract.image_to_data(
             image_for_tesseract,
             config=config,
-            output_type=_PYTESSERACT.Output.DICT,
+            output_type=pytesseract.Output.DICT,
             lang=lang,
         )
 
@@ -1811,14 +1775,14 @@ def _pytesseract_prepare_image(image: Image.Image) -> Image.Image:
     return prepared
 
 
-def _load_frame(path: Path) -> FrameArray:
+def _load_frame(path: Path) -> ImageArray:
     image = _CV2.imread(str(path), _CV2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"Could not load frame image: {path}")
     return np.asarray(image, dtype=np.uint8)
 
 
-def _pil_from_frame(frame: FrameArray) -> Image.Image:
+def _pil_from_frame(frame: ImageArray) -> Image.Image:
     if frame.ndim == 3:
         rgb = _CV2.cvtColor(frame, _CV2.COLOR_BGR2RGB)
         return Image.fromarray(rgb)

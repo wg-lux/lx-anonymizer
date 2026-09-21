@@ -1,0 +1,37 @@
+schema_version: "1.0"
+id: spacy_model_packaging
+name: Reproducible German spaCy model
+description: Ship the default German named-entity recognition model with every source and wheel installation.
+owners: [lx-anonymizer maintainers]
+production_critical: true
+definition_of_done:
+  - id: offline_default_model
+    category: functionality
+    title: The default German model works without a separate installation or network access
+    acceptance:
+      - The package contains the pinned de_core_news_sm 3.8.0 model, upstream license and source attribution.
+      - The default loader uses the bundled model and requires German language and the trained NER component.
+      - Missing or corrupt bundled resources fail explicitly instead of downloading or returning a blank model.
+      - Automatic downloads for explicitly configured external models are disabled by default.
+      - Source and wheel tests verify real offline inference and resource checksums.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/test_spacy_model_manager.py, tests/test_config.py, -q]
+      timeout_seconds: 600
+    assessment:
+      status: verified
+      assessed_by: codex-storage-reaper-20260910
+      evidence:
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright
+          note: 0 errors, 8 existing warnings.
+        - kind: command
+          reference: devenv shell -- .devenv/state/venv/bin/pytest tests/test_spacy_model_manager.py tests/test_config.py tests/test_module.py -q
+          note: 20 passed; 3 unrelated heavy-module smoke tests skipped. Real bundled German NER is exercised without network or model-package lookup.
+        - kind: command
+          reference: uv build --wheel --out-dir /tmp/lx-spacy-wheel
+          note: Wheel built successfully. All 30 bundled model file hashes matched; isolated wheel extraction identified Angela Merkel as PER and Berlin as LOC with sockets and subprocesses blocked.
+        - kind: command
+          reference: uv build --sdist --out-dir /tmp/lx-spacy-wheel
+          note: Source archive built successfully; all 30 model files matched the checksum manifest.

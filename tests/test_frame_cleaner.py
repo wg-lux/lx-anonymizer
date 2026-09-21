@@ -1,11 +1,11 @@
 import subprocess
+import threading
 from fractions import Fraction
 from pathlib import Path
 from typing import TypedDict, cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import numpy.typing as npt
 import pytest
 from lx_dtypes.models.meta.VideoMeta import FrameProcessResult, VideoMeta
 
@@ -16,10 +16,10 @@ from lx_anonymizer.frame_cleaner import (
     FrameCleanerSamplingProfile,
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
-FrameArray = npt.NDArray[np.uint8]
-StreamItem = tuple[int, FrameArray, int]
+StreamItem = tuple[int, ImageArray, int]
 NestedRoi = dict[str, dict[str, int | None]]
 
 
@@ -46,10 +46,90 @@ def _frame_cleaner_unit_stub() -> FrameCleaner:
     frame_cleaner.frame_ocr = MagicMock()
     frame_cleaner.frame_metadata_extractor = FrameMetadataExtractor()
     frame_cleaner.sensitive_meta = SensitiveMeta()
+    frame_cleaner.sampling_profile = FrameCleanerSamplingProfile.from_quality_profile(
+        "balanced"
+    )
     frame_cleaner.frame_collection = []
     frame_cleaner.frame_observations = []
     frame_cleaner.ocr_text_collection = []
     return frame_cleaner
+
+
+@pytest.mark.parametrize("late_name", [None, "", "unknown", "Conflicting"])
+@pytest.mark.parametrize(
+    ("confidences", "expected_text"),
+    [
+        ((0.95, 0.5, 0.1), "Initial OCR"),
+        ((0.5, 0.95, 0.1), "More complete OCR"),
+        ((0.95, 0.95, 0.1), "More complete OCR"),
+    ],
+)
+def test_clean_video_returns_accumulated_best_prediction(
+    tmp_path: Path,
+    late_name: str | None,
+    confidences: tuple[float, float, float],
+    expected_text: str,
+) -> None:
+    # Arrange: complementary frames, followed by an unhelpful/conflicting read.
+    cleaner = _frame_cleaner_unit_stub()
+    cleaner.use_llm = False
+    cleaner.sampling_profile = FrameCleanerSamplingProfile(
+        max_frames_to_sample=3,
+        high_quality_ocr=False,
+        smart_early_stopping=False,
+        early_stop_techniques=frozenset(),
+    )
+    cleaner._run_lock = threading.Lock()  # pyright: ignore[reportPrivateUsage]
+    cleaner.sensitive_meta = SensitiveMeta(first_name="Previous patient")
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"immutable source")
+    frame: ImageArray = np.zeros((8, 8), dtype=np.uint8)
+    results = [
+        FrameProcessResult(
+            is_sensitive=True,
+            metadata={"first_name": "Anna", "last_name": "Muster"},
+            ocr_text="Initial OCR",
+            ocr_confidence=confidences[0],
+        ),
+        FrameProcessResult(
+            is_sensitive=True,
+            metadata={"dob": "1980-02-03", "endoscope_sn": "SN-123"},
+            ocr_text="More complete OCR",
+            ocr_confidence=confidences[1],
+        ),
+        FrameProcessResult(
+            is_sensitive=False,
+            metadata={"first_name": late_name, "last_name": late_name},
+            ocr_text="Noise",
+            ocr_confidence=confidences[2],
+        ),
+    ]
+    with (
+        patch.object(cleaner, "_get_total_frames", return_value=3),
+        patch.object(
+            cleaner, "_iter_video", return_value=[(i, frame, 1) for i in range(3)]
+        ),
+        patch.object(cleaner, "_process_frame_result", side_effect=results) as process,
+    ):
+        # Act: keep the real accumulation, finalization, and public serialization.
+        _, metadata = cleaner.clean_video(
+            video_path=source,
+            endoscope_image_roi=None,
+            endoscope_data_roi_nested=None,
+            source_frame_rate=Fraction(25, 1),
+            technique="extract_only",
+        )
+
+    # Assert: the result combines evidence, rather than returning the last frame.
+    assert process.call_count == 3
+    assert metadata["first_name"] == "Anna"
+    assert metadata["last_name"] == "Muster"
+    assert metadata["dob"] == "1980-02-03"
+    assert metadata["endoscope_sn"] == "SN-123"
+    assert metadata["text"] == expected_text
+    prediction = VideoMeta.model_validate(metadata)
+    assert prediction.first_name == cleaner.sensitive_meta.first_name
+    assert prediction.dob == cleaner.sensitive_meta.dob
 
 
 class TestFrameCleanerRefactored:
@@ -60,7 +140,7 @@ class TestFrameCleanerRefactored:
         return FrameCleaner(use_llm=False)
 
     @pytest.fixture
-    def mock_frame(self) -> FrameArray:
+    def mock_frame(self) -> ImageArray:
         """Create a dummy grayscale numpy frame (height, width)."""
         return np.zeros((1080, 1920), dtype=np.uint8)
 
@@ -92,10 +172,10 @@ class TestFrameCleanerRefactored:
             # Setup the stream: Return a frame 100 times, then False (EOF)
             # side_effect: [(True, frame), (True, frame), ... (False, None)]
             # We create a dummy color frame (H, W, 3) because _iter_video converts BGR2GRAY
-            dummy_color_frame: FrameArray = np.zeros((100, 100, 3), dtype=np.uint8)
+            dummy_color_frame: ImageArray = np.zeros((100, 100, 3), dtype=np.uint8)
 
             # Create a side effect that yields frames and then stops
-            read_side_effect: list[tuple[bool, FrameArray | None]] = []
+            read_side_effect: list[tuple[bool, ImageArray | None]] = []
             for _ in range(total_frames):
                 read_side_effect.append((True, dummy_color_frame))
             read_side_effect.append((False, None))
@@ -132,7 +212,7 @@ class TestFrameCleanerRefactored:
     def test_clean_video_pipeline_integration(
         self,
         frame_cleaner: FrameCleaner,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
         tmp_path: Path,
     ) -> None:
         """
@@ -250,7 +330,7 @@ class TestFrameCleanerRefactored:
     def test_clean_video_continues_when_probe_reports_zero_dimensions(
         self,
         frame_cleaner: FrameCleaner,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
         mock_central_video_format: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -303,7 +383,7 @@ class TestFrameCleanerRefactored:
     def test_mask_overlay_stops_analysis_after_complete_metadata(
         self,
         frame_cleaner: FrameCleaner,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
         tmp_path: Path,
     ) -> None:
         video_path = tmp_path / "input.mp4"
@@ -371,7 +451,7 @@ class TestFrameCleanerRefactored:
 
     def test_process_frame_marks_sensitive_after_ocr_metadata_merge(
         self,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
     ) -> None:
         frame_cleaner = _frame_cleaner_unit_stub()
         ocr_text = "Patient: Thomas Lux geb. 15.02.2024"
@@ -417,7 +497,7 @@ class TestFrameCleanerRefactored:
 
     def test_process_frame_uses_image_roi_as_ocr_roi_when_nested_roi_missing(
         self,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
     ) -> None:
         frame_cleaner = _frame_cleaner_unit_stub()
         image_roi = {
@@ -446,7 +526,7 @@ class TestFrameCleanerRefactored:
 
     def test_process_frame_prefers_explicit_nested_ocr_roi(
         self,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
     ) -> None:
         frame_cleaner = _frame_cleaner_unit_stub()
         image_roi = {"x": 10, "y": 20, "width": 300, "height": 120}
@@ -470,7 +550,7 @@ class TestFrameCleanerRefactored:
 
     def test_process_frame_can_use_fast_ocr_quality(
         self,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
     ) -> None:
         frame_cleaner = _frame_cleaner_unit_stub()
 
@@ -513,7 +593,7 @@ class TestFrameCleanerRefactored:
 
     def test_process_frame_records_phi_detector_observations_as_sensitive(
         self,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
     ) -> None:
         frame_cleaner = _frame_cleaner_unit_stub()
         phi_regions = [
@@ -588,7 +668,7 @@ class TestFrameCleanerRefactored:
             # we check the stride of the *first* yielded item if we allowed one read.
 
             # Let's allow one read to capture the calculated stride
-            dummy_frame: FrameArray = np.zeros((10, 10, 3), dtype=np.uint8)
+            dummy_frame: ImageArray = np.zeros((10, 10, 3), dtype=np.uint8)
             mock_cap.read.side_effect = [(True, dummy_frame), (False, None)]
 
             gen = frame_cleaner._iter_video(video_path, long_frame_count)  # pyright: ignore[reportPrivateUsage]
@@ -608,7 +688,7 @@ class TestFrameCleanerRefactored:
     def test_clean_video_raises_when_masking_fails(
         self,
         frame_cleaner: FrameCleaner,
-        mock_frame: npt.NDArray[np.uint8],
+        mock_frame: ImageArray,
         tmp_path: Path,
     ) -> None:
         video_path = tmp_path / "input.mp4"

@@ -10,13 +10,15 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import certifi
 import cv2
 import numpy as np
 from lx_dtypes.models.contracts.text_detection import EastDetectionConfidenceCore
+
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
+from lx_anonymizer.runtime_types import Box, Cv2DnnModule
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.setup.directory_setup import create_model_directory
 from lx_anonymizer.text_detection.np_wrapper import load_image_into_np
@@ -24,35 +26,7 @@ from lx_anonymizer.text_detection.np_wrapper import load_image_into_np
 logger = get_logger(__name__)
 
 
-class _DnnNet(Protocol):
-    def setInput(self, blob: np.ndarray) -> None: ...
-
-    def forward(self, outNames: list[str]) -> tuple[np.ndarray, np.ndarray]: ...
-
-
-class _Cv2DnnModule(Protocol):
-    def readNet(self, model_path: str) -> _DnnNet: ...
-
-    def blobFromImage(
-        self,
-        image: np.ndarray,
-        scalefactor: float,
-        size: tuple[int, int],
-        mean: tuple[float, float, float],
-        swapRB: bool,
-        crop: bool,
-    ) -> np.ndarray: ...
-
-    def NMSBoxes(
-        self,
-        bboxes: list[list[int]],
-        scores: list[float],
-        score_threshold: float,
-        nms_threshold: float,
-    ) -> np.ndarray: ...
-
-
-cv2_dnn = cast(_Cv2DnnModule, cv2.dnn)  # type: ignore[attr-defined]
+cv2_dnn = cast(Cv2DnnModule, cv2.dnn)  # type: ignore[attr-defined]
 
 # Official model source you currently use.
 MODEL_URL = (
@@ -96,7 +70,7 @@ class Detection:
     def height(self) -> int:
         return self.end_y - self.start_y
 
-    def to_box(self) -> tuple[int, int, int, int]:
+    def to_box(self) -> Box:
         return (self.start_x, self.start_y, self.end_x, self.end_y)
 
     def to_confidence(self) -> EastDetectionConfidenceCore:
@@ -305,10 +279,10 @@ def non_max_suppression_with_indices(
 
 
 def clip_box_to_image(
-    box: tuple[int, int, int, int],
+    box: Box,
     image_width: int,
     image_height: int,
-) -> tuple[int, int, int, int] | None:
+) -> Box | None:
     start_x, start_y, end_x, end_y = box
 
     start_x = max(0, min(start_x, image_width - 1))
@@ -369,7 +343,7 @@ def east_text_detection(
     min_confidence: float = 0.6,
     width: int = 320,
     height: int = 320,
-) -> tuple[list[tuple[int, int, int, int]], str]:
+) -> tuple[list[Box], str]:
     if width <= 0 or height <= 0:
         raise ValueError("width and height must be positive integers")
     if not (0.0 <= min_confidence <= 1.0):
@@ -411,7 +385,7 @@ def east_text_detection(
     scores, geometry = net.forward(layer_names)
 
     num_rows, num_cols = scores.shape[2:4]
-    rects: list[tuple[int, int, int, int]] = []
+    rects: list[Box] = []
     confidences: list[float] = []
 
     for y in range(num_rows):

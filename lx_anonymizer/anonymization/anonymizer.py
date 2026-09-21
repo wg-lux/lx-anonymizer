@@ -81,7 +81,7 @@ def _east_text_detection_on_pil_image(
     min_confidence: float,
     width: int,
     height: int,
-) -> tuple[list[tuple[int, int, int, int]], str]:
+) -> tuple[list[Box], str]:
     """
     Temporary adapter for east_text_detection(), which currently expects str | Path.
     """
@@ -94,7 +94,7 @@ def _east_text_detection_on_pil_image(
             legacy_detector = cast(
                 Callable[
                     [Path, float, int, int],
-                    tuple[list[tuple[int, int, int, int]], str],
+                    tuple[list[Box], str],
                 ],
                 east_text_detection,
             )
@@ -121,7 +121,7 @@ def _clamp_box(
     width: int,
     height: int,
     padding: int = 0,
-) -> tuple[int, int, int, int] | None:
+) -> Box | None:
     x1 = max(0, min(x1 - padding, width))
     y1 = max(0, min(y1 - padding, height))
     x2 = max(0, min(x2 + padding, width))
@@ -134,11 +134,11 @@ def _clamp_box(
 
 
 def _merge_region_boxes(
-    rois: list[tuple[int, int, int, int]],
+    rois: list[Box],
     image_size: tuple[int, int],
-) -> list[tuple[int, int, int, int]]:
+) -> list[Box]:
     width, height = image_size
-    merged: list[tuple[int, int, int, int]] = []
+    merged: list[Box] = []
     for roi in rois:
         clamped = _clamp_box(*roi, width=width, height=height, padding=0)
         if clamped is None:
@@ -149,7 +149,7 @@ def _merge_region_boxes(
 
 
 def _pil_to_pdf_rect(
-    box: tuple[int, int, int, int],
+    box: Box,
     page_width: float,
     page_height: float,
     image_width: int,
@@ -215,7 +215,7 @@ class Anonymizer:
         east_width: int = 640,
         east_height: int = 640,
         language: str = "deu+eng",
-    ) -> list[tuple[int, int, int, int]]:
+    ) -> list[Box]:
         if self.region_detector is None:
             custom_regions: list[Box] = detect_phi_regions_from_settings(image)
         else:
@@ -230,7 +230,7 @@ class Anonymizer:
             height=east_height,
         )
 
-        sensitive_regions: list[tuple[int, int, int, int]] = []
+        sensitive_regions: list[Box] = []
         if not text_boxes:
             logger.info("No text regions detected")
         else:
@@ -265,7 +265,7 @@ class Anonymizer:
         image: Image.Image,
         *,
         page_num: int | None = None,
-    ) -> list[tuple[int, int, int, int]]:
+    ) -> list[Box]:
         try:
             return self._detect_sensitive_regions_from_image(image)
         except CustomPhiRegionDetectorError:
@@ -300,7 +300,7 @@ class Anonymizer:
     def _draw_black_boxes_on_image(
         self,
         image: Image.Image,
-        rois: list[tuple[int, int, int, int]],
+        rois: list[Box],
         padding: int = 2,
     ) -> Image.Image:
         image = image.copy()
@@ -486,7 +486,7 @@ class Anonymizer:
     def create_anonymized_image_from_rois(
         self,
         image_path: str,
-        rois: list[tuple[int, int, int, int]],
+        rois: list[Box],
         output_path: Optional[str] = None,
     ) -> Optional[str]:
         try:

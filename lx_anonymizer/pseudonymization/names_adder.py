@@ -1,27 +1,27 @@
+import ast
+import time
+import uuid
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Optional, Tuple, cast
+
 import cv2
 import numpy as np
-import uuid
-from pathlib import Path
-import time
-import ast
-from collections.abc import Sequence
-from typing import Optional, Tuple, cast
-from numpy.typing import NDArray
-
-from lx_anonymizer.setup.device_reader import read_device, read_text_formatting
-from lx_anonymizer.setup.directory_setup import create_temp_directory
-from lx_anonymizer.setup.custom_logger import get_logger
 
 # --- NEW IMPORTS FOR PIL ---
 from PIL import Image, ImageDraw, ImageFont
 
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.setup.device_reader import read_device, read_text_formatting
+from lx_anonymizer.setup.directory_setup import create_temp_directory
+
 logger = get_logger(__name__)
 
-Box = tuple[int, int, int, int]
 RGBColor = tuple[int, int, int]
 FontSource = str | int
 PilFont = ImageFont.ImageFont | ImageFont.FreeTypeFont
-ImageArray = NDArray[np.uint8]
 TextFormattingConfig = tuple[object, object, FontSource, float, int, str]
 DeviceConfig = tuple[
     object,

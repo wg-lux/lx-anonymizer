@@ -7,7 +7,7 @@ from pytest import MonkeyPatch
 from lx_anonymizer.config import Settings
 
 
-def test_spacy_auto_download_is_enabled_by_default(
+def test_spacy_auto_download_is_disabled_by_default(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -15,7 +15,7 @@ def test_spacy_auto_download_is_enabled_by_default(
     monkeypatch.delenv("SPACY_AUTO_DOWNLOAD", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    assert Settings().SPACY_AUTO_DOWNLOAD is True
+    assert Settings().SPACY_AUTO_DOWNLOAD is False
 
 
 def test_settings_accept_prefixed_spacy_env_file_keys(

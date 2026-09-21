@@ -3,7 +3,6 @@ from __future__ import annotations
 # pydicom intentionally exposes dynamic Dataset/DataElement values at this
 # integration boundary.
 # pyright: reportMissingTypeStubs=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-
 import argparse
 import csv
 import hashlib
@@ -20,13 +19,18 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
-import numpy.typing as npt
 import pydicom  # type: ignore[import-untyped]
 from PIL import Image
 from pydicom.dataset import Dataset, FileMetaDataset  # type: ignore[import-untyped]
-from pydicom.uid import ExplicitVRLittleEndian, UID  # type: ignore[import-untyped]
+from pydicom.uid import UID, ExplicitVRLittleEndian  # type: ignore[import-untyped]
 
 from lx_anonymizer.region_processing.box_operations import Box, fill_boxes
+from lx_anonymizer.runtime_types import (
+    ImageArray as ImageArray,
+)
+from lx_anonymizer.runtime_types import (
+    PixelArray as PixelArray,
+)
 from lx_anonymizer.text_detection.phi_region_detector import (
     CustomPhiRegionDetector,
     PhiRegionDetectorConfig,
@@ -34,7 +38,6 @@ from lx_anonymizer.text_detection.phi_region_detector import (
 
 logger = logging.getLogger(__name__)
 
-PixelArray = npt.NDArray[np.generic]
 
 _DIRECT_TEXT_KEYWORDS = frozenset(
     {
@@ -714,7 +717,7 @@ def _frame_to_image(dataset: Dataset, frame: PixelArray) -> Image.Image:
     return Image.fromarray(grayscale).convert("RGB")
 
 
-def _normalize_grayscale(pixels: PixelArray) -> npt.NDArray[np.uint8]:
+def _normalize_grayscale(pixels: PixelArray) -> ImageArray:
     values = pixels.astype(np.float32, copy=False)
     finite = values[np.isfinite(values)]
     if finite.size == 0:
@@ -728,10 +731,10 @@ def _normalize_grayscale(pixels: PixelArray) -> npt.NDArray[np.uint8]:
     return np.clip(scaled, 0.0, 255.0).astype(np.uint8)
 
 
-def _normalize_color(pixels: PixelArray) -> npt.NDArray[np.uint8]:
+def _normalize_color(pixels: PixelArray) -> ImageArray:
     color = pixels[..., :3]
     if color.dtype == np.uint8:
-        return cast(npt.NDArray[np.uint8], color)
+        return cast(ImageArray, color)
     values = color.astype(np.float32, copy=False)
     finite = values[np.isfinite(values)]
     if finite.size == 0:

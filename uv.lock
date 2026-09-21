@@ -19,14 +19,15 @@ name = "accelerate"
 version = "1.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", marker = "sys_platform == 'linux'" },
-    { name = "numpy", marker = "sys_platform == 'linux'" },
-    { name = "packaging", marker = "sys_platform == 'linux'" },
-    { name = "psutil", marker = "sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "sys_platform == 'linux'" },
-    { name = "safetensors", marker = "sys_platform == 'linux'" },
+    { name = "huggingface-hub", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "numpy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "packaging", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "psutil", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "pyyaml", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "safetensors", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra != 'extra-13-lx-anonymizer-cpu' and extra != 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/23/60/2757c4f03a8705dbf80b1268b03881927878dca5ed07d74f733fb6c219e0/accelerate-1.11.0.tar.gz", hash = "sha256:bb1caf2597b4cd632b917b5000c591d10730bb024a79746f1ee205bba80bd229", size = 393715, upload-time = "2025-10-20T14:42:25.025Z" }
 wheels = [
@@ -111,11 +112,11 @@ name = "bioc"
 version = "2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "docopt", marker = "sys_platform == 'linux'" },
-    { name = "intervaltree", marker = "sys_platform == 'linux'" },
-    { name = "jsonlines", marker = "sys_platform == 'linux'" },
-    { name = "lxml", marker = "sys_platform == 'linux'" },
-    { name = "tqdm", marker = "sys_platform == 'linux'" },
+    { name = "docopt", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "intervaltree", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "jsonlines", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "lxml", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "tqdm", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/44/9b/90086bbbffcf4aaa267a71e94f92eab1cfe4142198708129b8495e16c73f/bioc-2.1.tar.gz", hash = "sha256:7d9248198bdae291b0ebb218de2dc653c96d32a7eac2fa0ef4ed0c74ce45aaaa", size = 27924, upload-time = "2023-08-15T22:34:59.047Z" }
 wheels = [
@@ -156,9 +157,9 @@ name = "boto3"
 version = "1.40.62"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "botocore", marker = "sys_platform == 'linux'" },
-    { name = "jmespath", marker = "sys_platform == 'linux'" },
-    { name = "s3transfer", marker = "sys_platform == 'linux'" },
+    { name = "botocore", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "jmespath", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "s3transfer", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b4/69/2612a06d584786500ba7ea068927e95e24719da3b6734bd23c50788f5982/boto3-1.40.62.tar.gz", hash = "sha256:3dbe7e1e7dc9127a4b1f2020a14f38ffe64fad84df00623e8ab6a5d49a82ea28", size = 111499, upload-time = "2025-10-29T21:33:13.873Z" }
 wheels = [
@@ -170,9 +171,9 @@ name = "botocore"
 version = "1.40.62"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jmespath", marker = "sys_platform == 'linux'" },
-    { name = "python-dateutil", marker = "sys_platform == 'linux'" },
-    { name = "urllib3", marker = "sys_platform == 'linux'" },
+    { name = "jmespath", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "python-dateutil", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "urllib3", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/d6/dc11fecf450c60175fd568791e2324e059e81bc4adac85d83f272ab293f5/botocore-1.40.62.tar.gz", hash = "sha256:1e8e57c131597dc234d67428bda1323e8f0a687ea13ea570253159ab9256fa28", size = 14389174, upload-time = "2025-10-29T21:33:03.209Z" }
 wheels = [
@@ -826,7 +827,7 @@ name = "deprecated"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "wrapt", marker = "sys_platform == 'linux'" },
+    { name = "wrapt", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/49/85/12f0a49a7c4ffb70572b6c2ef13c90c88fd190debda93b23f026b25f9634/deprecated-1.3.1.tar.gz", hash = "sha256:b1b50e0ff0c1fddaa5708a2c6b0a6588bb09b892825ab2b214ac9ea9d92a5223", size = 2932523, upload-time = "2025-10-30T08:19:02.757Z" }
 wheels = [
@@ -989,32 +990,33 @@ name = "flair"
 version = "0.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "bioc", marker = "sys_platform == 'linux'" },
-    { name = "boto3", marker = "sys_platform == 'linux'" },
-    { name = "conllu", marker = "sys_platform == 'linux'" },
-    { name = "deprecated", marker = "sys_platform == 'linux'" },
-    { name = "ftfy", marker = "sys_platform == 'linux'" },
-    { name = "gdown", marker = "sys_platform == 'linux'" },
-    { name = "huggingface-hub", marker = "sys_platform == 'linux'" },
-    { name = "langdetect", marker = "sys_platform == 'linux'" },
-    { name = "lxml", marker = "sys_platform == 'linux'" },
-    { name = "matplotlib", marker = "sys_platform == 'linux'" },
-    { name = "more-itertools", marker = "sys_platform == 'linux'" },
-    { name = "mpld3", marker = "sys_platform == 'linux'" },
-    { name = "pptree", marker = "sys_platform == 'linux'" },
-    { name = "python-dateutil", marker = "sys_platform == 'linux'" },
-    { name = "pytorch-revgrad", marker = "sys_platform == 'linux'" },
-    { name = "regex", marker = "sys_platform == 'linux'" },
-    { name = "scikit-learn", marker = "sys_platform == 'linux'" },
-    { name = "segtok", marker = "sys_platform == 'linux'" },
-    { name = "sqlitedict", marker = "sys_platform == 'linux'" },
-    { name = "tabulate", marker = "sys_platform == 'linux'" },
+    { name = "bioc", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "boto3", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "conllu", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "deprecated", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "ftfy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "gdown", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "huggingface-hub", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "langdetect", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "lxml", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "matplotlib", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "more-itertools", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "mpld3", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "pptree", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "python-dateutil", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "pytorch-revgrad", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "regex", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "scikit-learn", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "segtok", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "sqlitedict", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "tabulate", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
-    { name = "tqdm", marker = "sys_platform == 'linux'" },
-    { name = "transformer-smaller-training-vocab", marker = "sys_platform == 'linux'" },
-    { name = "transformers", extra = ["sentencepiece"], marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
-    { name = "wikipedia-api", marker = "sys_platform == 'linux'" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra != 'extra-13-lx-anonymizer-cpu' and extra != 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "tqdm", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "transformer-smaller-training-vocab", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "transformers", extra = ["sentencepiece"], marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "wikipedia-api", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/70/bf/f6cc2ee7fd15946fef5f7747327eeed49837a3d7fd34460129bc936f0de7/flair-0.15.1.tar.gz", hash = "sha256:780b4eeffba044c4a181f1810872fc01201c2eaed8d2ef4bcb126a6464e91933", size = 388607, upload-time = "2025-02-05T14:45:44.322Z" }
 wheels = [
@@ -1098,7 +1100,7 @@ name = "ftfy"
 version = "6.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "wcwidth", marker = "sys_platform == 'linux'" },
+    { name = "wcwidth", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a5/d3/8650919bc3c7c6e90ee3fa7fd618bf373cbbe55dff043bd67353dbb20cd8/ftfy-6.3.1.tar.gz", hash = "sha256:9b3c3d90f84fb267fe64d375a07b7f8912d817cf86009ae134aa03e1819506ec", size = 308927, upload-time = "2024-10-26T00:50:35.149Z" }
 wheels = [
@@ -1110,10 +1112,10 @@ name = "gdown"
 version = "5.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "beautifulsoup4", marker = "sys_platform == 'linux'" },
-    { name = "filelock", marker = "sys_platform == 'linux'" },
-    { name = "requests", extra = ["socks"], marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
-    { name = "tqdm", marker = "sys_platform == 'linux'" },
+    { name = "beautifulsoup4", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "filelock", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "requests", extra = ["socks"], marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "tqdm", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/6a/37e6b70c5bda3161e40265861e63b64a86bfc6ca6a8f1c35328a675c84fd/gdown-5.2.0.tar.gz", hash = "sha256:2145165062d85520a3cd98b356c9ed522c5e7984d408535409fd46f94defc787", size = 284647, upload-time = "2024-05-12T06:45:12.725Z" }
 wheels = [
@@ -1134,12 +1136,13 @@ name = "hezar"
 version = "0.42.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", marker = "sys_platform == 'linux'" },
-    { name = "omegaconf", marker = "sys_platform == 'linux'" },
-    { name = "tokenizers", marker = "sys_platform == 'linux'" },
+    { name = "huggingface-hub", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "omegaconf", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "tokenizers", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
-    { name = "transformers", marker = "sys_platform == 'linux'" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra != 'extra-13-lx-anonymizer-cpu' and extra != 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "transformers", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/83/2b/703bb0342dca83e8ac48dd444700d8a19bf5ef13db478cbe33640b465543/hezar-0.42.0.tar.gz", hash = "sha256:3c8a659ed95c2543358150c26481fa67a7a41295790ed13dc58880b2f2f7a80d", size = 128703, upload-time = "2024-11-19T18:23:31.962Z" }
 wheels = [
@@ -1264,7 +1267,7 @@ name = "intervaltree"
 version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sortedcontainers", marker = "sys_platform == 'linux'" },
+    { name = "sortedcontainers", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/fb/396d568039d21344639db96d940d40eb62befe704ef849b27949ded5c3bb/intervaltree-3.1.0.tar.gz", hash = "sha256:902b1b88936918f9b2a19e0e5eb7ccb430ae45cde4f39ea4b36932920d33952d", size = 32861, upload-time = "2020-08-03T08:01:11.392Z" }
 
@@ -1390,7 +1393,7 @@ name = "jsonlines"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "attrs", marker = "sys_platform == 'linux'" },
+    { name = "attrs", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/35/87/bcda8e46c88d0e34cad2f09ee2d0c7f5957bccdb9791b0b934ec84d84be4/jsonlines-4.0.0.tar.gz", hash = "sha256:0c6d2c09117550c089995247f605ae4cf77dd1533041d366351f6f298822ea74", size = 11359, upload-time = "2023-09-01T12:34:44.187Z" }
 wheels = [
@@ -1502,7 +1505,7 @@ name = "langdetect"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "six", marker = "sys_platform == 'linux'" },
+    { name = "six", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0e/72/a3add0e4eec4eb9e2569554f7c70f4a3c27712f40e3284d483e88094cc0e/langdetect-1.0.9.tar.gz", hash = "sha256:cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0", size = 981474, upload-time = "2021-05-07T07:54:13.562Z" }
 
@@ -1580,7 +1583,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.4.1"
+version = "0.9.8"
 source = { editable = "." }
 dependencies = [
     { name = "certifi", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1617,15 +1620,15 @@ dependencies = [
 
 [package.optional-dependencies]
 cpu = [
-    { name = "flair", marker = "sys_platform == 'linux'" },
-    { name = "hezar", marker = "sys_platform == 'linux'" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
     { name = "torchaudio", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
     { name = "torchvision", version = "0.27.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
 ]
 dev = [
     { name = "build", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "flair", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "flake8", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "hezar", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "mypy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "opencv-stubs", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pre-commit", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1643,8 +1646,6 @@ evaluation = [
     { name = "pydicom", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 gpu = [
-    { name = "flair", marker = "sys_platform == 'linux'" },
-    { name = "hezar", marker = "sys_platform == 'linux'" },
     { name = "onnxruntime-gpu", marker = "sys_platform == 'linux'" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
     { name = "torchaudio", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux'" },
@@ -1658,13 +1659,11 @@ requires-dist = [
     { name = "click", specifier = ">=8.4.2" },
     { name = "dateparser", specifier = ">=1.2.1" },
     { name = "faker", specifier = ">=37.1.0" },
-    { name = "flair", marker = "extra == 'cpu'", specifier = ">=0.15.1" },
-    { name = "flair", marker = "extra == 'gpu'", specifier = ">=0.15.1" },
+    { name = "flair", marker = "extra == 'dev'", specifier = ">=0.15.1" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.1.1" },
     { name = "gender-guesser", specifier = ">=0.4.0" },
-    { name = "hezar", marker = "extra == 'cpu'", specifier = ">=0.42.0" },
-    { name = "hezar", marker = "extra == 'gpu'", specifier = ">=0.42.0" },
-    { name = "lx-dtypes", specifier = ">=0.2.31" },
+    { name = "hezar", marker = "extra == 'dev'", specifier = ">=0.42.0" },
+    { name = "lx-dtypes", specifier = "==0.3.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18.2" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "onnx", specifier = ">=1.12.0,<2.0.0" },
@@ -1714,7 +1713,7 @@ provides-extras = ["evaluation", "dev", "cpu", "gpu"]
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.31"
+version = "0.3.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1729,6 +1728,7 @@ dependencies = [
     { name = "pandas-stubs", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pandera", extra = ["io", "mypy", "pandas"], marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pillow", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "platformdirs", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pydantic", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "python-ffmpeg", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "pyyaml", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1737,9 +1737,9 @@ dependencies = [
     { name = "scipy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "types-pyyaml", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/80/d3/547110dc46800f9c10197131af22b4643b75aaaee5d16ba59d23f41b58d2/lx_dtypes-0.2.31.tar.gz", hash = "sha256:7345b1fd16a1161301ed9411c6e66dbaf8a7e029c510230112e99ac14a88551e", size = 2585085, upload-time = "2026-08-27T10:02:21.183Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/0a/04d2b4e9e09649be021b391e5b37e3099ccafbfd7c1b589032f132dffbe3/lx_dtypes-0.3.5.tar.gz", hash = "sha256:103e397fc5402f6682e15975a4b4d9012997c1b0be1b4942153c2f1ab53193e9", size = 2704643, upload-time = "2026-09-21T09:52:24.83Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/c1/b2e4244cec1c77d78f5e298f19e12e3a6129c87c979bb8a81223820f01d4/lx_dtypes-0.2.31-py3-none-any.whl", hash = "sha256:f516588dbd73fbd396a9e0f249333b93b5d95859bb503e02cb4f6c0ab8a941ea", size = 783392, upload-time = "2026-08-27T10:02:17.235Z" },
+    { url = "https://files.pythonhosted.org/packages/47/a8/aa8834cc5ecb782754565e7866d3a1bff6d99bb374ccc3b424a3812bb293/lx_dtypes-0.3.5-py3-none-any.whl", hash = "sha256:64c0ecfe8f702abb7895bd6f6785011f228510abf27d4ce59260c002885759b3", size = 892947, upload-time = "2026-09-21T09:52:21.968Z" },
 ]
 
 [[package]]
@@ -2027,8 +2027,8 @@ name = "mpld3"
 version = "0.5.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jinja2", marker = "sys_platform == 'linux'" },
-    { name = "matplotlib", marker = "sys_platform == 'linux'" },
+    { name = "jinja2", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "matplotlib", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/dd/c2/7c556858bcd2575c64b993197674e6294e7963e4ad561b2b6f8951838202/mpld3-0.5.11.tar.gz", hash = "sha256:bffe2c93f8b406f8d4dc059565dfecb4779e8a1fc50bfbb4e7f5d476a274eab7", size = 1028240, upload-time = "2025-07-27T20:10:30.648Z" }
 wheels = [
@@ -3482,9 +3482,10 @@ name = "pytorch-revgrad"
 version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", marker = "sys_platform == 'linux'" },
+    { name = "numpy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra != 'extra-13-lx-anonymizer-cpu' and extra != 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/90/c3/aecc90deea743b93757e05e235f70eef479509eb3eb11b19f3aa0d528541/pytorch_revgrad-0.2.0.tar.gz", hash = "sha256:9cf097a7d18cbadddeaec9fef74b258d70b6cb8d0c77f524baab18bffc7d7be9", size = 7086, upload-time = "2021-01-09T17:35:49.131Z" }
 wheels = [
@@ -3739,7 +3740,7 @@ wheels = [
 
 [package.optional-dependencies]
 socks = [
-    { name = "pysocks", marker = "sys_platform == 'linux'" },
+    { name = "pysocks", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 
 [[package]]
@@ -3806,7 +3807,7 @@ name = "s3transfer"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "botocore", marker = "sys_platform == 'linux'" },
+    { name = "botocore", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/62/74/8d69dcb7a9efe8baa2046891735e5dfe433ad558ae23d9e3c14c633d1d58/s3transfer-0.14.0.tar.gz", hash = "sha256:eff12264e7c8b4985074ccce27a3b38a485bb7f7422cc8046fee9be4983e4125", size = 151547, upload-time = "2025-09-09T19:23:31.089Z" }
 wheels = [
@@ -3970,7 +3971,7 @@ name = "segtok"
 version = "1.5.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "regex", marker = "sys_platform == 'linux'" },
+    { name = "regex", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0c/8a/1ae8e3deb805831933b63d58851ab41ff2472099e15511fc62039421ad70/segtok-1.5.11.tar.gz", hash = "sha256:8ab2dd44245bcbfec25b575dc4618473bbdf2af8c2649698cd5a370f42f3db23", size = 25244, upload-time = "2021-12-15T21:56:14.555Z" }
 wheels = [
@@ -4750,7 +4751,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
-    { name = "transformers", extra = ["sentencepiece", "torch"], marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra != 'extra-13-lx-anonymizer-cpu' and extra != 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "transformers", extra = ["sentencepiece", "torch"], marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/45/6f/85142d145fd2c453053e7dcd5500c31cd26ce51f9010cf0fe698001853f2/transformer_smaller_training_vocab-0.4.2.tar.gz", hash = "sha256:aed4390331e63d9a0998d76f277b7d44ad5d38b8427ad7792b1e28c807801ed8", size = 11754, upload-time = "2025-06-15T13:34:38.522Z" }
 wheels = [
@@ -4780,13 +4782,14 @@ wheels = [
 
 [package.optional-dependencies]
 sentencepiece = [
-    { name = "protobuf", marker = "sys_platform == 'linux'" },
-    { name = "sentencepiece", marker = "sys_platform == 'linux'" },
+    { name = "protobuf", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "sentencepiece", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 torch = [
-    { name = "accelerate", marker = "sys_platform == 'linux'" },
+    { name = "accelerate", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-13-lx-anonymizer-cpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform == 'linux' and extra != 'extra-13-lx-anonymizer-cpu' and extra != 'extra-13-lx-anonymizer-gpu') or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 
 [[package]]
@@ -5113,7 +5116,7 @@ name = "wikipedia-api"
 version = "0.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "requests", marker = "sys_platform == 'linux'" },
+    { name = "requests", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/aa/2e35be124dfc7e581480705f912040172f6570cc12e68a245ba9258c32ef/wikipedia_api-0.8.1.tar.gz", hash = "sha256:b31e93b3f5407c1a1ba413ed7326a05379a3c270df6cf6a211aca67a14c5658b", size = 19934, upload-time = "2025-01-19T23:44:33.488Z" }
 

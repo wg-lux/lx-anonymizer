@@ -1,13 +1,7 @@
-import gender_guesser.detector as gender_detector  # type: ignore[import-untyped]
-from typing import Protocol, cast
-
-
-class _GenderDetector(Protocol):
-    def get_gender(self, name: str) -> str: ...
-
+import gender_guesser.detector as gender_detector
 
 # Initialize the detector
-detector = cast(_GenderDetector, gender_detector.Detector(case_sensitive=False))
+detector = gender_detector.Detector(case_sensitive=False)
 
 
 def determine_gender(first_name: str | None) -> str:

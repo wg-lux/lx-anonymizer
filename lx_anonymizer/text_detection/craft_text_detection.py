@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Protocol, TypedDict, TypeAlias, cast
+from typing import Protocol, TypedDict, cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 import torch  # type: ignore[import-untyped]
 from hezar.models import Model  # type: ignore[import-untyped]
 from hezar.utils import load_image  # type: ignore[import-untyped]
@@ -15,11 +14,11 @@ from hezar.utils import load_image  # type: ignore[import-untyped]
 from PIL import Image
 
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
-
-Box: TypeAlias = tuple[int, int, int, int]
 
 
 class _CraftOutput(TypedDict):
@@ -66,7 +65,7 @@ def craft_text_detection(
         if isinstance(image_input, (str, Path)):
             image_file_path = str(image_input)
             # Use OpenCV to load the image for dimension calculations.
-            orig = cast(npt.NDArray[np.uint8] | None, cv2.imread(image_file_path))
+            orig = cast(ImageArray | None, cv2.imread(image_file_path))
             if orig is None:
                 raise FileNotFoundError(f"Failed to load image: {image_input}")
             # Load the image using your custom load_image utility.
@@ -166,7 +165,7 @@ def craft_text_detection(
             output_boxes = sort_boxes(output_boxes, vertical_threshold=5)
             # Optionally, extend boxes with minimal margins.
             output_boxes = extend_boxes_if_needed(
-                cast(npt.NDArray[np.uint8], orig), output_boxes, extension_margin=2
+                cast(ImageArray, orig), output_boxes, extension_margin=2
             )
 
         return output_boxes, json.dumps(output_confidences)

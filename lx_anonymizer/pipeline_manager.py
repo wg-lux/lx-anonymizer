@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, TypeAli
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 import pymupdf  # type: ignore[import-untyped]
 from PIL import Image
 
@@ -34,6 +33,18 @@ from lx_anonymizer.region_processing.box_operations import (
     filter_empty_boxes,
     find_or_create_close_box,
     get_dominant_color,
+)
+from lx_anonymizer.runtime_types import (
+    Box as Box,
+)
+from lx_anonymizer.runtime_types import (
+    ImageArray as ImageArray,
+)
+from lx_anonymizer.runtime_types import (
+    ModifiedImageMap as ModifiedImageMap,
+)
+from lx_anonymizer.runtime_types import (
+    OcrResult as OcrResult,
 )
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 from lx_anonymizer.setup.custom_logger import get_logger
@@ -72,11 +83,8 @@ except ImportError:
 
 CRAFT_AVAILABLE: bool = _craft_available
 
-BoundingBox: TypeAlias = Tuple[int, int, int, int]
-OcrResult: TypeAlias = Tuple[str, BoundingBox]
 DetectedEntity: TypeAlias = Tuple[str, str]
-CombinedResult: TypeAlias = Tuple[str, BoundingBox, float, List[DetectedEntity]]
-ModifiedImageMap: TypeAlias = Dict[Tuple[str, str], str]
+CombinedResult: TypeAlias = Tuple[str, Box, float, List[DetectedEntity]]
 ProcessingResult: TypeAlias = Dict[str, object]
 
 
@@ -142,8 +150,8 @@ def _prepare_image_paths(
 def _load_device_defaults(
     device: str, img_path: Path
 ) -> Tuple[
-    Optional[BoundingBox],
-    Optional[BoundingBox],
+    Optional[Box],
+    Optional[Box],
     Tuple[int, int, int],
 ]:
     try:
@@ -158,7 +166,7 @@ def _load_device_defaults(
         image_obj = cast(object, cv2.imread(str(img_path)))
         if image_obj is None:
             raise ValueError(f"Could not load image: {img_path}")
-        image = cast(npt.NDArray[np.uint8], image_obj)
+        image = cast(ImageArray, image_obj)
         image = image.astype(np.uint8, copy=False)
         background_color = get_dominant_color(image)
     return first_name_box, last_name_box, background_color
@@ -217,15 +225,15 @@ def detect_combined_text_boxes(
     width: int,
     height: int,
     region_detector: PhiRegionDetector | None = None,
-    phi_regions: Sequence[BoundingBox] | None = None,
-) -> List[BoundingBox]:
+    phi_regions: Sequence[Box] | None = None,
+) -> List[Box]:
     east_boxes, _ = east_text_detection(
         img_path, east_path, min_confidence, width, height
     )
     tesseract_boxes, _ = tesseract_text_detection(
         img_path, min_confidence, width, height
     )
-    craft_boxes: List[BoundingBox] = []
+    craft_boxes: List[Box] = []
     if CRAFT_AVAILABLE:
         craft_boxes, _ = craft_text_detection(img_path, min_confidence, width, height)
     else:
@@ -242,7 +250,7 @@ _detect_combined_text_boxes = detect_combined_text_boxes
 
 
 def _run_ocr_for_boxes(
-    img_path: Path, combined_boxes: List[BoundingBox]
+    img_path: Path, combined_boxes: List[Box]
 ) -> Tuple[List[OcrResult], List[float]]:
     logger.info("Running OCR on boxes")
     trocr_results, trocr_confidences = trocr_on_boxes(img_path, combined_boxes)
@@ -308,7 +316,7 @@ def _save_final_blurred_image(blurred_image_path: Optional[Path]) -> None:
     final_image_obj = cast(object, cv2.imread(str(blurred_image_path)))
     if final_image_obj is None:
         raise ValueError(f"Unable to read blurred image: {blurred_image_path}")
-    final_image = cast(npt.NDArray[np.uint8], final_image_obj)
+    final_image = cast(ImageArray, final_image_obj)
     cv2.imwrite(str(output_path), final_image)
     logger.info(f"Final blurred image saved to: {output_path}")
 
@@ -485,15 +493,15 @@ def process_text(extracted_text: str) -> str:
 def process_ocr_results(
     image_path: str,
     phrase: str,
-    phrase_box: BoundingBox,
+    phrase_box: Box,
     ocr_confidence: float,
     combined_results: List[CombinedResult],
     names_detected: List[str],
     device: str,
     modified_images_map: ModifiedImageMap,
-    combined_boxes: List[BoundingBox],
-    first_name_box: Optional[BoundingBox] = None,  # Changed here
-    last_name_box: Optional[BoundingBox] = None,  # Changed here
+    combined_boxes: List[Box],
+    first_name_box: Optional[Box] = None,  # Changed here
+    last_name_box: Optional[Box] = None,  # Changed here
 ) -> Tuple[
     str,
     ModifiedImageMap,
@@ -558,9 +566,9 @@ def do_ocr_with_fuzzy_correction(
     names_detected: List[str],
     device: str,
     modified_images_map: ModifiedImageMap,
-    combined_boxes: List[BoundingBox],
-    first_name_box: Optional[BoundingBox] = None,
-    last_name_box: Optional[BoundingBox] = None,
+    combined_boxes: List[Box],
+    first_name_box: Optional[Box] = None,
+    last_name_box: Optional[Box] = None,
     full_text_candidates: Optional[Sequence[str]] = None,
 ) -> Tuple[str, ModifiedImageMap, List[CombinedResult], List[str]]:
     """
@@ -629,10 +637,10 @@ def do_ocr_with_fuzzy_correction(
 
 
 def modify_image_for_name(
-    image_path: str | Path, phrase_box: BoundingBox, combined_boxes: List[BoundingBox]
-) -> Tuple[Path, BoundingBox]:
+    image_path: str | Path, phrase_box: Box, combined_boxes: List[Box]
+) -> Tuple[Path, Box]:
     image_obj = cast(object, cv2.imread(str(image_path)))
-    image = cast(npt.NDArray[np.uint8], image_obj)
+    image = cast(ImageArray, image_obj)
     _image_height, image_width, _ = image.shape
     last_name_box = find_or_create_close_box(phrase_box, combined_boxes, image_width)
 

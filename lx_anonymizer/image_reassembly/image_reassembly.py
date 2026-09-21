@@ -1,11 +1,11 @@
-from typing import Any, cast
-import cv2
-from pathlib import Path
 import uuid
-import numpy as np
-from numpy.typing import NDArray
-from lx_anonymizer.setup.custom_logger import get_logger
+from pathlib import Path
+from typing import Any, cast
 
+import cv2
+
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
+from lx_anonymizer.setup.custom_logger import get_logger
 
 # Configure logger
 logger = get_logger(__name__)
@@ -40,7 +40,7 @@ def reassemble_image(
     # Load the original image only once
     logger.info(f"Loading original image from {str(original_image_path)}.")
     curr_image = cast(
-        NDArray[np.uint8] | None,
+        ImageArray | None,
         cv2.imread(str(original_image_path)),
     )
     if curr_image is None:
@@ -56,7 +56,7 @@ def reassemble_image(
             f"Processing box {box_key} with modified image {str(modified_image_path)}."
         )
         modified_image = cast(
-            NDArray[np.uint8] | None,
+            ImageArray | None,
             cv2.imread(str(modified_image_path)),
         )
         if modified_image is None:

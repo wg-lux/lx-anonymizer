@@ -49,6 +49,9 @@ class FrameCleanerVideoMixin:
     def _target_sample_count(self, total_frames: int) -> int:
         raise NotImplementedError
 
+    def _analyzes_every_frame(self) -> bool:
+        return False
+
     def remove_frames_from_video_streaming(
         self,
         original_video: Path,
@@ -429,38 +432,38 @@ class FrameCleanerVideoMixin:
         self, video_path: Path, total_frames: int
     ) -> Iterator[Tuple[int, np.ndarray, int]]:
         cap = cast(_VideoCaptureProtocol, cv2.VideoCapture(str(video_path)))
-        if not cap.isOpened():
-            logger.error("Cannot open %s", video_path)
-            return
-
         try:
-            cap.set(cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY)
-        except (AttributeError, cv2.error):
-            pass
-
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        target_samples = self._target_sample_count(total_frames) or 1
-        calculated_skip = (
-            math.ceil(total_frames / target_samples) if total_frames else 1
-        )
-
-        max_skip_limit = int(fps * 2)
-        skip = max(5, min(calculated_skip, max_skip_limit))
-
-        idx = 0
-
-        while True:
-            ok, bgr = cap.read()
-            if not ok:
-                break
-
-            if idx % skip == 0:
-                gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-                gray = cv2.equalizeHist(gray)
-                yield idx, gray, skip
-            idx += 1
-
-        cap.release()
+            if not cap.isOpened():
+                raise RuntimeError("Cannot open video for frame analysis")
+            exhaustive = self._analyzes_every_frame()
+            if exhaustive and total_frames <= 0:
+                raise ValueError(
+                    "Exhaustive analysis requires a positive source frame count"
+                )
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            target_samples = self._target_sample_count(total_frames) or 1
+            calculated_skip = (
+                math.ceil(total_frames / target_samples) if total_frames else 1
+            )
+            skip = 1 if exhaustive else max(5, min(calculated_skip, int(fps * 2)))
+            idx = 0
+            while True:
+                ok, bgr = cap.read()
+                if not ok:
+                    break
+                if exhaustive:
+                    # Preserve source pixels for OCR and exact duplicate detection.
+                    yield idx, bgr, 1
+                elif idx % skip == 0:
+                    gray = cv2.equalizeHist(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+                    yield idx, gray, skip
+                idx += 1
+            if exhaustive and idx != total_frames:
+                raise RuntimeError(
+                    f"Incomplete video analysis: decoded {idx} of {total_frames} expected frames"
+                )
+        finally:
+            cap.release()
 
     @staticmethod
     def _frame_ranges(indices: List[int]) -> List[Tuple[int, int]]:

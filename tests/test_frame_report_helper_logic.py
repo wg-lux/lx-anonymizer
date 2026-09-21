@@ -337,3 +337,41 @@ def test_extract_report_meta_uses_line_fallback_parses_dob_and_enriches_fields()
     assert meta["examination_date"] == "2024-01-01"
     assert meta["endoscope_sn"] == "SN1"
     assert meta["pdf_hash"] is None
+
+
+def test_video_does_not_hide_invalid_recognized_metadata() -> None:
+    from lx_anonymizer.sensitive_meta_interface import SensitiveMetaResolutionError
+
+    cleaner = _frame_cleaner_stub()
+    cleaner.patient_data_extractor = cast(
+        PatientDataExtractor, Mock(return_value={"patient_dob": "invalid-date"})
+    )
+    with pytest.raises(SensitiveMetaResolutionError):
+        cleaner._unified_metadata_extract("input")  # pyright: ignore[reportPrivateUsage]
+    assert cleaner.sensitive_meta.dob is None
+
+
+def test_report_does_not_hide_invalid_provider_metadata() -> None:
+    from lx_anonymizer.sensitive_meta_interface import SensitiveMetaResolutionError
+
+    reader = _report_reader_stub()
+    reader.llm_available = True
+    provider = _ReportLlmExtractorStub()
+    provider.extract_metadata.side_effect = SensitiveMetaResolutionError(
+        "Invalid sensitive metadata update"
+    )
+    reader.llm_extractor = cast(LLMExtractorProtocol, provider)
+    with pytest.raises(SensitiveMetaResolutionError):
+        reader._extract_report_meta_via_llm("input", "provider")  # pyright: ignore[reportPrivateUsage]
+    assert reader.sensitive_meta.first_name == "unknown"
+
+
+def test_video_normalizes_legacy_aliases_before_signal_detection() -> None:
+    cleaner = _frame_cleaner_stub()
+    cleaner.patient_data_extractor = cast(
+        PatientDataExtractor,
+        Mock(return_value={"patient_first_name": "Alice", "patient_dob": "21.03.1994"}),
+    )
+    result = cleaner._unified_metadata_extract("input")  # pyright: ignore[reportPrivateUsage]
+    assert result["first_name"] == "Alice"
+    assert result["dob"] == "1994-03-21"

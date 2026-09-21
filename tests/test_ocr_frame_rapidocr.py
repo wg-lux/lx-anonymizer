@@ -1,17 +1,17 @@
 # pyright: reportPrivateUsage=false
-
-from dataclasses import dataclass
 import threading
 import time
+from dataclasses import dataclass
 
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 from PIL import Image
 
+from lx_anonymizer.llm.llm_service import LLMService
 from lx_anonymizer.ocr import ocr_frame as ocr_mod
 from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, NestedRoi
-from lx_anonymizer.llm.llm_service import LLMService
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 
 
 @dataclass
@@ -27,7 +27,7 @@ class FakeRapidOCREngine:
         self.outputs = outputs
         self.input_shapes: list[tuple[int, ...]] = []
 
-    def __call__(self, image: NDArray[np.uint8]) -> FakeRapidOCROutput:
+    def __call__(self, image: ImageArray) -> FakeRapidOCROutput:
         self.input_shapes.append(image.shape)
         return self.outputs.pop(0)
 
@@ -226,7 +226,7 @@ def test_rapidocr_lazy_initialization_is_locked(
             with init_count_lock:
                 init_count += 1
 
-        def __call__(self, image: NDArray[np.uint8]) -> FakeRapidOCROutput:
+        def __call__(self, image: ImageArray) -> FakeRapidOCROutput:
             return FakeRapidOCROutput(
                 boxes=np.array(
                     [[[0, 0], [10, 0], [10, 5], [0, 5]]],
@@ -350,3 +350,69 @@ def test_pytesseract_fallback_uses_default_config_on_partial_instance(
     assert metadata == {"words": 2, "avg_conf": 0.9}
     assert captured["lang"] == "deu+eng"
     assert captured["config"] == "--oem 3 --psm 6 --dpi 300"
+
+
+def test_required_rapidocr_propagates_failure_without_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange.
+    frame_ocr = FrameOCR()
+
+    def fail(self: FrameOCR) -> None:
+        raise RuntimeError("Required OCR engine failed")
+
+    monkeypatch.setattr(FrameOCR, "_ensure_rapidocr_engine", fail)
+    # Act / Assert: exhaustive mode must not replace failure with empty metadata.
+    with pytest.raises(RuntimeError, match="Required OCR engine failed"):
+        frame_ocr.extract_text_with_rapidocr(np.zeros((8, 8, 3), dtype=np.uint8))
+
+
+@pytest.mark.parametrize("shape", [(0, 8), (8,), (1, 1, 1, 1)])
+def test_required_rapidocr_rejects_invalid_images(shape: tuple[int, ...]) -> None:
+    # Arrange.
+    frame_ocr = FrameOCR.__new__(FrameOCR)
+    # Act / Assert: invalid images are rejected before model initialization.
+    with pytest.raises(ValueError, match="nonempty image"):
+        frame_ocr.extract_text_with_rapidocr(np.zeros(shape, dtype=np.uint8))
+
+
+def test_required_rapidocr_uses_full_frame_and_normalizes_output() -> None:
+    # Arrange.
+    engine = FakeRapidOCREngine(
+        [
+            FakeRapidOCROutput(
+                boxes=np.array([[[1, 1], [7, 1], [7, 5], [1, 5]]], dtype=np.float32),
+                txts=("Anna Muster",),
+                scores=(0.95,),
+            )
+        ]
+    )
+    frame_ocr = _frame_ocr_with_engine(engine)
+    # Act.
+    text, confidence, metadata = frame_ocr.extract_text_with_rapidocr(
+        np.zeros((8, 12, 3), dtype=np.uint8)
+    )
+    # Assert.
+    assert text == "Anna Muster"
+    assert confidence == 0.95
+    assert metadata["backend"] == "rapidocr"
+    assert engine.input_shapes == [(8, 12, 3)]
+
+
+def test_rapidocr_explicit_thread_budget_is_passed_to_engine() -> None:
+    # Arrange / Act: initialize configuration without loading models.
+    frame_ocr = FrameOCR(inference_threads=2)
+    # Assert: bound each inference session and avoid nested inter-operator pools.
+    assert (
+        frame_ocr.rapidocr_params["EngineConfig.onnxruntime.intra_op_num_threads"] == 2
+    )
+    assert (
+        frame_ocr.rapidocr_params["EngineConfig.onnxruntime.inter_op_num_threads"] == 1
+    )
+
+
+@pytest.mark.parametrize("threads", [0, -1])
+def test_rapidocr_rejects_invalid_thread_budget(threads: int) -> None:
+    # Arrange / Act / Assert.
+    with pytest.raises(ValueError, match="thread count must be positive"):
+        FrameOCR(inference_threads=threads)

@@ -16,6 +16,37 @@ invariants:
   - Input media is immutable and output is one unpublished attempt-owned candidate.
   - Integrity, FFmpeg, FFprobe, masking, and cancellation failures raise loudly and clean only invocation-owned temporary artifacts.
 definition_of_done:
+  - id: exhaustive_metadata_analysis
+    category: functionality
+    title: Every source frame contributes to patient metadata extraction
+    acceptance:
+      - The exhaustive profile uses full-frame RapidOCR without sample caps, ROI exclusions, vision LLM calls, or metadata-driven early stopping.
+      - Sequential decoding preserves frame order and closes the decoder on success, cancellation, or failure; incomplete decoding raises.
+      - Only pixel-identical consecutive frames reuse OCR; changed pixels always trigger inference.
+      - Repeated text extraction and retained LLM candidates are bounded per invocation; observation capacity exhaustion raises.
+      - The exhaustive profile explicitly bounds ONNX Runtime intra-operator and inter-operator thread pools.
+      - Auxiliary PHI-region proposal inference retains its independent sample budget and never gates exhaustive OCR.
+      - Tests place a single patient overlay at the first, middle, and last frame and beyond the normal sample budget.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_exhaustive_video_metadata.py, tests/test_ocr_frame_rapidocr.py, -q]
+      timeout_seconds: 600
+    assessment:
+      status: verified
+      evidence:
+        - kind: test
+          reference: tests/test_exhaustive_video_metadata.py
+          note: Lossless source decoding with controlled OCR verifies single-frame overlays, exact pixel caching, bounded text retention, and decoder cleanup.
+        - kind: command
+          reference: Full lx-anonymizer Pyright (0 errors, 8 existing warnings); focused exhaustive/OCR/frame/concurrency/real-media/strand/helper/metrics suite (97 passed).
+        - kind: command
+          reference: New exhaustive test file passes Ruff; changed production files have no added Ruff findings against HEAD (103 existing findings).
+        - kind: command
+          reference: Endoreg import adapter, import normalization, storage normalization, and import service suite (106 passed, 2 warnings, 528.37 seconds); full endoreg Pyright (0 errors, 1 existing warning).
+          note: Includes real 501-frame 1080p import with RapidOCR. Endoreg uses the local editable lx-anonymizer package; caller and compute package must be deployed together. This is functional verification, not a controlled throughput or clinical recall benchmark.
+      assessed_by: codex-metadata-boundaries-20260910
+      assessed_at: "2026-09-10"
   - id: typed_public_boundary
     category: requirements
     title: FrameCleaner exposes a typed invocation and result boundary

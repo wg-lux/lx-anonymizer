@@ -1,50 +1,167 @@
-schema_version: "1.0"
+schema_version: '1.0'
 id: sensitive_meta_resolution
 name: Sensitive metadata resolution
-description: >-
-  Stable typed resolution of mixed OCR, NER, report, and LLM metadata payloads
-  at the lx-anonymizer boundary.
+description: Stable typed resolution of mixed OCR, NER, report, and LLM metadata payloads at the lx-anonymizer
+  boundary.
 owners:
-  - lx-anonymizer maintainers
+- lx-anonymizer maintainers
 production_critical: true
 tracking:
   state: active
   history: []
 source_documents:
-  - path: lx_anonymizer/sensitive_meta_interface.py
-    disposition: normative
-    note: Defines local compatibility behavior around the shared lx_dtypes model.
+- path: docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+  disposition: reference
+  note: Defines attempt-local compute ownership; metadata implementation references are recorded as code
+    evidence below.
 definition_of_done:
-  - id: robust_mixed_payload_resolution
-    category: functionality
-    title: Mixed sensitive metadata resolves without partial or untyped state
-    acceptance:
-      - Unknown upstream fields are projected out at the named compatibility boundary.
-      - Blank and null-equivalent values cannot downgrade populated metadata.
-      - Reversed birth and examination dates are corrected after strict date parsing.
-      - Invalid updates are atomic and preserve the typed state model and metadata identity.
-    required: true
-    verification:
-      kind: command
-      command:
-        - .devenv/state/venv/bin/python
-        - -m
-        - pytest
-        - tests/test_sensitive_meta_interface.py
-        - -q
-      timeout_seconds: 300
-    assessment:
-      status: verified
-      evidence:
-        - kind: code
-          reference: lx_anonymizer/sensitive_meta_interface.py
-        - kind: test
-          reference: tests/test_sensitive_meta_interface.py
-        - kind: command
-          reference: .devenv/state/venv/bin/pyright (0 errors)
-        - kind: command
-          reference: focused metadata and consumer tests (84 passed)
-        - kind: command
-          reference: full pytest suite (299 passed, 3 skipped)
-      assessed_by: codex-sensitive-meta-robust-20260827
-      assessed_at: "2026-08-27T11:11:00+02:00"
+- id: collected_prediction_at_processing_boundaries
+  category: testing
+  title: Collected metadata survives FrameCleaner and ReportReader return boundaries
+  acceptance:
+  - Arrange-Act-Assert tests exercise clean_video and process_report with real metadata accumulation and
+    serialization.
+  - Complementary observations fill missing fields while later blank, unknown, or conflicting names preserve
+    the first valid prediction.
+  - Video output retains the highest-confidence OCR text and prefers longer text when confidence ties.
+  - Report aliases, dates, and endoscope metadata survive finalization and typed artifact results.
+  - Previous patient metadata is reset before collecting a new prediction.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - -m
+    - pytest
+    - tests/test_frame_cleaner.py
+    - tests/test_report_reader_contract.py
+    - tests/test_sensitive_meta_interface.py
+    - tests/test_frame_report_helper_logic.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/test_frame_cleaner.py::test_clean_video_returns_accumulated_best_prediction
+    - kind: test
+      reference: tests/test_report_reader_contract.py::test_process_report_returns_collected_best_prediction
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 8 existing warnings)
+    - kind: command
+      reference: focused boundary, metadata, and helper tests (87 passed, including 16 new AAA cases)
+    - kind: command
+      reference: Ruff check and format for both changed test files (passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 8 existing warnings; exit 0)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/test_sensitive_meta_interface.py tests/test_frame_report_helper_logic.py
+        tests/test_llm_meta_helpers.py tests/test_frame_metadata_extractor_dates.py -q -o log_cli=false
+        --tb=short --maxfail=4 (102 passed; exit 0)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/test_frame_cleaner.py tests/test_exhaustive_video_metadata.py
+        tests/test_report_reader_contract.py tests/test_blank_handling.py tests/test_frame_cleaner_concurrency.py
+        tests/test_llm_meta_helpers.py -q -o log_cli=false --tb=short --maxfail=3 (86 passed; exit 0)
+      note: Includes the two additional no-result request-reset cases added after the initial 102-test
+        run.
+    - kind: command
+      reference: PYTHONPATH=/home/admin/lx-anonymizer TEST_DB_ENGINE=django.db.backends.sqlite3 RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test
+        tests/import_files/test_sensitive_metadata_resolution.py tests/import_files/test_video_anonymization.py
+        tests/import_files/test_report_anonymization_contract.py -q --tb=short -rs --maxfail=3 (50 passed,
+        2 warnings; exit 0 in /home/admin/endoreg-db)
+    - kind: command
+      reference: 'Ruff diagnostics compared with the Git index: no new diagnostic codes/messages in any
+        changed implementation or test file. 44 pre-existing findings remain in consumer modules/helper
+        tests; adapter and adapter/LLM tests pass Ruff. git diff --check passed.'
+    assessed_by: codex-sensitive-meta-20260921
+    assessed_at: '2026-09-21T12:49:05.092753+00:00'
+    note: Reassessed after metadata boundary changes using the current processing and helper tests. Original
+      code/test references are retained; this assessment replaces the earlier date-only timestamp with
+      current verified evidence.
+- id: robust_mixed_payload_resolution
+  category: functionality
+  title: Mixed sensitive metadata resolves without partial or untyped state
+  acceptance:
+  - Unknown upstream fields are projected out at the named compatibility boundary.
+  - Blank and null-equivalent values cannot downgrade populated metadata.
+  - Reversed dates may be repaired within one observation; combining observations must never overwrite
+    an established birth or examination date.
+  - Invalid recognized fields raise a redacted SensitiveMetaResolutionError, preserve every field and
+    typed state, and are not converted to empty successful results by video, report, or asynchronous LLM
+    wrappers.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - -m
+    - pytest
+    - tests/test_sensitive_meta_interface.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: lx_anonymizer/sensitive_meta_interface.py
+    - kind: test
+      reference: tests/test_sensitive_meta_interface.py
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors)
+    - kind: command
+      reference: focused metadata and consumer tests (84 passed)
+    - kind: command
+      reference: full pytest suite (299 passed, 3 skipped)
+    assessed_by: codex-sensitive-meta-20260921
+    assessed_at: '2026-09-21T12:49:05.092753+00:00'
+    note: Invalid recognized fields now raise a redacted SensitiveMetaResolutionError without partial
+      mutation. Video, report, LLM and asynchronous worker wrappers propagate this error instead of treating
+      it as absent metadata. Unknown diagnostic keys and blank observations remain supported. Existing
+      same-observation date-role repair is preserved; merges validate with the shared lx_dtypes model
+      and cannot swap an established DOB with a later examination observation. Earlier passing evidence
+      above is historical; the 2026-09-21 runs verify the current behavior.
+- id: request_isolated_llm_metadata
+  category: data_integrity
+  title: LLM metadata is isolated across requests and cache consumers
+  acceptance:
+  - Every full and smart-sampling extraction starts with a fresh metadata accumulator; returning no result
+    must not retain a previous patient.
+  - Cache writes and reads use independent deep copies, including nested verification state.
+  - Cache keys use full SHA256 of request text; this is an ephemeral cache key, not a patient identity
+    hash.
+  - Canonical and legacy clinical aliases reach video signal detection only after shared normalization.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/test_llm_meta_helpers.py
+    - tests/test_frame_report_helper_logic.py
+    - -q
+    - -o
+    - log_cli=false
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: lx_anonymizer/llm/llm_extractor.py
+    - kind: test
+      reference: tests/test_llm_meta_helpers.py
+    assessed_by: codex-sensitive-meta-20260921
+    assessed_at: '2026-09-21T12:49:05.092753+00:00'
+    note: Each extraction resets its request state, including no-model/no-signal returns. Cached inputs
+      and outputs are deep copies, including nested verification state. Full SHA256 replaces truncated
+      MD5 only for ephemeral text cache keys. Canonical and legacy clinical aliases are normalized before
+      video signal detection. Patient/examination hashing and salt ownership remain exclusively in endoreg-db.
+      Stateful extractors remain invocation-owned and are not declared safe for concurrent sharing. Local
+      component checks do not establish clinical OCR recall, production runtime acceptance, or approval
+      to deploy. Source /home/admin/lx-anonymizer at 16b274b273243b669d26299a94efea20eb79bd5c with pre-existing
+      unrelated dirty changes; lx-anonymizer 0.9.8 and lx-dtypes 0.3.5. No feature lock acquired per user
+      instruction; this repository has no tracker.py. Required uv sync initially inherited the lx-annotate
+      environment path; that environment was restored with its own lockfile. Subsequent sync explicitly
+      targeted the lx-anonymizer environment and the existing CPython 3.12.14 interpreter. lx-annotate
+      decord 0.6.0 imports successfully, but its wheel internal cp36 platform tag causes uv audit to request
+      reinstall repeatedly; no wheel metadata was falsified. No production service, salt, identity record,
+      or release artifact was changed.

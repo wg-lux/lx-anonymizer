@@ -6,7 +6,11 @@ from typing import cast
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, SensitiveMetaState
+from lx_anonymizer.sensitive_meta_interface import (
+    SensitiveMeta,
+    SensitiveMetaResolutionError,
+    SensitiveMetaState,
+)
 
 
 def test_init_normalizes_blanks_and_trims() -> None:
@@ -75,7 +79,8 @@ def test_safe_update_accepts_base_model() -> None:
 
 def test_safe_update_rejects_unsupported_type() -> None:
     meta = SensitiveMeta(first_name="Alice")
-    meta.safe_update(cast(Mapping[str, object] | None, 123))
+    with pytest.raises(SensitiveMetaResolutionError):
+        meta.safe_update(cast(Mapping[str, object] | None, 123))
     assert meta.first_name == "Alice"
 
 
@@ -230,11 +235,45 @@ def test_type_validation_rejects_non_string_scalars_after_preprocessing() -> Non
 
 def test_safe_update_is_validation_gated_and_prevents_partial_mutation() -> None:
     meta = SensitiveMeta(first_name="Alice", last_name="Smith")
-    meta.safe_update({"first_name": "Bob", "last_name": ["bad"]})
+    with pytest.raises(SensitiveMetaResolutionError):
+        meta.safe_update({"first_name": "Bob", "last_name": ["bad"]})
 
     # Payload is validated as a whole before assignment, so no field should change.
     assert meta.first_name == "Alice"
     assert meta.last_name == "Smith"
+
+
+@pytest.mark.parametrize(
+    ("initial", "update"),
+    [
+        ({"dob": "1994-03-21"}, {"examination_date": "1990-01-01"}),
+        ({"examination_date": "2020-01-01"}, {"dob": "2024-01-01"}),
+    ],
+)
+def test_cross_observation_dates_never_rewrite_established_values(
+    initial: dict[str, str],
+    update: dict[str, str],
+) -> None:
+    meta = SensitiveMeta.model_validate(initial)
+    before = meta.model_dump()
+    before_fields = meta.model_fields_set.copy()
+    with pytest.raises(SensitiveMetaResolutionError, match="Inconsistent"):
+        meta.safe_update({**update, "last_name": "Must not be partially applied"})
+    assert meta.model_dump() == before
+    assert meta.model_fields_set == before_fields
+
+
+@pytest.mark.parametrize("field", ["dob", "patient_dob", "birth_date", "first_name"])
+def test_invalid_recognized_metadata_is_explicit_atomic_and_redacted(
+    field: str,
+) -> None:
+    meta = SensitiveMeta(first_name="Existing")
+    before = meta.model_dump()
+    with pytest.raises(SensitiveMetaResolutionError) as raised:
+        meta.safe_update({field: ["private-extracted-value"], "last_name": "Partial"})
+    assert "private-extracted-value" not in str(raised.value)
+    assert raised.value.__suppress_context__
+    assert meta.model_dump() == before
 
 
 def test_safe_update_fill_only_keeps_existing_nonblank_values() -> None:

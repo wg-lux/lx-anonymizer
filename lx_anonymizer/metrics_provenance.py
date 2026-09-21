@@ -1,4 +1,5 @@
 from __future__ import annotations
+from lx_anonymizer.runtime_types import Box
 
 import importlib.metadata
 from collections.abc import Sequence
@@ -82,7 +83,7 @@ def summarize_frame_observations(
 
 
 def summarize_pdf_redactions(
-    rois_per_page: Mapping[int, list[tuple[int, int, int, int]]],
+    rois_per_page: Mapping[int, list[Box]],
     *,
     detector_sources: list[str] | None = None,
     confidences: list[float] | None = None,

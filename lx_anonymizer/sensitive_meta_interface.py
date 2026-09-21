@@ -11,6 +11,10 @@ from lx_dtypes.models.meta.SensitiveMeta import (
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 
+class SensitiveMetaResolutionError(ValueError):
+    """Invalid recognized metadata; the message contains no extracted values."""
+
+
 class SensitiveMeta(DTypeSensitiveMeta):
     """Stable, mixed-input boundary for sensitive metadata.
 
@@ -57,7 +61,7 @@ class SensitiveMeta(DTypeSensitiveMeta):
         data: object = None,
         **kwargs: object,
     ) -> None:
-        """Fill blank fields from a mixed payload as one atomic update."""
+        """Fill blank fields atomically; reject invalid updates without exposing PHI."""
         payload: dict[str, object] = {}
         if isinstance(data, BaseModel):
             payload.update(data.model_dump())
@@ -65,7 +69,7 @@ class SensitiveMeta(DTypeSensitiveMeta):
             for key, value in cast(Mapping[object, object], data).items():
                 payload[str(key)] = value
         elif data is not None:
-            return
+            raise SensitiveMetaResolutionError("Unsupported sensitive metadata input")
 
         payload.update(kwargs)
         if not payload:
@@ -75,7 +79,9 @@ class SensitiveMeta(DTypeSensitiveMeta):
         try:
             validated_updates = model_type.from_mixed_mapping(payload)
         except ValidationError:
-            return
+            raise SensitiveMetaResolutionError(
+                "Invalid sensitive metadata update"
+            ) from None
 
         excluded_fields = {"created_at", "sensitive_meta_state", "uuid"}
         fill_updates = {
@@ -89,9 +95,13 @@ class SensitiveMeta(DTypeSensitiveMeta):
             return
 
         try:
-            merged = model_type.model_validate(self.model_dump() | fill_updates)
+            # Date-role repair belongs to one observation, never to a merge of
+            # observations: swapping here could overwrite an established DOB.
+            merged = DTypeSensitiveMeta.model_validate(self.model_dump() | fill_updates)
         except ValidationError:
-            return
+            raise SensitiveMetaResolutionError(
+                "Inconsistent sensitive metadata update"
+            ) from None
 
         # Preserve validated nested model instances; model_dump() would flatten
         # SensitiveMetaState into an untyped dictionary here.
@@ -119,6 +129,7 @@ def sensitive_meta_to_dict(meta: SensitiveMeta) -> dict[str, object]:
 __all__ = [
     "SensitiveMeta",
     "SensitiveMetaDataDict",
+    "SensitiveMetaResolutionError",
     "SensitiveMetaState",
     "SensitiveMetaStateDataDict",
     "sensitive_meta_to_dict",

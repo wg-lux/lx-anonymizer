@@ -1,14 +1,15 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import Dict, List, Optional, Protocol, Tuple, TypedDict, Union, cast
 
 import numpy as np
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image
 
 from lx_anonymizer.ocr.ocr_preprocessing import preprocess_image
 from lx_anonymizer.setup.custom_logger import logger
 
-TesseractDataDict = Dict[str, list[str]]
 ScaleResultMetadata = Dict[str, Union[float, int, str]]
 ScaleResultsMetadata = Dict[str, ScaleResultMetadata]
 PyramidMetadataValue = Union[float, ScaleResultsMetadata, Dict[str, float]]
@@ -18,46 +19,23 @@ PyramidOcrResult = Tuple[str, PyramidMetadata]
 
 class BlockWord(TypedDict):
     text: str
-    left: str
-    top: str
-    width: str
-    height: str
-
-
-class _TesseractImageToString(Protocol):
-    def __call__(self, image: Image.Image, *, config: str = "") -> str: ...
-
-
-class _TesseractImageToData(Protocol):
-    def __call__(
-        self, image: Image.Image, *, output_type: object, config: str = ""
-    ) -> TesseractDataDict: ...
-
-
-class _TesseractOutput(Protocol):
-    DICT: object
-
-
-class _TesseractModule(Protocol):
-    image_to_string: _TesseractImageToString
-    image_to_data: _TesseractImageToData
-    Output: _TesseractOutput
+    left: int | str
+    top: int | str
+    width: int | str
+    height: int | str
 
 
 class _Cv2Module(Protocol):
     boundingRect: Callable[[object], tuple[int, int, int, int]]
 
 
-_PYTESSERACT = cast(_TesseractModule, pytesseract)
-
-
 def _image_to_string(image: Image.Image, config: str = "") -> str:
-    return _PYTESSERACT.image_to_string(image, config=config)
+    return pytesseract.image_to_string(image, config=config)
 
 
-def _image_to_data(image: Image.Image, config: str = "") -> TesseractDataDict:
-    return _PYTESSERACT.image_to_data(
-        image, output_type=_PYTESSERACT.Output.DICT, config=config
+def _image_to_data(image: Image.Image, config: str = "") -> pytesseract.TesseractData:
+    return pytesseract.image_to_data(
+        image, output_type=pytesseract.Output.DICT, config=config
     )
 
 
@@ -114,7 +92,9 @@ def pyramid_ocr(
 
             # Calculate average confidence, excluding negative values
             confidences_list = [
-                float(conf) for conf in data["conf"] if conf != "-1" and conf.strip()
+                float(conf)
+                for conf in data["conf"]
+                if str(conf).strip() and float(conf) >= 0
             ]
             avg_confidence = (
                 sum(confidences_list) / len(confidences_list) if confidences_list else 0

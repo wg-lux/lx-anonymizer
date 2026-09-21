@@ -5,8 +5,12 @@ from typing import Any, Protocol, TypeAlias, cast
 
 import torch  # type: ignore[import-not-found]
 from PIL import Image
-from transformers import DonutProcessor, VisionEncoderDecoderModel  # type: ignore[import-untyped]
+from transformers import (  # type: ignore[import-untyped]
+    DonutProcessor,
+    VisionEncoderDecoderModel,
+)
 
+from lx_anonymizer.runtime_types import Box
 from lx_anonymizer.setup.custom_logger import get_logger
 
 # Set the environment variable to avoid memory fragmentation
@@ -15,7 +19,6 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 logger = get_logger(__name__)
 
 
-ImagePosition: TypeAlias = tuple[int, int, int, int]
 ImageInput: TypeAlias = Image.Image | str | PathLike[str]
 
 
@@ -102,7 +105,7 @@ def get_decoder_start_token_id(tokenizer: DonutTokenizer) -> int:
 
 def split_image_into_chunks(
     image: Image.Image, max_height: int = 800, max_width: int = 800, overlap: int = 100
-) -> tuple[list[Image.Image], list[ImagePosition]]:
+) -> tuple[list[Image.Image], list[Box]]:
     """
     Split a large image into smaller chunks with intelligent boundaries.
 
@@ -120,7 +123,7 @@ def split_image_into_chunks(
     """
     width, height = image.size
     chunks: list[Image.Image] = []
-    positions: list[ImagePosition] = []
+    positions: list[Box] = []
 
     # Convert to numpy for analysis
     import numpy as np
@@ -263,7 +266,7 @@ def process_chunk(
     return decoded_text
 
 
-def post_process_chunks(chunk_texts: list[str], positions: list[ImagePosition]) -> str:
+def post_process_chunks(chunk_texts: list[str], positions: list[Box]) -> str:
     """
     Post-process and merge text from multiple chunks intelligently.
 

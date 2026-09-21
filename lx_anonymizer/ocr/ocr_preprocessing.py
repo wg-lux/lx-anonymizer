@@ -1,7 +1,24 @@
-from PIL import ImageOps, Image, ImageFilter, ImageEnhance
-import numpy as np
+from typing import Any, List, Optional, Tuple, cast
+
 import cv2
-from typing import Any, List, Tuple, Optional, cast
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+
+from lx_anonymizer.runtime_types import ImageArray
+
+
+def adaptive_threshold(
+    src: ImageArray,
+    max_value: float,
+    adaptive_method: int,
+    threshold_type: int,
+    block_size: int,
+    constant: float,
+) -> ImageArray:
+    """Typed boundary for OpenCV's incompletely annotated adaptive threshold API."""
+    return cv2.adaptiveThreshold(  # pyright: ignore[reportUnknownMemberType]
+        src, max_value, adaptive_method, threshold_type, block_size, constant
+    )
 
 
 def preprocess_image(
@@ -59,7 +76,7 @@ def preprocess_image(
         elif method == "threshold":
             # Apply adaptive thresholding
             image_cv = np.array(image.convert("L"))
-            image_cv = cast(Any, cv2).adaptiveThreshold(
+            image_cv = adaptive_threshold(
                 image_cv, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
             )
             image = Image.fromarray(image_cv)

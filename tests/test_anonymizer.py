@@ -9,9 +9,9 @@ import pytest
 from PIL import Image
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
+from lx_anonymizer.runtime_types import Box as Box
 
-Roi = tuple[int, int, int, int]
-TextWithBox = dict[str, str | Roi]
+TextWithBox = dict[str, str | Box]
 
 
 def create_test_image(
@@ -57,48 +57,48 @@ def _blank_pdf_pages(_pdf_path: object) -> list[Image.Image]:
 
 def _no_sensitive_regions(
     _self: Anonymizer, _image: Image.Image, **_kwargs: object
-) -> list[Roi]:
+) -> list[Box]:
     return []
 
 
 def _sample_sensitive_region(
     _self: Anonymizer, _image: Image.Image, **_kwargs: object
-) -> list[Roi]:
+) -> list[Box]:
     return [(10, 10, 40, 30)]
 
 
 def _pdf_text_region(
     _self: Anonymizer, _image: Image.Image, **_kwargs: object
-) -> list[Roi]:
+) -> list[Box]:
     return [(40, 80, 220, 110)]
 
 
 def _east_one_box(
     _image: Image.Image, _min_confidence: float, _width: int, _height: int
-) -> tuple[list[Roi], str]:
+) -> tuple[list[Box], str]:
     return ([(1, 2, 3, 4)], "[]")
 
 
 def _east_no_boxes(
     _image: Image.Image, _min_confidence: float, _width: int, _height: int
-) -> tuple[list[Roi], str]:
+) -> tuple[list[Box], str]:
     return ([], "[]")
 
 
 def _ocr_one_box(
-    _image: Image.Image, _text_boxes: Sequence[Roi], language: str = "deu+eng"
-) -> tuple[list[TextWithBox], list[Roi]]:
+    _image: Image.Image, _text_boxes: Sequence[Box], language: str = "deu+eng"
+) -> tuple[list[TextWithBox], list[Box]]:
     _ = language
     return ([{"text": "Max", "box": (1, 2, 3, 4)}], [])
 
 
-def _phi_region(_image: Image.Image) -> list[Roi]:
+def _phi_region(_image: Image.Image) -> list[Box]:
     return [(40, 50, 120, 90)]
 
 
 def _cropper_region(
     _image: Image.Image, _text_with_boxes: Sequence[TextWithBox]
-) -> list[Roi]:
+) -> list[Box]:
     return [(10, 10, 20, 20)]
 
 
@@ -462,7 +462,7 @@ def test_detect_sensitive_regions_pipeline_calls_cropper_with_ocr_output(
 
     def fake_detect_sensitive_regions(
         image_arg: Image.Image, text_with_boxes: Sequence[TextWithBox]
-    ) -> list[Roi]:
+    ) -> list[Box]:
         called["image"] = image_arg
         called["text_with_boxes"] = text_with_boxes
         return [(10, 10, 20, 20)]

@@ -8,13 +8,12 @@ TesseOCR instead of pytesseract for video frame text extraction.
 
 import sys
 import time
-from typing import TypeAlias
-
-import cv2
-import numpy as np
 
 # Add project root to sys.path (repo-relative)
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -27,8 +26,6 @@ try:
 except ImportError as e:
     print(f"❌ Failed to import OCR modules: {e}")
     sys.exit(1)
-
-OcrResult: TypeAlias = tuple[str, float]
 
 
 def create_test_frame_with_text() -> np.ndarray:
@@ -98,7 +95,7 @@ def benchmark_ocr_performance():
     frame_ocr_pytesseract = FrameOCR()
 
     start_time = time.time()
-    pytesseract_results: list[OcrResult] = []
+    pytesseract_results: list[tuple[str, float]] = []
 
     for i in range(num_frames):
         text, confidence, _metadata = frame_ocr_pytesseract.extract_text_from_frame(
@@ -117,7 +114,7 @@ def benchmark_ocr_performance():
     frame_ocr_tesserocr = FrameOCR()
 
     start_time = time.time()
-    tesserocr_results: list[OcrResult] = []
+    tesserocr_results: list[tuple[str, float]] = []
 
     for i in range(num_frames):
         text, confidence, _metadata = frame_ocr_tesserocr.extract_text_from_frame(

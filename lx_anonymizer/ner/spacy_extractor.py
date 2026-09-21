@@ -22,6 +22,7 @@ from spacy.matcher import Matcher
 from spacy.tokens import Span, Token
 
 from lx_anonymizer.config import settings
+from lx_anonymizer.ner.bundled_spacy import load_bundled_german_model
 from lx_anonymizer.ner.determine_gender import determine_gender
 from lx_anonymizer.regex_patterns import (
     DATE_8_DIGIT_RE,
@@ -188,6 +189,10 @@ class SpacyModelManager:
             return cls._instance
 
         model_name = model_name or cls.configured_model_name()
+
+        if model_name == cls.DEFAULT_MODEL:
+            cls._instance = load_bundled_german_model()
+            return cls._instance
 
         try:
             logger.info(f"Loading spacy model: {model_name}")

@@ -10,16 +10,24 @@ from typing import Any, List, Optional, Protocol, Tuple, cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 
 from lx_anonymizer._native import native
+from lx_anonymizer.runtime_types import (
+    Box as Box,
+)
+from lx_anonymizer.runtime_types import (
+    ImageArray as ImageArray,
+)
+from lx_anonymizer.runtime_types import (
+    OcrResult as OcrResult,
+)
+from lx_anonymizer.runtime_types import (
+    PixelArray as PixelArray,
+)
 from lx_anonymizer.setup.custom_logger import get_logger
 
 # Define a type alias for a bounding box (startX, startY, endX, endY)
-Box = Tuple[int, int, int, int]
 # Define a type alias for OCR results (text, box)
-OcrResult = Tuple[str, Box]
-PixelArray = npt.NDArray[np.generic]
 
 logger = get_logger(__name__)
 
@@ -63,11 +71,11 @@ class _NativeBoxOperations(Protocol):
     ) -> List[OcrResult]: ...
 
     def get_dominant_color_native(
-        self, image: npt.NDArray[np.uint8], box: Optional[Box]
+        self, image: ImageArray, box: Optional[Box]
     ) -> Tuple[int, int, int]: ...
 
     def make_box_from_name_native(
-        self, image: npt.NDArray[np.uint8], name: str, padding: int
+        self, image: ImageArray, name: str, padding: int
     ) -> Box: ...
 
     def make_box_from_device_list_native(
@@ -76,7 +84,7 @@ class _NativeBoxOperations(Protocol):
 
     def extend_boxes_if_needed_native(
         self,
-        image: npt.NDArray[np.uint8],
+        image: ImageArray,
         boxes: List[Box],
         extension_margin: int,
         color_threshold: float,
@@ -116,7 +124,7 @@ def filter_empty_boxes(
 
 
 def get_dominant_color(
-    image: npt.NDArray[np.uint8], box: Optional[Box] = None
+    image: ImageArray, box: Optional[Box] = None
 ) -> Tuple[int, int, int]:
     """
     Get the dominant color in a given box region of the image.
@@ -156,9 +164,7 @@ def get_dominant_color(
 _DEFAULT_GET_DOMINANT_COLOR = get_dominant_color
 
 
-def make_box_from_name(
-    image: npt.NDArray[np.uint8], name: str, padding: int = 2
-) -> Box:
+def make_box_from_name(image: ImageArray, name: str, padding: int = 2) -> Box:
     """
     Create a bounding box around the given name based on font size.
     """
@@ -205,7 +211,7 @@ def make_box_from_device_list(x: int, y: int, w: int, h: int) -> Box:
 
 
 def extend_boxes_if_needed(
-    image: npt.NDArray[np.uint8],
+    image: ImageArray,
     boxes: List[Box],
     extension_margin: int = 10,
     color_threshold: int = 30,

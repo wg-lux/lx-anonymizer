@@ -2,17 +2,15 @@ from fractions import Fraction
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import numpy as np
-import numpy.typing as npt
 import pytest
 
 from lx_anonymizer.frame_cleaner import FrameCleaner
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
 
 cv2 = pytest.importorskip("cv2")
 
-FrameArray = npt.NDArray[np.uint8]
-StreamItem = tuple[int, FrameArray, int]
+StreamItem = tuple[int, ImageArray, int]
 
 
 def _example_processed_frames() -> list[Path]:

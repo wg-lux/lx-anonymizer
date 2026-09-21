@@ -12,8 +12,9 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-ImageArray = npt.NDArray[np.uint8]
-Box = tuple[int, int, int, int]
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
+
 StickerPlacement = Literal["panel", "lens"]
 
 

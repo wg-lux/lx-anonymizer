@@ -4,11 +4,7 @@ import random
 from pathlib import Path
 from typing import Protocol, Sequence, TextIO, cast
 
-import gender_guesser.detector as gender  # type: ignore[import-untyped]
-
-from lx_anonymizer.pseudonymization import names_adder
-from lx_anonymizer.setup.custom_logger import get_logger
-from lx_anonymizer.setup.directory_setup import create_temp_directory
+import gender_guesser.detector as gender
 from lx_dtypes.models.contracts.text_anonymization import (
     DateOfBirthCore,
     GenderDisplayLabel,
@@ -16,13 +12,14 @@ from lx_dtypes.models.contracts.text_anonymization import (
     PersonNameMetadata,
 )
 
+from lx_anonymizer.pseudonymization import names_adder
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.setup.custom_logger import get_logger
+from lx_anonymizer.setup.directory_setup import create_temp_directory
+
 logger = get_logger(__name__)
 
 temp_dir, data_base_dir, csv_dir = create_temp_directory()
-
-
-class _GenderDetector(Protocol):
-    def get_gender(self, name: str) -> str: ...
 
 
 class _AddNameToImage(Protocol):
@@ -31,27 +28,24 @@ class _AddNameToImage(Protocol):
         first_name: str,
         last_name: str,
         gender_par: str,
-        first_name_box: tuple[int, int, int, int],
-        last_name_box: tuple[int, int, int, int],
+        first_name_box: Box,
+        last_name_box: Box,
         device: str,
     ) -> Path: ...
 
 
 class _AddFullNameToImage(Protocol):
-    def __call__(
-        self, name: str, gender_par: str, box: tuple[int, int, int, int]
-    ) -> Path: ...
+    def __call__(self, name: str, gender_par: str, box: Box) -> Path: ...
 
 
 class _AddDeviceNameToImage(Protocol):
     def __call__(self, name: str, gender_par: str, device: str) -> Path: ...
 
 
-BoundingBox = tuple[int, int, int, int]
 DetectedWords = Sequence[str]
 
 
-_gender_detector = cast(_GenderDetector, gender.Detector())
+_gender_detector = gender.Detector()
 _add_name_to_image = cast(_AddNameToImage, names_adder.add_name_to_image)
 _add_full_name_to_image = cast(_AddFullNameToImage, names_adder.add_full_name_to_image)
 _add_device_name_to_image = cast(
@@ -149,13 +143,13 @@ def getindex(file: TextIO) -> int:
     return random.randint(0, file_length - 1)
 
 
-def _to_box_key(box: BoundingBox) -> str:
+def _to_box_key(box: Box) -> str:
     return f"{box[0]},{box[1]},{box[2]},{box[3]}"
 
 
 def gender_and_handle_full_names(
     words: DetectedWords,
-    box: BoundingBox,
+    box: Box,
     image_path: str,
     device: str = "olympus_cv_1500",
 ) -> tuple[dict[tuple[str, str], Path], GenderGuess]:
@@ -179,8 +173,8 @@ def gender_and_handle_full_names(
 
 def gender_and_handle_separate_names(
     words: DetectedWords,
-    first_name_box: BoundingBox,
-    last_name_box: BoundingBox,
+    first_name_box: Box,
+    last_name_box: Box,
     image_path: str,
     device: str,
 ) -> tuple[dict[tuple[str, str], Path], GenderGuess]:
@@ -231,7 +225,7 @@ def gender_and_handle_separate_names(
 
 def gender_and_handle_device_names(
     words: DetectedWords,
-    box: BoundingBox,
+    box: Box,
     image_path: str,
     device: str = "olympus_cv_1500",
 ) -> tuple[dict[tuple[str, str], Path], GenderGuess]:

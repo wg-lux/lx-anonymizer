@@ -79,7 +79,7 @@ jobs:
           uv venv smoke_env
           source smoke_env/bin/activate
           uv pip install dist/*.whl --no-cache
-          # import the local folder instead of the installed wheel
+          # Run outside the checkout package so this checks the installed wheel.
           mkdir -p test_dir
           cd test_dir
           python - <<'PY'
@@ -100,6 +100,10 @@ jobs:
           except Exception as e:
               print(f"❌ Package initialization failed: {e}")
               sys.exit(1)
+          from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
+          model = SpacyModelManager.get_model()
+          assert model.lang == "de" and model.has_pipe("ner")
+          assert any(entity.label_ == "PER" for entity in model("Angela Merkel lebt in Berlin.").ents)
           PY
 
       - name: Upload wheel artifacts

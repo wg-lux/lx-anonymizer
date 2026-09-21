@@ -1,9 +1,11 @@
 import logging
+import math
 import os
 import resource
 import stat
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Generator, Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -65,7 +67,11 @@ from lx_anonymizer.regex_patterns import (
     NON_ALNUM_COMPACT_RE,
     NON_ALNUM_SPACE_RE,
 )
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, sensitive_meta_to_dict
+from lx_anonymizer.sensitive_meta_interface import (
+    SensitiveMeta,
+    SensitiveMetaResolutionError,
+    sensitive_meta_to_dict,
+)
 from lx_anonymizer.text_detection.phi_region_detector import (
     PhiRegionDetector,
     detect_phi_regions,
@@ -93,6 +99,7 @@ class FrameCleanerQualityProfile(str, Enum):
     FAST = "fast"
     BALANCED = "balanced"
     QUALITY = "quality"
+    EXHAUSTIVE = "exhaustive"
 
 
 @dataclass(frozen=True)
@@ -101,6 +108,26 @@ class FrameCleanerSamplingProfile:
     high_quality_ocr: bool
     smart_early_stopping: bool
     early_stop_techniques: frozenset[str]
+    every_frame: bool = False
+    max_retained_observations: int = 100_000
+    max_retained_texts: int = 128
+    ocr_inference_threads: int = 2
+
+    def __post_init__(self) -> None:
+        if (
+            min(
+                self.max_frames_to_sample,
+                self.max_retained_observations,
+                self.max_retained_texts,
+                self.ocr_inference_threads,
+            )
+            <= 0
+        ):
+            raise ValueError("Frame analysis limits must be positive")
+        if self.every_frame and (self.smart_early_stopping or self.high_quality_ocr):
+            raise ValueError(
+                "Exhaustive analysis requires conventional OCR without early stopping"
+            )
 
     @classmethod
     def from_quality_profile(
@@ -110,6 +137,15 @@ class FrameCleanerSamplingProfile:
             profile or settings.FRAME_CLEANER_QUALITY_PROFILE
         )
         configured_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
+
+        if resolved_profile is FrameCleanerQualityProfile.EXHAUSTIVE:
+            return cls(
+                max_frames_to_sample=configured_samples,
+                high_quality_ocr=False,
+                smart_early_stopping=False,
+                early_stop_techniques=frozenset(),
+                every_frame=True,
+            )
 
         if resolved_profile is FrameCleanerQualityProfile.FAST:
             max_frames = min(configured_samples, 12)
@@ -155,9 +191,15 @@ def _current_max_rss_kib() -> int:
 
 
 class FrameCleaner(FrameCleanerVideoMixin):
-    """
-    FrameCleaner class for handling video frame extraction and sensitive data detection.
-    """
+    """Frame extraction and sensitive data detection for one video attempt."""
+
+    _previous_ocr_frame: np.ndarray | None
+    _previous_ocr_result: tuple[str, float, dict[str, object]] | None
+    _metadata_text_cache: OrderedDict[str, None]
+    _ocr_cache_hits: int
+    _phi_sample_stride: int
+    _phi_sample_limit: int
+    _phi_frames_processed: int
 
     def __init__(
         self,
@@ -200,7 +242,13 @@ class FrameCleaner(FrameCleanerVideoMixin):
         logger.info("Using encoder: %s", self.preferred_encoder)
 
     def _init_core_components(self) -> None:
-        self.frame_ocr = FrameOCR()
+        self.frame_ocr = FrameOCR(
+            inference_threads=(
+                self.sampling_profile.ocr_inference_threads
+                if self._analyzes_every_frame()
+                else None
+            )
+        )
         self.frame_metadata_extractor = FrameMetadataExtractor()
         self.patient_data_extractor = PatientDataExtractor()
         self.roi_processor = ROIProcessor()
@@ -281,9 +329,18 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self._llm_calls_this_video = 0
         self._llm_seen_texts: set[str] = set()
         self.sensitive_meta: SensitiveMeta = SensitiveMeta()
+        self._previous_ocr_frame: np.ndarray | None = None
+        self._previous_ocr_result: tuple[str, float, dict[str, object]] | None = None
+        self._metadata_text_cache: OrderedDict[str, None] = OrderedDict()
+        self._ocr_cache_hits = 0
+        self._phi_sample_stride = 1
+        self._phi_sample_limit = self.sampling_profile.max_frames_to_sample
+        self._phi_frames_processed = 0
         logger.debug("Run state reset for new video")
 
     def _target_sample_count(self, total_frames: int) -> int:
+        if self._analyzes_every_frame():
+            return total_frames
         configured = max(1, self.sampling_profile.max_frames_to_sample)
         if total_frames <= 0:
             return 0
@@ -298,6 +355,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
             configured = pytest_cap
 
         return min(configured, total_frames)
+
+    def _analyzes_every_frame(self) -> bool:
+        return self.sampling_profile.every_frame
 
     def clean_video(
         self,
@@ -347,6 +407,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
                     candidate_path.unlink(missing_ok=True)
                 raise
         finally:
+            self._previous_ocr_frame = None
+            self._previous_ocr_result = None
             self._run_lock.release()
 
     def process(
@@ -457,6 +519,19 @@ class FrameCleaner(FrameCleanerVideoMixin):
         )
 
         total_frames, max_samples = self._prepare_video_sampling(video_path)
+        if self._analyzes_every_frame() and total_frames > 0:
+            # Region proposals are an independent sampled diagnostic. Expanding
+            # OCR coverage must not multiply this second model's inference budget.
+            self._phi_sample_limit = min(
+                total_frames, self.sampling_profile.max_frames_to_sample
+            )
+            self._phi_sample_stride = max(
+                5,
+                min(
+                    math.ceil(total_frames / self._phi_sample_limit),
+                    int(source_frame_rate * 2),
+                ),
+            )
         staging_seconds = time.perf_counter() - staging_started_at
 
         anonymizer_started_at = time.perf_counter()
@@ -606,6 +681,17 @@ class FrameCleaner(FrameCleanerVideoMixin):
             final_payload["frame_observations"] = frame_observation_payloads
         final_meta = VideoMeta.model_validate(final_payload)
         payload = final_meta.model_dump(mode="json")
+        if self._analyzes_every_frame():
+            payload["frame_analysis"] = {
+                "profile": "exhaustive",
+                "ocr_backend": "rapidocr",
+                "ocr_scope": "full_frame",
+                "identical_frame_cache_hits": self._ocr_cache_hits,
+                "retained_text_limit": self.sampling_profile.max_retained_texts,
+                "observation_limit": self.sampling_profile.max_retained_observations,
+                "phi_detector_frames_processed": self._phi_frames_processed,
+                "phi_detector_sample_limit": self._phi_sample_limit,
+            }
         for field_name, value in raw_sensitive_payload.items():
             payload.setdefault(field_name, value)
         if paper_evaluation_metrics is not None:
@@ -651,51 +737,67 @@ class FrameCleaner(FrameCleanerVideoMixin):
         frames_processed = 0
         best_ocr_text = ""
         best_ocr_conf = -1.0
+        previous_metadata: dict[str, object] | None = None
 
-        for idx, gray_frame, stride in self._iter_video(video_path, total_frames):
-            _ = stride
-            if frames_processed >= max_samples:
-                logger.info("Reached maximum frame sample limit. Stopping analysis.")
-                break
+        frames = self._iter_video(video_path, total_frames)
+        try:
+            for idx, gray_frame, stride in frames:
+                _ = stride
+                if not self._analyzes_every_frame() and frames_processed >= max_samples:
+                    logger.info(
+                        "Reached maximum frame sample limit. Stopping analysis."
+                    )
+                    break
 
-            frame_result = self._process_frame_result(
-                gray_frame=gray_frame,
-                endoscope_image_roi=endoscope_image_roi,
-                endoscope_data_roi_nested=endoscope_data_roi_nested,
-                frame_id=idx,
-                collect_for_batch=True,
-                high_quality_ocr=self.sampling_profile.high_quality_ocr,
-            )
-
-            merged_accumulated = self.frame_metadata_extractor.merge_metadata(
-                accumulated.model_dump(), frame_result.metadata
-            )
-            accumulated = FrameCleanerAccumulatedMeta.model_validate(merged_accumulated)
-
-            if frame_result.ocr_text and frame_result.ocr_text.strip():
-                candidate = frame_result.ocr_text.strip()
-                if frame_result.ocr_confidence > best_ocr_conf or (
-                    abs(frame_result.ocr_confidence - best_ocr_conf) < 1e-6
-                    and len(candidate) > len(best_ocr_text)
-                ):
-                    best_ocr_text = candidate
-                    best_ocr_conf = float(frame_result.ocr_confidence)
-
-            if frame_result.is_sensitive:
-                sensitive_idx.append(idx)
-                self.sensitive_meta.safe_update(accumulated.model_dump())
-
-            frames_processed += 1
-
-            if self._should_stop_frame_analysis(
-                technique=technique,
-                accumulated=accumulated,
-            ):
-                logger.info(
-                    "Critical metadata found. Early stopping enabled for %s.",
-                    technique,
+                frame_result = self._process_frame_result(
+                    gray_frame=gray_frame,
+                    endoscope_image_roi=endoscope_image_roi,
+                    endoscope_data_roi_nested=endoscope_data_roi_nested,
+                    frame_id=idx,
+                    collect_for_batch=True,
+                    high_quality_ocr=self.sampling_profile.high_quality_ocr,
                 )
-                break
+
+                if (
+                    not self._analyzes_every_frame()
+                    or frame_result.metadata != previous_metadata
+                ):
+                    merged_accumulated = self.frame_metadata_extractor.merge_metadata(
+                        accumulated.model_dump(), frame_result.metadata
+                    )
+                    accumulated = FrameCleanerAccumulatedMeta.model_validate(
+                        merged_accumulated
+                    )
+                    previous_metadata = dict(frame_result.metadata)
+
+                if frame_result.ocr_text and frame_result.ocr_text.strip():
+                    candidate = frame_result.ocr_text.strip()
+                    if frame_result.ocr_confidence > best_ocr_conf or (
+                        abs(frame_result.ocr_confidence - best_ocr_conf) < 1e-6
+                        and len(candidate) > len(best_ocr_text)
+                    ):
+                        best_ocr_text = candidate
+                        best_ocr_conf = float(frame_result.ocr_confidence)
+
+                if frame_result.is_sensitive:
+                    sensitive_idx.append(idx)
+                    self.sensitive_meta.safe_update(accumulated.model_dump())
+
+                frames_processed += 1
+
+                if self._should_stop_frame_analysis(
+                    technique=technique,
+                    accumulated=accumulated,
+                ):
+                    logger.info(
+                        "Critical metadata found. Early stopping enabled for %s.",
+                        technique,
+                    )
+                    break
+
+        finally:
+            if isinstance(frames, Generator):
+                frames.close()
 
         return FrameAnalysisResult(
             accumulated=accumulated,
@@ -881,11 +983,17 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 patient_candidate: Mapping[str, object] = self.patient_data_extractor(
                     text
                 )
-                if self._metadata_has_signal(patient_candidate):
-                    self.sensitive_meta.safe_update(patient_candidate)
+                normalized_candidate = SensitiveMeta()
+                normalized_candidate.safe_update(patient_candidate)
+                if self._metadata_has_signal(
+                    normalized_candidate.model_dump(exclude_unset=True)
+                ):
+                    self.sensitive_meta.safe_update(normalized_candidate)
                     meta = self.sensitive_meta.to_dict()
                 else:
                     meta = None
+            except SensitiveMetaResolutionError:
+                raise
             except Exception:
                 meta = None
         if not meta:
@@ -1182,7 +1290,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
             endoscope_image_roi,
             endoscope_data_roi_nested,
         )
-        if high_quality_ocr:
+        if self._analyzes_every_frame():
+            ocr_roi = None
+            ocr_text, ocr_conf, frame_metadata = self._exhaustive_frame_ocr(gray_frame)
+        elif high_quality_ocr:
             ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
                 gray_frame, ocr_roi
             )
@@ -1190,7 +1301,20 @@ class FrameCleaner(FrameCleanerVideoMixin):
             ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
                 gray_frame, ocr_roi, high_quality=False
             )
-        phi_regions = self._detect_phi_regions_for_frame(gray_frame)
+        phi_regions: list[dict[str, object]] = []
+        inspect_regions = not self._analyzes_every_frame() or (
+            self._phi_frames_processed < self._phi_sample_limit
+            and (frame_id is None or frame_id % self._phi_sample_stride == 0)
+        )
+        if inspect_regions:
+            detector_frame = (
+                cv2.cvtColor(gray_frame, cv2.COLOR_BGR2RGB)
+                if self._analyzes_every_frame() and gray_frame.ndim == 3
+                else gray_frame
+            )
+            phi_regions = self._detect_phi_regions_for_frame(detector_frame)
+            if self._analyzes_every_frame():
+                self._phi_frames_processed += 1
         frame_metadata = self._metadata_for_ocr_text(ocr_text, frame_metadata)
         is_sensitive = self._frame_is_sensitive(frame_metadata, phi_regions)
 
@@ -1222,16 +1346,44 @@ class FrameCleaner(FrameCleanerVideoMixin):
             ocr_confidence=ocr_conf,
         )
 
+    def _exhaustive_frame_ocr(
+        self, frame: np.ndarray
+    ) -> tuple[str, float, dict[str, object]]:
+        previous = self._previous_ocr_frame
+        result = self._previous_ocr_result
+        if (
+            previous is not None
+            and result is not None
+            and np.array_equal(previous, frame)
+        ):
+            self._ocr_cache_hits += 1
+            return result[0], result[1], dict(result[2])
+        result = self.frame_ocr.extract_text_with_rapidocr(frame)
+        self._previous_ocr_frame = frame.copy()
+        self._previous_ocr_result = result
+        return result[0], result[1], dict(result[2])
+
     def _metadata_for_ocr_text(
         self,
         ocr_text: str,
         frame_metadata: dict[str, object],
     ) -> dict[str, object]:
-        if ocr_text:
+        exhaustive = self._analyzes_every_frame()
+        cached = exhaustive and ocr_text in self._metadata_text_cache
+        if cached:
+            self._metadata_text_cache.move_to_end(ocr_text)
+        if ocr_text and not cached:
             meta_unified = self._unified_metadata_extract(ocr_text)
             frame_metadata = self.frame_metadata_extractor.merge_metadata(
                 frame_metadata, meta_unified
             )
+            if exhaustive:
+                self._metadata_text_cache[ocr_text] = None
+                if (
+                    len(self._metadata_text_cache)
+                    > self.sampling_profile.max_retained_texts
+                ):
+                    self._metadata_text_cache.popitem(last=False)
         self.sensitive_meta.safe_update(frame_metadata)
         return self.sensitive_meta.to_dict()
 
@@ -1256,6 +1408,14 @@ class FrameCleaner(FrameCleanerVideoMixin):
         is_sensitive: bool,
         phi_regions: list[dict[str, object]],
     ) -> None:
+        if (
+            self._analyzes_every_frame()
+            and len(self.frame_observations)
+            >= self.sampling_profile.max_retained_observations
+        ):
+            raise VideoAnonymizationError(
+                "Frame observation capacity exceeded; analysis is incomplete"
+            )
         self.frame_observations.append(
             self._build_frame_observation(
                 frame_id=frame_id,
@@ -1279,6 +1439,20 @@ class FrameCleaner(FrameCleanerVideoMixin):
         is_sensitive: bool,
         phi_regions: list[dict[str, object]],
     ) -> None:
+        if self._analyzes_every_frame():
+            if ocr_text in self.ocr_text_collection:
+                return
+            if len(self.frame_collection) >= self.sampling_profile.max_retained_texts:
+                # Metadata has already been collected from every text. Retain only
+                # the strongest bounded candidates for optional video-level LLM use.
+                weakest = min(
+                    range(len(self.frame_collection)),
+                    key=lambda i: self.frame_collection[i].ocr_confidence,
+                )
+                if ocr_conf <= self.frame_collection[weakest].ocr_confidence:
+                    return
+                del self.frame_collection[weakest]
+                del self.ocr_text_collection[weakest]
         self.frame_collection.append(
             FrameCollectionItem.model_validate(
                 {
@@ -1347,6 +1521,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 meta_obj = self.llm_extractor.extract_metadata(text)  # type: ignore
                 if meta_obj is not None:
                     meta = meta_obj.to_dict()
+            except SensitiveMetaResolutionError:
+                raise
             except Exception as e:
                 logger.warning("LLM extraction failed: %s", e)
                 meta = {}
@@ -1370,6 +1546,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 else:
                     spacy_meta = {}
                 meta = dict(spacy_meta)
+            except SensitiveMetaResolutionError:
+                raise
             except Exception as e:
                 logger.error(f"spaCy fallback failed: {e}")
                 meta = {}
@@ -1422,6 +1600,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
             logger.info("Video-level LLM extraction produced no validated metadata.")
             return {}
+        except SensitiveMetaResolutionError:
+            raise
         except Exception as exc:
             logger.warning(
                 "Batch enrichment failed softly (returning empty metadata): %s",

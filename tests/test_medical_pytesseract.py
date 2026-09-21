@@ -4,6 +4,7 @@ from typing import cast
 
 import cv2
 import numpy as np
+import pytest
 from PIL import Image
 
 from lx_anonymizer.ocr.medical_pytesseract import (
@@ -15,6 +16,7 @@ from lx_anonymizer.ocr.medical_pytesseract import (
     normalize_ocr_text_for_nlp,
     preprocess_for_medical_ocr,
 )
+from lx_anonymizer.ocr.ocr_preprocessing import adaptive_threshold
 
 
 def test_tesseract_invocation_pins_layout_modes_and_dawgs() -> None:
@@ -146,3 +148,29 @@ def test_extract_medical_text_can_raise_on_invalid_roi() -> None:
         assert str(exc) == "ROI x and y must be non-negative"
     else:
         raise AssertionError("Expected invalid ROI to raise")
+
+
+@pytest.mark.parametrize("block_size", [3, 11, 25])
+def test_shared_adaptive_threshold_preserves_binary_image_contract(
+    block_size: int,
+) -> None:
+    image = np.tile(np.arange(32, dtype=np.uint8), (32, 1))
+    result = adaptive_threshold(
+        image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block_size, 2
+    )
+    assert result.shape == image.shape
+    assert result.dtype == np.uint8
+    assert set(np.unique(result).tolist()) <= {0, 255}
+
+
+@pytest.mark.parametrize("block_size", [0, 1, 2, 10])
+def test_shared_adaptive_threshold_rejects_invalid_block_size(block_size: int) -> None:
+    with pytest.raises(cv2.error):
+        adaptive_threshold(
+            np.zeros((32, 32), dtype=np.uint8),
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            block_size,
+            2,
+        )

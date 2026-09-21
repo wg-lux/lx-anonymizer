@@ -10,44 +10,34 @@ New: Region-first OCR
 
 from __future__ import annotations
 
-import glob
 import importlib
 import logging
-import os
 import threading
 import time
 import unicodedata
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Tuple, TypeAlias, TypedDict, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 from PIL import Image
 
 from lx_anonymizer._native import native as _native
+from lx_anonymizer.ocr.ocr_preprocessing import adaptive_threshold
+from lx_anonymizer.ocr.tessdata import get_tessdata_path
 from lx_anonymizer.regex_patterns import (
     MULTISPACE_2PLUS_RE,
     OCR_ALLOWED_TEXT_RE,
     PUNCT_RUN_RE,
-    STRUCTURED_OVERLAY_LOOSE_RE,
     REPEATED_PUNCT_RE,
+    STRUCTURED_OVERLAY_LOOSE_RE,
     STRUCTURED_OVERLAY_RE,
 )
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
+from lx_anonymizer.utils.roi_normalization import NormalizedRoi as OCRRoi
 
 logger = logging.getLogger(__name__)
-
-FrameArray: TypeAlias = npt.NDArray[np.uint8]
-GrayArray: TypeAlias = npt.NDArray[np.uint8]
-Box: TypeAlias = Tuple[int, int, int, int]
-PsmValue: TypeAlias = int
-
-
-class OCRRoi(TypedDict):
-    x: int
-    y: int
-    width: int
-    height: int
 
 
 _tesserocr_module: ModuleType | None = None
@@ -252,7 +242,7 @@ class TesseOCRFrameProcessor:
     # ---------------- Tesseract init ----------------
     def _initialize_api(self) -> None:
         self._tesserocr = _get_tesserocr_module()
-        tessdata_path = self._get_tessdata_path()
+        tessdata_path = get_tessdata_path(self.language)
         self._tessdata_path = tessdata_path
         self.api = self._tesserocr.PyTessBaseAPI(
             lang=self.language,  # German prioritized
@@ -302,50 +292,6 @@ class TesseOCRFrameProcessor:
         api.SetVariable("language_model_penalty_non_freq_dict_word", "1")
         api.SetVariable("tessedit_char_whitelist", self._default_whitelist)
 
-    # ---------------- tessdata discovery ----------------
-    def _get_tessdata_path(self) -> Optional[str]:
-        """
-        Return tessdata/ directory itself (PyTessBaseAPI expects the dir containing *.traineddata).
-        """
-        env_tessdata_parent = os.environ.get("TESSDATA_PREFIX")
-        if env_tessdata_parent:
-            if env_tessdata_parent.endswith("/tessdata") and os.path.isdir(
-                env_tessdata_parent
-            ):
-                logger.info("Using TESSDATA_PREFIX directly: %s", env_tessdata_parent)
-                return env_tessdata_parent
-            tessdata_dir = os.path.join(env_tessdata_parent, "tessdata")
-            if os.path.isdir(tessdata_dir):
-                logger.info(
-                    "Using tessdata from TESSDATA_PREFIX parent: %s", tessdata_dir
-                )
-                return tessdata_dir
-
-        nix_patterns = [
-            "/nix/store/*/share/tessdata",
-            "/run/current-system/sw/share/tessdata",
-        ]
-        for pattern in nix_patterns:
-            if "*" in pattern:
-                for candidate in glob.glob(pattern):
-                    if os.path.isdir(candidate):
-                        if any(
-                            f.endswith(".traineddata") for f in os.listdir(candidate)
-                        ):
-                            logger.info("Using NixOS tessdata: %s", candidate)
-                            return candidate
-            elif os.path.isdir(pattern):
-                logger.info("Using tessdata: %s", pattern)
-                return pattern
-
-        for p in ["/usr/share/tessdata", "/usr/local/share/tessdata"]:
-            if os.path.isdir(p):
-                logger.info("Using tessdata: %s", p)
-                return p
-
-        logger.warning("No tessdata path found; falling back to tesserocr default")
-        return None
-
     # ---------------- Helpers ----------------
     @staticmethod
     def _validate_roi(roi: OCRRoi) -> bool:
@@ -356,7 +302,7 @@ class TesseOCRFrameProcessor:
     def _is_gibberish(text: str) -> bool:
         return _is_gibberish_impl(text)
 
-    def _choose_psm_for_box(self, w: int, h: int) -> PsmValue:
+    def _choose_psm_for_box(self, w: int, h: int) -> int:
         """Choose optimal PSM based on ROI dimensions and expected content"""
         assert self._tesserocr is not None
         aspect_ratio = w / max(h, 1)
@@ -404,8 +350,8 @@ class TesseOCRFrameProcessor:
 
     # ---------------- Preprocessing ----------------
     def _preprocess_to_gray(
-        self, frame: FrameArray, roi: Optional[OCRRoi] = None, mode: str = "binary"
-    ) -> GrayArray:
+        self, frame: ImageArray, roi: Optional[OCRRoi] = None, mode: str = "binary"
+    ) -> ImageArray:
         if frame.ndim == 3:
             img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         else:
@@ -432,7 +378,7 @@ class TesseOCRFrameProcessor:
 
         # 2. CLAHE for adaptive contrast enhancement
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced = cast(GrayArray, clahe.apply(denoised))
+        enhanced = cast(ImageArray, clahe.apply(denoised))
 
         # 4. Detect if we have white-on-black text (common in medical overlays)
         # Calculate mean brightness to determine if inversion is needed
@@ -450,20 +396,17 @@ class TesseOCRFrameProcessor:
         # 3b. Sharpen only for binary path (can introduce halos in grayscale OCR path)
         sharpen_kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
         cv2_dynamic = cast(Any, cv2)
-        sharpened = cast(GrayArray, cv2_dynamic.filter2D(enhanced, -1, sharpen_kernel))
+        sharpened = cast(ImageArray, cv2_dynamic.filter2D(enhanced, -1, sharpen_kernel))
 
         # 5. Adaptive thresholding for varying lighting
         # Use THRESH_BINARY (not INV) since we already inverted if needed
-        binary = cast(
-            GrayArray,
-            cv2_dynamic.adaptiveThreshold(
-                sharpened,
-                255,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY,  # Changed from THRESH_BINARY_INV
-                blockSize=21,
-                C=8,
-            ),
+        binary = adaptive_threshold(
+            sharpened,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,  # Changed from THRESH_BINARY_INV
+            block_size=21,
+            constant=8,
         )
 
         # 6. Morphological cleaning to connect broken characters

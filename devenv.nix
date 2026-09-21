@@ -8,7 +8,6 @@
 let
   python = pkgs.python312;
 
-  # Avoid repeated inline evaluations by binding the override once
   tesseractCustom = pkgs.tesseract.override {
     enableLanguages = [
       "eng"
@@ -16,7 +15,7 @@ let
     ];
   };
 
-  # 1. Pure C-libraries that need to be in LD_LIBRARY_PATH
+  # Pure C libraries needed at runtime.
   libs = with pkgs; [
     stdenv.cc.cc
     glib
@@ -26,7 +25,7 @@ let
     libxcb
   ];
 
-  # 2. Build-time tools (DO NOT evaluate library paths for these)
+  # Build-time tools. Do not include these in lib.makeLibraryPath.
   buildTools = with pkgs; [
     git
     direnv
@@ -40,7 +39,7 @@ let
     uv
   ];
 
-  # 3. Rest of the runtime/shell packages
+  # Remaining runtime/shell packages.
   otherPackages = with pkgs; [
     python
     python312Packages.pip
@@ -59,8 +58,14 @@ in
   languages.python = {
     enable = true;
     version = "3.12";
+
+    # devenv owns the canonical development venv:
+    # .devenv/state/venv
+    venv.enable = true;
+
     uv = {
       enable = true;
+
       sync = {
         enable = true;
         extras = [
@@ -73,10 +78,9 @@ in
 
   languages.rust.enable = true;
 
-  # Avoid lib.unique. Concatenating lists directly is instant.
   packages = buildTools ++ libs ++ otherPackages;
 
-  # pyproject-nix & rust imports are only evaluated if outputs are specifically requested
+  # pyproject-nix & Rust imports are evaluated only when outputs are requested.
   outputs = lib.optionalAttrs (inputs ? pyproject-nix) (
     let
       pythonApp = config.languages.python.import ./. { };
@@ -85,9 +89,19 @@ in
 
       nativeApp = pkgs.runCommand "lx-anonymizer-native-0.1.0" { } ''
         mkdir -p "$out/${python.sitePackages}/lx_anonymizer"
-        native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'lib_lx_anonymizer_native*.so' | head -n 1)"
+
+        native_lib="$(
+          find -L ${nativeLibDrv}/lib \
+            -type f \
+            -name 'lib_lx_anonymizer_native*.so' \
+            | head -n 1
+        )"
+
         test -n "$native_lib"
-        cp "$native_lib" "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
+
+        cp \
+          "$native_lib" \
+          "$out/${python.sitePackages}/lx_anonymizer/_lx_anonymizer_native.so"
       '';
     in
     {
@@ -97,8 +111,7 @@ in
   );
 
   env = {
-    # Point only to the lightweight 'libs' list.
-    # This prevents Nix from walking the recursive trees of gcc, rustc, and cuda_nvcc.
+    # Keep library-path evaluation restricted to actual libraries.
     LD_LIBRARY_PATH =
       "/run/opengl-driver/lib:/run/opengl-driver-32/lib"
       + ":/usr/lib/wsl/lib"
@@ -108,43 +121,52 @@ in
 
     OLLAMA_HOST = "127.0.0.1:11434";
     PYTORCH_ALLOC_CONF = "expandable_segments:True";
+
+    # Nix-provided Python interpreter.
     PYO3_PYTHON = "${python}/bin/python";
     UV_PYTHON = lib.mkForce "${python}/bin/python";
+    UV_PYTHON_DOWNLOADS = "never";
+
+    # Critical:
+    # uv and devenv now use exactly the same environment.
+    UV_PROJECT_ENVIRONMENT = "${config.devenv.state}/venv";
   };
 
-  scripts.hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
+  scripts = {
+    hello.exec = "${pkgs.uv}/bin/uv run python hello.py";
 
-  scripts.env-setup.exec = ''
-    export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${lib.makeLibraryPath libs}"
-    export TESSDATA_PREFIX="${tesseractCustom}/share"
-  '';
+    env-setup.exec = ''
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${lib.makeLibraryPath libs}"
+      export TESSDATA_PREFIX="${tesseractCustom}/share"
+    '';
 
-  scripts.uvs.exec = ''
-    uv sync --extra dev --extra gpu
-  '';
+    uvs.exec = ''
+      uv sync --extra dev --extra gpu
+    '';
+  };
 
   processes = {
-    ollama-gemma4-provision.exec = "bash scripts/provision_ollama_gemma4.sh";
-    ollama-verify.exec = "curl --fail http://127.0.0.1:11434/api/tags";
+    ollama-gemma4-provision.exec =
+      "bash scripts/provision_ollama_gemma4.sh";
+
+    ollama-verify.exec =
+      "curl --fail http://127.0.0.1:11434/api/tags";
   };
 
   tasks = {
-    "ollama:serve".exec = "export OLLAMA_DEBUG=1 && ollama serve";
-    "ollama:provision-gemma4".exec = "bash scripts/provision_ollama_gemma4.sh";
+    "ollama:serve".exec =
+      "export OLLAMA_DEBUG=1 && ollama serve";
+
+    "ollama:provision-gemma4".exec =
+      "bash scripts/provision_ollama_gemma4.sh";
   };
 
   enterShell = ''
-
-    ACTIVATED=false
-    if [ -f ".devenv/state/venv/bin/activate" ]; then
-      source .devenv/state/venv/bin/activate
-      ACTIVATED=true
-      echo "Virtual environment activated."
-    else
-      echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
-    fi
+    echo "Python environment: $VIRTUAL_ENV"
+    echo "uv project environment: $UV_PROJECT_ENVIRONMENT"
 
     echo "Exporting environment variables from .env file..."
+
     if [ -f ".env" ]; then
       set -a
       source .env
@@ -156,6 +178,7 @@ in
     else
       echo "Warning: .env file not found. Please run 'devenv tasks run env:build' to create it."
     fi
+
     env-setup
   '';
 }

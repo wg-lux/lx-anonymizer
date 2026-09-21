@@ -4,15 +4,15 @@ from typing import cast
 
 import cv2
 import numpy as np
-import numpy.typing as npt
 
 from lx_anonymizer.region_processing.box_operations import Box, get_dominant_color
+from lx_anonymizer.region_processing.region_detector import expand_roi
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.setup.directory_setup import (
     create_blur_directory,
     create_temp_directory,
 )
-from lx_anonymizer.region_processing.region_detector import expand_roi
 
 logger = get_logger(__name__)
 
@@ -52,9 +52,7 @@ def blur_function(
     logger.info("Applying blur to the specified region")
     blur_dir = create_blur_directory(base_dir)
     image_path = Path(image_path)
-    image: npt.NDArray[np.uint8] | None = cast(
-        npt.NDArray[np.uint8] | None, cv2.imread(str(image_path))
-    )
+    image: ImageArray | None = cast(ImageArray | None, cv2.imread(str(image_path)))
     if image is None:
         raise ValueError(f"Could not load image: {image_path}")
     image = image.astype(np.uint8, copy=False)

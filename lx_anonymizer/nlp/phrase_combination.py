@@ -1,10 +1,10 @@
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import OcrResult
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
 
-Box = tuple[int, int, int, int]
 OcrTextWithBox = tuple[str, Box | list[int]]
-CombinedPhrase = tuple[str, Box]
 
 
 def _normalize_box(box: Box | list[int]) -> Box:
@@ -17,8 +17,8 @@ def _normalize_box(box: Box | list[int]) -> Box:
 
 def create_combined_phrases(
     ocr_texts_with_boxes: list[OcrTextWithBox],
-) -> list[CombinedPhrase]:
-    combined_phrases: list[CombinedPhrase] = []
+) -> list[OcrResult]:
+    combined_phrases: list[OcrResult] = []
     combined_box: Box | None = None
     phrase = ""
 

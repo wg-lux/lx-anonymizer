@@ -9,12 +9,12 @@ from typing import Callable
 import cv2
 from PIL import Image
 
+from lx_anonymizer.runtime_types import Box as Box
 from lx_anonymizer.setup.custom_logger import logger
 from lx_anonymizer.text_detection.phi_region_detector import (
     detect_phi_regions_from_settings,
 )
 
-Box = tuple[int, int, int, int]
 RegionDetector = Callable[[Image.Image], list[Box]]
 
 

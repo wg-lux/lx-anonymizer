@@ -3,56 +3,29 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, Sequence, TypeAlias, cast
+from typing import Literal, Protocol, Sequence, cast
 
 import cv2
 import numpy as np
 from PIL import Image
 
 from lx_anonymizer.config import settings
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import Cv2DnnModule, DnnNet
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
-cv2_dnn = cast("_Cv2DnnModule", cv2.dnn)  # type: ignore[attr-defined]
+cv2_dnn = cast("Cv2DnnModule", cv2.dnn)  # type: ignore[attr-defined]
 
 BoxFormat = Literal["yolo_xywh", "xyxy"]
 ScoreFormat = Literal["class_scores", "objectness"]
 ResizeMode = Literal["letterbox", "stretch"]
-PhiRegion: TypeAlias = tuple[int, int, int, int]
 
 
 class PhiRegionDetector(Protocol):
     """Runtime contract shared by image, video, and report processing."""
 
-    def detect(self, image: Image.Image) -> list[PhiRegion]: ...
-
-
-class _DnnNet(Protocol):
-    def setInput(self, blob: np.ndarray) -> None: ...
-
-    def forward(self) -> object: ...
-
-
-class _Cv2DnnModule(Protocol):
-    def readNet(self, model_path: str) -> _DnnNet: ...
-
-    def blobFromImage(
-        self,
-        image: np.ndarray,
-        scalefactor: float,
-        size: tuple[int, int],
-        mean: tuple[float, float, float],
-        swapRB: bool,
-        crop: bool,
-    ) -> np.ndarray: ...
-
-    def NMSBoxes(
-        self,
-        bboxes: list[list[int]],
-        scores: list[float],
-        score_threshold: float,
-        nms_threshold: float,
-    ) -> np.ndarray: ...
+    def detect(self, image: Image.Image) -> list[Box]: ...
 
 
 class CustomPhiRegionDetectorError(RuntimeError):
@@ -114,10 +87,10 @@ class CustomPhiRegionDetector:
 
     def __init__(self, config: PhiRegionDetectorConfig):
         self.config = config
-        self._net: _DnnNet | None = None
+        self._net: DnnNet | None = None
         self._validate_config()
 
-    def detect(self, image: Image.Image) -> list[PhiRegion]:
+    def detect(self, image: Image.Image) -> list[Box]:
         if self._net is None:
             self._net = cv2_dnn.readNet(str(self.config.model_path))
 
@@ -212,7 +185,7 @@ _cached_detector: CustomPhiRegionDetector | None = None
 
 def detect_phi_regions_from_settings(
     image: Image.Image,
-) -> list[PhiRegion]:
+) -> list[Box]:
     try:
         config = PhiRegionDetectorConfig.from_settings()
     except Exception as exc:
@@ -244,7 +217,7 @@ def detect_phi_regions_from_settings(
 def detect_phi_regions(
     image: Image.Image,
     detector: PhiRegionDetector | None = None,
-) -> list[PhiRegion]:
+) -> list[Box]:
     """Detect regions through an explicit detector or the settings-based default.
 
     Explicit detector failures always propagate. This makes a checksum-pinned,

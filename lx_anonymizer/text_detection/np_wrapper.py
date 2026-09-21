@@ -5,8 +5,9 @@ from typing import cast, overload
 
 import cv2
 import numpy as np
-from numpy.typing import NDArray
 from PIL import Image
+
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 
 
 @overload
@@ -31,7 +32,7 @@ def load_image_into_np(
         return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
     path = Path(image_input).expanduser().resolve()
-    image = cast(NDArray[np.uint8] | None, cv2.imread(str(path), cv2.IMREAD_COLOR))
+    image = cast(ImageArray | None, cv2.imread(str(path), cv2.IMREAD_COLOR))
     if image is None:
         raise FileNotFoundError(f"Could not read image: {path}")
     return image

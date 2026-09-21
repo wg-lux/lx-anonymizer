@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LX_ANONYMIZER_SPACY_MODEL", "SPACY_MODEL"),
     )
     SPACY_AUTO_DOWNLOAD: bool = Field(
-        default=True,
+        default=False,
         validation_alias=AliasChoices(
             "LX_ANONYMIZER_SPACY_AUTO_DOWNLOAD",
             "SPACY_AUTO_DOWNLOAD",

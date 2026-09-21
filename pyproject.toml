@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "lx-anonymizer"
 readme = "README.md"
 requires-python = ">=3.12"
-version = "0.9.5"
+version = "0.9.8"
 
 authors = [
   {name = "Max Hild", email = "maxhild10@gmail.com"},
@@ -45,7 +45,7 @@ dependencies = [
   "requests>=2.32.3",
   "spacy==3.8.3",
   "tenacity>=9.1.2",
-  "lx-dtypes>=0.2.31",
+  "lx-dtypes==0.3.5",
   "tesserocr>=2.9.1",
   "onnx>=1.12.0,<2.0.0",
   "onnxruntime>=1.25.1",
@@ -91,26 +91,24 @@ dev = [
   "uv>=0.4.17",
   "ziglang>=0.15.2",
   "tcia-utils>=3.3.4",
-]
-
-# CPU-only PyTorch-dependent feature set.
-cpu = [
   "flair>=0.15.1",
   "hezar>=0.42.0",
+]
+
+# CPU-only feature set.
+cpu = [
   "torch>=2.5.1",
   "torchaudio>=2.5.1",
   "torchvision>=0.20.1",
 ]
 
-# CUDA-enabled PyTorch-dependent feature set. Use only on hosts where the NVIDIA
+# CUDA-enabled feature set. Use only on hosts where the NVIDIA
 # wheel stack is desired.
 gpu = [
-  "flair>=0.15.1",
-  "hezar>=0.42.0",
-  "onnxruntime-gpu>=1.26.0",
   "torch>=2.5.1",
   "torchaudio>=2.5.1",
   "torchvision>=0.20.1",
+  "onnxruntime-gpu>=1.26.0",
 ]
 
 [project.scripts]
@@ -152,6 +150,7 @@ bindings = "pyo3"
 zig = true
 # Migrated Hatch rules here so Maturin respects them
 include = [
+  "lx_anonymizer/resources/spacy/**/*",
   "lx_anonymizer/names_dict/**/*",
   "lx_anonymizer/devices/**/*"
 ]

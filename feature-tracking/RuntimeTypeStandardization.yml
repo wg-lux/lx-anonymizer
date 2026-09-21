@@ -1,0 +1,94 @@
+schema_version: "1.0"
+id: runtime_type_standardization
+name: Shared runtime type ownership
+tracking:
+  state: implemented
+scope:
+  - Canonical pixel-corner Box, uint8 ImageArray, source PixelArray, OcrResult, and ModifiedImageMap.
+  - All matching local alias definitions in application code, stubs, and tests use the shared owner.
+  - A single gender-guesser stub replaces duplicate local protocols and unchecked casts.
+  - ROI boundary validation accepts object rather than Any.
+ownership:
+  serialized_contracts: lx_dtypes
+  runtime_buffers: lx_anonymizer/runtime_types.py
+  external_gender_api: typings/gender_guesser/detector.pyi
+invariants:
+  - Corner coordinates are distinct from OpenCV width-height rectangles and file identity tuples.
+  - Shape-specific ndarray annotations retain their stronger dimensional constraint.
+  - No video lifecycle, publication, retry, or concurrency ownership changes.
+verification:
+  - Strict Pyright before pytest.
+  - uv sync --extra dev before pytest.
+  - Regression guard prevents reintroducing consolidated local type definitions.
+  - Public entrypoint imports in the configured devenv shell.
+clarifications:
+  - User confirmed there is no startup failure; scope is fewer confusing files and duplicate type helpers.
+  - Pytesseract overloads now own its dictionary/string result types in typings/pytesseract.
+  - Removed image-processor callable casts and unused polymorphic OCR coercion; default image_to_string returns str.
+  - Integer and string OCR confidence values are handled consistently, excluding negative sentinel values.
+results:
+  pyright: "0 errors, 8 pre-existing warnings"
+  dependency_sync: "uv sync --extra dev passed"
+  pytest: "416 passed, 3 skipped, 1 failed in 89.18s"
+  regression_tests: "All 9 new ownership and OCR-column cases passed"
+  entrypoint_imports: "Passed in devenv shell; no startup fix requested"
+  lint: "Focused Ruff import/unused-import checks and git diff --check passed"
+known_test_blocker:
+  test: tests/test_report_reader_example_report.py::test_example_report_populates_sensitive_meta_fields
+  cause: >-
+    Existing TesseOCROptimized initialization overwrites TESSDATA_PREFIX with
+    /nix/store/3xz7i2zscqhfp70fylqs04cn8y02frfs-tesseract-5.5.1/share/tessdata,
+    which is absent. Both native OCR initialization and its subprocess fallback fail.
+  baseline_evidence: The same hard-coded path and environment assignment are present in the pre-change Git index.
+  disposition: Outside the user-clarified type-consolidation scope; no runtime path changes made.
+follow_up:
+  request: Repair the six failures pasted after the type consolidation.
+  changes:
+    - Both native OCR processors use one typed tessdata resolver.
+    - Removed the hard-coded Nix store path and all TESSDATA_PREFIX mutation.
+    - Explicit tessdata configuration accepts the language-data directory or its parent and validates every requested language.
+    - Unconfigured discovery follows the selected Tesseract installation and standard installation directories.
+    - spacy-legacy is already locked; synchronize dependencies fully before running validation.
+  verification_status: passed
+  verification:
+    pyright: "Full repository: 0 errors, 8 pre-existing warnings"
+    pytest: "439 passed, 3 skipped in 146.06s; all six reported failures passed"
+    environment: >-
+      Ran from an isolated hard-linked copy of the fully synchronized development
+      environment because concurrent uv synchronization removed live dependencies
+      during earlier validation. No dependency declarations were changed.
+    additional_repairs:
+      - Updated native frame threshold keywords to match the concurrently consolidated adaptive_threshold signature.
+      - Removed the performance test's conflicting OcrResult alias for text-confidence pairs.
+    checks: "Focused Ruff and git diff --check passed"
+consolidation_followup:
+  state: implemented
+  shared_contracts:
+    - OcrConfig replaces both OCRConfig copies and PytesseractConfig; NamedOcrConfig requires the diagnostic name.
+    - DnnNet and Cv2DnnModule replace both detector-local OpenCV interfaces, with overloads for forward output selection.
+    - PydicomReader replaces the evaluation and synthetic training reader protocols.
+    - NormalizedRoi supplies the required integer coordinates for native OCR and the labeled ROI processor.
+  removed_helpers:
+    - Cv2ImageFunc and per-module OpenCV callable casts; use upstream signatures directly.
+    - PsmValue and SplitName aliases that only renamed built-in scalar types.
+    - Local adaptive-threshold protocol and casts; all five callers use ocr_preprocessing.adaptive_threshold.
+  ownership:
+    runtime_interfaces: lx_anonymizer/runtime_types.py
+    integer_roi: lx_anonymizer/utils/roi_normalization.py
+    adaptive_threshold_boundary: lx_anonymizer/ocr/ocr_preprocessing.py
+    rationale: In-process buffers and library interfaces stay application-owned; serialized domain models remain lx_dtypes-owned.
+  preserved_distinctions:
+    - Required integer ROIs, fractional ROIs, and partial diagnostic input dictionaries are separate contracts.
+    - Existing public configuration imports remain explicit re-exports of their canonical definitions.
+    - Specialized PDF and model capability protocols are not widened solely to merge their names.
+  regression_guards:
+    - Scan nested scopes as well as module-level declarations for consolidated helper names.
+    - Detect required OCR and integer ROI TypedDict field copies even under different class names.
+    - Require exactly one direct OpenCV adaptiveThreshold boundary.
+    - Parametrize valid and invalid adaptive-threshold block sizes.
+  validation_results:
+    dependency_sync: "uv sync --extra dev passed"
+    pyright: "0 errors, 8 existing warnings"
+    focused_pytest: "62 passed in 39.51s"
+    lint: "Focused Ruff import/unused-import checks passed"
+    whitespace: "git diff --check passed"

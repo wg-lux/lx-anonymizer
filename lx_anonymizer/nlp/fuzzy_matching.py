@@ -7,12 +7,10 @@ import cv2
 import numpy as np
 
 from lx_anonymizer._native import native as _native
+from lx_anonymizer.runtime_types import Box as Box
 from lx_anonymizer.setup.custom_logger import get_logger
 
 logger = get_logger(__name__)
-
-
-Box = tuple[int, int, int, int]
 
 
 def fuzzy_match_snippet(

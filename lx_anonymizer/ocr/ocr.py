@@ -1,29 +1,23 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Protocol, TypeAlias, TypedDict, cast
+from typing import Any, Protocol, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image
 
 from lx_anonymizer.region_processing.box_operations import Box, OcrResult
 from lx_anonymizer.region_processing.region_detector import (
     expand_roi,
 )  # Ensure this module is correctly referenced
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
 from lx_anonymizer.setup.custom_logger import get_logger
 
 ImageInput: TypeAlias = str | Path | Image.Image
-ArrayImageInput: TypeAlias = npt.NDArray[np.uint8] | npt.NDArray[np.integer[Any]]
+ArrayImageInput: TypeAlias = ImageArray | npt.NDArray[np.integer[Any]]
 TrocrImageInput: TypeAlias = ImageInput | ArrayImageInput
-
-
-class _TesseractData(TypedDict):
-    text: list[str]
-    left: list[int | str]
-    top: list[int | str]
-    width: list[int | str]
-    height: list[int | str]
-    conf: list[int | str]
 
 
 class _TensorLike(Protocol):
@@ -98,7 +92,10 @@ except ImportError:
 TORCH_AVAILABLE: bool = _torch_available
 
 try:
-    from transformers import TrOCRProcessor, VisionEncoderDecoderModel  # type: ignore[import-untyped]
+    from transformers import (  # type: ignore[import-untyped]
+        TrOCRProcessor,
+        VisionEncoderDecoderModel,
+    )
 
     _transformers_available = True
 except ImportError:
@@ -132,7 +129,7 @@ def _load_rgb_trocr_image(image_input: TrocrImageInput) -> Image.Image:
 def _pytesseract_image_to_string(image: Image.Image, config: str = "") -> str:
     raw_output = cast(
         object,
-        pytesseract.image_to_string(image, config=config),  # pyright: ignore[reportUnknownMemberType]
+        pytesseract.image_to_string(image, config=config),
     )
     if isinstance(raw_output, bytes):
         return raw_output.decode(errors="replace")
@@ -141,13 +138,8 @@ def _pytesseract_image_to_string(image: Image.Image, config: str = "") -> str:
     return str(raw_output)
 
 
-def _pytesseract_image_to_data(image: Image.Image) -> _TesseractData:
-    return cast(
-        _TesseractData,
-        pytesseract.image_to_data(  # pyright: ignore[reportUnknownMemberType]
-            image, output_type=pytesseract.Output.DICT
-        ),
-    )
+def _pytesseract_image_to_data(image: Image.Image) -> pytesseract.TesseractData:
+    return pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
 
 
 def _as_trocr_processor(processor: object) -> _TrocrProcessorRuntime:
@@ -170,7 +162,9 @@ def _get_model_service() -> object | None:
     if not _trocr_dependencies_available():
         return None
     try:
-        from lx_anonymizer.model_service import model_service  # type: ignore[import-untyped]
+        from lx_anonymizer.model_service import (
+            model_service,  # type: ignore[import-untyped]
+        )
 
         return model_service
     except ImportError:

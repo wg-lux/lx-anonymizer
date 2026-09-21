@@ -1,12 +1,10 @@
-from typing import TypedDict, NotRequired, Any, Optional
 from functools import reduce
+from typing import Any, NotRequired, Optional
+
+from lx_anonymizer.utils.roi_normalization import NormalizedRoi
 
 
-class ROI(TypedDict):
-    x: int
-    y: int
-    width: int
-    height: int
+class ROI(NormalizedRoi):
     label: NotRequired[str]
 
 

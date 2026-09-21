@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Protocol, Tuple, TypedDict, Union, cast
+from typing import Dict, Optional, Tuple, TypedDict, Union, cast
 
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image
 from spellchecker import SpellChecker
 
@@ -16,7 +18,6 @@ from lx_anonymizer.setup.custom_logger import logger
 
 OcrTextConfidenceResult = Tuple[str, float]
 OcrFunction = Callable[[Image.Image], Union[str, OcrTextConfidenceResult]]
-TesseractDataDict = Dict[str, list[str]]
 OcrResultsDict = Dict[str, str]
 ConfidenceScoresDict = Dict[str, float]
 
@@ -47,36 +48,13 @@ class _LineCandidate(TypedDict):
     score: int
 
 
-class _TesseractImageToString(Protocol):
-    def __call__(self, image: Image.Image, *, config: str = "") -> str: ...
-
-
-class _TesseractImageToData(Protocol):
-    def __call__(
-        self, image: Image.Image, *, output_type: object, config: str = ""
-    ) -> TesseractDataDict: ...
-
-
-class _TesseractOutput(Protocol):
-    DICT: object
-
-
-class _TesseractModule(Protocol):
-    image_to_string: _TesseractImageToString
-    image_to_data: _TesseractImageToData
-    Output: _TesseractOutput
-
-
-_PYTESSERACT = cast(_TesseractModule, pytesseract)
-
-
 def _image_to_string(image: Image.Image, config: str = "") -> str:
-    return _PYTESSERACT.image_to_string(image, config=config)
+    return pytesseract.image_to_string(image, config=config)
 
 
-def _image_to_data(image: Image.Image, config: str = "") -> TesseractDataDict:
-    return _PYTESSERACT.image_to_data(
-        image, output_type=_PYTESSERACT.Output.DICT, config=config
+def _image_to_data(image: Image.Image, config: str = "") -> pytesseract.TesseractData:
+    return pytesseract.image_to_data(
+        image, output_type=pytesseract.Output.DICT, config=config
     )
 
 
@@ -175,7 +153,9 @@ def ensemble_ocr_with_details(
 
         # Calculate confidence score
         data = _image_to_data(image_tesseract, config=config)
-        confidences = [float(c) for c in data["conf"] if c != "-1" and c != ""]
+        confidences = [
+            float(c) for c in data["conf"] if str(c).strip() and float(c) >= 0
+        ]
         confidence_tesseract = sum(confidences) / len(confidences) if confidences else 0
 
         results["tesseract"] = text_tesseract

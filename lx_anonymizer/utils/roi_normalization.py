@@ -1,4 +1,4 @@
-from typing import Any, Mapping, TypedDict
+from typing import Mapping, TypedDict
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
@@ -24,7 +24,7 @@ class _NormalizedRoi(BaseModel):
 
     @field_validator("x", "y", "width", "height", mode="before")
     @classmethod
-    def _coerce_int_like(cls, value: Any) -> int:
+    def _coerce_int_like(cls, value: object) -> int:
         if isinstance(value, bool):
             raise ValueError("bool is not a valid ROI integer")
         if isinstance(value, int):
@@ -48,14 +48,14 @@ class _NormalizedRoi(BaseModel):
         return value
 
 
-def _first_present(roi: Mapping[str, Any], keys: tuple[str, ...]) -> Any:
+def _first_present(roi: Mapping[str, object], keys: tuple[str, ...]) -> object:
     for key in keys:
         if key in roi and roi[key] is not None:
             return roi[key]
     return None
 
 
-def normalize_roi_keys(roi: Mapping[str, Any] | None) -> NormalizedRoi | None:
+def normalize_roi_keys(roi: Mapping[str, object] | None) -> NormalizedRoi | None:
     """
     Normalize ROI key naming conventions.
 

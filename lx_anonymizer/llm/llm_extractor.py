@@ -48,7 +48,10 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 
 from lx_anonymizer.config import settings
 from lx_anonymizer.llm.connection import request_options, resolve_connection
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import (
+    SensitiveMeta,
+    SensitiveMetaResolutionError,
+)
 
 # Konfiguriere Logging
 logger = logging.getLogger(__name__)
@@ -208,7 +211,7 @@ class MetadataCache:
 
     def _generate_key(self, text: str) -> str:
         """Generiert einen Cache-Key basierend auf Text-Inhalt."""
-        return hashlib.md5(text.encode("utf-8")).hexdigest()[:16]
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def get(self, text: str) -> Optional[SensitiveMeta]:
         """Holt Metadaten aus dem Cache."""
@@ -216,7 +219,7 @@ class MetadataCache:
         if key in self.cache:
             self.hit_count += 1
             logger.debug(f"Cache HIT für Key {key}")
-            return self.cache[key]
+            return self.cache[key].model_copy(deep=True)
         else:
             self.miss_count += 1
             return None
@@ -229,7 +232,7 @@ class MetadataCache:
             del self.cache[oldest_key]
 
         key = self._generate_key(text)
-        self.cache[key] = metadata
+        self.cache[key] = metadata.model_copy(deep=True)
         logger.debug(f"Cache PUT für Key {key}")
 
     def get_stats(self) -> LLMMetadataCacheStatsPayload:
@@ -614,6 +617,8 @@ OCR_TEXT_END"""
         Returns:
             SensitiveMeta Objekt oder None bei Fehler
         """
+        # Accumulation belongs to the media caller, never to another text request.
+        self.sensitive_meta = SensitiveMeta()
         # Early return if no models are available
         if not self.current_model and not self.available_models:
             logger.warning(
@@ -726,6 +731,8 @@ OCR_TEXT_END"""
                     logger.error("Alle Modelle liefen in Timeout")
                     break
 
+            except SensitiveMetaResolutionError:
+                raise
             except Exception as e:
                 logger.error(f"Fehler mit Modell {self.current_model.name}: {e}")
 
@@ -829,6 +836,7 @@ OCR_TEXT_END"""
         Returns:
             SensitiveMeta Objekt oder None bei Fehler
         """
+        self.sensitive_meta = SensitiveMeta()
         # Pre-Check: Enthält der Text überhaupt relevante Informationen?
         if not self._contains_patient_data(text):
             logger.debug(
@@ -899,6 +907,8 @@ OCR_TEXT_END"""
                 )
                 return self.extract_metadata(text)
 
+        except SensitiveMetaResolutionError:
+            raise
         except Exception as e:
             logger.warning(
                 f"Smart-Sampling fehlgeschlagen, Fallback zur Vollextraktion: {e}"
@@ -2045,6 +2055,8 @@ class AsyncMetadataWorker:
     def _safe_extract_metadata(self, text: str) -> Optional[SensitiveMeta]:
         try:
             return self.extractor.extract_metadata(text)
+        except SensitiveMetaResolutionError:
+            raise
         except Exception as exc:
             logger.warning("Async metadata extraction failed: %s", exc)
             return None

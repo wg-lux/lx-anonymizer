@@ -1,19 +1,22 @@
+from __future__ import annotations
+
 import inspect
 import logging
 import os
 import threading
 import time
 from collections.abc import Mapping, Sequence
-from typing import Any, Dict, Literal, Optional, TypeAlias, Tuple, TypedDict, cast
+from typing import Any, Dict, Literal, Optional, Tuple, TypeAlias, cast
 
 import cv2
 import numpy as np
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 
 from lx_anonymizer.config import settings
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.regex_patterns import STRUCTURED_OVERLAY_RE
+from lx_anonymizer.runtime_types import OcrConfig as PytesseractConfig
 
 _RapidOCRClass: Optional[type[Any]] = (
     None  # Umbenannt, um zu zeigen: Das ist die KLASSE
@@ -63,18 +66,6 @@ RoiInput: TypeAlias = NestedRoi | FlatRoi | list[object] | None
 OcrResultStatus: TypeAlias = Literal["text_detected", "no_text_detected"]
 
 
-class PytesseractData(TypedDict):
-    text: list[str]
-    conf: list[str | int | float]
-
-
-class PytesseractConfig(TypedDict):
-    lang: str
-    oem: int
-    psm: int
-    dpi: int
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -96,7 +87,9 @@ class FrameOCR:
     _rapidocr_available: bool
     pytesseract_config: PytesseractConfig
 
-    def __init__(self):
+    def __init__(self, *, inference_threads: int | None = None):
+        if inference_threads is not None and inference_threads <= 0:
+            raise ValueError("OCR inference thread count must be positive")
         self.frame_metadata_extractor = FrameMetadataExtractor()
         self.pytesseract_config = self._default_pytesseract_config()
         self.rapidocr_engine: Optional[Any] = None
@@ -106,6 +99,13 @@ class FrameOCR:
         self.rapidocr_params = (
             self._rapidocr_init_params() if self._rapidocr_available else {}
         )
+        if inference_threads is not None:
+            self.rapidocr_params.update(
+                {
+                    "EngineConfig.onnxruntime.intra_op_num_threads": inference_threads,
+                    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                }
+            )
 
         if self._rapidocr_available:
             logger.info(
@@ -149,6 +149,18 @@ class FrameOCR:
         return self._default_pytesseract_config()
 
     # ---------------- Public API ----------------
+    def extract_text_with_rapidocr(
+        self, frame: np.ndarray
+    ) -> tuple[str, float, dict[str, object]]:
+        """Full-frame RapidOCR for exhaustive video analysis; errors propagate."""
+        if frame.size == 0 or frame.ndim not in (2, 3):
+            raise ValueError("RapidOCR requires a nonempty image")
+        self._ensure_rapidocr_engine()
+        text, confidence, metadata = self._extract_text_rapidocr(
+            frame, roi=None, high_quality=False
+        )
+        return text, confidence, dict(metadata)
+
     def extract_text_from_frame(
         self,
         frame: np.ndarray,
@@ -679,14 +691,11 @@ class FrameOCR:
             img = self._preprocess_frame(frame, roi)
             cfg = self._get_pytesseract_config()
             config_str = f"--oem {cfg['oem']} --psm {cfg['psm']} --dpi {cfg['dpi']}"
-            data = cast(
-                PytesseractData,
-                cast(Any, pytesseract).image_to_data(
-                    img,
-                    lang=cfg["lang"],
-                    config=config_str,
-                    output_type=pytesseract.Output.DICT,
-                ),
+            data = pytesseract.image_to_data(
+                img,
+                lang=cfg["lang"],
+                config=config_str,
+                output_type=pytesseract.Output.DICT,
             )
 
             words: list[str] = []

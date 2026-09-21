@@ -39,7 +39,10 @@ from lx_anonymizer.regex_patterns import (
     PATIENT_LINE_RE,
 )
 from lx_anonymizer.region_processing.box_operations import OcrResult
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import (
+    SensitiveMeta,
+    SensitiveMetaResolutionError,
+)
 from lx_anonymizer.setup.custom_logger import logger
 
 
@@ -343,6 +346,8 @@ class ReportReaderExtractionMixin:
             self.sensitive_meta.safe_update(meta_obj)
             logger.info("%s LLM extraction successful.", extractor_name)
             return self.sensitive_meta.to_dict()
+        except SensitiveMetaResolutionError:
+            raise
         except Exception as e:
             logger.warning(f"{extractor_name} LLM extraction error: {e}")
             return {}

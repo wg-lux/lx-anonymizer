@@ -11,11 +11,11 @@ This script tests:
 
 import cv2
 import numpy as np
-from numpy.typing import NDArray
 
 from lx_anonymizer.ocr.ocr_frame import FlatRoi
-from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.ocr.ocr_frame_tesserocr import TesseOCRFrameProcessor
+from lx_anonymizer.runtime_types import ImageArray as ImageArray
+from lx_anonymizer.setup.custom_logger import get_logger
 
 # Setup logging
 logger = get_logger(__name__)
@@ -23,9 +23,9 @@ logger = get_logger(__name__)
 
 def create_test_image_with_text(
     text: str, size: tuple[int, int] = (400, 100), noise_level: int = 0
-) -> NDArray[np.uint8]:
+) -> ImageArray:
     """Create a test image with text and optional noise."""
-    img: NDArray[np.uint8] = np.ones(size, dtype=np.uint8) * 255  # White background
+    img: ImageArray = np.ones(size, dtype=np.uint8) * 255  # White background
 
     # Add text
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -33,9 +33,7 @@ def create_test_image_with_text(
 
     # Add noise if requested
     if noise_level > 0:
-        noise: NDArray[np.uint8] = np.random.normal(0, noise_level, size).astype(
-            np.uint8
-        )
+        noise: ImageArray = np.random.normal(0, noise_level, size).astype(np.uint8)
         img = cv2.add(img, noise)
 
     return img
@@ -100,7 +98,7 @@ def _run_gibberish_filtering_case() -> bool:
     processor = TesseOCRFrameProcessor()
 
     # Create very noisy image that produces gibberish
-    img: NDArray[np.uint8] = np.random.randint(0, 256, (100, 400), dtype=np.uint8)
+    img: ImageArray = np.random.randint(0, 256, (100, 400), dtype=np.uint8)
 
     roi: FlatRoi = {"x": 0, "y": 0, "width": img.shape[1], "height": img.shape[0]}
     text, conf, _ = processor.extract_text_from_frame(img, roi=roi, high_quality=True)
@@ -128,7 +126,7 @@ def _run_roi_processing_case() -> bool:
     processor = TesseOCRFrameProcessor()
 
     # Create image with two text regions
-    img: NDArray[np.uint8] = np.ones((200, 600), dtype=np.uint8) * 255
+    img: ImageArray = np.ones((200, 600), dtype=np.uint8) * 255
     cv2.putText(img, "2024-01-15", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
     cv2.putText(img, "ID: 12345", (10, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
 
@@ -166,7 +164,7 @@ def _run_low_confidence_filtering_case() -> bool:
     processor = TesseOCRFrameProcessor()
 
     # Create very low contrast image
-    img: NDArray[np.uint8] = np.ones((100, 400), dtype=np.uint8) * 200
+    img: ImageArray = np.ones((100, 400), dtype=np.uint8) * 200
     cv2.putText(
         img, "Barely Visible", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (210, 210, 210), 1
     )

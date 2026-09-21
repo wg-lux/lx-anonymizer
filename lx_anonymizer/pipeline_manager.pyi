@@ -1,10 +1,9 @@
 from pathlib import Path
 from typing import Sequence
 
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import ModifiedImageMap as ModifiedImageMap
 from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetector
-
-type ModifiedImageMap = dict[tuple[str, str], str]
-type BoundingBox = tuple[int, int, int, int]
 
 def detect_combined_text_boxes(
     img_path: Path,
@@ -13,8 +12,8 @@ def detect_combined_text_boxes(
     width: int,
     height: int,
     region_detector: PhiRegionDetector | None = ...,
-    phi_regions: Sequence[BoundingBox] | None = ...,
-) -> list[BoundingBox]: ...
+    phi_regions: Sequence[Box] | None = ...,
+) -> list[Box]: ...
 def process_images_with_OCR_and_NER(
     file_path: Path | str,
     east_path: str = ...,

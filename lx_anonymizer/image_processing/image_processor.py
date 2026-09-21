@@ -1,10 +1,10 @@
 import uuid
 from pathlib import Path
-from typing import Callable, TypeAlias, cast
+from typing import cast
 
 import cv2
 import numpy as np
-import pytesseract  # type: ignore
+import pytesseract
 from lx_dtypes.models.contracts.image_processing import ImageProcessingResultPayload
 from PIL import Image
 
@@ -22,36 +22,9 @@ logger = get_logger(__name__)
 
 sensitive_meta = SensitiveMeta()
 
-OcrTextOutput: TypeAlias = bytes | str | dict[str, bytes | str]
-ModifiedImageMap: TypeAlias = dict[tuple[str, str], str]
-ProcessPipelineResult: TypeAlias = tuple[ModifiedImageMap, dict[str, object]]
-ProcessImagesCallable: TypeAlias = Callable[
-    [Path, str, str, float, int, int, bool, bool, PhiRegionDetector | None],
-    ProcessPipelineResult,
-]
-OcrToStringCallable: TypeAlias = Callable[[Image.Image], OcrTextOutput]
-
-
-def _coerce_tesseract_output(output: OcrTextOutput) -> str:
-    if isinstance(output, str):
-        return output
-    if isinstance(output, bytes):
-        return output.decode("utf-8", errors="ignore")
-    return "\n".join(
-        entry.decode("utf-8", errors="ignore")
-        if isinstance(entry, bytes)
-        else str(entry)
-        for entry in output.values()
-    )
-
 
 def _run_ocr_text_extraction(image: Image.Image) -> str:
-    image_to_string = cast(
-        OcrToStringCallable,
-        getattr(pytesseract, "image_to_string", None),
-    )
-    raw_output = image_to_string(image)
-    conventional_text = _coerce_tesseract_output(raw_output)
+    conventional_text = pytesseract.image_to_string(image)
     if not (
         settings.LLM_ENABLED
         and settings.OLLAMA_OCR_ENABLED
@@ -72,11 +45,6 @@ def _run_ocr_text_extraction(image: Image.Image) -> str:
     except Exception as exc:
         logger.warning("Gemma 4 vision OCR failed; using Tesseract output: %s", exc)
         return conventional_text
-
-
-_typed_process_images_with_OCR_and_NER: ProcessImagesCallable = cast(
-    ProcessImagesCallable, process_images_with_OCR_and_NER
-)
 
 
 def process_image(
@@ -163,7 +131,7 @@ def process_image(
         return img_path, combined_results
 
     # Normal processing path with OCR, NER, and optional blurring
-    pipeline_result_tuple = _typed_process_images_with_OCR_and_NER(
+    pipeline_result_tuple = process_images_with_OCR_and_NER(
         Path(img_path),
         str(east_path),
         device,

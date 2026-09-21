@@ -15,16 +15,23 @@ from typing import Protocol, SupportsFloat, TypeAlias, cast
 import cv2
 import numpy as np
 import numpy.typing as npt
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image
+
+from lx_anonymizer.ocr.ocr_preprocessing import adaptive_threshold
+from lx_anonymizer.runtime_types import (
+    Box as Box,
+)
+from lx_anonymizer.runtime_types import (
+    ImageArray as ImageArray,
+)
+from lx_anonymizer.runtime_types import (
+    PixelArray as PixelArray,
+)
 
 logger = logging.getLogger(__name__)
 
-ImageArray: TypeAlias = npt.NDArray[np.uint8]
-GrayArray: TypeAlias = npt.NDArray[np.uint8]
 ImageInput: TypeAlias = str | Path | Image.Image | ImageArray
-TesseractData: TypeAlias = Mapping[str, Sequence[object]]
-Box: TypeAlias = tuple[int, int, int, int]
 
 _ALLOWED_OCR_NOISE_RE = re.compile(r"[^0-9A-Za-zÄÖÜäöüßÀ-ÿ\s.,:;/()+\-\[\]#%]")
 _SINGLE_CHAR_RUN_RE = re.compile(
@@ -188,36 +195,7 @@ class MedicalOcrResult:
 class ImageToDataFn(Protocol):
     def __call__(
         self, image: Image.Image, *, lang: str, config: str
-    ) -> TesseractData: ...
-
-
-class _TesseractOutput(Protocol):
-    DICT: object
-
-
-class _TesseractModule(Protocol):
-    Output: _TesseractOutput
-
-    def image_to_data(
-        self,
-        image: Image.Image,
-        *,
-        lang: str,
-        config: str,
-        output_type: object,
-    ) -> TesseractData: ...
-
-
-class _AdaptiveThresholdFn(Protocol):
-    def __call__(
-        self,
-        src: GrayArray,
-        maxValue: float,
-        adaptiveMethod: int,
-        thresholdType: int,
-        blockSize: int,
-        C: float,
-    ) -> GrayArray: ...
+    ) -> Mapping[str, object]: ...
 
 
 class _MinAreaRectFn(Protocol):
@@ -232,15 +210,14 @@ class _GetRotationMatrix2DFn(Protocol):
     ) -> npt.NDArray[np.float64]: ...
 
 
-_PYTESSERACT = cast(_TesseractModule, pytesseract)
-
-
-def _image_to_data(image: Image.Image, *, lang: str, config: str) -> TesseractData:
-    return _PYTESSERACT.image_to_data(
+def _image_to_data(
+    image: Image.Image, *, lang: str, config: str
+) -> Mapping[str, object]:
+    return pytesseract.image_to_data(
         image,
         lang=lang,
         config=config,
-        output_type=_PYTESSERACT.Output.DICT,
+        output_type=pytesseract.Output.DICT,
     )
 
 
@@ -486,7 +463,7 @@ def _load_image(image_input: object) -> ImageArray:
 
     if not isinstance(image_input, np.ndarray):
         raise TypeError("image_input must be a path, PIL image, or uint8 ndarray")
-    array_input = cast(npt.NDArray[np.generic], image_input)
+    array_input = cast(PixelArray, image_input)
     if array_input.dtype != np.uint8:
         raise TypeError("image_input ndarray must have dtype uint8")
     if array_input.ndim not in (2, 3):
@@ -496,7 +473,7 @@ def _load_image(image_input: object) -> ImageArray:
     return cast(ImageArray, array_input)
 
 
-def _to_grayscale(image: ImageArray) -> GrayArray:
+def _to_grayscale(image: ImageArray) -> ImageArray:
     if image.ndim == 2:
         return image.copy()
     if image.shape[2] == 4:
@@ -573,19 +550,19 @@ def _boundary_int(value: object, name: str) -> int:
 
 
 def _preprocess_video_overlay(
-    gray: GrayArray,
+    gray: ImageArray,
     *,
     has_roi: bool,
-) -> tuple[GrayArray, float, bool]:
+) -> tuple[ImageArray, float, bool]:
     scale = _scale_for_min_short_edge(gray, target=96 if has_roi else 720, maximum=3.0)
     scaled = _resize_gray(gray, scale)
 
     # Bilateral filtering removes compression noise while keeping glyph edges.
-    denoised: GrayArray = cv2.bilateralFilter(scaled, 5, 45, 45)
+    denoised: ImageArray = cv2.bilateralFilter(scaled, 5, 45, 45)
 
     # CLAHE local contrast helps low-light overlay text without overexposing frames.
     clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    enhanced: GrayArray = clahe.apply(denoised)
+    enhanced: ImageArray = clahe.apply(denoised)
 
     mean_brightness = float(cast(SupportsFloat, np.mean(enhanced)))
     inverted = bool(mean_brightness < 127.0)
@@ -612,11 +589,11 @@ def _preprocess_video_overlay(
 
 
 def _preprocess_report_page(
-    gray: GrayArray,
+    gray: ImageArray,
     *,
     has_roi: bool,
     deskew: bool,
-) -> tuple[GrayArray, float, float]:
+) -> tuple[ImageArray, float, float]:
     scale = _scale_for_min_short_edge(
         gray, target=120 if has_roi else 1400, maximum=2.0
     )
@@ -628,15 +605,11 @@ def _preprocess_report_page(
     else:
         deskew_angle = 0.0
 
-    denoised: GrayArray = cv2.bilateralFilter(scaled, 7, 55, 55)
+    denoised: ImageArray = cv2.bilateralFilter(scaled, 7, 55, 55)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced: GrayArray = clahe.apply(denoised)
+    enhanced: ImageArray = clahe.apply(denoised)
 
     block_size = 35 if min(enhanced.shape[:2]) >= 600 else 25
-    adaptive_threshold = cast(
-        _AdaptiveThresholdFn,
-        cv2.adaptiveThreshold,  # pyright: ignore[reportUnknownMemberType]
-    )
     binary = adaptive_threshold(
         enhanced,
         255.0,
@@ -649,7 +622,7 @@ def _preprocess_report_page(
 
 
 def _scale_for_min_short_edge(
-    gray: GrayArray,
+    gray: ImageArray,
     *,
     target: int,
     maximum: float,
@@ -661,7 +634,7 @@ def _scale_for_min_short_edge(
     return min(maximum, target / short_edge)
 
 
-def _resize_gray(gray: GrayArray, scale: float) -> GrayArray:
+def _resize_gray(gray: ImageArray, scale: float) -> ImageArray:
     if abs(scale - 1.0) < 0.01:
         return gray.copy()
     height, width = gray.shape[:2]
@@ -669,12 +642,12 @@ def _resize_gray(gray: GrayArray, scale: float) -> GrayArray:
     return cv2.resize(gray, size, interpolation=cv2.INTER_CUBIC)
 
 
-def _unsharp_mask(gray: GrayArray) -> GrayArray:
+def _unsharp_mask(gray: ImageArray) -> ImageArray:
     blurred = cv2.GaussianBlur(gray, (0, 0), 1.0)
     return cv2.addWeighted(gray, 1.5, blurred, -0.5, 0)
 
 
-def _deskew_angle(gray: GrayArray) -> float:
+def _deskew_angle(gray: ImageArray) -> float:
     _, foreground = cv2.threshold(
         gray,
         0,
@@ -696,7 +669,7 @@ def _deskew_angle(gray: GrayArray) -> float:
     return correction
 
 
-def _rotate_gray(gray: GrayArray, angle: float, *, border_value: int) -> GrayArray:
+def _rotate_gray(gray: ImageArray, angle: float, *, border_value: int) -> ImageArray:
     height, width = gray.shape[:2]
     center = (width / 2.0, height / 2.0)
     get_rotation_matrix = cast(
@@ -715,7 +688,7 @@ def _rotate_gray(gray: GrayArray, angle: float, *, border_value: int) -> GrayArr
 
 
 def _words_from_tesseract_data(
-    data: TesseractData,
+    data: Mapping[str, object],
     *,
     min_confidence: float,
 ) -> tuple[OcrWord, ...]:
@@ -777,8 +750,11 @@ def _join_words_by_line(words: Sequence[OcrWord]) -> str:
     return "\n".join(" ".join(lines[index]) for index in sorted(lines))
 
 
-def _field(data: TesseractData, key: str) -> Sequence[object]:
-    return data.get(key, ())
+def _field(data: Mapping[str, object], key: str) -> Sequence[object]:
+    value = data.get(key, ())
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError(f"Tesseract column {key!r} must be a sequence")
+    return cast(Sequence[object], value)
 
 
 def _int_at(values: Sequence[object], index: int, *, default: int) -> int:

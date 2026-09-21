@@ -4,20 +4,21 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import cast
 
 import pytest
-from pydantic import ValidationError
-from pytest import MonkeyPatch
 from lx_dtypes.models.contracts.llm_extractor import (
     LLMEnrichedMetadataPayload,
     LLMFrameContextPayload,
     LLMFrameDataPayload,
-    LLMTextTimelineEntryPayload,
     LLMTemporalAnalysisPayload,
+    LLMTextTimelineEntryPayload,
 )
 from lx_dtypes.models.contracts.llm_service import (
     LLMChatOllamaPayload,
     LLMChatResponsePayload,
 )
 from lx_dtypes.models.contracts.text_anonymization import LLMMetadataPayload
+from pydantic import ValidationError
+from pytest import MonkeyPatch
+
 from lx_anonymizer.llm.llm_extractor import (
     AsyncMetadataWorker,
     EnrichedMetadataExtractor,
@@ -31,7 +32,10 @@ from lx_anonymizer.llm.llm_extractor import (
     _LLMModelConfig,  # pyright: ignore[reportPrivateUsage]
     _parse_ollama_model_names,  # pyright: ignore[reportPrivateUsage]
 )
-from lx_anonymizer.sensitive_meta_interface import SensitiveMeta
+from lx_anonymizer.sensitive_meta_interface import (
+    SensitiveMeta,
+    SensitiveMetaResolutionError,
+)
 
 
 def _extractor_stub(
@@ -266,14 +270,14 @@ def test_metadata_cache_fifo_and_stats():
 
     cache.put("one", m1)
     cache.put("two", m2)
-    assert cache.get("one") is m1
+    assert cache.get("one") == m1
     assert cache.get("missing") is None
 
     cache.put("three", m3)
 
     assert cache.get("one") is None
-    assert cache.get("two") is m2
-    assert cache.get("three") is m3
+    assert cache.get("two") == m2
+    assert cache.get("three") == m3
     stats = cache.get_stats()
     assert stats.cache_size == 2
     assert stats.hit_count >= 3
@@ -569,3 +573,80 @@ def test_video_metadata_enricher_keeps_existing_fallback_data():
     fallback_data = cast(dict[str, object], result["fallback_data"])
     assert llm_extracted["first_name"] == "LLM_Name"
     assert fallback_data["dob"] == "01.01.1990"
+
+
+def test_metadata_cache_isolates_writers_and_readers() -> None:
+    cache = MetadataCache()
+    source = SensitiveMeta(first_name="Alice")
+    cache.put("first request", source)
+    source.last_name = "Changed by writer"
+    first_read = cache.get("first request")
+    assert first_read is not None
+    assert first_read.last_name == "unknown"
+    first_read.last_name = "Changed by reader"
+    first_read.state.name_verified = True
+    second_read = cache.get("first request")
+    assert second_read is not None
+    assert second_read.last_name == "unknown"
+    assert not second_read.state.name_verified
+
+
+def test_llm_requests_and_cache_hits_do_not_inherit_previous_patient(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    extractor = _extractor_stub(
+        current_model={"name": "gemma4:e2b", "timeout": 120},
+        available_models=["gemma4:e2b"],
+    )
+    names = iter(["Alice", "Bob"])
+    requests_sent: list[str] = []
+
+    def request(_payload: LLMChatRequestPayload) -> LLMChatResponsePayload:
+        name = next(names)
+        requests_sent.append(name)
+        return LLMChatResponsePayload.model_validate(
+            {"message": {"content": '{"first_name":"' + name + '"}'}}
+        )
+
+    monkeypatch.setattr(extractor, "_make_api_request", request)
+    first = extractor.extract_metadata("first patient")
+    second = extractor.extract_metadata("second patient")
+    cached = extractor.extract_metadata("first patient")
+    assert first is not None and second is not None and cached is not None
+    assert (first.first_name, second.first_name, cached.first_name) == (
+        "Alice",
+        "Bob",
+        "Alice",
+    )
+    assert first is not second and first is not cached
+    assert requests_sent == ["Alice", "Bob"]
+
+
+def test_async_worker_propagates_sensitive_metadata_resolution_failure() -> None:
+    class InvalidExtractor(LLMMetadataExtractor):
+        def __init__(self) -> None:
+            pass
+
+        def extract_metadata(self, text: str) -> SensitiveMeta | None:
+            meta = SensitiveMeta()
+            meta.safe_update({"dob": "invalid-date"})
+            return meta
+
+    with (
+        AsyncMetadataWorker(extractor=InvalidExtractor()) as worker,
+        pytest.raises(SensitiveMetaResolutionError),
+    ):
+        worker.extract_metadata("input", timeout=2)
+
+
+@pytest.mark.parametrize("smart_sampling", [False, True])
+def test_skipped_llm_request_clears_previous_patient(smart_sampling: bool) -> None:
+    extractor = _extractor_stub()
+    extractor.sensitive_meta = SensitiveMeta(first_name="Previous patient")
+    result = (
+        extractor.extract_metadata_smart_sampling("")
+        if smart_sampling
+        else extractor.extract_metadata("")
+    )
+    assert result is None
+    assert extractor.sensitive_meta.first_name == "unknown"

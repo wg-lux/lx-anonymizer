@@ -1,24 +1,23 @@
 import json
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import cast
 
 import cv2
 import numpy as np
-import pytesseract  # type: ignore[import-untyped, reportMissingTypeStubs]
-from pytesseract import Output  # type: ignore[import-untyped, reportMissingTypeStubs]
-
+import pytesseract
 from lx_dtypes.models.contracts.text_detection import (
     TesseractOCRData,
     TesseractWordConfidence,
 )
+from pytesseract import Output
+
 from lx_anonymizer.region_processing.box_operations import extend_boxes_if_needed
+from lx_anonymizer.runtime_types import Box as Box
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.text_detection.np_wrapper import load_image_into_np
 
 logger = get_logger(__name__)
-
-Box: TypeAlias = tuple[int, int, int, int]
 
 
 def tesseract_text_detection(
@@ -168,9 +167,7 @@ def sort_boxes(boxes: list[Box], vertical_threshold: int = 5) -> list[Box]:
 def _load_tesseract_ocr_data(image: np.ndarray, custom_config: str) -> TesseractOCRData:
     raw_payload: object = cast(
         object,
-        pytesseract.image_to_data(  # pyright: ignore[reportUnknownMemberType]
-            image, output_type=Output.DICT, config=custom_config
-        ),
+        pytesseract.image_to_data(image, output_type=Output.DICT, config=custom_config),
     )
     return normalize_tesseract_ocr_data(raw_payload)
 

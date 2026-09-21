@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Protocol, TypedDict, cast
 
 import numpy as np
-import pytesseract  # type: ignore[import-untyped]
+import pytesseract
 from PIL import Image
 
+from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import PydicomReader
 from lx_anonymizer.text_detection.phi_region_detector import (
     CustomPhiRegionDetector,
     PhiRegionDetectorConfig,
@@ -20,8 +22,6 @@ from lx_anonymizer.text_detection.phi_region_detector import (
 from lx_anonymizer.text_detection.tesseract_text_detection import (
     normalize_tesseract_ocr_data,
 )
-
-Box = tuple[int, int, int, int]
 
 
 class MidiBEvaluationError(RuntimeError):
@@ -32,10 +32,6 @@ class RegionDetector(Protocol):
     name: str
 
     def detect(self, image: Image.Image) -> list[Box]: ...
-
-
-class _PydicomModule(Protocol):
-    def dcmread(self, path: str | Path, **kwargs: object) -> object: ...
 
 
 class _BoxMetrics(TypedDict):
@@ -153,7 +149,7 @@ class TesseractRegionDetector:
     def detect(self, image: Image.Image) -> list[Box]:
         raw_payload = cast(
             object,
-            pytesseract.image_to_data(  # pyright: ignore[reportUnknownMemberType]
+            pytesseract.image_to_data(
                 image,
                 output_type=pytesseract.Output.DICT,
                 config="--oem 3 --psm 11",
@@ -405,14 +401,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _load_pydicom() -> _PydicomModule:
+def _load_pydicom() -> PydicomReader:
     try:
         import pydicom  # type: ignore[import-untyped]
     except ImportError as exc:
         raise MidiBEvaluationError(
             "MIDI-B evaluation requires pydicom; install lx-anonymizer[evaluation]"
         ) from exc
-    return cast(_PydicomModule, pydicom)
+    return cast(PydicomReader, pydicom)
 
 
 def index_midi_b_dicom_instances(
