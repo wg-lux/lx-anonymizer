@@ -17,3 +17,38 @@ behavior:
   - Direct OCR helpers raise LLMServiceError when disabled.
   - HTTP is allowed only for literal loopback addresses; remote inference requires HTTPS and mTLS.
   - Enabling inference does not enable training or active learning.
+provider_compatibility:
+  ollama:
+    examples: [lx-gemma4-e2b-json, 'gemma4:e2b', 'qwen3:8b']
+    discovery: /api/tags
+    inference: /api/chat
+    structured_output: JSON schema in format
+  vllm:
+    examples: [Qwen/Qwen2.5-1.5B-Instruct, glm-5.2]
+    servers: [vLLM, llama.cpp]
+    discovery: /v1/models
+    inference: /v1/chat/completions
+    structured_output: response_format.json_schema
+    base_url: Server root or a URL ending in /v1; the suffix is normalized once.
+  vision:
+    requirement: The explicitly configured model and server must support image input.
+    ollama: Base64 PNG in messages[].images.
+    vllm: Inline PNG data URL in a user image_url content part.
+    failure: No automatic switch to another model or provider.
+response_contract:
+  - Provider telemetry and separate reasoning fields are accepted but never treated as answer text.
+  - Missing, empty, refused, malformed and explicitly incomplete answers raise LLMServiceError.
+  - Missing completion markers remain accepted for older compatible servers.
+  - Metadata requests constrain the five prompt keys to nullable strings with no additional properties.
+  - Unsupported structured-output requests fail without silently dropping the schema.
+  - One metadata HTTP request per invocation; scheduling retries belong to the caller.
+  - Chunked OCR correction preserves the original chunk on inference failure and logs the failure class.
+validation_limits:
+  - Contract tests use synthetic HTTP responses and do not establish clinical accuracy or live model availability.
+  - Validate each deployed model on representative de-identified reports before clinical use.
+sources:
+  - https://github.com/ollama/ollama/blob/main/docs/api.md
+  - https://docs.vllm.ai/en/v0.21.0/features/structured_outputs/
+  - /home/admin/luxnix/modules/nixos/services/ollama/default.nix
+  - /home/admin/luxnix/modules/nixos/services/v-llm/default.nix
+  - /home/admin/luxnix/modules/nixos/services/glm-5-2/default.nix

@@ -26,6 +26,8 @@ def resolve_connection(provider: str | None, base_url: str | None) -> tuple[str,
             if protocol == "ollama"
             else "http://127.0.0.1:8000"
         )
+    if protocol == "vllm" and url.endswith("/v1"):
+        url = url[:-3]
     return protocol, url
 
 

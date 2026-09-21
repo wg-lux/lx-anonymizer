@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import base64
-from io import BytesIO
 import json
+from io import BytesIO
 from typing import Mapping, cast
 
 import pytest
 from PIL import Image
 
 from lx_anonymizer.llm import llm_service
-from lx_anonymizer.llm.llm_service import LLMService, LLMServiceError
+from lx_anonymizer.llm.llm_service import LLMService
 
 
 class _FakeResponse:
@@ -123,8 +123,24 @@ def test_ollama_text_correction_serializes_typed_payload(
     assert isinstance(payload["options"], dict)
 
 
-def test_vision_ocr_rejects_non_ollama_provider() -> None:
-    service = LLMService(provider="vllm", model_name="gemma4:e2b")
+def test_compatible_vision_ocr_sends_image_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
 
-    with pytest.raises(LLMServiceError, match="requires the Ollama provider"):
-        service.recognize_image(Image.new("RGB", (4, 4)))
+    def post(url: str, **kwargs: object) -> _FakeResponse:
+        captured["url"] = url
+        captured.update(kwargs)
+        return _FakeResponse(
+            {"choices": [{"finish_reason": "stop", "message": {"content": "ID 123"}}]}
+        )
+
+    monkeypatch.setattr(llm_service.requests, "post", post)
+    service = LLMService(
+        provider="vllm", base_url="http://127.0.0.1:8000/v1", model_name="vision-model"
+    )
+    assert service.recognize_image(Image.new("RGB", (4, 4))) == "ID 123"
+    assert captured["url"] == "http://127.0.0.1:8000/v1/chat/completions"
+    payload = cast(dict[str, object], captured["json"])
+    messages = cast(list[dict[str, object]], payload["messages"])
+    parts = cast(list[dict[str, object]], messages[0]["content"])
+    image_url = cast(dict[str, str], parts[1]["image_url"])
+    assert image_url["url"].startswith("data:image/png;base64,")

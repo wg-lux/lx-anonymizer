@@ -1,0 +1,68 @@
+schema_version: '1.0'
+id: llm_management
+name: LuxNix LLM provider compatibility
+owners:
+  - lx-anonymizer maintainers
+assessed_by: codex-llm-luxnix-20260921
+assessed_at: '2026-09-21'
+status: implemented_contract_tests_passed
+scope:
+  - Ollama native API for configured local Gemma and Qwen models.
+  - OpenAI-compatible API used by LuxNix vLLM and llama.cpp GLM services.
+  - Metadata extraction and direct text and vision OCR helpers.
+findings_resolved:
+  - Strict domain response models rejected ordinary provider telemetry and reasoning fields.
+  - Strict vLLM discovery models rejected ordinary model listing metadata.
+  - Empty and truncated OCR responses could appear successful.
+  - Base URLs ending in /v1 generated duplicate API path segments.
+  - Metadata requests used JSON-object mode without enforcing their five-key schema.
+  - Fast metadata generation allowed only 150 tokens.
+  - Metadata transport retried permanent errors and invalid responses indiscriminately.
+  - Vision OCR could not use a configured compatible multimodal server.
+invariants:
+  - Preserve exact configured model selection and remote mTLS requirements.
+  - Normalize external envelopes locally before projecting into existing lx-dtypes contracts.
+  - Keep provider-specific envelope types local; installed shared contracts are not modified.
+  - Ignore provider telemetry and separate reasoning while validating final answer content strictly.
+  - Reject explicitly incomplete or refused completions without caching them.
+  - Do not silently remove unsupported schema constraints or switch models.
+  - Leave durable attempts, scheduling, retries, and publication with the caller.
+verification:
+  dependency_sync:
+    command: .devenv/state/venv/bin/uv sync --extra dev
+    result: passed; uv was not on PATH, so the existing environment binary was used.
+  typing:
+    command: .devenv/state/venv/bin/pyright
+    result: 0 errors, 8 warnings
+  regression:
+    command: >-
+      .devenv/state/venv/bin/python -m pytest tests/test_llm_configuration.py
+      tests/test_llm_meta_helpers.py tests/test_llm_service_vision_ocr.py
+      tests/test_llm_provider_contracts.py tests/test_report_reader_init.py
+      tests/test_report_reader_ollama_ocr.py -q
+    result: 78 passed in 8.54s before four additional HTTP error cases.
+  final_provider_contracts:
+    command: .devenv/state/venv/bin/python -m pytest tests/test_llm_provider_contracts.py -q
+    result: 24 passed in 0.64s, including four additional HTTP error cases; 82 distinct tests passed overall.
+  lint:
+    command: >-
+      .devenv/state/venv/bin/ruff check lx_anonymizer/llm/responses.py
+      tests/test_llm_provider_contracts.py
+    result: passed; broader existing LLM modules have pre-existing modernization/style findings.
+  whitespace:
+    command: git diff --check
+    result: passed
+limitations:
+  - No live LuxNix endpoint or clinical model quality benchmark was exercised.
+  - Vision requires a deployed multimodal model and server configuration; text-only GLM models are not made vision-capable.
+  - Missing completion markers remain compatible with older servers; explicitly unsuccessful markers are rejected.
+  - OCR chunk failures retain original text under the existing logged fallback policy.
+  - Metadata callers retain the existing optional local-extraction fallback when inference fails.
+references:
+  - docs/guides/llm-configuration.yml
+  - /home/admin/luxnix/modules/nixos/services/ollama/default.nix
+  - /home/admin/luxnix/modules/nixos/services/v-llm/default.nix
+  - /home/admin/luxnix/modules/nixos/services/glm-5-2/default.nix
+  - https://github.com/ollama/ollama/blob/main/docs/api.md
+  - https://docs.vllm.ai/en/v0.21.0/features/structured_outputs/
+  - https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-common.cpp

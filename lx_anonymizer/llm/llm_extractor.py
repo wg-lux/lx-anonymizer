@@ -1,11 +1,7 @@
-"""
-Optimierte LLM-Metadaten-Extraktion mit leichtgewichtigen Modellen und REST API.
+"""Metadata extraction through explicitly configured local LLM providers.
 
-Diese Implementierung basiert auf den Best Practices:
-1. Verwendung von instruction-tuned, quantisierten Modellen für bessere Performance
-2. Direkte REST API Verwendung statt Python Client für bessere Kontrolle
-3. Fail-safe Model Factory mit automatischem Fallback
-4. Strukturierte Ausgabe mit JSON Schema Validation
+Provider wire envelopes are validated before projection into lx-dtypes. Model
+selection is exact; durable retries remain the responsibility of the caller.
 """
 
 from __future__ import annotations
@@ -30,7 +26,6 @@ from lx_dtypes.models.contracts.llm_extractor import (
     LLMModelInfoPayload,
     LLMTemporalAnalysisPayload,
     LLMTextTimelineEntryPayload,
-    LLMVllmModelsPayload,
 )
 from lx_dtypes.models.contracts.llm_service import (
     LLMChatMessagePayload,
@@ -44,10 +39,10 @@ from lx_dtypes.models.contracts.text_anonymization import (
 )
 from lx_dtypes.models.meta.VideoMeta import FrameCollectionItem
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from tenacity import retry, stop_after_attempt, wait_fixed
 
 from lx_anonymizer.config import settings
 from lx_anonymizer.llm.connection import request_options, resolve_connection
+from lx_anonymizer.llm.responses import parse_chat_response, parse_model_names
 from lx_anonymizer.sensitive_meta_interface import (
     SensitiveMeta,
     SensitiveMetaResolutionError,
@@ -330,19 +325,14 @@ class LLMMetadataExtractor:
                 if self.provider == "ollama":
                     return _parse_ollama_model_names(raw_models_json)
 
-                models_payload = LLMVllmModelsPayload.model_validate(raw_models_json)
-                return [model.id for model in models_payload.data]
+                return parse_model_names(raw_models_json)
 
             return []
-        except Exception as e:
-            logger.warning(f"could not check available models: {e}")
-            try:
-                # Short one-shot backoff to avoid slowing tests/pipeline startup by ~100s.
-                self.available_models_retry = True
-                time.sleep(1.0)
-                return self._check_available_models()
-            except Exception:
-                return []
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning(
+                "Could not check available LLM models (%s)", type(exc).__name__
+            )
+            return []
 
     def _initialize_best_model(self):
         """Initialisiert das beste verfügbare Modell."""
@@ -426,36 +416,39 @@ OCR_TEXT_BEGIN
 OCR_TEXT_END"""
 
     def _create_json_schema(self) -> dict[str, object]:
-        """Erstellt das erweiterte JSON-Schema für medizinische Metadaten-Extraktion."""
+        """Constrain both providers to the same nullable clinical metadata keys."""
         return {
             "type": "object",
             "properties": {
-                # Patientendaten
-                "first_name": {"type": ["string", "null"]},
-                "last_name": {"type": ["string", "null"]},
-                "dob": {"type": ["string", "null"]},
-                "gender": {
-                    "type": ["string", "null"],
-                    "enum": ["male", "female", "unknown", None],
-                },
-                # Untersuchungsdaten
-                "examination_date": {"type": ["string", "null"]},
-                "examination_time": {"type": ["string", "null"]},
-                "examiner_first_name": {"type": ["string", "null"]},
-                "examiner_last_name": {"type": ["string", "null"]},
-                # Administrative Daten
-                "casenumber": {"type": ["string", "null"]},
-                # Zusätzliche Informationen
+                key: {"type": ["string", "null"]} for key in STRICT_METADATA_KEYS
             },
-            "required": [],  # Keine Felder sind zwingend erforderlich
+            "required": list(STRICT_METADATA_KEYS),
+            "additionalProperties": False,
         }
 
-    @retry(stop=stop_after_attempt(2), wait=wait_fixed(1))
+    def _wire_payload(self, payload: LLMChatRequestPayload) -> dict[str, object]:
+        # lx-dtypes' legacy request models only express JSON-object mode. Keep
+        # the provider schema extension at this boundary, not in domain objects.
+        wire: dict[str, object] = payload.model_dump(exclude_none=True)
+        schema = self._create_json_schema()
+        if self.provider == "ollama":
+            wire["format"] = schema
+        else:
+            wire["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "clinical_metadata",
+                    "strict": True,
+                    "schema": schema,
+                },
+            }
+        return wire
+
     def _make_api_request(
         self, payload: LLMChatRequestPayload
     ) -> LLMChatResponsePayload:
         """
-        Macht API-Request mit Retry-Logik und robuster Fehlerbehandlung.
+        Sendet genau einen Request; Wiederholungen gehören dem Aufrufer.
 
         Args:
             payload: Request-Payload für die LLM/OpenAI-kompatible API
@@ -482,7 +475,7 @@ OCR_TEXT_END"""
 
             response = requests.post(
                 self.chat_endpoint,
-                json=payload.model_dump(),
+                json=self._wire_payload(payload),
                 headers={"Content-Type": "application/json"},
                 timeout=timeout,
                 **transport,
@@ -490,12 +483,12 @@ OCR_TEXT_END"""
 
             if response.status_code == 200:
                 raw_response = response.json()
-                result = LLMChatResponsePayload.model_validate(raw_response)
+                result = parse_chat_response(raw_response, self.provider)
                 content = self._extract_response_content(result)
 
                 # Validiere Antwort
                 if not content:
-                    logger.warning(f"⚠️ Leere Antwort vom Modell: {result}")
+                    logger.warning("Leere Antwort vom Modell")
 
                 content_length = len(content)
                 logger.debug(f"✅ API-Response erhalten: {content_length} Zeichen")
@@ -516,7 +509,7 @@ OCR_TEXT_END"""
             logger.error("🔌 Verbindungsfehler zu %s: %s", self.provider, e)
             raise requests.RequestException(f"{self.provider} nicht erreichbar: {e}")
         except Exception as e:
-            logger.error(f"💥 Unerwarteter API-Fehler: {e}")
+            logger.error("LLM API response failed (%s)", type(e).__name__)
             raise
 
     def _extract_response_content(self, result: LLMChatResponsePayload) -> str:
@@ -564,7 +557,7 @@ OCR_TEXT_END"""
             return LLMChatOpenAIPayload(
                 model=model_name,
                 messages=messages,
-                max_tokens=150,
+                max_tokens=1024,
                 response_format={"type": "json_object"},
                 top_p=0.9,
                 temperature=0.0,
@@ -698,7 +691,7 @@ OCR_TEXT_END"""
 
                     logger.info(
                         f"✅ Erfolgreich extrahiert mit {self.current_model.name}: "
-                        f"Datum: {metadata.examination_date}"
+                        "Metadaten validiert"
                     )
 
                     self.sensitive_meta.safe_update(metadata)
@@ -706,9 +699,8 @@ OCR_TEXT_END"""
 
                 except (json.JSONDecodeError, ValidationError) as e:
                     logger.warning(
-                        f"JSON/Validierung fehlgeschlagen für {self.current_model.name}: {e}"
+                        f"JSON/Validierung fehlgeschlagen für {self.current_model.name}: {type(e).__name__}"
                     )
-                    logger.debug(f"Rohe Antwort: {content}")
 
                     # Bei JSON-Fehlern versuche das nächste Modell
                     if model_attempt < len(available_model_configs) - 1:
