@@ -14,6 +14,7 @@ from lx_dtypes.models.contracts.report_anonymization import (
 )
 from lx_dtypes.models.meta.ReportMeta import ReportProcessRequest, ReportProcessResult
 
+from lx_anonymizer.anonymization.anonymizer import Anonymizer
 from lx_anonymizer.report_contracts import (
     AnonymizationArtifactError,
     ArtifactAlreadyExistsError,
@@ -93,6 +94,49 @@ def _reader_with_fake_pipeline() -> ReportReader:
 
 def test_process_report_is_the_canonical_processing_method() -> None:
     assert hasattr(ReportReader, "process_report")
+
+
+def test_report_ocr_failure_preserves_cause_and_cleans_only_owned_output(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
+    original = source.read_bytes()
+    output_directory = tmp_path / "attempt"
+    output_directory.mkdir()
+    unrelated = output_directory / "unrelated.pdf"
+    unrelated.write_bytes(b"preserve")
+    request = _request(source=source, output_directory=output_directory)
+    reader = object.__new__(ReportReader)
+    reader.llm_available = False
+    reader.anonymizer = object.__new__(Anonymizer)
+    failure = FileNotFoundError(
+        "TESSDATA_PREFIX does not contain trained data for deu+eng"
+    )
+
+    def process(
+        self: ReportReader, process_request: ReportProcessRequest
+    ) -> ReportProcessResult:
+        temporary = process_request.anonymized_pdf_output_path
+        assert isinstance(temporary, Path)
+        temporary.write_bytes(b"partial")
+        self._maybe_create_anonymized_pdf(request=process_request, report_meta={})  # pyright: ignore[reportPrivateUsage]
+        raise AssertionError("OCR configuration failure must propagate")
+
+    reader._process_report_request = MethodType(process, reader)  # pyright: ignore[reportPrivateUsage]
+    with (
+        patch(
+            "lx_anonymizer.anonymization.anonymizer.get_tessdata_path",
+            side_effect=failure,
+        ),
+        pytest.raises(AnonymizationArtifactError, match="Report OCR runtime") as error,
+    ):
+        reader.process_report(request)
+
+    assert error.value.__cause__ is failure
+    assert source.read_bytes() == original
+    assert list(output_directory.iterdir()) == [unrelated]
+    assert unrelated.read_bytes() == b"preserve"
 
 
 @pytest.mark.parametrize("late_name", [None, "", "unknown", "Conflicting"])

@@ -9,6 +9,8 @@ import pytest
 from PIL import Image
 
 from lx_anonymizer.anonymization.anonymizer import Anonymizer
+from lx_anonymizer.ocr.tessdata import get_tessdata_path
+from lx_anonymizer.report_contracts import AnonymizationArtifactError
 from lx_anonymizer.runtime_types import Box as Box
 
 TextWithBox = dict[str, str | Box]
@@ -107,7 +109,15 @@ def _raise_pdf_open(_path: object) -> object:
 
 
 @pytest.fixture
-def anonymizer() -> Anonymizer:
+def anonymizer(monkeypatch: pytest.MonkeyPatch) -> Anonymizer:
+    # These tests replace OCR detection; they do not require system language data.
+    def configured_tessdata(_language: str) -> str:
+        return "/unused-test-tessdata"
+
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.get_tessdata_path",
+        configured_tessdata,
+    )
     return Anonymizer()
 
 
@@ -529,7 +539,7 @@ def test_detect_sensitive_regions_merges_custom_and_ocr_regions(
     assert rois == [(10, 10, 20, 20), (40, 50, 120, 90)]
 
 
-def test_create_anonymized_pdf_returns_none_on_pdf_open_failure(
+def test_create_anonymized_pdf_preserves_pdf_open_failure(
     anonymizer: Anonymizer,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -546,10 +556,90 @@ def test_create_anonymized_pdf_returns_none_on_pdf_open_failure(
         "lx_anonymizer.anonymization.anonymizer.pymupdf.open", _raise_pdf_open
     )
 
-    result = anonymizer.create_anonymized_pdf(
-        str(input_path),
-        output_path=str(output_path),
+    monkeypatch.setattr(
+        Anonymizer, "_detect_sensitive_regions_from_image", _no_sensitive_regions
     )
 
-    assert result is None
+    with pytest.raises(AnonymizationArtifactError, match="cannot open pdf") as error:
+        anonymizer.create_anonymized_pdf(
+            str(input_path),
+            output_path=str(output_path),
+        )
+
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert anonymizer.last_redaction_summary is None
     assert not output_path.exists()
+
+
+@pytest.mark.parametrize("languages", [(), ("deu",), ("eng",)])
+def test_pdf_missing_language_data_fails_before_rendering(
+    anonymizer: Anonymizer,
+    sample_pdf_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    languages: tuple[str, ...],
+) -> None:
+    data = tmp_path / "tessdata"
+    data.mkdir()
+    for language in languages:
+        (data / f"{language}.traineddata").touch()
+    monkeypatch.setenv("TESSDATA_PREFIX", str(data))
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.get_tessdata_path",
+        get_tessdata_path,
+    )
+    render_calls: list[object] = []
+
+    def render(path: object) -> list[Image.Image]:
+        render_calls.append(path)
+        return _blank_pdf_page(path)
+
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images", render
+    )
+    original = sample_pdf_path.read_bytes()
+    output = tmp_path / "output" / "anonymized.pdf"
+
+    with pytest.raises(
+        AnonymizationArtifactError, match="Report OCR runtime.*deu\\+eng"
+    ) as error:
+        anonymizer.create_anonymized_pdf(str(sample_pdf_path), str(output))
+
+    assert isinstance(error.value.__cause__, FileNotFoundError)
+    assert not isinstance(error.value, FileNotFoundError)
+    assert not render_calls
+    assert not output.parent.exists()
+    assert sample_pdf_path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ImportError("missing OCR module"),
+        FileNotFoundError("tesseract executable missing"),
+        RuntimeError("OCR execution failed"),
+    ],
+)
+def test_pdf_processing_failure_preserves_cause(
+    anonymizer: Anonymizer,
+    sample_pdf_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+) -> None:
+    def render(_path: object) -> list[Image.Image]:
+        raise failure
+
+    monkeypatch.setattr(
+        "lx_anonymizer.anonymization.anonymizer.convert_pdf_to_images", render
+    )
+    output = tmp_path / "anonymized.pdf"
+    original = sample_pdf_path.read_bytes()
+
+    with pytest.raises(AnonymizationArtifactError) as error:
+        anonymizer.create_anonymized_pdf(str(sample_pdf_path), str(output))
+
+    assert error.value.__cause__ is failure
+    assert not output.exists()
+    assert sample_pdf_path.read_bytes() == original
+    assert anonymizer.last_redaction_summary is None

@@ -51,8 +51,28 @@ definition_of_done:
       - LLM enablement requires a configured and available provider and is observable in initialization behavior.
       - Named deterministic OCR, NER, or regex behavior remains available only where the documented capability profile permits it.
       - Processing failures clean only invocation-owned temporary artifacts and cannot return an apparently complete result.
+      - PDF-Schwärzung prüft deu+eng-Sprachdaten vor dem Rendern mit dem vorhandenen Tesseract-Resolver.
+      - Fehlende OCR-Laufzeitdaten und PDF-Verarbeitungsfehler erhalten ihre Ursache als verketteten AnonymizationArtifactError statt eines None-Ergebnisses; Importquellen bleiben unverändert.
     required: true
     verification:
       kind: command
       command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_report_reader_init.py, tests/test_report_reader_ollama_ocr.py, -q]
       timeout_seconds: 600
+    assessment:
+      status: in_progress
+      assessed_by: codex-pdf-import-20260923
+      evidence:
+        - kind: command
+          reference: uv sync --extra dev
+          note: Abhängigkeiten vor Pyright und pytest synchronisiert.
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright
+          note: 0 Fehler, 8 bestehende Warnungen außerhalb der Änderung. Geänderte Dateien ohne Fehler oder Warnungen.
+        - kind: command
+          reference: .devenv/state/venv/bin/pytest tests/test_tessdata.py tests/test_anonymizer.py tests/test_report_reader_contract.py tests/test_report_reader_init.py tests/test_report_reader_ollama_ocr.py -q --tb=short
+          note: 51 Tests bestanden in 23.74 Sekunden; Fehlerursachen, unveränderte Quellen und versuchseigenes Cleanup geprüft.
+      note: >-
+        PDF-Erzeugung prüft deu+eng mit dem bestehenden Tesseract-Resolver vor dem Rendern.
+        Fehler werden als AnonymizationArtifactError samt Ursache weitergegeben statt als None.
+        Formatprüfung bestanden; bestehende Ruff-Stilbefunde bleiben offen. Deployment,
+        Systempakete und ein erfolgreicher Produktionsneuimport auf gc-02 sind nicht verifiziert.

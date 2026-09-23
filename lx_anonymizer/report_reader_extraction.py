@@ -84,7 +84,7 @@ class _Anonymizer(Protocol):
         pdf_path: str,
         output_path: str | None = None,
         report_meta: Mapping[str, object] | None = None,
-    ) -> str | None: ...
+    ) -> str: ...
 
 
 class LLMExtractorProtocol(Protocol):

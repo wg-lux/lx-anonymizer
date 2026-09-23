@@ -13,7 +13,9 @@ import lx_anonymizer.image_processing.pdf_operations as pdf_operations
 from lx_anonymizer.anonymization.sensitive_region_cropper import SensitiveRegionCropper
 from lx_anonymizer.metrics_provenance import summarize_pdf_redactions
 from lx_anonymizer.ocr.ocr import tesseract_full_image_ocr
+from lx_anonymizer.ocr.tessdata import get_tessdata_path
 from lx_anonymizer.region_processing.box_operations import Box, OcrResult
+from lx_anonymizer.report_contracts import AnonymizationArtifactError
 from lx_anonymizer.setup.custom_logger import get_logger
 from lx_anonymizer.text_detection.east_text_detection import east_text_detection
 from lx_anonymizer.text_detection.phi_region_detector import (
@@ -373,11 +375,18 @@ class Anonymizer:
     def create_anonymized_pdf(
         self,
         pdf_path: str,
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
         report_meta: Mapping[str, object] | None = None,
-    ) -> Optional[str]:
+    ) -> str:
         _ = report_meta
         self.last_redaction_summary = None
+
+        try:
+            get_tessdata_path("deu+eng")
+        except (OSError, ValueError) as exc:
+            raise AnonymizationArtifactError(
+                f"Report OCR runtime is not configured: {exc}"
+            ) from exc
 
         try:
             if output_path is None:
@@ -411,14 +420,11 @@ class Anonymizer:
             logger.info("Anonymized PDF saved: %s", output_path)
             return output_path
 
-        except ImportError as exc:
-            logger.error(
-                "Required module not installed. Cannot create anonymized PDF: %s", exc
-            )
-            return None
         except Exception as exc:
-            logger.error("Error creating anonymized PDF: %s", exc, exc_info=True)
-            return None
+            self.last_redaction_summary = None
+            raise AnonymizationArtifactError(
+                f"Anonymized PDF creation failed ({type(exc).__name__}): {exc}"
+            ) from exc
 
     def create_anonymized_image(
         self,
