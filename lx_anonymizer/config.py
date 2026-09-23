@@ -1,4 +1,5 @@
 from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,6 +37,7 @@ class Settings(BaseSettings):
     # When enabled, prefer a laptop-friendly local backend by default.
     LLM_PROVIDER: Literal["vllm", "ollama"] = "ollama"
     LLM_BASE_URL: str = ""
+    OLLAMA_HOST: str = ""
     LLM_MODEL: str = "lx-gemma4-e2b-json"
     LLM_TIMEOUT: int = Field(default=120, ge=1, le=120)
     LLM_CA_FILE: str = ""
@@ -83,12 +85,45 @@ class Settings(BaseSettings):
 
     @property
     def resolved_llm_base_url(self) -> str:
+        return self.llm_base_url_for(self.LLM_PROVIDER)
+
+    def llm_base_url_for(self, provider: str) -> str:
         base_url = self.LLM_BASE_URL.strip()
         if base_url:
-            return base_url
-        if self.LLM_PROVIDER.lower() == "ollama":
+            return base_url.rstrip("/")
+        if provider == "ollama":
+            host = self.OLLAMA_HOST.strip()
+            if host:
+                return normalize_ollama_host(host)
             return "http://127.0.0.1:11434"
         return "http://127.0.0.1:8000"
+
+
+def normalize_ollama_host(host: str) -> str:
+    """Convert an Ollama listen address to a client URL without DNS lookup."""
+    parsed = urlsplit(host if "://" in host else f"http://{host}")
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError("OLLAMA_HOST must be an HTTP(S) host with an optional port")
+    hostname = parsed.hostname
+    if hostname in {"localhost", "0.0.0.0"}:
+        hostname = "127.0.0.1"
+    elif hostname == "::":
+        hostname = "::1"
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    port = parsed.port
+    if port is None:
+        port = 11434 if "://" not in host else (443 if parsed.scheme == "https" else 80)
+    if port == 0:
+        raise ValueError("OLLAMA_HOST port must be between 1 and 65535")
+    return urlunsplit((parsed.scheme, f"{authority}:{port}", "", "", ""))
 
 
 settings = Settings()

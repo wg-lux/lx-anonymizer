@@ -1,0 +1,49 @@
+schema_version: "1.0"
+id: system_dependencies
+name: Portable system dependency discovery
+owners: [lx-anonymizer maintainers]
+production_critical: true
+description: Discover OCR resources across installation layouts, share Ollama endpoint configuration, and expose actionable deployment checks.
+definition_of_done:
+  - id: portable_discovery
+    category: functionality
+    title: Dependency configuration fails explicitly and supports common installation layouts
+    acceptance:
+      - Preserve pinned Nix tessdata precedence and explicit-prefix fail-closed behavior.
+      - Discover data beside executables, under installation prefixes, and in Homebrew/MacPorts locations.
+      - Reject traversal and malformed language names on all platforms while supporting script language packs.
+      - Honor OLLAMA_HOST below explicit LLM_BASE_URL without weakening remote TLS policy.
+      - Provisioning uses one endpoint and never starts an unmanaged daemon.
+      - Doctor checks OCR resources and native imports, with optional video and LLM checks.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/test_system_dependencies.py, tests/test_tessdata.py, tests/test_llm_configuration.py, tests/test_config.py, tests/test_cli_and_package_exports.py, -q]
+      timeout_seconds: 120
+    assessment:
+      status: verified
+      assessed_by: codex-system-deps-20260923
+      evidence:
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright
+          note: Zero errors, eight existing warnings.
+        - kind: command
+          reference: uv sync --extra dev
+          note: Completed before pytest; unrelated generated lockfile changes were discarded.
+        - kind: command
+          reference: Focused verification command above
+          note: 79 passed.
+        - kind: command
+          reference: python -m lx_anonymizer.cli doctor --video
+          note: Live Nix environment passed CLI, tessdata and native import checks; LLM intentionally skipped.
+        - kind: command
+          reference: python -m lx_anonymizer.cli doctor --llm
+          note: Correctly reported ConnectionError for the unavailable configured endpoint; live LLM inference was not verified.
+        - kind: command
+          reference: Ruff check on changed Python modules and new tests; bash -n scripts/provision_ollama_gemma4.sh
+          note: Passed.
+limitations:
+  - Linux remains the declared supported package platform; other layouts have simulated regression coverage only.
+  - Doctor does not establish model integrity, native codec support, GPU compatibility or clinical inference quality.
+  - Existing uncommitted Nix packaging and tessdata changes were preserved.
+documentation: docs/guides/system-dependencies.yml

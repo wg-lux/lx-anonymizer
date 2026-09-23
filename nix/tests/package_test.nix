@@ -5,6 +5,24 @@
 }: {
   suites."package".tests = [
     {
+      name = "packaged-tessdata-python-import";
+      type = "script";
+      script = ''
+        export PYTHONPATH="${lxAnonymizer}/${pkgs.python312.sitePackages}"
+        export TESSDATA_PREFIX=/nonexistent-host-tessdata
+        ${pkgs.python312}/bin/python - <<'PY'
+from pathlib import Path
+from lx_anonymizer.ocr.tessdata import get_tessdata_path
+
+data = Path(get_tessdata_path("deu+eng"))
+assert data.is_symlink()
+assert str(data.resolve()).startswith("/nix/store/")
+assert (data / "deu.traineddata").stat().st_size > 0
+assert (data / "eng.traineddata").stat().st_size > 0
+PY
+      '';
+    }
+    {
       name = "package-smoke";
       type = "script";
       script = ''

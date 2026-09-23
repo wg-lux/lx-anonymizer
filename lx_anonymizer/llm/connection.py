@@ -19,7 +19,11 @@ def resolve_connection(provider: str | None, base_url: str | None) -> tuple[str,
     protocol = (settings.LLM_PROVIDER if provider is None else provider).strip().lower()
     if protocol not in {"ollama", "vllm"}:
         raise ValueError("LLM_PROVIDER must be ollama or vllm")
-    url = (settings.LLM_BASE_URL if base_url is None else base_url).strip().rstrip("/")
+    url = (
+        (settings.llm_base_url_for(protocol) if base_url is None else base_url)
+        .strip()
+        .rstrip("/")
+    )
     if not url:
         url = (
             "http://127.0.0.1:11434"
@@ -37,6 +41,8 @@ def request_options(base_url: str) -> RequestOptions:
         raise ValueError(
             "LLM_BASE_URL must be a server URL without credentials, query or fragment"
         )
+    if url.port == 0:
+        raise ValueError("LLM server port must be between 1 and 65535")
     try:
         loopback = ip_address(url.hostname).is_loopback
     except ValueError:

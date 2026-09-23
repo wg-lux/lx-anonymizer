@@ -142,7 +142,7 @@ py.buildPythonPackage {
   installPhase = ''
     runHook preInstall
 
-    mkdir -p "$out/$pythonSitePackages" "$out/bin"
+    mkdir -p "$out/${py.python.sitePackages}" "$out/bin"
     python - <<'PY'
 import pathlib
 import zipfile
@@ -151,12 +151,17 @@ wheel_path = next(pathlib.Path("dist").glob("*.whl"))
 with zipfile.ZipFile(wheel_path) as zf:
     zf.extractall("wheel-unpack")
 PY
-    cp -r wheel-unpack/lx_anonymizer wheel-unpack/*.dist-info "$out/$pythonSitePackages/"
+    cp -r wheel-unpack/lx_anonymizer wheel-unpack/*.dist-info "$out/${py.python.sitePackages}/"
+    mkdir -p "$out/${py.python.sitePackages}/lx_anonymizer/resources"
+    ln -s "${tesseractWithLangs}/share/tessdata" \
+      "$out/${py.python.sitePackages}/lx_anonymizer/resources/tessdata"
+    test -s "${tesseractWithLangs}/share/tessdata/deu.traineddata"
+    test -s "${tesseractWithLangs}/share/tessdata/eng.traineddata"
 
     cat > "$out/bin/lx-anonymizer" <<EOF
 #!${pkgs.runtimeShell}
-export PATH="${lib.makeBinPath ([ ffmpeg-headless ] ++ lib.optionals withLlm [ ollama ])}:\$PATH"
-export PYTHONPATH="$out/$pythonSitePackages''${PYTHONPATH:+:$PYTHONPATH}"
+export PATH="${lib.makeBinPath ([ ffmpeg-headless tesseractWithLangs ] ++ lib.optionals withLlm [ ollama ])}:\$PATH"
+export PYTHONPATH="$out/${py.python.sitePackages}''${PYTHONPATH:+:$PYTHONPATH}"
 export TESSDATA_PREFIX="${tesseractWithLangs}/share/tessdata"
 export OLLAMA_HOST="''${OLLAMA_HOST:-127.0.0.1:11434}"
 exec ${py.python.interpreter} -m lx_anonymizer.cli "\$@"

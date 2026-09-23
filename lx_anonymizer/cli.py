@@ -39,6 +39,11 @@ class _DelegatedCommand:
 
 _DELEGATED_COMMANDS = (
     _DelegatedCommand(
+        "doctor",
+        "Check system dependencies and optionally LLM availability.",
+        "lx_anonymizer.system_dependencies",
+    ),
+    _DelegatedCommand(
         "export-dicom",
         "Create an anonymized DICOM tree and validation artifacts.",
         "lx_anonymizer.dicom_anonymization",

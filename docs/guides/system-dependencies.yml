@@ -1,0 +1,51 @@
+schema_version: 1
+purpose: Portable dependency discovery and deployment checks.
+verification:
+  command: lx-anonymizer doctor --video --llm
+  output: JSON checks; exit 1 when any requested dependency fails, otherwise exit 0.
+  default: Checks Tesseract on PATH, requested tessdata, and tesserocr/OpenCV/PyMuPDF imports.
+  options:
+    --language: Requested languages, default deu+eng; all must exist in one directory.
+    --video: Also requires ffmpeg and ffprobe on PATH; does not execute video processing.
+    --llm: Lists configured server models with a five-second request timeout; sends no patient data.
+  limits:
+    - Does not prove traineddata integrity, FFmpeg codec availability, GPU driver compatibility or inference quality.
+    - No downloads, service starts, environment mutation or model substitution.
+    - LLM_ENABLED=false skips network checks, even with --llm.
+    - Run as the actual service user inside its container or service environment.
+tesseract:
+  native_discovery_order:
+    - Packaged Nix tessdata, including fail-closed validation of broken package symlinks.
+    - Explicit TESSDATA_PREFIX, accepting the data directory or its parent for native tesserocr.
+    - Data beside the PATH executable and under its installation share directory, including resolved symlinks.
+    - Conventional NixOS, Debian/Ubuntu, Fedora, Homebrew and MacPorts locations.
+  missing_data: Fails with the requested language and configuration guidance; explicit invalid paths never fall back.
+  cli: Put tesseract on PATH. For current Tesseract CLI installations set TESSDATA_PREFIX to the directory containing traineddata files, not its parent.
+  windows_layout: Data beside tesseract.exe is recognized when its directory is on PATH.
+  native_library: tesserocr also needs a compatible native Tesseract and Leptonica library; installing the CLI alone may be insufficient.
+ollama:
+  runtime_precedence: Explicit API argument, LLM_BASE_URL, OLLAMA_HOST, loopback default.
+  host_forms: Host with optional port, bracketed IPv6, or HTTP(S) URL; malformed addresses fail explicitly.
+  client_addresses: localhost and wildcard listen addresses are converted to literal loopback addresses without DNS lookup.
+  ports: Bare hosts default to 11434; explicit HTTP/HTTPS schemes default to 80/443.
+  remote: Existing policy requires HTTPS and configured CA/client certificate/private key; plain remote HTTP remains rejected.
+  installation: Inference uses HTTP and does not require an Ollama executable on the application host.
+  provisioning:
+    command: bash scripts/provision_ollama_gemma4.sh
+    prerequisites: A running managed Ollama service, CLI on PATH, and an existing Modelfile.
+    endpoint_precedence: LLM_BASE_URL, legacy OLLAMA_URL, legacy OLLAMA_CLIENT_HOST, OLLAMA_HOST, loopback default.
+    behavior: CLI discovery, pull, create and show use one endpoint; no background daemon is spawned.
+    tls: The Ollama CLI has its own transport configuration; application mTLS settings are not forwarded to it.
+other_dependencies:
+  ffmpeg: Install FFmpeg and FFprobe in the worker PATH; preserve attempt ownership and the video concurrency contract.
+  spacy: Default German model is bundled; automatic download remains disabled by default.
+  models: Deploy required OCR/detector assets before starting workers; doctor does not load neural models.
+  containers: Configure dependencies inside the container; host PATH and loopback do not refer to host services.
+platform_scope:
+  - Linux remains the declared and uv-supported package platform.
+  - Discovery recognizes common macOS and Windows layouts, but does not establish full application support on those operating systems.
+  - Platform layout and endpoint behavior are covered by isolated tests; native end-to-end checks must run on each target deployment.
+sources:
+  - https://tesseract-ocr.github.io/tessdoc/Installation.html
+  - https://tesseract-ocr.github.io/tessdoc/Compiling-%E2%80%93-GitInstallation.html
+  - https://github.com/ollama/ollama/blob/main/envconfig/config.go

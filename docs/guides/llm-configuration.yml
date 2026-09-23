@@ -3,7 +3,8 @@ purpose: Shared LLM configuration supplied by LuxNix or the process environment.
 settings:
   LLM_ENABLED: 'true enables probing and inference; false prevents LLM network requests.'
   LLM_PROVIDER: 'ollama or vllm (OpenAI-compatible, including GLM).'
-  LLM_BASE_URL: 'Server root without /v1. Empty selects http://127.0.0.1:11434 for Ollama or http://127.0.0.1:8000 for vllm.'
+  LLM_BASE_URL: 'Server root without /v1. Empty uses OLLAMA_HOST for Ollama when set, otherwise http://127.0.0.1:11434; vllm defaults to http://127.0.0.1:8000.'
+  OLLAMA_HOST: "Optional Ollama host:port or HTTP(S) URL; ignored for vllm. Wildcard and localhost hosts normalize to literal loopback. Remote TLS policy still applies."
   LLM_MODEL: 'Exact configured model; default lx-gemma4-e2b-json. Missing models remain unavailable.'
   LLM_TIMEOUT: 'Request timeout in seconds, 1 through 120; default 120.'
   LLM_CA_FILE: CA bundle path for HTTPS.

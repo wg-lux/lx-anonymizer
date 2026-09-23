@@ -3,7 +3,59 @@ from pathlib import Path
 
 import pytest
 
+from lx_anonymizer.ocr import tessdata
 from lx_anonymizer.ocr.tessdata import get_tessdata_path
+
+
+@pytest.mark.parametrize("prefix", [None, "missing", "other"])
+def test_nix_package_data_takes_precedence_without_environment_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str | None,
+) -> None:
+    store_data = tmp_path / "nix-store-data"
+    store_data.mkdir()
+    for language in ("deu", "eng"):
+        (store_data / f"{language}.traineddata").touch()
+    packaged = tmp_path / "package-tessdata"
+    packaged.symlink_to(store_data, target_is_directory=True)
+    monkeypatch.setattr(tessdata, "_PACKAGED_TESSDATA", packaged)
+    if prefix is None:
+        monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
+    else:
+        configured = tmp_path / prefix
+        if prefix == "other":
+            configured.mkdir()
+            for language in ("deu", "eng"):
+                (configured / f"{language}.traineddata").touch()
+        monkeypatch.setenv("TESSDATA_PREFIX", str(configured))
+    original_prefix = os.environ.get("TESSDATA_PREFIX")
+
+    assert get_tessdata_path("deu+eng") == str(packaged)
+    assert os.environ.get("TESSDATA_PREFIX") == original_prefix
+
+
+@pytest.mark.parametrize("broken_link", [False, True])
+def test_invalid_nix_package_data_does_not_use_host_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    broken_link: bool,
+) -> None:
+    packaged = tmp_path / "package-tessdata"
+    if broken_link:
+        packaged.symlink_to(tmp_path / "missing-store-data", target_is_directory=True)
+    else:
+        packaged.mkdir()
+        (packaged / "eng.traineddata").touch()
+    host_data = tmp_path / "host-data"
+    host_data.mkdir()
+    for language in ("deu", "eng"):
+        (host_data / f"{language}.traineddata").touch()
+    monkeypatch.setattr(tessdata, "_PACKAGED_TESSDATA", packaged)
+    monkeypatch.setenv("TESSDATA_PREFIX", str(host_data))
+
+    with pytest.raises(FileNotFoundError, match="Packaged Tesseract data"):
+        get_tessdata_path("deu+eng")
 
 
 @pytest.mark.parametrize("use_parent", [False, True])

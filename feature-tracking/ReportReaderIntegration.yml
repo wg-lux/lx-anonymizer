@@ -52,6 +52,7 @@ definition_of_done:
       - Named deterministic OCR, NER, or regex behavior remains available only where the documented capability profile permits it.
       - Processing failures clean only invocation-owned temporary artifacts and cannot return an apparently complete result.
       - PDF-Schwärzung prüft deu+eng-Sprachdaten vor dem Rendern mit dem vorhandenen Tesseract-Resolver.
+      - Nix-Installationen beziehen Tessdata auch bei direkten Python-Importen aus dem in package.nix definierten Tesseract-Paket; fehlende Paketsprachdaten werden nicht durch Systemdaten ersetzt.
       - Fehlende OCR-Laufzeitdaten und PDF-Verarbeitungsfehler erhalten ihre Ursache als verketteten AnonymizationArtifactError statt eines None-Ergebnisses; Importquellen bleiben unverändert.
     required: true
     verification:
@@ -63,6 +64,19 @@ definition_of_done:
       assessed_by: codex-pdf-import-20260923
       evidence:
         - kind: command
+          reference: nix run .#nixtest
+          note: >-
+            Nix-Paket erfolgreich gebaut; packaged-tessdata-python-import besteht mit echten
+            deu/eng-Sprachdaten trotz ungültigem Host-Prefix. Zwei vorhandene CLI-Tests scheitern:
+            package-smoke erwartet einen veralteten Hilfetext; base-cli-missing-ocr-deps erwartet
+            einen anderen Fehlertext, tatsächlich fehlt lx_dtypes im Basispaket. Keine Produktionsaktivierung.
+        - kind: command
+          reference: .devenv/state/venv/bin/pytest tests/test_tessdata.py tests/test_anonymizer.py tests/test_report_reader_contract.py -q --tb=short -o log_cli=false
+          note: 2026-09-23 Nix-Tessdata-Ergänzung; 47 Tests bestanden. Paketdatenpriorität, unveränderte Umgebung sowie Abbruch bei unvollständigen Daten oder defektem Paketlink geprüft.
+        - kind: command
+          reference: nix eval --raw .#packages.x86_64-linux.lx-anonymizer.installPhase
+          note: Paketlink, Sprachdateiprüfung und CLI-PATH verweisen auf dieselbe Tesseract-Derivation mit deu und eng. Nix-Syntaxprüfung, Pyright (0 Fehler, 8 bestehende Warnungen), Ruff und Formatprüfung bestanden.
+        - kind: command
           reference: uv sync --extra dev
           note: Abhängigkeiten vor Pyright und pytest synchronisiert.
         - kind: command
@@ -72,6 +86,10 @@ definition_of_done:
           reference: .devenv/state/venv/bin/pytest tests/test_tessdata.py tests/test_anonymizer.py tests/test_report_reader_contract.py tests/test_report_reader_init.py tests/test_report_reader_ollama_ocr.py -q --tb=short
           note: 51 Tests bestanden in 23.74 Sekunden; Fehlerursachen, unveränderte Quellen und versuchseigenes Cleanup geprüft.
       note: >-
+        package.nix verlinkt die ausgewählten Nix-Sprachdaten in resources/tessdata; der gemeinsame
+        Resolver bevorzugt diese Paketdaten. Der CLI-PATH enthält dasselbe Tesseract-Paket.
+        Der im Paketbuild aufgedeckte leere Shellwert pythonSitePackages ist durch den Nix-Wert
+        py.python.sitePackages ersetzt, damit direkte Python-Importe den installierten Paketpfad finden.
         PDF-Erzeugung prüft deu+eng mit dem bestehenden Tesseract-Resolver vor dem Rendern.
         Fehler werden als AnonymizationArtifactError samt Ursache weitergegeben statt als None.
         Formatprüfung bestanden; bestehende Ruff-Stilbefunde bleiben offen. Deployment,
