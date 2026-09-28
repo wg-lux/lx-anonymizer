@@ -416,3 +416,58 @@ def test_rapidocr_rejects_invalid_thread_budget(threads: int) -> None:
     # Arrange / Act / Assert.
     with pytest.raises(ValueError, match="thread count must be positive"):
         FrameOCR(inference_threads=threads)
+
+
+def test_rapidocr_metrics_report_failure_and_omit_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import json
+    import logging
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    output = FakeRapidOCROutput(boxes=None, txts=("PRIVATE_OCR_TEXT",), scores=(1.0,))
+    engine = Mock(side_effect=[output, RuntimeError("PRIVATE_FAILURE")])
+    engine.text_det = SimpleNamespace(
+        session=SimpleNamespace(
+            session=SimpleNamespace(
+                get_providers=lambda: ["CPUExecutionProvider"],
+            )
+        )
+    )
+    frame_ocr = FrameOCR.__new__(FrameOCR)
+    frame_ocr.rapidocr_engine = engine
+    frame_ocr._rapidocr_lock = threading.Lock()
+    with caplog.at_level(logging.INFO):
+        frame_ocr._run_rapidocr(np.zeros((4, 4), dtype=np.uint8), None)
+        with pytest.raises(RuntimeError, match="PRIVATE_FAILURE"):
+            frame_ocr._run_rapidocr(np.zeros((4, 4), dtype=np.uint8), None)
+    metrics = frame_ocr._rapidocr_metrics
+    assert metrics.calls == 1
+    assert metrics.full_frame_calls == 1
+    assert metrics.failures == 1
+    records = [
+        json.loads(record.message)
+        for record in caplog.records
+        if '"event": "ocr.progress"' in record.message
+    ]
+    assert records[-1]["session_providers"]["text_det"] == ["CPUExecutionProvider"]
+    assert "PRIVATE" not in caplog.text
+
+
+def test_rapidocr_stage_timing_aggregation() -> None:
+    from types import SimpleNamespace
+
+    from lx_anonymizer.ocr.ocr_frame import RapidOCRMetrics
+
+    metrics = RapidOCRMetrics()
+    FrameOCR._record_stage_timings(
+        SimpleNamespace(elapse_list=[0.2, None, 0.3]), metrics
+    )
+    assert metrics.detection_seconds == 0.2
+    assert metrics.recognition_seconds == 0.3
+    assert metrics.stage_timing_calls == 1
+    FrameOCR._record_stage_timings(
+        SimpleNamespace(elapse_list=[float("nan"), 0, 0]), metrics
+    )
+    assert metrics.stage_timing_calls == 1

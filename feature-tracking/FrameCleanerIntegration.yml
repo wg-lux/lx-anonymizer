@@ -16,6 +16,22 @@ invariants:
   - Input media is immutable and output is one unpublished attempt-owned candidate.
   - Integrity, FFmpeg, FFprobe, masking, and cancellation failures raise loudly and clean only invocation-owned temporary artifacts.
 definition_of_done:
+  - id: redacted_ocr_progress
+    category: operations
+    title: Long exhaustive OCR runs expose bounded aggregate telemetry
+    acceptance:
+      - First inference, periodic progress and inference failures report completed inference counts and elapsed times without OCR text or exception values.
+      - Stage timing availability and configured session providers are explicit; missing backend telemetry is not fabricated.
+      - Telemetry preserves exhaustive frame coverage and does not introduce parallel inference or retries.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/test_ocr_frame_rapidocr.py, tests/test_exhaustive_video_metadata.py, -q]
+      timeout_seconds: 600
+    assessment:
+      status: in_progress
+      assessed_by: codex-gc02-import-20260928
+      assessed_at: '2026-09-28T07:36:08.361070+00:00'
   - id: exhaustive_metadata_analysis
     category: functionality
     title: Every source frame contributes to patient metadata extraction

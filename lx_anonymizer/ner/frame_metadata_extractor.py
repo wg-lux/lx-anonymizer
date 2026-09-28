@@ -20,8 +20,10 @@ from enum import Enum
 from typing import Any, Optional, Tuple, cast
 
 import dateparser  # type: ignore[import-untyped]
+from lx_dtypes.names import GENDER_OPTIONS_LITERAL
 
 from lx_anonymizer.regex_patterns import (
+    DATE_DOT_FLEX_RE,
     FRAME_CASE_PATTERNS,
     FRAME_DATE_PATTERNS,
     FRAME_DOB_PATTERNS,
@@ -29,7 +31,6 @@ from lx_anonymizer.regex_patterns import (
     FRAME_GENDER_PATTERNS,
     FRAME_PATIENT_PATTERNS,
     FRAME_TIME_PATTERNS,
-    DATE_DOT_FLEX_RE,
     MULTISPACE_RE,
     NON_DIGIT_RE,
     TIME_HH_MM_RE,
@@ -109,58 +110,24 @@ class FrameMetadataExtractor:
         if not text or not text.strip():
             return self.meta.to_dict()
 
-        try:
-            # names
-            first_name, last_name = self._extract_patient_names(text)
-            self.meta.safe_update(
-                {
-                    "first_name": first_name,
-                    "last_name": last_name,
-                }
-            )
-
-            # Resolve date roles together. Independent first-match extraction can
-            # otherwise assign the first overlay date to both DOB and exam date.
-            dob, exam_date = self._resolve_frame_dates(text)
-            self.meta.safe_update(
-                {"dob": dob.isoformat() if isinstance(dob, date) else dob}
-            )
-
-            # case number
-            case_num = self._extract_case_number(text)
-            self.meta.safe_update({"casenumber": case_num})
-
-            # exam date/time
-            exam_time = self._extract_examination_time(text)
-            self.meta.safe_update(
-                {
-                    "examination_date": exam_date.isoformat()
-                    if isinstance(exam_date, date)
-                    else exam_date,
-                    "examination_time": exam_time,
-                }
-            )
-
-            # examiner
-            examiner_first, examiner_last = self._extract_examiner(text)
-            self.meta.safe_update(
-                {
-                    "examiner_first_name": examiner_first,
-                    "examiner_last_name": examiner_last,
-                }
-            )
-
-            # gender
-            gender = self._extract_gender(text)
-            self.meta.safe_update({"gender": gender})
-
-            # mark source (won’t overwrite an existing non-blank)
-            self.meta.safe_update({"center": None})  # no-op but illustrates safety
-            return self.meta.to_dict()
-
-        except Exception as e:
-            logger.error(f"Frame metadata extraction failed: {e}")
-            return self.meta.to_dict()
+        # One observation is validated before any accumulated field changes.
+        # In particular, birth and examination dates must be resolved together.
+        first_name, last_name = self._extract_patient_names(text)
+        dob, exam_date = self._resolve_frame_dates(text)
+        examiner_first, examiner_last = self._extract_examiner(text)
+        candidate: dict[str, object] = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "dob": dob,
+            "casenumber": self._extract_case_number(text),
+            "examination_date": exam_date,
+            "examination_time": self._extract_examination_time(text),
+            "examiner_first_name": examiner_first,
+            "examiner_last_name": examiner_last,
+            "gender": self._extract_gender(text),
+        }
+        self.meta.safe_update(candidate)
+        return self.meta.to_dict()
 
     def is_sensitive_content(self, metadata: Mapping[str, object]) -> bool:
         """Basic sensitive presence check (uses dict for call-site compatibility)."""
@@ -295,55 +262,47 @@ class FrameMetadataExtractor:
         return None
 
     def _extract_patient_names(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        try:
-            for pattern in self.patient_patterns:
-                matches = cast(
-                    list[str | tuple[str, ...]],
-                    re.findall(pattern, text, re.IGNORECASE),
-                )
-                if not matches:
-                    continue
-                m0 = matches[0]
-                if isinstance(m0, tuple) and len(m0) >= 2:
-                    name1, name2 = m0[:2]
-                    name1, name2 = name1.strip(), name2.strip()
-                    # Heuristic: "Last, First" if comma appears before name2
-                    if "," in text and text.index(",") < text.index(name2):
-                        return name2, name1
-                    return name1, name2
-                if isinstance(m0, str):
-                    return m0.strip(), None
-            return None, None
-        except Exception as e:
-            logger.error(f"Patient name extraction failed: {e}")
-            return None, None
+        for pattern in self.patient_patterns:
+            matches = cast(
+                list[str | tuple[str, ...]],
+                re.findall(pattern, text, re.IGNORECASE),
+            )
+            if not matches:
+                continue
+            m0 = matches[0]
+            if isinstance(m0, tuple) and len(m0) >= 2:
+                name1, name2 = m0[:2]
+                name1, name2 = name1.strip(), name2.strip()
+                # Heuristic: "Last, First" if comma appears before name2
+                if "," in text and text.index(",") < text.index(name2):
+                    return name2, name1
+                return name1, name2
+            if isinstance(m0, str):
+                return m0.strip(), None
+        return None, None
 
     def _extract_date_of_birth(self, text: str) -> Optional[date]:
-        try:
-            # 1) labeled
-            for pattern in self.dob_patterns[:4]:
-                m = re.findall(pattern, text, re.IGNORECASE)
-                if m:
-                    d = self._parse_german_date(m[0].strip())
-                    if d:
-                        return d
-            # 2) compact
-            for pattern in self.dob_patterns[4:6]:
-                m = re.findall(pattern, text)
-                if m:
-                    d = self._parse_compact_date(m[0].strip())
-                    if d:
-                        return d
-            # 3) separators
-            m = re.findall(self.dob_patterns[6], text)
+        # 1) labeled
+        for pattern in self.dob_patterns[:4]:
+            m = re.findall(pattern, text, re.IGNORECASE)
             if m:
                 d = self._parse_german_date(m[0].strip())
                 if d:
                     return d
-            return None
-        except Exception as e:
-            logger.error(f"DOB extraction failed: {e}")
-            return None
+        # 2) compact
+        for pattern in self.dob_patterns[4:6]:
+            m = re.findall(pattern, text)
+            if m:
+                d = self._parse_compact_date(m[0].strip())
+                if d:
+                    return d
+        # 3) separators
+        m = re.findall(self.dob_patterns[6], text)
+        if m:
+            d = self._parse_german_date(m[0].strip())
+            if d:
+                return d
+        return None
 
     def _resolve_frame_dates(self, text: str) -> tuple[date | None, date | None]:
         """Resolve DOB and examination date from one shared candidate set.
@@ -469,62 +428,46 @@ class FrameMetadataExtractor:
             return None
 
     def _extract_case_number(self, text: str) -> Optional[str]:
-        try:
-            for pattern in self.case_patterns:
-                m = re.findall(pattern, text, re.IGNORECASE)
-                if m:
-                    case = MULTISPACE_RE.sub(" ", m[0].strip())
-                    return case
-            return None
-        except Exception as e:
-            logger.error(f"Case number extraction failed: {e}")
-            return None
+        for pattern in self.case_patterns:
+            m = re.findall(pattern, text, re.IGNORECASE)
+            if m:
+                case = MULTISPACE_RE.sub(" ", m[0].strip())
+                return case
+        return None
 
     def _extract_examination_date(self, text: str) -> Optional[date]:
-        try:
-            for pattern in self.date_patterns:
-                m = re.findall(pattern, text, re.IGNORECASE)
-                if m:
-                    d = self._parse_german_date(m[0].strip())
-                    if d:
-                        return d
-            return None
-        except Exception as e:
-            logger.error(f"Examination date extraction failed: {e}")
-            return None
+        for pattern in self.date_patterns:
+            m = re.findall(pattern, text, re.IGNORECASE)
+            if m:
+                d = self._parse_german_date(m[0].strip())
+                if d:
+                    return d
+        return None
 
     def _extract_examination_time(self, text: str) -> Optional[str]:
-        try:
-            for pattern in self.time_patterns:
-                m = re.findall(pattern, text, re.IGNORECASE)
-                if m:
-                    t = m[0].strip()
-                    if TIME_HH_MM_RE.match(t):
-                        return t
-            return None
-        except Exception as e:
-            logger.error(f"Examination time extraction failed: {e}")
-            return None
+        for pattern in self.time_patterns:
+            m = re.findall(pattern, text, re.IGNORECASE)
+            if m:
+                t = m[0].strip()
+                if TIME_HH_MM_RE.match(t):
+                    return t
+        return None
 
     def _extract_examiner(self, text: str) -> Tuple[Optional[str], Optional[str]]:
-        try:
-            for pattern in self.examiner_patterns:
-                m = re.findall(pattern, text, re.IGNORECASE)
-                if not m:
-                    continue
-                examiner = MULTISPACE_RE.sub(" ", m[0].strip())
-                parts = examiner.split()
-                if len(parts) >= 2:
-                    first_name, last_name = parts[0], " ".join(parts[1:])
-                else:
-                    first_name, last_name = examiner, None
-                if self._is_valid_examiner(examiner):
-                    return first_name, last_name
-                logger.debug(f"Rejected invalid examiner candidate: {examiner}")
-            return None, None
-        except Exception as e:
-            logger.error(f"Examiner extraction failed: {e}")
-            return None, None
+        for pattern in self.examiner_patterns:
+            m = re.findall(pattern, text, re.IGNORECASE)
+            if not m:
+                continue
+            examiner = MULTISPACE_RE.sub(" ", m[0].strip())
+            parts = examiner.split()
+            if len(parts) >= 2:
+                first_name, last_name = parts[0], " ".join(parts[1:])
+            else:
+                first_name, last_name = examiner, None
+            if self._is_valid_examiner(examiner):
+                return first_name, last_name
+            logger.debug(f"Rejected invalid examiner candidate: {examiner}")
+        return None, None
 
     def _is_valid_examiner(self, examiner: str) -> bool:
         if not examiner:
@@ -547,20 +490,16 @@ class FrameMetadataExtractor:
             return False
         return True
 
-    def _extract_gender(self, text: str) -> Optional[str]:
-        try:
-            for pattern in self.gender_patterns:
-                m = re.findall(pattern, text, re.IGNORECASE)
-                if m:
-                    g = m[0].lower().strip()
-                    if g in ("männlich", "male", "m"):
-                        return "M"
-                    if g in ("weiblich", "female", "f", "w"):
-                        return "F"
-            return None
-        except Exception as e:
-            logger.error(f"Gender extraction failed: {e}")
-            return None
+    def _extract_gender(self, text: str) -> GENDER_OPTIONS_LITERAL | None:
+        for pattern in self.gender_patterns:
+            m = re.findall(pattern, text, re.IGNORECASE)
+            if m:
+                g = m[0].lower().strip()
+                if g in ("männlich", "male", "m"):
+                    return "male"
+                if g in ("weiblich", "female", "f", "w"):
+                    return "female"
+        return None
 
     def _parse_german_date(self, date_str: str) -> Optional[date]:
         try:

@@ -135,7 +135,7 @@ FRAME_EXAMINER_PATTERNS: Final[tuple[str, ...]] = (
     rf"Examiner[:\s]*([{GERMAN_NAME_CHARS}\s\-\.]{{3,50}})(?:\s|$)",
 )
 FRAME_GENDER_PATTERNS: Final[tuple[str, ...]] = (
-    r"(männlich|weiblich|male|female|m|f|w)",
+    r"\b(männlich|weiblich|male|female|m|f|w)\b",
 )
 
 FALLBACK_PATIENT_FULL_RE: Final[Pattern[str]] = re.compile(

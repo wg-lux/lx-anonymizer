@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import inspect
+import json
 import logging
+import math
 import os
 import threading
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Tuple, TypeAlias, cast
 
 import cv2
@@ -69,6 +72,19 @@ OcrResultStatus: TypeAlias = Literal["text_detected", "no_text_detected"]
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class RapidOCRMetrics:
+    calls: int = 0
+    failures: int = 0
+    full_frame_calls: int = 0
+    inference_seconds: float = 0.0
+    detection_seconds: float = 0.0
+    classification_seconds: float = 0.0
+    recognition_seconds: float = 0.0
+    stage_timing_calls: int = 0
+    last_log_at: float = 0.0
+
+
 class FrameOCR:
     """
     High-performance OCR interface for medical video frames.
@@ -79,6 +95,7 @@ class FrameOCR:
     - Includes medical pattern extraction helpers
     """
 
+    _rapidocr_metrics: RapidOCRMetrics
     frame_metadata_extractor: FrameMetadataExtractor
     rapidocr_engine: Optional[Any]
     rapidocr_params: Dict[str, Any]
@@ -94,6 +111,7 @@ class FrameOCR:
         self.pytesseract_config = self._default_pytesseract_config()
         self.rapidocr_engine: Optional[Any] = None
         self._rapidocr_lock = threading.Lock()
+        self._rapidocr_metrics = RapidOCRMetrics()
         self.tesserocr_processor: Optional[Any] = None
         self._rapidocr_available = rapidocr_available and _RapidOCRClass is not None
         self.rapidocr_params = (
@@ -527,7 +545,28 @@ class FrameOCR:
         if engine is None:
             raise RuntimeError("RapidOCR engine is not initialized")
         with self._rapidocr_lock:
-            result = engine(img)
+            metrics = getattr(self, "_rapidocr_metrics", None)
+            if metrics is None:
+                metrics = self._rapidocr_metrics = RapidOCRMetrics()
+            started = time.monotonic()
+            succeeded = False
+            try:
+                result = engine(img)
+                succeeded = True
+                self._record_stage_timings(result, metrics)
+            finally:
+                metrics.inference_seconds += time.monotonic() - started
+                metrics.calls += int(succeeded)
+                metrics.full_frame_calls += int(succeeded and roi is None)
+                metrics.failures += int(not succeeded)
+                now = time.monotonic()
+                if (
+                    not succeeded
+                    or metrics.calls == 1
+                    or now - metrics.last_log_at >= 60
+                ):
+                    self._log_rapidocr_metrics(engine, metrics)
+                    metrics.last_log_at = now
         entries, elapsed = self._parse_rapidocr_result(result, x_offset, y_offset)
 
         entries.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
@@ -536,6 +575,69 @@ class FrameOCR:
         text = " ".join(texts)
         avg_conf = sum(confs) / len(confs) if confs else 0.0
         return text, avg_conf, entries, elapsed
+
+    @staticmethod
+    def _record_stage_timings(result: object, metrics: RapidOCRMetrics) -> None:
+        raw: object = getattr(result, "elapse_list", None)
+        if not isinstance(raw, (list, tuple)):
+            return
+        if len(cast(Sequence[object], raw)) != 3:
+            return
+        values: list[float] = []
+        for value in cast(Sequence[object], raw):
+            if value is None:
+                values.append(0.0)
+            elif (
+                isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
+            ):
+                values.append(float(value))
+            else:
+                return
+        metrics.detection_seconds += values[0]
+        metrics.classification_seconds += values[1]
+        metrics.recognition_seconds += values[2]
+        metrics.stage_timing_calls += 1
+
+    @staticmethod
+    def _log_rapidocr_metrics(engine: object, metrics: RapidOCRMetrics) -> None:
+        providers: dict[str, list[str]] = {}
+        for stage in ("text_det", "text_cls", "text_rec"):
+            component: object = getattr(engine, stage, None)
+            wrapper: object = getattr(component, "session", None)
+            session: object = getattr(wrapper, "session", None)
+            getter: object = getattr(session, "get_providers", None)
+            if callable(getter):
+                raw: object = getter()
+                if isinstance(raw, (list, tuple)):
+                    providers[stage] = [
+                        value
+                        for value in cast(Sequence[object], raw)
+                        if isinstance(value, str)
+                        and value
+                        in {
+                            "CPUExecutionProvider",
+                            "CUDAExecutionProvider",
+                            "TensorrtExecutionProvider",
+                            "CoreMLExecutionProvider",
+                        }
+                    ]
+        logger.info(
+            json.dumps(
+                {
+                    "event": "ocr.progress",
+                    "inference_calls_completed": metrics.calls,
+                    "full_frame_calls_completed": metrics.full_frame_calls,
+                    "failures": metrics.failures,
+                    "inference_seconds": metrics.inference_seconds,
+                    "detection_seconds": metrics.detection_seconds,
+                    "classification_seconds": metrics.classification_seconds,
+                    "recognition_seconds": metrics.recognition_seconds,
+                    "stage_timing_calls": metrics.stage_timing_calls,
+                    "session_providers": providers,
+                },
+                sort_keys=True,
+            )
+        )
 
     def _parse_rapidocr_result(
         self, result: Any, x_offset: int, y_offset: int

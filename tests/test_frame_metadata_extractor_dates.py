@@ -107,3 +107,65 @@ def test_metadata_merge_projects_clinical_fields_from_ocr_diagnostics() -> None:
     assert merged["examination_date"] == "2024-02-15"
     assert "backend" not in merged
     assert "text_regions" not in merged
+
+
+def test_invalid_observation_does_not_partially_update_metadata(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from lx_anonymizer.sensitive_meta_interface import SensitiveMetaResolutionError
+
+    extractor = FrameMetadataExtractor()
+    before = extractor.meta.model_dump()
+
+    def names(_: str) -> tuple[str, None]:
+        return "PRIVATE_TEST_NAME", None
+
+    def invalid_time(_: str) -> str:
+        return "invalid_PRIVATE_TIME"
+
+    monkeypatch.setattr(extractor, "_extract_patient_names", names)
+    monkeypatch.setattr(extractor, "_extract_examination_time", invalid_time)
+    with pytest.raises(SensitiveMetaResolutionError) as error:
+        extractor.extract_metadata_from_frame_text("nonempty observation")
+    assert extractor.meta.model_dump() == before
+    assert "examination_time" in str(error.value)
+    assert "PRIVATE" not in str(error.value)
+    assert "PRIVATE" not in caplog.text
+
+
+def test_unexpected_extractor_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    extractor = FrameMetadataExtractor()
+
+    def broken(_: str) -> tuple[str, str]:
+        raise RuntimeError("unexpected extractor failure")
+
+    monkeypatch.setattr(extractor, "_extract_patient_names", broken)
+    with pytest.raises(RuntimeError, match="unexpected extractor failure"):
+        extractor.extract_metadata_from_frame_text("nonempty")
+
+
+@pytest.mark.parametrize(
+    "text,gender",
+    [
+        ("Geschlecht: M", "male"),
+        ("Geschlecht: w", "female"),
+        ("female", "female"),
+        ("männlich", "male"),
+        ("Geburtsdatum Untersuchung", "unknown"),
+        ("Temp. Aufnahme", "unknown"),
+    ],
+)
+def test_gender_tokens_use_shared_schema(text: str, gender: str) -> None:
+    assert (
+        FrameMetadataExtractor().extract_metadata_from_frame_text(text)["gender"]
+        == gender
+    )
+
+
+def test_regex_configuration_error_is_not_suppressed() -> None:
+    import re
+
+    extractor = FrameMetadataExtractor()
+    extractor.patient_patterns = ["("]
+    with pytest.raises(re.error):
+        extractor.extract_metadata_from_frame_text("nonempty")

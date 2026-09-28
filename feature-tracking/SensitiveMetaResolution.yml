@@ -15,6 +15,22 @@ source_documents:
   note: Defines attempt-local compute ownership; metadata implementation references are recorded as code
     evidence below.
 definition_of_done:
+- id: atomic_frame_observation
+  category: functionality
+  title: Frame metadata validates one observation before accumulation
+  acceptance:
+  - One complete candidate updates metadata atomically; invalid candidates preserve accumulated values.
+  - Validation failures expose field names and error codes without clinical values, and propagate to the import owner.
+  - Unexpected extractor failures propagate rather than returning partial metadata.
+  required: true
+  verification:
+    kind: command
+    command: [.devenv/state/venv/bin/pytest, tests/test_frame_metadata_extractor_dates.py, tests/test_sensitive_meta_interface.py, -q]
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    assessed_by: codex-gc02-import-20260928
+    assessed_at: '2026-09-28T07:36:08.360184+00:00'
 - id: collected_prediction_at_processing_boundaries
   category: testing
   title: Collected metadata survives FrameCleaner and ReportReader return boundaries

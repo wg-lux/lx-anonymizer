@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Mapping
 from datetime import date
 from typing import cast
@@ -9,6 +10,22 @@ from lx_dtypes.models.meta.SensitiveMeta import (
     SensitiveMetaStateDataDict,
 )
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+
+logger = logging.getLogger(__name__)
+
+
+def _validation_codes(error: ValidationError) -> str:
+    # Never include input, message, context, arbitrary keys, or clinical values.
+    return ",".join(
+        sorted(
+            {
+                f"{item['loc'][0] if item['loc'] and item['loc'][0] in DTypeSensitiveMeta.model_fields else 'metadata'}:{item['type']}"
+                for item in error.errors(
+                    include_input=False, include_context=False, include_url=False
+                )
+            }
+        )
+    )
 
 
 class SensitiveMetaResolutionError(ValueError):
@@ -78,9 +95,11 @@ class SensitiveMeta(DTypeSensitiveMeta):
         model_type = type(self)
         try:
             validated_updates = model_type.from_mixed_mapping(payload)
-        except ValidationError:
+        except ValidationError as exc:
+            codes = _validation_codes(exc)
+            logger.error("sensitive_metadata_validation_failed codes=%s", codes)
             raise SensitiveMetaResolutionError(
-                "Invalid sensitive metadata update"
+                f"Invalid sensitive metadata update ({codes})"
             ) from None
 
         excluded_fields = {"created_at", "sensitive_meta_state", "uuid"}
@@ -98,9 +117,11 @@ class SensitiveMeta(DTypeSensitiveMeta):
             # Date-role repair belongs to one observation, never to a merge of
             # observations: swapping here could overwrite an established DOB.
             merged = DTypeSensitiveMeta.model_validate(self.model_dump() | fill_updates)
-        except ValidationError:
+        except ValidationError as exc:
+            codes = _validation_codes(exc)
+            logger.error("sensitive_metadata_validation_failed codes=%s", codes)
             raise SensitiveMetaResolutionError(
-                "Inconsistent sensitive metadata update"
+                f"Inconsistent sensitive metadata update ({codes})"
             ) from None
 
         # Preserve validated nested model instances; model_dump() would flatten
