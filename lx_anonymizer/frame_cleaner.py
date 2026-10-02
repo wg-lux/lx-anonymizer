@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, List, cast
+from typing import Any, List, Literal, cast
 
 import cv2
 import numpy as np
@@ -56,6 +56,7 @@ from lx_anonymizer.paper_metrics import (
     build_video_paper_evaluation_metrics,
 )
 from lx_anonymizer.processing_contracts import (
+    MetadataAnalysisCoverage,
     VideoAnonymizationRequest,
     VideoAnonymizationResult,
 )
@@ -79,6 +80,13 @@ from lx_anonymizer.text_detection.phi_region_detector import (
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_encoder, video_processor
+from lx_anonymizer.video_processing.analysis_budget import (
+    DEFAULT_MAX_ANALYSIS_SECONDS,
+    FrameAnalysisBudgetExceeded,
+    check_analysis_budget,
+    metadata_probe_frames,
+    validate_analysis_budget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +120,10 @@ class FrameCleanerSamplingProfile:
     max_retained_observations: int = 100_000
     max_retained_texts: int = 128
     ocr_inference_threads: int = 2
+    max_analysis_seconds: float = DEFAULT_MAX_ANALYSIS_SECONDS
 
     def __post_init__(self) -> None:
+        validate_analysis_budget(self.max_analysis_seconds)
         if (
             min(
                 self.max_frames_to_sample,
@@ -197,6 +207,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
     _previous_ocr_result: tuple[str, float, dict[str, object]] | None
     _metadata_text_cache: OrderedDict[str, None]
     _ocr_cache_hits: int
+    _metadata_analysis: MetadataAnalysisCoverage | None
     _phi_sample_stride: int
     _phi_sample_limit: int
     _phi_frames_processed: int
@@ -333,6 +344,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self._previous_ocr_result: tuple[str, float, dict[str, object]] | None = None
         self._metadata_text_cache: OrderedDict[str, None] = OrderedDict()
         self._ocr_cache_hits = 0
+        self._metadata_analysis: MetadataAnalysisCoverage | None = None
         self._phi_sample_stride = 1
         self._phi_sample_limit = self.sampling_profile.max_frames_to_sample
         self._phi_frames_processed = 0
@@ -425,12 +437,18 @@ class FrameCleaner(FrameCleanerVideoMixin):
             technique=request.technique,
             device=request.device,
         )
+        coverage_payload = raw_metadata.get("metadata_analysis")
         return VideoAnonymizationResult(
             source_path=request.source_path,
             artifact_path=(
                 None if request.technique == "extract_only" else result_path
             ),
             metadata=VideoMeta.model_validate(raw_metadata),
+            metadata_analysis=(
+                MetadataAnalysisCoverage.model_validate(coverage_payload)
+                if coverage_payload is not None
+                else None
+            ),
         )
 
     @staticmethod
@@ -692,6 +710,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 "phi_detector_frames_processed": self._phi_frames_processed,
                 "phi_detector_sample_limit": self._phi_sample_limit,
             }
+        if self._metadata_analysis is not None:
+            payload["metadata_analysis"] = self._metadata_analysis.model_dump(
+                mode="json"
+            )
         for field_name, value in raw_sensitive_payload.items():
             payload.setdefault(field_name, value)
         if paper_evaluation_metrics is not None:
@@ -738,11 +760,41 @@ class FrameCleaner(FrameCleanerVideoMixin):
         best_ocr_text = ""
         best_ocr_conf = -1.0
         previous_metadata: dict[str, object] | None = None
+        analysis_started_at = time.monotonic()
+        inspected_frame_numbers: list[int] = []
+        probes: set[int] | None = None
+        cap_reason: (
+            Literal["projected_deadline_exceeded", "deadline_exceeded"] | None
+        ) = None
+
+        def check_budget() -> None:
+            if self._analyzes_every_frame():
+                check_analysis_budget(
+                    # After projection admission fails, enforce the elapsed
+                    # ceiling while allowing explicitly bounded metadata probes.
+                    total_frames=total_frames,
+                    completed_frames=frames_processed,
+                    elapsed_seconds=time.monotonic() - analysis_started_at,
+                    maximum_seconds=self.sampling_profile.max_analysis_seconds,
+                    project_completion=probes is None,
+                )
 
         frames = self._iter_video(video_path, total_frames)
         try:
             for idx, gray_frame, stride in frames:
                 _ = stride
+                try:
+                    check_budget()
+                except FrameAnalysisBudgetExceeded as exc:
+                    if technique == "remove_frames":
+                        raise
+                    if exc.reason == "deadline_exceeded":
+                        cap_reason = "deadline_exceeded"
+                        break
+                    cap_reason = "projected_deadline_exceeded"
+                    probes = metadata_probe_frames(total_frames)
+                if probes is not None and idx not in probes:
+                    continue
                 if not self._analyzes_every_frame() and frames_processed >= max_samples:
                     logger.info(
                         "Reached maximum frame sample limit. Stopping analysis."
@@ -784,6 +836,17 @@ class FrameCleaner(FrameCleanerVideoMixin):
                     self.sensitive_meta.safe_update(accumulated.model_dump())
 
                 frames_processed += 1
+                inspected_frame_numbers.append(idx)
+                try:
+                    check_budget()
+                except FrameAnalysisBudgetExceeded as exc:
+                    if technique == "remove_frames":
+                        raise
+                    if exc.reason == "deadline_exceeded":
+                        cap_reason = "deadline_exceeded"
+                        break
+                    cap_reason = "projected_deadline_exceeded"
+                    probes = metadata_probe_frames(total_frames)
 
                 if self._should_stop_frame_analysis(
                     technique=technique,
@@ -798,6 +861,17 @@ class FrameCleaner(FrameCleanerVideoMixin):
         finally:
             if isinstance(frames, Generator):
                 frames.close()
+
+        if self._analyzes_every_frame():
+            self._metadata_analysis = MetadataAnalysisCoverage(
+                total_frames=total_frames,
+                inspected_frame_numbers=inspected_frame_numbers,
+                complete=len(inspected_frame_numbers) == total_frames,
+                mode="exhaustive" if probes is None else "interval_sampled",
+                cap_reason=cap_reason,
+                elapsed_seconds=time.monotonic() - analysis_started_at,
+                maximum_seconds=self.sampling_profile.max_analysis_seconds,
+            )
 
         return FrameAnalysisResult(
             accumulated=accumulated,

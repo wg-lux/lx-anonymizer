@@ -450,6 +450,7 @@ class FrameOCR:
         try:
             import onnxruntime as ort  # type: ignore[import-untyped]
         except ImportError:
+            logger.info("To use RapidOCR (recommended) install lx-anonymizer[cpu] or lx-anonymizer[gpu] if you have CUDA.")
             return ()
 
         providers = cast(Sequence[object], cast(Any, ort).get_available_providers())

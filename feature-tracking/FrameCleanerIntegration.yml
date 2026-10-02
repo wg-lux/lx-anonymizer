@@ -16,6 +16,30 @@ invariants:
   - Input media is immutable and output is one unpublished attempt-owned candidate.
   - Integrity, FFmpeg, FFprobe, masking, and cancellation failures raise loudly and clean only invocation-owned temporary artifacts.
 definition_of_done:
+  - id: bounded_metadata_return
+    category: operations
+    title: Infeasible exhaustive OCR returns useful bounded metadata without weakening overlay masking
+    acceptance:
+      - Exhaustive analysis has a finite positive caller-configurable time budget, defaulting to 3600 seconds; warmup requires at least 32 inspected frames and 30 elapsed seconds before throughput projection.
+      - On infeasible projected completion, mask_overlay and extract_only use at most 128 interval-subdivision probe positions in addition to the inspected prefix, preserving immutable source order and useful collected metadata.
+      - On elapsed budget exhaustion, those modes return partial metadata with validated inspected frame numbers, completeness, mode, cap reason and elapsed budget; no missing value is invented.
+      - Whole-video overlay masking still covers every output frame and preserves the candidate contract; human anonymization validation remains a separate application gate. Partial analysis cannot drive remove_frames.
+      - Decoder failures, actual OCR failures and invalid metadata coverage still propagate; the analysis budget is checked around synchronous calls and does not claim to preempt a hung native call.
+    required: true
+    verification:
+      kind: command
+      command: [.venv/bin/pytest, tests/test_frame_analysis_budget.py, tests/test_exhaustive_video_metadata.py, tests/test_video_anonymization_e2e.py, tests/test_processing_strands.py, -q]
+      timeout_seconds: 600
+    assessment:
+      status: in_progress
+      assessed_by: codex-dataset-audit-20261002
+      assessed_at: '2026-10-02'
+      evidence:
+        - kind: command
+          reference: 78 focused tests passed in 16.59 seconds; full repository Pyright reports 0 errors; no added lint findings.
+        - kind: document
+          reference: feature-tracking/reports/gc-02-ocr-runtime-diagnostics.yml
+      note: Local source implementation is verified, including real full-video masking after partial metadata return. Deployed runtime remains unchanged; representative host acceptance and ONNX package conflict repair remain outstanding.
   - id: redacted_ocr_progress
     category: operations
     title: Long exhaustive OCR runs expose bounded aggregate telemetry
@@ -36,7 +60,7 @@ definition_of_done:
     category: functionality
     title: Every source frame contributes to patient metadata extraction
     acceptance:
-      - The exhaustive profile uses full-frame RapidOCR without sample caps, ROI exclusions, vision LLM calls, or metadata-driven early stopping.
+      - Within its analysis budget, the exhaustive profile uses full-frame RapidOCR without sample caps, ROI exclusions, vision LLM calls, or metadata-driven early stopping. Explicit budget caps are governed by bounded_metadata_return.
       - Sequential decoding preserves frame order and closes the decoder on success, cancellation, or failure; incomplete decoding raises.
       - Only pixel-identical consecutive frames reuse OCR; changed pixels always trigger inference.
       - Repeated text extraction and retained LLM candidates are bounded per invocation; observation capacity exhaustion raises.

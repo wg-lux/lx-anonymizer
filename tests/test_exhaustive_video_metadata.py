@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import cv2
 import numpy as np
 import pytest
+from lx_dtypes.models.meta.VideoMeta import FrameProcessResult
 
 from lx_anonymizer.frame_cleaner import (
     FrameCleaner,
@@ -18,7 +19,8 @@ from lx_anonymizer.frame_cleaner import (
     VideoAnonymizationError,
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
-from lx_anonymizer.runtime_types import ImageArray as ImageArray
+from lx_anonymizer.runtime_types import ImageArray
+from lx_anonymizer.video_processing.analysis_budget import FrameAnalysisBudgetExceeded
 
 
 class _VideoWriter(Protocol):
@@ -193,6 +195,121 @@ def test_ocr_failure_closes_decoder_and_does_not_return_metadata(
     capture.release.assert_called_once()
     assert cleaner._run_lock.acquire(blocking=False)
     cleaner._run_lock.release()
+
+
+def test_analysis_cap_returns_metadata_and_releases_invocation(
+    tmp_path: Path,
+) -> None:
+    # Arrange: a real decoder and a deadline crossed by the first OCR call.
+    source = _source(tmp_path, 0, count=3)
+    original_bytes = source.read_bytes()
+    cleaner = _cleaner()
+    cleaner.sampling_profile = replace(cleaner.sampling_profile, max_analysis_seconds=1)
+    with (
+        patch("lx_anonymizer.frame_cleaner.time.monotonic", side_effect=[0, 0, 2, 2]),
+        patch.object(
+            cleaner,
+            "_process_frame_result",
+            return_value=FrameProcessResult(
+                is_sensitive=True,
+                metadata={"first_name": "Anna"},
+                ocr_text="Anna",
+                ocr_confidence=0.95,
+            ),
+        ) as process,
+    ):
+        # Act: a cap preserves discovered metadata and declares incomplete coverage.
+        result_path, metadata = cleaner.clean_video(
+            source, None, None, Fraction(25, 1), technique="extract_only"
+        )
+    # Assert: only one frame was attempted; the immutable source is preserved.
+    process.assert_called_once()
+    assert result_path == source
+    assert metadata["first_name"] == "Anna"
+    coverage = cleaner._metadata_analysis
+    assert coverage is not None
+    assert coverage.complete is False
+    assert coverage.inspected_frame_numbers == [0]
+    assert coverage.cap_reason == "deadline_exceeded"
+    assert metadata["metadata_analysis"] == coverage.model_dump(mode="json")
+    assert source.read_bytes() == original_bytes
+    assert cleaner._previous_ocr_frame is None
+    assert cleaner._previous_ocr_result is None
+    assert cleaner._run_lock.acquire(blocking=False)
+    cleaner._run_lock.release()
+
+
+def test_capped_analysis_cannot_drive_sensitive_frame_removal(tmp_path: Path) -> None:
+    # Arrange / Act / Assert: this technique needs complete sensitive-frame discovery.
+    source = _source(tmp_path, 0, count=3)
+    cleaner = _cleaner()
+    cleaner.sampling_profile = replace(cleaner.sampling_profile, max_analysis_seconds=1)
+    with (
+        patch("lx_anonymizer.frame_cleaner.time.monotonic", side_effect=[0, 2]),
+        pytest.raises(FrameAnalysisBudgetExceeded),
+    ):
+        cleaner.clean_video(
+            source,
+            None,
+            None,
+            Fraction(25, 1),
+            output_path=tmp_path / "candidate.mp4",
+            technique="remove_frames",
+        )
+    assert not (tmp_path / "candidate.mp4").exists()
+
+
+def test_projected_cap_probes_timeline_and_finds_name_at_last_frame(
+    tmp_path: Path,
+) -> None:
+    # Arrange: a name beyond the first 32 frames, at the far end of a real source.
+    source = _source(tmp_path, 259, count=260)
+    cleaner = _cleaner()
+
+    def guard(
+        *,
+        total_frames: int,
+        completed_frames: int,
+        elapsed_seconds: float,
+        maximum_seconds: float,
+        project_completion: bool,
+    ) -> None:
+        if project_completion and total_frames == 260 and completed_frames == 32:
+            raise FrameAnalysisBudgetExceeded("projected_deadline_exceeded")
+
+    def process(
+        *,
+        gray_frame: ImageArray,
+        endoscope_image_roi: object,
+        endoscope_data_roi_nested: object,
+        frame_id: int,
+        collect_for_batch: bool,
+        high_quality_ocr: bool,
+    ) -> FrameProcessResult:
+        has_name = frame_id == 259
+        return FrameProcessResult(
+            is_sensitive=has_name,
+            metadata={"first_name": "Anna"} if has_name else {},
+            ocr_text="Anna" if has_name else "",
+            ocr_confidence=0.95,
+        )
+
+    with (
+        patch("lx_anonymizer.frame_cleaner.check_analysis_budget", side_effect=guard),
+        patch.object(cleaner, "_process_frame_result", side_effect=process),
+    ):
+        # Act: infeasible exhaustive OCR becomes bounded timeline probing.
+        _, metadata = cleaner.clean_video(
+            source, None, None, Fraction(25, 1), technique="extract_only"
+        )
+    # Assert: useful metadata survives; no claim is made about uninspected frames.
+    assert metadata["first_name"] == "Anna"
+    coverage = cleaner._metadata_analysis
+    assert coverage is not None
+    assert coverage.mode == "interval_sampled"
+    assert coverage.complete is False
+    assert {0, 129, 259} <= set(coverage.inspected_frame_numbers)
+    assert len(coverage.inspected_frame_numbers) <= 32 + 128
 
 
 def test_observation_capacity_fails_loudly(tmp_path: Path) -> None:

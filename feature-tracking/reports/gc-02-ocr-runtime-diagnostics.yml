@@ -1,0 +1,131 @@
+schema_version: '1.0'
+assessor: codex-dataset-audit-20261002
+date: '2026-10-02'
+host: gc-02
+profile: site-client
+inventory_address: 172.16.255.102
+execution: Local read-only diagnostics; no SSH, service restart, installation or data mutation.
+references:
+  skill: /home/admin/.codex/skills/lx-annotate-diagnostics/SKILL.md
+  commands: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/Diagnostics.md
+  configuration: /home/admin/luxnix/systems/x86_64-linux/gc-02/default.nix
+  feature: ../FrameCleanerIntegration.yml
+  concurrency: ../../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+source_revision: 246743916071eff8de560212bc827e57810c5ce4
+deployed_versions:
+  lx_anonymizer: '1.0.4'
+  endoreg_db: '1.4.3'
+  lx_annotate: '1.4.3'
+observed_failure:
+  video_id: 15
+  task: endoreg_db.video_reimport
+  task_id: 56585322-2ffe-4acf-9995-9878d2b81226
+  worker: lx-annotate-celery-ffmpeg-worker.service
+  source_frames: 105307
+  source_nominal_fps: 50
+  task_started_utc: '2026-10-01T06:47:36Z'
+  frame_analysis_started_utc: '2026-10-01T06:57:26Z'
+  soft_timeout_utc: '2026-10-01T16:32:49Z'
+  soft_limit_seconds: 35193
+  measured_task_seconds: 35197.675565654004
+  completed_ocr_calls: 11574
+  inference_seconds: 34263.91067412098
+  stage_seconds:
+    detection: 12049.83375068593
+    classification: 395.7259881400322
+    recognition: 21766.133025010073
+  session_providers:
+    detection: [CPUExecutionProvider]
+    classification: [CPUExecutionProvider]
+    recognition: [CPUExecutionProvider]
+  configured_planning_frames_per_second: 5
+  observed_inference_frames_per_second_approximately: 0.338
+  projected_ocr_hours_at_observed_rate_approximately: 86.6
+  exception_chain: RapidOCR ONNXRuntimeError caused by Celery SoftTimeLimitExceeded during inference.
+confirmed_causes:
+  - Exhaustive full-frame OCR could not finish within the estimated reimport budget at measured throughput.
+  - Both onnxruntime and onnxruntime-gpu distributions are installed and own the same import namespace.
+  - The imported native binary SHA-256 matches the CPU distribution RECORD and does not match the GPU distribution RECORD.
+  - ONNX Runtime exposes AzureExecutionProvider and CPUExecutionProvider, with no CUDAExecutionProvider.
+  - NVENC encoding capability did not accelerate any of the three OCR inference stages.
+contributing_resource_observations:
+  worker_cpu_quota: 6 CPU-seconds per second.
+  background_slice_frontend_quota: 0.5 CPU-seconds per second, shared across background workers.
+  request_priority_journal:
+    transitions: 12729
+    first_to_last_record_seconds: 31782.00
+    priority_active_seconds: 17881.27
+    priority_active_fraction: 0.5626
+    note: Fraction covers only the retained transition span, not the complete task. Historical quota values were not emitted with each transition; this is not a measured causal slowdown factor.
+  current_memory:
+    usable_ram_approximately_gib: 15
+    used_swap_approximately_gib: 14
+    note: Current snapshot, not evidence of historical memory pressure during the failed task.
+runtime_health:
+  web: active
+  nginx: active
+  redis: active
+  postgresql: active
+  environment_gate: active_exited
+  master_key_gate: active_exited
+  migration_unit: inactive_dead
+  first_failed_startup_stage: No active startup failure identified in the selected checks.
+  redis_ping: PONG
+  listeners: [443, 8117, 5432, 6379]
+commands_run:
+  - systemctl show lx-annotate-celery-ffmpeg-worker.service lx-annotate-background.slice with resource and state properties.
+  - systemctl is-active lx-annotate.service nginx.service redis-lx-annotate.service postgresql.service.
+  - systemctl show lx-annotate-runtime-env.service lx-annotate-migrate.service lx-annotate-master-key-check.service lx-annotate.service with state properties.
+  - journalctl --namespace=lx-annotate -u lx-annotate-celery-ffmpeg-worker.service --since '2026-10-01 06:40:00 UTC' --until '2026-10-01 16:35:00 UTC' -o json --no-pager.
+  - journalctl --namespace=lx-annotate -u lx-annotate-request-throttle.service --since '2026-10-01 06:47:00 UTC' --until '2026-10-01 16:33:00 UTC' -o json --no-pager, aggregating profile events only.
+  - Service-user Python probes for installed package versions, ONNX providers and native binary ownership; protected environment consumed without printing secrets.
+  - nvidia-smi GPU name, utilization and memory query; free -h; socket listener inspection; Redis PING.
+checks_not_run:
+  - No whole-video reimport or multi-hour benchmark.
+  - No destructive storage, memory-pressure or GPU-stress test.
+  - No Django acceptance command, NixOS rebuild, wheel publication or production dependency repair.
+implemented_safeguard:
+  analysis_budget_seconds_default: 3600
+  configurable_through: FrameCleanerSamplingProfile.max_analysis_seconds
+  projection_warmup_frames: 32
+  projection_warmup_seconds: 30
+  observed_failure_projection_detection_seconds_approximately: 94.7
+  interval_probe_limit: 128
+  partial_metadata:
+    - Preserve collected names and other metadata without inventing missing values.
+    - Validate and expose exact inspected frame numbers, coverage completeness, mode, cap reason and elapsed budget.
+    - Preserve sequential decoding while reducing expensive OCR to bounded interval-subdivision positions after projected exhaustion.
+  candidate_behavior:
+    - mask_overlay still processes every source frame and can return the unpublished candidate with partial metadata, as explicitly requested by the user.
+    - Publication remains owned by endoreg-db; human anonymization acceptance remains a separate gate.
+    - extract_only returns the immutable source and useful partial metadata.
+    - remove_frames still fails on a cap, because incomplete sensitivity detection cannot safely decide which frames to remove.
+    - Decoder and actual OCR failures remain errors; only the explicit budget cap is handled gracefully.
+  limitations:
+    - Interval subdivision is a broad timeline sampling schedule, not a monotonic binary search. It can miss isolated overlays outside inspected frames.
+    - Checks surround synchronous OCR and decoder calls; a native call that never returns still requires caller process-level cancellation.
+    - The one-hour budget covers frame analysis, not metadata enrichment, encoding or HLS, whose own budgets remain caller-owned.
+    - The safeguard is a local source change; the deployed wheel runtime has not been changed.
+required_runtime_followup:
+  - Resolve exactly one ONNX Runtime implementation in the release environment and verify actual CUDA session providers if GPU OCR is intended.
+  - Review representative throughput under frontend-priority throttling and size resources and admission budgets from measurements.
+  - Release and deploy the tested lx-anonymizer change through the existing production-source and acceptance workflow.
+verification:
+  status: Passed for the local implementation; no deployed acceptance claimed.
+  environment: Existing .venv synchronized with uv sync --extra dev; test library path taken from the generated devenv shell. Pyright used the existing strict project settings with the actual .venv path and explicit repository source scope.
+  tests:
+    command: .venv/bin/pytest tests/test_frame_analysis_budget.py tests/test_exhaustive_video_metadata.py tests/test_video_anonymization_e2e.py tests/test_frame_cleaner_concurrency.py tests/test_processing_strands.py tests/test_ocr_frame_rapidocr.py -q --tb=short --log-cli-level=CRITICAL
+    result: 78 passed in 16.59 seconds.
+    coverage:
+      - Observed gc-02 throughput triggers projection admission after approximately 95 seconds rather than a nine-hour scan.
+      - Real decoding finds a name at the last source frame after switching to timeline probes.
+      - Elapsed caps retain collected metadata and exact incomplete-coverage evidence.
+      - Real FFmpeg candidate has all ten source frames masked, unchanged immutable input and no audio, despite metadata cap after the first frame.
+      - Partial coverage cannot drive frame removal; malformed coverage is rejected.
+      - Existing OCR failure propagation, instance isolation and typed processing-strand compatibility remain tested.
+  typing:
+    result: Full repository scope, 168 files; 0 errors, 441 warnings in the installed dependency/type-stub environment. The pre-existing configuration points to an absent .devenv venv, so verification supplied an equivalent temporary config selecting .venv.
+  lint:
+    result: Other changed Python files pass Ruff. FrameCleaner has 12 identical findings before and after; no added findings. All changed Python files pass formatting.
+  yaml: Parse verification recorded after final edits.
+  diff: git diff --check passed.

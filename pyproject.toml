@@ -48,7 +48,6 @@ dependencies = [
   "lx-dtypes>=0.3.6",
   "tesserocr>=2.9.1",
   "onnx>=1.12.0,<2.0.0",
-  "onnxruntime>=1.25.1",
   "pandas>=2.3.3",
   "rapidocr>=3.8.1",
   "transformers==4.45.0",
@@ -100,6 +99,7 @@ cpu = [
   "torch>=2.5.1",
   "torchaudio>=2.5.1",
   "torchvision>=0.20.1",
+  "onnxruntime>=1.25.1",
 ]
 
 # CUDA-enabled feature set. Use only on hosts where the NVIDIA
@@ -134,8 +134,18 @@ name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
+[dependency-groups]
+
+cpu = [
+  "torch>=2.5.1",
+  "torchaudio>=2.5.1",
+  "torchvision>=0.20.1",
+  "onnxruntime>=1.25.1",
+]
+
 [tool.uv]
 environments = ["sys_platform == 'linux'"]
+default-groups = ["cpu"]
 conflicts = [
   [
     { extra = "cpu" },

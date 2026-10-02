@@ -43,8 +43,8 @@ This requires the matching lx-anonymizer implementation; deploy the caller and
 compute package together. Existing sampled profiles remain available for
 explicit callers, but cannot establish coverage of single-frame overlays.
 
-The exhaustive profile decodes every source frame sequentially, without a
-sample cap or metadata-driven early stopping. RapidOCR receives the full source
+Within its time budget, the exhaustive profile decodes every source frame
+sequentially, without a sample cap or metadata-driven early stopping. RapidOCR receives the full source
 image, including regions outside configured endoscope coordinates. It does not
 invoke a vision language model per frame or silently switch OCR backends after
 failure. Decoded frame counts must match the declared source frame count.
@@ -70,6 +70,37 @@ masking strategy and does not establish clinical OCR recall or masking accuracy.
 See `exhaustive_metadata_analysis` in the linked FrameCleaner feature definition
 for regression evidence. Deployment performance and recall require representative
 videos on the target hardware.
+
+### Bounded partial metadata
+
+`FrameCleanerSamplingProfile.max_analysis_seconds` defaults to 3600 seconds and
+must be finite and positive. After at least 32 inspected frames and 30 seconds,
+whole-analysis throughput projects the cost of exhaustive coverage. If that
+projection exceeds the budget, `mask_overlay` and `extract_only` continue with
+up to 128 interval-subdivision probe positions across the source timeline, in
+addition to the already inspected prefix. Decoding remains in source order.
+These are timeline probes, not a binary search that can prove absence of names.
+Single-frame overlays outside the probes may be missed.
+
+When elapsed analysis time reaches the budget, these modes gracefully retain
+the collected metadata. The validated `metadata_analysis` payload records
+inspected frame numbers, completeness, mode, cap reason, elapsed seconds and
+the configured maximum. No name or negative observation is invented. The typed
+`process()` result also exposes this coverage. Existing sampled profiles retain
+their current behavior.
+
+Overlay masking still processes the entire video independently of metadata
+sampling and returns an unpublished candidate through the existing boundary.
+The application may publish that candidate into its anonymization-review
+workflow; this does not establish human anonymization acceptance or dataset
+release readiness. `remove_frames` raises on budget exhaustion because its
+masking decisions require complete sensitive-frame discovery. Genuine OCR and
+decoder errors still raise, preserving the existing failure cleanup.
+
+Budget checks surround synchronous decoding and OCR calls. They bound the
+observed repeated slow-inference case, but cannot preempt a native call that
+never returns; the caller's process-level cancellation remains authoritative.
+Finalization, video encoding and HLS have their own caller-owned budgets.
 
 ## Current Concurrency Limitation
 

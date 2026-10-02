@@ -167,6 +167,33 @@ class VideoAnonymizationRequest(BaseModel):
         return self
 
 
+class MetadataAnalysisCoverage(BaseModel):
+    """Explicit metadata coverage; independent of whole-video overlay masking."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    total_frames: int = Field(gt=0)
+    inspected_frame_numbers: list[int]
+    complete: bool
+    mode: Literal["exhaustive", "interval_sampled"]
+    cap_reason: Literal["projected_deadline_exceeded", "deadline_exceeded"] | None
+    elapsed_seconds: float = Field(ge=0, allow_inf_nan=False)
+    maximum_seconds: float = Field(gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_coverage(self) -> MetadataAnalysisCoverage:
+        frames = self.inspected_frame_numbers
+        if frames != sorted(set(frames)) or any(
+            frame < 0 or frame >= self.total_frames for frame in frames
+        ):
+            raise ValueError("Metadata coverage requires unique source-ordered frames")
+        if self.complete != (len(frames) == self.total_frames):
+            raise ValueError(
+                "Metadata completeness must match inspected frame coverage"
+            )
+        return self
+
+
 class VideoAnonymizationResult(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -178,6 +205,7 @@ class VideoAnonymizationResult(BaseModel):
     source_path: Path
     artifact_path: Path | None
     metadata: VideoMeta
+    metadata_analysis: MetadataAnalysisCoverage | None = None
 
 
 RequestT_contra = TypeVar("RequestT_contra", contravariant=True)
@@ -193,6 +221,7 @@ class ProcessingStrand(Protocol[RequestT_contra, ResultT_co]):
 __all__ = [
     "ImageAnonymizationRequest",
     "ImageAnonymizationResult",
+    "MetadataAnalysisCoverage",
     "ProcessingContractError",
     "ProcessingStrand",
     "VideoAnonymizationRequest",

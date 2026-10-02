@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import threading
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 from typing import cast
@@ -22,6 +23,7 @@ from lx_anonymizer.frame_cleaner import (
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
+from lx_anonymizer.video_processing.analysis_budget import FrameAnalysisBudgetExceeded
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 from lx_anonymizer.video_processing.video_utils import (
     detect_video_format as real_detect_video_format,
@@ -97,9 +99,11 @@ def _initialize_deterministic_core(cleaner: FrameCleaner) -> None:
 @pytest.mark.video
 @pytest.mark.ffmpeg
 @pytest.mark.integration
+@pytest.mark.parametrize("capped_metadata", [False, True])
 def test_clean_video_masks_real_media_and_preserves_the_attempt_contract(
     tmp_path: Path,
     mock_central_video_format: MagicMock,
+    capped_metadata: bool,
 ) -> None:
     # Arrange: create a decodable source with visible pixels and an audio stream.
     source = tmp_path / "immutable-source.mp4"
@@ -124,24 +128,38 @@ def test_clean_video_masks_real_media_and_preserves_the_attempt_contract(
         patch.object(FrameCleaner, "_log_hf_cache_status", return_value=None),
         patch.object(FrameCleaner, "_process_frame_result", return_value=clean_frame),
     ):
-        cleaner = FrameCleaner(use_llm=False)
+        cleaner = FrameCleaner(
+            use_llm=False, quality_profile="exhaustive" if capped_metadata else None
+        )
+        if capped_metadata:
+            cleaner.sampling_profile = replace(
+                cleaner.sampling_profile, max_analysis_seconds=1
+            )
 
         # Act: cross the public FrameCleaner boundary and execute real decode/FFmpeg.
-        result_path, raw_metadata = cleaner.clean_video(
-            video_path=source,
-            endoscope_image_roi={
-                "x": 40,
-                "y": 30,
-                "width": 80,
-                "height": 60,
-                "image_width": 160,
-                "image_height": 120,
-            },
-            endoscope_data_roi_nested=None,
-            source_frame_rate=Fraction(10, 1),
-            output_path=candidate,
-            technique="mask_overlay",
-        )
+        with (
+            patch(
+                "lx_anonymizer.frame_cleaner.check_analysis_budget",
+                side_effect=[None, FrameAnalysisBudgetExceeded("deadline_exceeded")],
+            )
+            if capped_metadata
+            else patch("lx_anonymizer.frame_cleaner.check_analysis_budget")
+        ):
+            result_path, raw_metadata = cleaner.clean_video(
+                video_path=source,
+                endoscope_image_roi={
+                    "x": 40,
+                    "y": 30,
+                    "width": 80,
+                    "height": 60,
+                    "image_width": 160,
+                    "image_height": 120,
+                },
+                endoscope_data_roi_nested=None,
+                source_frame_rate=Fraction(10, 1),
+                output_path=candidate,
+                technique="mask_overlay",
+            )
 
     # Assert: ownership, media integrity, anonymization, and typed metadata hold.
     assert result_path == candidate
@@ -159,14 +177,25 @@ def test_clean_video_masks_real_media_and_preserves_the_attempt_contract(
     assert video_streams[0]["nb_frames"] == "10"
 
     capture = cv2.VideoCapture(str(candidate))
+    masked_frames = 0
     try:
-        ok, frame = capture.read()
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            assert isinstance(frame, np.ndarray)
+            assert float(frame[5:20, 5:20].mean()) < 8.0
+            assert float(frame[40:80, 55:105].mean()) > 240.0
+            masked_frames += 1
     finally:
         capture.release()
-    assert ok is True
-    assert isinstance(frame, np.ndarray)
-    assert float(frame[5:20, 5:20].mean()) < 8.0
-    assert float(frame[40:80, 55:105].mean()) > 240.0
+    assert masked_frames == 10
+    if capped_metadata:
+        coverage = cleaner._metadata_analysis
+        assert coverage is not None
+        assert coverage.complete is False
+        assert coverage.inspected_frame_numbers == [0]
+        assert raw_metadata["metadata_analysis"] == coverage.model_dump(mode="json")
 
     metadata = VideoMeta.model_validate(raw_metadata)
     assert metadata.anonymizer_provenance is not None
