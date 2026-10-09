@@ -50,11 +50,11 @@ class LLMService:
     ) -> None:
         self.provider, self.base_url = resolve_connection(provider, base_url)
         self.model_name = (
-            settings.LLM_MODEL if model_name is None else model_name
+            settings.llm_ocr_model_for(self.provider) if model_name is None else model_name
         ).strip()
         self.timeout = settings.LLM_TIMEOUT if timeout is None else timeout
         if not self.model_name:
-            raise ValueError("LLM_MODEL must not be empty")
+            raise ValueError("LLM OCR model must not be empty")
         if not 1 <= self.timeout <= 120:
             raise ValueError("LLM timeout must be between 1 and 120 seconds")
 

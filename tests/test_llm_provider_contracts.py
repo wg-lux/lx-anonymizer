@@ -106,6 +106,7 @@ def test_invalid_answers_fail_closed(provider: str, payload: object) -> None:
     "provider,model",
     [
         ("ollama", "lx-gemma4-e2b-json:latest"),
+        ("ollama", "lx-gemma4-e2b-json"),
         ("ollama", "qwen3:8b"),
         ("vllm", "Qwen/Qwen2.5-1.5B-Instruct"),
         ("vllm", "glm-5.2"),
@@ -172,6 +173,10 @@ def test_discovery_and_inference_contract(
     payload = cast(dict[str, object], captured["json"])
     assert payload["model"] == model
     if provider == "ollama":
+        if model.startswith("lx-gemma4-e2b-json"):
+            assert payload["think"] is False
+        else:
+            assert "think" not in payload
         schema = cast(dict[str, object], payload["format"])
     else:
         response_format = cast(dict[str, object], payload["response_format"])

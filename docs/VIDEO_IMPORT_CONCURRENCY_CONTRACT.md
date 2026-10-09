@@ -36,6 +36,23 @@ Those responsibilities remain in `endoreg-db`. A successful
 `FrameCleaner.clean_video` return never means that a canonical artifact may be
 published.
 
+### Host frame-provenance integration
+
+`FrameCleaner` accepts optional, instance-local `execution_hooks` using
+`VideoExecutionHooks` from `runtime_types`. Existing method signatures and standalone
+behavior remain available. The host encoder callback executes the library-built
+command with the host's bounded process policy and actual encoder provenance.
+The decoder observation context spans decoding through finalization and receives
+the source index immediately after each successful frame write. Exceptions propagate
+through that context; the host persists evidence only after validating the complete
+input/output sequences. Remuxing the decoder-produced video does not create another
+canonical generation or invent encoder ancestry.
+
+With hooks, masking preserves dimensions and encodes even a full-image region;
+empty frame-removal requests fail instead of using stream copy. Hooks contain no
+shared per-video state and must not be installed by global monkey-patching.
+The host and this optional interface must be deployed together.
+
 ## Exhaustive patient metadata analysis
 
 Endoreg video import selects `FrameCleaner(quality_profile="exhaustive")`.

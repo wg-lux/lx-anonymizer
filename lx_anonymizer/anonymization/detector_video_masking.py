@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
@@ -10,6 +11,7 @@ import cv2
 from PIL import Image
 
 from lx_anonymizer.runtime_types import Box as Box
+from lx_anonymizer.runtime_types import VideoExecutionHooks
 from lx_anonymizer.setup.custom_logger import logger
 from lx_anonymizer.text_detection.phi_region_detector import (
     detect_phi_regions_from_settings,
@@ -34,8 +36,14 @@ class DetectorVideoMaskingSummary:
 class DetectorVideoMasker:
     """Apply configured PHI-detector regions to every decoded video frame."""
 
-    def __init__(self, detector: RegionDetector | None = None) -> None:
+    def __init__(
+        self,
+        detector: RegionDetector | None = None,
+        *,
+        execution_hooks: VideoExecutionHooks | None = None,
+    ) -> None:
         self._detector = detector or detect_phi_regions_from_settings
+        self._execution_hooks = execution_hooks
 
     def mask_video(
         self, input_video: Path, output_video: Path
@@ -46,15 +54,23 @@ class DetectorVideoMasker:
             raise FileNotFoundError(f"Input video not found: {input_video}")
 
         output_video.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix="lx-anonymizer-detector-mask-", dir=output_video.parent
-        ) as temp_dir:
+        observation = (
+            self._execution_hooks.observe_decoded_frames(input_video, output_video)
+            if self._execution_hooks is not None
+            else nullcontext(None)
+        )
+        with (
+            observation as observe_frame,
+            tempfile.TemporaryDirectory(
+                prefix="lx-anonymizer-detector-mask-", dir=output_video.parent
+            ) as temp_dir,
+        ):
             video_only = Path(temp_dir) / "masked-video.mp4"
-            summary = self._mask_frames(input_video, video_only)
+            summary = self._mask_frames(input_video, video_only, observe_frame)
             self._finalize_video_only(video_only, output_video)
 
-        if not output_video.is_file() or output_video.stat().st_size <= 0:
-            raise RuntimeError("Detector-assisted video output is missing or empty")
+            if not output_video.is_file() or output_video.stat().st_size <= 0:
+                raise RuntimeError("Detector-assisted video output is missing or empty")
         return DetectorVideoMaskingSummary(
             frames_processed=summary.frames_processed,
             frames_with_redactions=summary.frames_with_redactions,
@@ -63,7 +79,10 @@ class DetectorVideoMasker:
         )
 
     def _mask_frames(
-        self, input_video: Path, video_only_output: Path
+        self,
+        input_video: Path,
+        video_only_output: Path,
+        observe_frame: Callable[[int], None] | None = None,
     ) -> DetectorVideoMaskingSummary:
         capture = cv2.VideoCapture(str(input_video))
         if not capture.isOpened():
@@ -110,6 +129,8 @@ class DetectorVideoMasker:
                     frames_with_redactions += 1
                     redactions_applied += valid_regions
                 writer.write(frame)  # pyright: ignore[reportUnknownMemberType]
+                if observe_frame is not None:
+                    observe_frame(frames_processed)
                 frames_processed += 1
         finally:
             capture.release()
@@ -150,7 +171,9 @@ class DetectorVideoMasker:
             str(output_video),
         ]
         try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
+            subprocess.run(
+                command, capture_output=True, text=True, check=True, timeout=300
+            )
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"Could not finalize detector-assisted video: {exc.stderr}"

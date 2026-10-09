@@ -38,7 +38,6 @@ def _run_ocr_text_extraction(image: Image.Image) -> str:
         recognized_text = LLMService(
             provider="ollama",
             base_url=settings.resolved_llm_base_url,
-            model_name=settings.LLM_MODEL,
             timeout=settings.LLM_TIMEOUT,
         ).recognize_image(image, candidate_text=conventional_text)
         return recognized_text or conventional_text

@@ -6,7 +6,11 @@ ImageArray covers grayscale and color uint8 buffers; PixelArray also supports
 source DICOM pixel depths. Neither alias asserts a channel layout.
 """
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from pathlib import Path
+from subprocess import CompletedProcess
 from typing import Protocol, TypeAlias, TypedDict, overload
 
 import numpy as np
@@ -17,6 +21,21 @@ ImageArray: TypeAlias = npt.NDArray[np.uint8]
 PixelArray: TypeAlias = npt.NDArray[np.generic]
 OcrResult: TypeAlias = tuple[str, Box]
 ModifiedImageMap: TypeAlias = dict[tuple[str, str], str]
+
+
+@dataclass(frozen=True)
+class VideoExecutionHooks:
+    """Attempt-local host integration for canonical video frame provenance.
+
+    The encoder runner must raise on failure. The decoder observer encloses
+    decoding and finalization; each callback identifies a source frame written
+    to the output. Hosts own evidence persistence, never the masking algorithm.
+    """
+
+    run_encoder: Callable[[list[str]], CompletedProcess[str]]
+    observe_decoded_frames: Callable[
+        [Path, Path], AbstractContextManager[Callable[[int], None]]
+    ]
 
 
 class OcrConfig(TypedDict):

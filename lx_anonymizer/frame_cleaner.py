@@ -68,6 +68,7 @@ from lx_anonymizer.regex_patterns import (
     NON_ALNUM_COMPACT_RE,
     NON_ALNUM_SPACE_RE,
 )
+from lx_anonymizer.runtime_types import VideoExecutionHooks
 from lx_anonymizer.sensitive_meta_interface import (
     SensitiveMeta,
     SensitiveMetaResolutionError,
@@ -220,7 +221,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         quality_profile: FrameCleanerQualityProfile | str | None = None,
         sampling_profile: FrameCleanerSamplingProfile | None = None,
         region_detector: PhiRegionDetector | None = None,
+        execution_hooks: VideoExecutionHooks | None = None,
     ):
+        self.execution_hooks = execution_hooks
         self.use_minicpm = use_minicpm
         self.minicpm_config: dict[str, object] = dict(minicpm_config or {})
         self.sampling_profile = (
@@ -326,7 +329,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
 
     def _init_masking(self) -> None:
-        self.mask_application = MaskApplication(self.preferred_encoder.model_dump())
+        self.mask_application = MaskApplication(
+            self.preferred_encoder.model_dump(), execution_hooks=self.execution_hooks
+        )
         self.default_mask_config = self.mask_application.default_mask_config
         self._mask_video_streaming = self.mask_application.mask_video_streaming
         self._create_mask_config_from_roi = (
@@ -622,7 +627,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
         requires human validation of the resulting artifact.
         """
         return DetectorVideoMasker(
-            detector=lambda image: detect_phi_regions(image, self.region_detector)
+            detector=lambda image: detect_phi_regions(image, self.region_detector),
+            execution_hooks=self.execution_hooks,
         ).mask_video(input_video, output_video)
 
     def _prepare_video_sampling(self, video_path: Path) -> tuple[int, int]:

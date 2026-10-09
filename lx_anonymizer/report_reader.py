@@ -714,7 +714,6 @@ class ReportReader(ReportReaderExtractionMixin):
                 recognized_text = LLMService(
                     provider="ollama",
                     base_url=settings.resolved_llm_base_url,
-                    model_name=settings.LLM_MODEL,
                     timeout=settings.LLM_TIMEOUT,
                 ).recognize_image(pil_image, candidate_text=conventional_text)
                 if recognized_text:

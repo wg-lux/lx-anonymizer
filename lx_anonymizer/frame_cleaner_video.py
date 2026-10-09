@@ -2,24 +2,27 @@ import logging
 import math
 import subprocess
 import tempfile
-from pathlib import Path
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Iterator, List, Optional, Protocol, Tuple, cast
 
 import cv2
 import numpy as np
+from lx_dtypes.models.contracts.video_processing import VideoEncoderConfig
 from lx_dtypes.models.meta.VideoMeta import (
     FrameRemovalFilterArgs,
     FrameRemovalPlan,
     VideoRoiBox,
 )
-from lx_dtypes.models.contracts.video_processing import VideoEncoderConfig
 
 from lx_anonymizer.config import settings
+from lx_anonymizer.runtime_types import VideoExecutionHooks
 from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
 from lx_anonymizer.video_processing import video_utils
 from lx_anonymizer.video_processing.ffmpeg_filters import (
     build_frame_drop_filters,
+)
+from lx_anonymizer.video_processing.ffmpeg_filters import (
     frame_ranges as build_frame_ranges,
 )
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
@@ -41,6 +44,7 @@ class _VideoCaptureProtocol(Protocol):
 
 
 class FrameCleanerVideoMixin:
+    execution_hooks: VideoExecutionHooks | None = None
     video_encoder: VideoEncoder
     video_processor: VideoProcessor
     preferred_encoder: VideoEncoderConfig
@@ -60,6 +64,8 @@ class FrameCleanerVideoMixin:
         total_frames: Optional[int] = None,
         use_named_pipe: bool = True,
     ) -> bool:
+        if self.execution_hooks is not None and not frames_to_remove:
+            raise ValueError("Frame removal requires at least one selected frame")
         plan = self._build_frame_removal_plan(
             original_video=original_video,
             frames_to_remove=frames_to_remove,
@@ -269,8 +275,11 @@ class FrameCleanerVideoMixin:
             stderr=subprocess.DEVNULL,
         )
 
-    @staticmethod
-    def _run_checked(cmd: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+    def _run_checked(
+        self, cmd: list[str], timeout: int
+    ) -> subprocess.CompletedProcess[str]:
+        if self.execution_hooks is not None:
+            return self.execution_hooks.run_encoder(cmd)
         result = subprocess.run(
             cmd,
             capture_output=True,

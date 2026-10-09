@@ -1,4 +1,7 @@
 import shutil
+import subprocess
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -7,6 +10,7 @@ import pytest
 from PIL import Image
 
 from lx_anonymizer.anonymization.detector_video_masking import DetectorVideoMasker
+from lx_anonymizer.runtime_types import VideoExecutionHooks
 
 
 def _write_test_video(path: Path, *, frames: int = 3) -> None:
@@ -36,12 +40,16 @@ def test_detector_video_masker_applies_regions_to_every_frame(tmp_path: Path) ->
         calls.append(image)
         return [(8, 6, 32, 20)]
 
-    summary = DetectorVideoMasker(detector)._mask_frames(source, masked)
+    written_indices: list[int] = []
+    summary = DetectorVideoMasker(detector)._mask_frames(
+        source, masked, written_indices.append
+    )
 
     assert summary.frames_processed == 3
     assert summary.frames_with_redactions == 3
     assert summary.redactions_applied == 3
     assert len(calls) == 3
+    assert written_indices == [0, 1, 2]
 
     capture = cv2.VideoCapture(str(masked))
     decoded = 0
@@ -99,3 +107,57 @@ def test_detector_video_masker_finalizes_playable_output(
         capture.release()
     assert ok is True
     assert frame is not None
+
+
+@pytest.mark.parametrize("finalization_fails", [False, True])
+def test_observer_encloses_written_frames_and_finalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, finalization_fails: bool
+) -> None:
+    source, output = tmp_path / "source.mp4", tmp_path / "output.mp4"
+    _write_test_video(source, frames=2)
+    events: list[str | int] = []
+
+    @contextmanager
+    def observe(
+        input_path: Path, output_path: Path
+    ) -> Generator[Callable[[int], None], None, None]:
+        assert (input_path, output_path) == (source, output)
+        events.append("start")
+        try:
+            yield events.append
+        except RuntimeError:
+            events.append("failed")
+            raise
+        else:
+            assert output.is_file()
+            events.append("complete")
+
+    def encode(_command: list[str]) -> subprocess.CompletedProcess[str]:
+        raise AssertionError(
+            "Decoder masking must not invent a second encoder ancestry"
+        )
+
+    def finalize(masked: Path, destination: Path) -> None:
+        events.append("finalize")
+        if finalization_fails:
+            raise RuntimeError("finalization failed")
+        shutil.copyfile(masked, destination)
+
+    monkeypatch.setattr(
+        DetectorVideoMasker, "_finalize_video_only", staticmethod(finalize)
+    )
+    masker = DetectorVideoMasker(
+        lambda _image: [], execution_hooks=VideoExecutionHooks(encode, observe)
+    )
+    if finalization_fails:
+        with pytest.raises(RuntimeError, match="finalization failed"):
+            masker.mask_video(source, output)
+    else:
+        assert masker.mask_video(source, output).frames_processed == 2
+    assert events == [
+        "start",
+        0,
+        1,
+        "finalize",
+        "failed" if finalization_fails else "complete",
+    ]

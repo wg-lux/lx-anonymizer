@@ -196,7 +196,6 @@ def _run_llm_image_analysis(img_path: Path) -> Dict[str, object]:
                 recognized_text = LLMService(
                     provider="ollama",
                     base_url=settings.resolved_llm_base_url,
-                    model_name=settings.LLM_MODEL,
                     timeout=settings.LLM_TIMEOUT,
                 ).recognize_image(image, candidate_text=ocr_text)
             ocr_text = recognized_text or ocr_text

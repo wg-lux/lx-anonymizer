@@ -97,11 +97,12 @@ def test_remote_mtls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         request_options("https://llm.example")
 
 
-def test_ollama_latest_alias_and_cloud_filter(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("model", ["local-model", "lx-gemma4-e2b-json"])
+def test_ollama_latest_alias_and_cloud_filter(monkeypatch: pytest.MonkeyPatch, model: str):
     monkeypatch.setattr(settings, "LLM_ENABLED", True)
     monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
     monkeypatch.setattr(settings, "LLM_BASE_URL", "http://127.0.0.1:11434")
-    monkeypatch.setattr(settings, "LLM_MODEL", "local-model")
+    monkeypatch.setattr(settings, "LLM_MODEL", model)
 
     class Response:
         status_code = 200
@@ -109,7 +110,7 @@ def test_ollama_latest_alias_and_cloud_filter(monkeypatch: pytest.MonkeyPatch):
         def json(self) -> dict[str, object]:
             return {
                 "models": [
-                    {"name": "local-model:latest"},
+                    {"name": f"{model}:latest"},
                     {"name": "remote-alias", "remote_host": "https://cloud.example"},
                 ]
             }
@@ -120,5 +121,40 @@ def test_ollama_latest_alias_and_cloud_filter(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("requests.get", get)
     extractor = LLMFactory.create_metadata_extractor()
     assert extractor.current_model is not None
-    assert extractor.current_model.name == "local-model:latest"
-    assert extractor.available_models == ["local-model:latest"]
+    assert extractor.current_model.name == f"{model}:latest"
+    assert extractor.available_models == [f"{model}:latest"]
+
+
+@pytest.mark.parametrize(
+    "provider,ocr_model,expected",
+    [
+        ("ollama", "", "gemma4:e2b"),
+        ("vllm", "", "configured-metadata"),
+        ("ollama", "custom-vision", "custom-vision"),
+        ("vllm", "custom-vision", "custom-vision"),
+    ],
+)
+def test_ocr_model_selection(
+    monkeypatch: pytest.MonkeyPatch, provider: str, ocr_model: str, expected: str
+) -> None:
+    monkeypatch.setattr(settings, "LLM_MODEL", "configured-metadata")
+    monkeypatch.setattr(settings, "LLM_OCR_MODEL", ocr_model)
+    service = LLMService(provider=provider)
+    payload = service._build_payload("OCR", "Synthetic text")
+    assert payload.model == expected
+    assert LLMService(provider=provider, model_name="explicit").model_name == "explicit"
+
+
+def test_blank_ocr_model_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "LLM_OCR_MODEL", "  ")
+    with pytest.raises(ValueError, match="OCR model must not be empty"):
+        LLMService(provider="ollama")
+
+
+def test_luxnix_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    for name in ("LLM_MODEL", "LLM_OCR_MODEL", "LLM_PROVIDER"):
+        monkeypatch.delenv(name, raising=False)
+    config = Settings()
+    assert config.LLM_MODEL == "lx-gemma4-e2b-json"
+    assert config.llm_ocr_model_for(config.LLM_PROVIDER) == "gemma4:e2b"

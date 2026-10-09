@@ -8,7 +8,7 @@ runtime_model="${LLM_MODEL:-lx-gemma4-e2b-json}"
 # Use a single endpoint for discovery and every CLI operation. Service lifecycle
 # belongs to systemd, Docker, launchd or the operator, not this provisioning helper.
 export OLLAMA_HOST="${LLM_BASE_URL:-${OLLAMA_URL:-${OLLAMA_CLIENT_HOST:-${OLLAMA_HOST:-http://127.0.0.1:11434}}}}"
-modelfile="${OLLAMA_GEMMA4_MODELFILE:-$repo_root/ollama/Modelfile.gemma4-ocr}"
+modelfile="${OLLAMA_GEMMA4_MODELFILE:-$repo_root/ollama/Modelfile.gemma4-json}"
 
 if ! command -v ollama >/dev/null 2>&1; then
   echo "Ollama is required but is not installed on this machine." >&2

@@ -32,15 +32,18 @@ class FakeRapidOCREngine:
         return self.outputs.pop(0)
 
 
+@pytest.mark.parametrize("ocr_model", ["", "custom-vision"])
 def test_gemma4_refines_conventional_ocr_and_preserves_confidence(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, ocr_model: str,
 ) -> None:
+    monkeypatch.setattr(ocr_mod.settings, "LLM_OCR_MODEL", ocr_model)
     observed: dict[str, object] = {}
 
     def recognize_image(
         self: LLMService, image: Image.Image, candidate_text: str = ""
     ) -> str:
         observed["size"] = image.size
+        assert self.model_name == (ocr_model or "gemma4:e2b")
         observed["candidate"] = candidate_text
         return "Patient Müller"
 
@@ -61,6 +64,7 @@ def test_gemma4_refines_conventional_ocr_and_preserves_confidence(
     assert text == "Patient Müller"
     assert confidence == 0.82
     assert observed == {"size": (40, 20), "candidate": "Patient Muller"}
+    assert metadata["model"] == (ocr_model or "gemma4:e2b")
     assert metadata["backend"] == "ollama-gemma4"
     assert metadata["candidate_backend"] == "rapidocr"
     assert metadata["confidence_source"] == "conventional_ocr"

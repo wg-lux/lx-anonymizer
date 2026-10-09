@@ -193,6 +193,8 @@ def test_provision_uses_one_endpoint_without_starting_service(
         TEST_AVAILABLE="yes" if available else "no",
         LLM_BASE_URL="http://127.0.0.1:11439",
         OLLAMA_HOST="wrong:11434",
+        LLM_MODEL="lx-gemma4-e2b-json",
+        OLLAMA_GEMMA4_BASE_MODEL="gemma4:e2b",
     )
     result = subprocess.run(
         ["bash", str(script)],
@@ -207,3 +209,8 @@ def test_provision_uses_one_endpoint_without_starting_service(
     assert len(calls) == (4 if available else 1)
     assert all(line.startswith("http://127.0.0.1:11439 ") for line in calls)
     assert not any("serve" in line for line in calls)
+
+    if available:
+        assert calls[1].endswith("pull gemma4:e2b")
+        assert "create lx-gemma4-e2b-json --file " in calls[2]
+        assert calls[2].endswith("ollama/Modelfile.gemma4-json")

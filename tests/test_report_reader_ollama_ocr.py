@@ -8,9 +8,11 @@ from lx_anonymizer.llm.llm_service import LLMService
 from lx_anonymizer.report_reader import ReportReader
 
 
+@pytest.mark.parametrize("ocr_model", ["", "custom-vision"])
 def test_report_reader_uses_gemma4_vision_ocr_with_tesseract_candidate(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, ocr_model: str,
 ) -> None:
+    monkeypatch.setattr(report_reader_module.settings, "LLM_OCR_MODEL", ocr_model)
     observed: dict[str, object] = {}
 
     def conventional_ocr(image: Image.Image) -> tuple[str, list[object]]:
@@ -19,6 +21,7 @@ def test_report_reader_uses_gemma4_vision_ocr_with_tesseract_candidate(
     def recognize_image(
         self: LLMService, image: Image.Image, candidate_text: str = ""
     ) -> str:
+        assert self.model_name == (ocr_model or "gemma4:e2b")
         observed["candidate"] = candidate_text
         observed["size"] = image.size
         return "Patient Müller"

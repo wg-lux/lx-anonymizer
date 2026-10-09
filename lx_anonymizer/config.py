@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = ""
     OLLAMA_HOST: str = ""
     LLM_MODEL: str = "lx-gemma4-e2b-json"
+    LLM_OCR_MODEL: str = ""
     LLM_TIMEOUT: int = Field(default=120, ge=1, le=120)
     LLM_CA_FILE: str = ""
     LLM_CLIENT_CERT_FILE: str = ""
@@ -86,6 +87,12 @@ class Settings(BaseSettings):
     @property
     def resolved_llm_base_url(self) -> str:
         return self.llm_base_url_for(self.LLM_PROVIDER)
+
+    def llm_ocr_model_for(self, provider: str) -> str:
+        """Keep OCR separate from the LuxNix metadata-only JSON profile."""
+        if self.LLM_OCR_MODEL:
+            return self.LLM_OCR_MODEL.strip()
+        return "gemma4:e2b" if provider == "ollama" else self.LLM_MODEL
 
     def llm_base_url_for(self, provider: str) -> str:
         base_url = self.LLM_BASE_URL.strip()

@@ -305,7 +305,6 @@ class FrameOCR:
         service = LLMService(
             provider="ollama",
             base_url=settings.resolved_llm_base_url,
-            model_name=settings.LLM_MODEL,
             timeout=settings.LLM_TIMEOUT,
         )
         recognized_text = service.recognize_image(image, candidate_text=candidate_text)
@@ -322,7 +321,7 @@ class FrameOCR:
             {
                 "backend": OLLAMA_OCR_BACKEND,
                 "method": "vision-ocr-with-conventional-candidate",
-                "model": settings.LLM_MODEL,
+                "model": service.model_name,
                 "candidate_backend": candidate_metadata.get("backend", "unknown"),
                 "confidence_source": (
                     "conventional_ocr" if candidate_text else "configured_proxy"

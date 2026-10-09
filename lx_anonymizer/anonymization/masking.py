@@ -14,6 +14,7 @@ from lx_dtypes.models.contracts.video_processing import (
     VideoMaskRegionCore,
 )
 
+from lx_anonymizer.runtime_types import VideoExecutionHooks
 from lx_anonymizer.video_processing import video_utils
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 
@@ -39,7 +40,10 @@ class MaskApplication:
         self,
         preferred_encoder: Mapping[str, object],
         device_name: str = "olympus_cv_1500",
+        *,
+        execution_hooks: VideoExecutionHooks | None = None,
     ):
+        self.execution_hooks = execution_hooks
         self.preferred_encoder = dict(preferred_encoder)
         self.video_encoder = VideoEncoder()
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
@@ -84,6 +88,11 @@ class MaskApplication:
         try:
             frame_rate = self._validated_source_frame_rate(source_frame_rate)
             mask_mode = self._coerce_mask_mode(mode)
+            if (
+                self.execution_hooks is not None
+                and mask_mode != MaskMode.PRESERVE_DIMENSIONS
+            ):
+                raise ValueError("Canonical masking must preserve image dimensions")
             region = self._resolve_mask_region(input_video, mask_config)
             if region is None:
                 return False
@@ -91,7 +100,10 @@ class MaskApplication:
             self._ensure_output_parent(output_video)
             vf = self._build_video_filter(region, mask_mode)
             if not vf:
-                return self._copy_video_stream(input_video, output_video)
+                if self.execution_hooks is None:
+                    return self._copy_video_stream(input_video, output_video)
+                # An unchanged region still requires an observed encoder receipt.
+                vf = "null"
 
             encoder_args = self.build_encoder_cmd("balanced")
 
@@ -134,7 +146,13 @@ class MaskApplication:
             logger.info("Using mask filter: %s", vf)
             logger.debug("FFmpeg command: %s", " ".join(cmd))
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = (
+                self.execution_hooks.run_encoder(cmd)
+                if self.execution_hooks is not None
+                else subprocess.run(
+                    cmd, capture_output=True, text=True, check=True, timeout=300
+                )
+            )
             logger.debug("Masking output: %s", result.stderr)
 
             # Verify output

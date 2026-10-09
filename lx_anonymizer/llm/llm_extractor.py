@@ -433,6 +433,9 @@ OCR_TEXT_END"""
         schema = self._create_json_schema()
         if self.provider == "ollama":
             wire["format"] = schema
+            if payload.model in {"lx-gemma4-e2b-json", "lx-gemma4-e2b-json:latest"}:
+                # The LuxNix profile budgets 256 tokens for the final JSON.
+                wire["think"] = False
         else:
             wire["response_format"] = {
                 "type": "json_schema",
