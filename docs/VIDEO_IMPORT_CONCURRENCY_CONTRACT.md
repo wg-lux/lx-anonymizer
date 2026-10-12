@@ -63,8 +63,22 @@ explicit callers, but cannot establish coverage of single-frame overlays.
 Within its time budget, the exhaustive profile decodes every source frame
 sequentially, without a sample cap or metadata-driven early stopping. RapidOCR receives the full source
 image, including regions outside configured endoscope coordinates. It does not
-invoke a vision language model per frame or silently switch OCR backends after
-failure. Decoded frame counts must match the declared source frame count.
+invoke a vision language model per frame. An explicit, logged model cascade now
+permits RapidOCR, Tesserocr and Pytesseract in configurable order. Each model
+block has a process-enforced deadline covering loading and inference. Failed
+workers are terminated before fallback; failed blocks stay disabled for the
+attempt. Decoded frame counts must match the declared source frame count.
+
+If all OCR blocks fail, the invocation records model failure and returns only a
+configured-mask, silent unpublished candidate for reprocessing. This also replaces
+frame-removal decisions that could not be established. `extract_only` remains
+artifact-free. The typed `model_execution` summary records models used and
+failed, `configured_mask_fallback`, and `reprocessing_required`. Metadata coverage has
+`complete=false` and `cap_reason=model_failure`, even if all frames were decoded.
+Decoder, encoder, integrity and cleanup failures still raise and clean the
+owned partial output. An empty successful OCR result remains a valid observation,
+distinct from model unavailability. Host publication and clinical-review gates
+are unchanged; a configured-mask candidate is not clinical release approval.
 
 One previous pixel buffer allows reuse of OCR only for exactly identical
 consecutive images. An invocation-local least-recently-used cache avoids
@@ -111,12 +125,13 @@ sampling and returns an unpublished candidate through the existing boundary.
 The application may publish that candidate into its anonymization-review
 workflow; this does not establish human anonymization acceptance or dataset
 release readiness. `remove_frames` raises on budget exhaustion because its
-masking decisions require complete sensitive-frame discovery. Genuine OCR and
-decoder errors still raise, preserving the existing failure cleanup.
+masking decisions require complete sensitive-frame discovery, unless exhausted
+OCR blocks have already selected full-frame configured masking. Decoder and
+other integrity errors still raise, preserving the existing failure cleanup.
 
-Budget checks surround synchronous decoding and OCR calls. They bound the
-observed repeated slow-inference case, but cannot preempt a native call that
-never returns; the caller's process-level cancellation remains authoritative.
+Budget checks surround synchronous decoding and OCR calls. OCR runs behind a
+separate process deadline; decoding and the caller's process-level cancellation
+remain governed by the caller's execution boundary.
 Finalization, video encoding and HLS have their own caller-owned budgets.
 
 ## Current Concurrency Limitation

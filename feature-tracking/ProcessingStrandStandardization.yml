@@ -10,6 +10,18 @@ production_critical: true
 tracking:
   state: completed
   history:
+    - at: "2026-10-12"
+      state: completed
+      note: >-
+        Grouped FrameCleaner and ReportReader implementations and helpers into
+        dedicated packages with explicit public processor and contract exports.
+        Existing processor imports remain compatible; lx-dtypes contracts are
+        reused without schema copies. Verified against /home/admin/lx-data-models:
+        Pyright 0 errors, 10 existing warnings; 126 focused tests passed across
+        CLI/package exports, distribution audits, processing strands, frame
+        cleaning, concurrency, exhaustive metadata, report contracts, OCR,
+        helper logic and video end-to-end tests. CPU dependency sync completed;
+        restored the editable lx-data-models checkout after synchronization.
     - at: "2026-08-28T12:27:38+02:00"
       state: completed
       note: >-

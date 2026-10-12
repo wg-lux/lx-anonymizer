@@ -471,6 +471,16 @@ ROI guidance:
 
 See [`tests/test_report_reader_init.py`](tests/test_report_reader_init.py) and [`tests/test_frame_cleaner.py`](tests/test_frame_cleaner.py) for concrete usage patterns.
 
+The entry points have dedicated packages: `frame_cleaner/` contains `cleaner.py`
+and the video helpers in `video.py`; `report_reader/` contains `reader.py`,
+`extraction.py`, and `settings.py`. Existing processor imports remain supported.
+Import each processor and its request/result types from its package and call
+`process(request)` for the typed application boundary. Report attempt contracts
+and both metadata schemas use the canonical `lx_dtypes` models; video invocation
+validation remains in `processing_contracts.py`. Internal helper imports now use
+the package paths above. Construct one `FrameCleaner` per attempt; outputs remain
+unpublished candidates owned by the calling application.
+
 ## Advanced Features
 
 ### ReportReader Capabilities

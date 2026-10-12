@@ -23,50 +23,29 @@ def _build_report_reader_without_heavy_init(
     """
     with ExitStack() as stack:
         stack.enter_context(
-            patch("lx_anonymizer.report_reader.Faker", return_value=MagicMock())
+            patch("lx_anonymizer.report_reader.reader.Faker", return_value=MagicMock())
         )
         stack.enter_context(
             patch(
-                "lx_anonymizer.report_reader.gender_detector.Detector",
+                "lx_anonymizer.report_reader.reader.gender_detector.Detector",
                 return_value=MagicMock(),
             )
         )
         stack.enter_context(
             patch(
-                "lx_anonymizer.report_reader.PatientDataExtractor",
+                "lx_anonymizer.report_reader.reader.SensitiveRegionCropper",
                 return_value=MagicMock(),
             )
         )
         stack.enter_context(
             patch(
-                "lx_anonymizer.report_reader.ExaminerDataExtractor",
+                "lx_anonymizer.report_reader.reader.Anonymizer",
                 return_value=MagicMock(),
             )
         )
         stack.enter_context(
             patch(
-                "lx_anonymizer.report_reader.EndoscopeDataExtractor",
-                return_value=MagicMock(),
-            )
-        )
-        stack.enter_context(
-            patch(
-                "lx_anonymizer.report_reader.ExaminationDataExtractor",
-                return_value=MagicMock(),
-            )
-        )
-        stack.enter_context(
-            patch(
-                "lx_anonymizer.report_reader.SensitiveRegionCropper",
-                return_value=MagicMock(),
-            )
-        )
-        stack.enter_context(
-            patch("lx_anonymizer.report_reader.Anonymizer", return_value=MagicMock())
-        )
-        stack.enter_context(
-            patch(
-                "lx_anonymizer.report_reader.LLMFactory.create_metadata_extractor",
+                "lx_anonymizer.report_reader.reader.LLMFactory.create_metadata_extractor",
                 llm_factory or MagicMock(),
             )
         )
@@ -100,6 +79,29 @@ def test_report_reader_init_uses_default_flags() -> None:
     assert reader.flags.model_dump() == default_flags
     assert reader.flags.patient_info_line is not None
     assert reader.flags.cut_off_above
+
+
+@pytest.mark.parametrize(
+    ("first_names", "last_names"),
+    [
+        (None, None),
+        ([], []),
+        (["ExampleFirst"], ["ExampleLast"]),
+        (("ExampleFirst",), None),
+    ],
+)
+def test_report_reader_uses_only_caller_provided_employee_names(
+    first_names: Sequence[str] | None,
+    last_names: Sequence[str] | None,
+) -> None:
+    reader = _build_report_reader_without_heavy_init(
+        employee_first_names=first_names, employee_last_names=last_names
+    )
+
+    assert reader.employee_first_names == first_names
+    assert reader.employee_last_names == last_names
+    assert "first_names" not in DEFAULT_SETTINGS
+    assert "last_names" not in DEFAULT_SETTINGS
 
 
 def test_report_reader_init_no_nameerror_regression() -> None:

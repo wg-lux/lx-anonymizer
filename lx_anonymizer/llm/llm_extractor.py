@@ -40,6 +40,7 @@ from lx_dtypes.models.contracts.text_anonymization import (
 from lx_dtypes.models.meta.VideoMeta import FrameCollectionItem
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from lx_anonymizer.model_loading import ModelChain
 from lx_anonymizer.config import settings
 from lx_anonymizer.llm.connection import request_options, resolve_connection
 from lx_anonymizer.llm.responses import parse_chat_response, parse_model_names
@@ -252,6 +253,8 @@ class LLMMetadataExtractor:
     oder native Ollama-Endpunkte und implementiert ein fail-safe Modell-System.
     """
 
+    model_chain: ModelChain[str, dict[str, object]] | None = None
+
     def __init__(
         self,
         base_url: Optional[str] = None,
@@ -259,6 +262,7 @@ class LLMMetadataExtractor:
         provider: Optional[str] = None,
         preferred_model: Optional[str] = None,
         model_timeout: Optional[int] = None,
+        isolated: bool = False,
     ):
         self.provider, self.base_url = resolve_connection(provider, base_url)
         self.chat_endpoint = self._build_chat_endpoint()
@@ -272,8 +276,37 @@ class LLMMetadataExtractor:
             raise ValueError("LLM_MODEL must not be empty")
         if not 1 <= self.preferred_timeout <= 120:
             raise ValueError("LLM timeout must be between 1 and 120 seconds")
+        from lx_anonymizer.model_adapters import MetadataFactory
+        from lx_anonymizer.model_loading import ModelBlock
+
+        chain_config = settings.model_copy(
+            update={
+                "LLM_PROVIDER": self.provider,
+                "LLM_BASE_URL": self.base_url,
+                "LLM_MODEL": self.preferred_model,
+                "LLM_TIMEOUT": self.preferred_timeout,
+            },
+            deep=True,
+        )
+        self.model_chain = (
+            ModelChain(
+                [
+                    ModelBlock(
+                        f"llm:{self.provider}:{self.preferred_model}",
+                        MetadataFactory("llm", chain_config),
+                        chain_config.MODEL_BLOCK_TIMEOUT,
+                    )
+                ]
+            )
+            if isolated
+            else None
+        )
         self.available_models_retry = False
-        self.available_models = self._check_available_models()
+        self.available_models = (
+            ([self.preferred_model] if settings.LLM_ENABLED else [])
+            if isolated
+            else self._check_available_models()
+        )
         self.current_model: _LLMModelConfig | None = None
         self.cache = MetadataCache() if enable_cache else None
         self.sensitive_meta = SensitiveMeta()
@@ -615,6 +648,15 @@ OCR_TEXT_END"""
         """
         # Accumulation belongs to the media caller, never to another text request.
         self.sensitive_meta = SensitiveMeta()
+        if self.model_chain is not None and settings.LLM_ENABLED:
+            from lx_anonymizer.model_loading import ModelUnavailableError
+
+            try:
+                payload = self.model_chain.run(text)
+            except ModelUnavailableError:
+                return None
+            self.sensitive_meta.safe_update(payload)
+            return self.sensitive_meta
         # Early return if no models are available
         if not self.current_model and not self.available_models:
             logger.warning(
@@ -831,6 +873,8 @@ OCR_TEXT_END"""
         Returns:
             SensitiveMeta Objekt oder None bei Fehler
         """
+        if self.model_chain is not None:
+            return self.extract_metadata(text)
         self.sensitive_meta = SensitiveMeta()
         # Pre-Check: Enthält der Text überhaupt relevante Informationen?
         if not self._contains_patient_data(text):

@@ -44,6 +44,20 @@ def test_environment_contract(monkeypatch: pytest.MonkeyPatch):
     assert config.LLM_TIMEOUT == 45
 
 
+def test_default_factory_configures_without_probing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "LLM_ENABLED", True)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("Lazy construction must not access the provider")
+
+    monkeypatch.setattr("requests.get", forbidden)
+    extractor = LLMFactory.create_metadata_extractor()
+    assert extractor.model_chain is not None
+    assert not extractor.model_chain.attempts
+
+
 def test_missing_configured_model_is_unavailable(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "LLM_ENABLED", True)
     monkeypatch.setattr(settings, "LLM_PROVIDER", "vllm")
@@ -62,7 +76,7 @@ def test_missing_configured_model_is_unavailable(monkeypatch: pytest.MonkeyPatch
         return Response()
 
     monkeypatch.setattr("requests.get", get)
-    extractor = LLMFactory.create_metadata_extractor()
+    extractor = LLMFactory.create_metadata_extractor(isolated=False)
     assert calls == ["http://127.0.0.1:8001/v1/models"]
     assert extractor.current_model is None
 
@@ -98,7 +112,9 @@ def test_remote_mtls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 
 @pytest.mark.parametrize("model", ["local-model", "lx-gemma4-e2b-json"])
-def test_ollama_latest_alias_and_cloud_filter(monkeypatch: pytest.MonkeyPatch, model: str):
+def test_ollama_latest_alias_and_cloud_filter(
+    monkeypatch: pytest.MonkeyPatch, model: str
+):
     monkeypatch.setattr(settings, "LLM_ENABLED", True)
     monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
     monkeypatch.setattr(settings, "LLM_BASE_URL", "http://127.0.0.1:11434")
@@ -119,7 +135,7 @@ def test_ollama_latest_alias_and_cloud_filter(monkeypatch: pytest.MonkeyPatch, m
         return Response()
 
     monkeypatch.setattr("requests.get", get)
-    extractor = LLMFactory.create_metadata_extractor()
+    extractor = LLMFactory.create_metadata_extractor(isolated=False)
     assert extractor.current_model is not None
     assert extractor.current_model.name == f"{model}:latest"
     assert extractor.available_models == [f"{model}:latest"]

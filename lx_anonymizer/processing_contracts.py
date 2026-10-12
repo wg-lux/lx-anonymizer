@@ -176,7 +176,10 @@ class MetadataAnalysisCoverage(BaseModel):
     inspected_frame_numbers: list[int]
     complete: bool
     mode: Literal["exhaustive", "interval_sampled"]
-    cap_reason: Literal["projected_deadline_exceeded", "deadline_exceeded"] | None
+    cap_reason: (
+        Literal["projected_deadline_exceeded", "deadline_exceeded", "model_failure"]
+        | None
+    )
     elapsed_seconds: float = Field(ge=0, allow_inf_nan=False)
     maximum_seconds: float = Field(gt=0, allow_inf_nan=False)
 
@@ -187,11 +190,22 @@ class MetadataAnalysisCoverage(BaseModel):
             frame < 0 or frame >= self.total_frames for frame in frames
         ):
             raise ValueError("Metadata coverage requires unique source-ordered frames")
-        if self.complete != (len(frames) == self.total_frames):
+        if self.complete != (
+            len(frames) == self.total_frames and self.cap_reason != "model_failure"
+        ):
             raise ValueError(
                 "Metadata completeness must match inspected frame coverage"
             )
         return self
+
+
+class ModelExecutionSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    models_used: list[str] = Field(default_factory=list)
+    failed_models: list[str] = Field(default_factory=list)
+    configured_mask_fallback: bool = False
+    reprocessing_required: bool = False
 
 
 class VideoAnonymizationResult(BaseModel):
@@ -206,6 +220,7 @@ class VideoAnonymizationResult(BaseModel):
     artifact_path: Path | None
     metadata: VideoMeta
     metadata_analysis: MetadataAnalysisCoverage | None = None
+    model_execution: ModelExecutionSummary | None = None
 
 
 RequestT_contra = TypeVar("RequestT_contra", contravariant=True)

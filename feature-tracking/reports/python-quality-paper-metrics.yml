@@ -1,0 +1,86 @@
+date: '2026-10-12'
+owner: codex-quality-20261012-a7c9
+revision_before: d9c182aa8c5ed6fd05ee517fe2b5ea1d3eacdbbf
+working_directory: /home/admin/lx-anonymizer
+skill: .agents/skills/get-dead-code/SKILL.md
+scope:
+  radon: lx_anonymizer
+  refactoring: lx_anonymizer/paper_metrics.py
+  tests: tests/test_paper_metrics.py
+  description: >-
+    Kleine Kohorte zur Komplexitätsreduktion. Gemeinsame Gruppierung für k-, l-
+    und t-Metriken pro QI-Projektion; separate Schwellenvalidierung und reine
+    Berechnungshelfer. Keine Änderung der öffentlichen Signatur oder Ergebnismodelle.
+measurements:
+  commands:
+    - [uvx, radon, cc, lx_anonymizer, -s, -n, C]
+    - [uvx, radon, cc, lx_anonymizer/paper_metrics.py, -s]
+    - [uvx, radon, raw, lx_anonymizer/paper_metrics.py]
+  before: {audit_complexity: 29, rank: D, loc: 566, sloc: 495}
+  after: {audit_complexity: 16, rank: C, loc: 560, sloc: 486}
+  helpers_after:
+    _validate_release_thresholds: 10
+    _group_sensitive_counts: 4
+    _l_diversity_violations: 2
+    _t_closeness_distances: 2
+inventory:
+  confirmed_removals:
+    - symbol: _group_records
+      original_location: lx_anonymizer/paper_metrics.py:476
+      classification: confirmed_dead
+      confidence: Manuell nach Migration des einzigen Aufrufers bestätigt.
+      evidence: >-
+        Der Audit war der einzige Aufrufer. Die Gruppenschlüsselberechnung war
+        zusätzlich in _l_diversity_violations und _t_closeness_distances vorhanden.
+        Alle drei Berechnungen verwenden jetzt _group_sensitive_counts.
+        Keine Registrierung oder Veröffentlichung über __all__ vorhanden.
+      risk: >-
+        Private Hilfsfunktion entfernt; unbekannte externe Nutzer privater Namen
+        können durch Repository-Suche nicht ausgeschlossen werden.
+  retained_contracts:
+    - symbol: audit_k_pseudonymity_records
+      classification: compatibility_contract
+      evidence: >-
+        Öffentlich über __all__ exportiert; Signatur, Fehlermeldungen,
+        Null-/Leerwertnormalisierung, Schwelleninklusion und Ergebnisschema erhalten.
+  uncertain_candidates: []
+  search:
+    symbols: 'audit_k_pseudonymity_records|_group_records|_l_diversity_violations|_t_closeness_distances|_value_key|_normalize_counts'
+    roots: [lx_anonymizer, tests, docs, /home/admin/endoreg-db]
+    result: >-
+      Private Helfer nur in paper_metrics.py referenziert; öffentlicher Audit in
+      test_paper_metrics.py. Keine passenden externen Aufrufer im geprüften Schwester-Repository.
+verification:
+  dependency_sync:
+    command: [uv, sync, --extra, dev, --extra, cpu]
+    result: Erfolgreich; dev-only wegen CUDA-Downloads abgebrochen und mit CPU-Extra wiederholt.
+  pyright:
+    command: [.devenv/state/venv/bin/pyright]
+    result: Vorher und nachher 0 Fehler, 10 bestehende Warnungen.
+  focused_pyright:
+    command: [.devenv/state/venv/bin/pyright, lx_anonymizer/paper_metrics.py, tests/test_paper_metrics.py]
+    result: 0 Fehler, 0 Warnungen einschließlich der zuletzt ergänzten Tests.
+  pytest:
+    command: [.devenv/state/venv/bin/python, -m, pytest, tests/test_paper_metrics.py, -q, -o, log_cli=false]
+    before: 31 Tests erfolgreich gegen die ursprüngliche Implementierung.
+    after: 34 Tests erfolgreich; drei zusätzliche Fälle für k-only und unabhängige QI-Projektionen.
+    contracts:
+      - Exakte k-Defizite, l-Verletzungen und t-Distanzen; optionale Metriken und leere Eingabe.
+      - Fehlertexte für ungültige Schwellen, NaN, Unendlich und fehlendes sensibles Attribut.
+      - Fehlende Werte, Whitespace, numerische Werte, Reihenfolge und unveränderte Eingabedaten.
+      - K-only liest sensible Werte nicht; kombinierte QI-Projektionen werden separat ausgewertet.
+  trace:
+    command_before: [.devenv/state/venv/bin/python, -m, trace, --count, -C, /tmp/lx-quality-trace-before, --ignore-dir, '/nix/store:/home/admin/lx-anonymizer/.devenv', --module, pytest, tests/test_paper_metrics.py, -q, -o, log_cli=false]
+    command_after: [.devenv/state/venv/bin/python, -m, trace, --count, -C, /tmp/lx-quality-trace-after, --ignore-dir, '/nix/store:/home/admin/lx-anonymizer/.devenv', --module, pytest, tests/test_paper_metrics.py, -q, -o, log_cli=false]
+    before: 31 Tests erfolgreich; alle drei ursprünglichen Gruppierungspfade ausgeführt.
+    after: 34 Tests erfolgreich; gemeinsame Gruppierung, l-/t-Berechnung und alle fünf Validierungsfehler ausgeführt.
+  lint:
+    result: >-
+      Ruff für Tests, Formatprüfung beider Dateien und git diff --check erfolgreich.
+      Modulweiter Ruff-Check meldet weiterhin das bestehende UP040 bei MetricStatus
+      (Zeile 11); kein neuer Lint-Befund.
+gaps:
+  - Kein tracker.py, keine CodeQuality-/Policy-Datei, keine Vulture-Baseline und kein quality:dead-code-Task vorhanden.
+  - Kein vollständiger Dead-Code-Nachweis; andere Radon-Hotspots und Rust-Code nicht verändert oder als tot klassifiziert.
+  - Keine Gesamt-Test-Suite und keine Video-/OCR-Modellläufe; Report-Metadatenintegration im fokussierten Testmodul enthalten.
+  - Trace belegt nur die geprüften synthetischen Szenarien, keine globale Nichtbenutzung.

@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import subprocess
@@ -7,12 +6,13 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
-from typing import cast
 
 from lx_dtypes.models.contracts.video_processing import (
     VideoMaskConfig,
     VideoMaskRegionCore,
 )
+
+from lx_dtypes.models.interface.video_masks import load_video_mask
 
 from lx_anonymizer.runtime_types import VideoExecutionHooks
 from lx_anonymizer.video_processing import video_utils
@@ -49,7 +49,7 @@ class MaskApplication:
         self.build_encoder_cmd = self.video_encoder.build_encoder_cmd
         self.device_name = device_name
 
-        # Default mask configuration based on olympus_cv_1500_mask.json
+        # Validated default from the lx-dtypes package data root.
         self.default_mask_config: VideoMaskConfig = self._load_mask()
 
     def mask_video_streaming(
@@ -88,10 +88,7 @@ class MaskApplication:
         try:
             frame_rate = self._validated_source_frame_rate(source_frame_rate)
             mask_mode = self._coerce_mask_mode(mode)
-            if (
-                self.execution_hooks is not None
-                and mask_mode != MaskMode.PRESERVE_DIMENSIONS
-            ):
+            if self.execution_hooks is not None and mask_mode == MaskMode.CROP:
                 raise ValueError("Canonical masking must preserve image dimensions")
             region = self._resolve_mask_region(input_video, mask_config)
             if region is None:
@@ -113,6 +110,12 @@ class MaskApplication:
                 "-y",
                 "-i",
                 str(input_video),
+                "-map",
+                "0:v:0",
+                "-map_metadata",
+                "-1",
+                "-map_chapters",
+                "-1",
                 "-vf",
                 vf,
                 *encoder_args,
@@ -479,9 +482,9 @@ class MaskApplication:
         out_h = self._coerce_int(output_info.get("height"), 0)
         if out_w <= 0 or out_h <= 0:
             logger.warning("Could not verify masked video dimensions")
-            return True
+            return False
 
-        if mode == MaskMode.PRESERVE_DIMENSIONS:
+        if mode != MaskMode.CROP:
             expected_w, expected_h = region.image_width, region.image_height
         else:
             crop_region = self._align_region_for_crop(region)
@@ -615,38 +618,4 @@ class MaskApplication:
         )
 
     def _load_mask(self) -> VideoMaskConfig:
-        masks_dir = Path(__file__).parent / "masks"
-        mask_file = masks_dir / f"{self.device_name}_mask.json"
-        stub = {
-            "image_width": 1920,
-            "image_height": 1080,
-            "x": 550,
-            "y": 0,
-            "width": 1350,
-            "height": 1080,
-        }
-
-        try:
-            with mask_file.open() as f:
-                loaded = cast(dict[str, object], json.load(f))
-                normalized = self._canonicalize_mask_config(loaded)
-                normalized.pop("description", None)
-                return VideoMaskConfig.model_validate(normalized)
-        except (FileNotFoundError, json.JSONDecodeError):
-            # create or overwrite with a fresh stub
-            masks_dir.mkdir(parents=True, exist_ok=True)
-            with mask_file.open("w") as f:
-                json.dump(stub, f, indent=2)
-            logger.warning(
-                "Created or repaired mask file %s – please verify coordinates.",
-                mask_file,
-            )
-            return VideoMaskConfig.model_validate(stub)
-
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(
-                f"Failed to load/create mask configuration for {self.device_name}: {e}"
-            )
-            raise FileNotFoundError(
-                f"Could not load or create mask configuration for {self.device_name}: {e}"
-            )
+        return load_video_mask(self.device_name).mask.model_copy(deep=True)

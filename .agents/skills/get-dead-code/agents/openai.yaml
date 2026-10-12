@@ -1,0 +1,4 @@
+interface:
+  display_name: "Get Dead Code"
+  short_description: "Find and classify repository-wide dead code"
+  default_prompt: "Use $get-dead-code to inventory and classify dead code across this repository."

@@ -257,18 +257,9 @@ def audit_k_pseudonymity_records(
     l_threshold: int | None = None,
     t_threshold: float | None = None,
 ) -> KPseudonymityReleaseControlMetrics:
-    if not qi_fields:
-        raise ValueError("qi_fields must not be empty")
-    if k_threshold < 1:
-        raise ValueError("k_threshold must be >= 1")
-    if l_threshold is not None and l_threshold < 1:
-        raise ValueError("l_threshold must be >= 1")
-    if t_threshold is not None and not 0.0 <= t_threshold <= 1.0:
-        raise ValueError("t_threshold must be within [0, 1]")
-    if (l_threshold is not None or t_threshold is not None) and not sensitive_attribute:
-        raise ValueError(
-            "sensitive_attribute is required for l-diversity or t-closeness"
-        )
+    _validate_release_thresholds(
+        qi_fields, sensitive_attribute, k_threshold, l_threshold, t_threshold
+    )
 
     qi_field_list = [str(field) for field in qi_fields]
     subsets = _qi_subsets(qi_field_list)
@@ -276,50 +267,46 @@ def audit_k_pseudonymity_records(
     underprotected_pattern_count = 0
     frequency_deficit_total = 0
     synthetic_padding_lower_bound = 0
-    l_diversity_violation_count = 0 if l_threshold is not None else None
-    t_closeness_violation_count = 0 if t_threshold is not None else None
-    max_t_closeness_distance = 0.0 if t_threshold is not None else None
+    l_diversity_violation_count = 0
+    t_closeness_violation_count = 0
+    max_t_closeness_distance = 0.0
     global_sensitive_distribution = (
         _sensitive_distribution(records, sensitive_attribute)
-        if sensitive_attribute and t_threshold is not None
+        if t_threshold is not None
         else {}
+    )
+    grouping_attribute = (
+        sensitive_attribute
+        if l_threshold is not None or t_threshold is not None
+        else None
     )
 
     for subset in subsets:
-        groups = _group_records(records, subset)
-        class_counts.extend(groups.values())
-        for count in groups.values():
-            if count >= k_threshold:
-                continue
-            deficit = k_threshold - count
-            underprotected_pattern_count += 1
-            frequency_deficit_total += deficit
-            synthetic_padding_lower_bound = max(synthetic_padding_lower_bound, deficit)
+        groups = _group_sensitive_counts(records, subset, grouping_attribute)
+        counts = [sum(group.values()) for group in groups]
+        class_counts.extend(counts)
+        deficits = [k_threshold - count for count in counts if count < k_threshold]
+        underprotected_pattern_count += len(deficits)
+        frequency_deficit_total += sum(deficits)
+        synthetic_padding_lower_bound = max(
+            synthetic_padding_lower_bound, max(deficits, default=0)
+        )
 
-        if sensitive_attribute and l_threshold is not None:
-            assert l_diversity_violation_count is not None
-            l_diversity_violation_count += _l_diversity_violations(
-                records,
-                subset=subset,
-                sensitive_attribute=sensitive_attribute,
-                l_threshold=l_threshold,
+        if l_threshold is not None:
+            l_diversity_violation_count += _l_diversity_violations(groups, l_threshold)
+
+        if t_threshold is not None:
+            distances = _t_closeness_distances(groups, global_sensitive_distribution)
+            t_closeness_violation_count += sum(
+                distance > t_threshold for distance in distances
+            )
+            max_t_closeness_distance = max(
+                max_t_closeness_distance, max(distances, default=0.0)
             )
 
-        if sensitive_attribute and t_threshold is not None:
-            assert t_closeness_violation_count is not None
-            assert max_t_closeness_distance is not None
-            distances = _t_closeness_distances(
-                records,
-                subset=subset,
-                sensitive_attribute=sensitive_attribute,
-                global_distribution=global_sensitive_distribution,
-            )
-            for distance in distances:
-                if distance > t_threshold:
-                    t_closeness_violation_count += 1
-                max_t_closeness_distance = max(max_t_closeness_distance, distance)
-
-    loss_distribution_distance = max_t_closeness_distance
+    loss_distribution_distance = (
+        max_t_closeness_distance if t_threshold is not None else None
+    )
     return KPseudonymityReleaseControlMetrics(
         measurement_status="dry_run",
         evaluated_record_count=len(records),
@@ -334,15 +321,40 @@ def audit_k_pseudonymity_records(
         underprotected_pattern_count=underprotected_pattern_count,
         frequency_deficit_total=frequency_deficit_total,
         synthetic_padding_lower_bound=synthetic_padding_lower_bound,
-        l_diversity_violation_count=l_diversity_violation_count,
-        t_closeness_violation_count=t_closeness_violation_count,
-        max_t_closeness_distance=max_t_closeness_distance,
+        l_diversity_violation_count=(
+            l_diversity_violation_count if l_threshold is not None else None
+        ),
+        t_closeness_violation_count=(
+            t_closeness_violation_count if t_threshold is not None else None
+        ),
+        max_t_closeness_distance=loss_distribution_distance,
         loss_size=synthetic_padding_lower_bound,
         loss_sensitive_modifications=0,
         loss_distribution_distance=loss_distribution_distance,
         real_record_mutation_allowed=False,
         stopping_reason="dry_run_no_synthetic_serialization",
     )
+
+
+def _validate_release_thresholds(
+    qi_fields: Sequence[str],
+    sensitive_attribute: str | None,
+    k_threshold: int,
+    l_threshold: int | None,
+    t_threshold: float | None,
+) -> None:
+    if not qi_fields:
+        raise ValueError("qi_fields must not be empty")
+    if k_threshold < 1:
+        raise ValueError("k_threshold must be >= 1")
+    if l_threshold is not None and l_threshold < 1:
+        raise ValueError("l_threshold must be >= 1")
+    if t_threshold is not None and not 0.0 <= t_threshold <= 1.0:
+        raise ValueError("t_threshold must be within [0, 1]")
+    if (l_threshold is not None or t_threshold is not None) and not sensitive_attribute:
+        raise ValueError(
+            "sensitive_attribute is required for l-diversity or t-closeness"
+        )
 
 
 def _mapping_or_empty(value: object) -> Mapping[str, object]:
@@ -473,29 +485,22 @@ def _qi_subsets(qi_fields: Sequence[str]) -> list[tuple[str, ...]]:
     ]
 
 
-def _group_records(
-    records: Sequence[Mapping[str, object]], subset: Sequence[str]
-) -> Counter[tuple[str, ...]]:
-    groups: Counter[tuple[str, ...]] = Counter()
-    for record in records:
-        groups[tuple(_value_key(record.get(field)) for field in subset)] += 1
-    return groups
-
-
-def _l_diversity_violations(
+def _group_sensitive_counts(
     records: Sequence[Mapping[str, object]],
-    *,
     subset: Sequence[str],
-    sensitive_attribute: str,
-    l_threshold: int,
-) -> int:
-    groups: dict[tuple[str, ...], set[str]] = defaultdict(set)
+    sensitive_attribute: str | None,
+) -> list[Counter[str]]:
+    """Count sensitive values once per equivalence class for k, l and t metrics."""
+    groups: dict[tuple[str, ...], Counter[str]] = defaultdict(Counter)
     for record in records:
         key = tuple(_value_key(record.get(field)) for field in subset)
-        groups[key].add(_value_key(record.get(sensitive_attribute)))
-    return sum(
-        1 for sensitive_values in groups.values() if len(sensitive_values) < l_threshold
-    )
+        value = record.get(sensitive_attribute) if sensitive_attribute else None
+        groups[key][_value_key(value)] += 1
+    return list(groups.values())
+
+
+def _l_diversity_violations(groups: Sequence[Counter[str]], l_threshold: int) -> int:
+    return sum(len(group) < l_threshold for group in groups)
 
 
 def _sensitive_distribution(
@@ -511,22 +516,11 @@ def _sensitive_distribution(
 
 
 def _t_closeness_distances(
-    records: Sequence[Mapping[str, object]],
-    *,
-    subset: Sequence[str],
-    sensitive_attribute: str,
-    global_distribution: Mapping[str, float],
+    groups: Sequence[Counter[str]], global_distribution: Mapping[str, float]
 ) -> list[float]:
-    grouped_counts: dict[tuple[str, ...], Counter[str]] = defaultdict(Counter)
-    for record in records:
-        key = tuple(_value_key(record.get(field)) for field in subset)
-        grouped_counts[key][_value_key(record.get(sensitive_attribute))] += 1
     return [
-        _total_variation_distance(
-            _normalize_counts(counts),
-            global_distribution,
-        )
-        for counts in grouped_counts.values()
+        _total_variation_distance(_normalize_counts(counts), global_distribution)
+        for counts in groups
     ]
 
 

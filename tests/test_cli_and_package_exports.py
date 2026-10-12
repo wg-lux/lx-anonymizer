@@ -1,4 +1,5 @@
 import argparse
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -11,6 +12,40 @@ import lx_anonymizer
 from lx_anonymizer import cli
 from lx_anonymizer import settings as settings_module
 from lx_anonymizer.config import Settings, settings
+
+
+@pytest.mark.parametrize(
+    ("package", "implementation", "processor", "contract_owner"),
+    [
+        (
+            "frame_cleaner",
+            "cleaner",
+            "FrameCleaner",
+            "lx_anonymizer.processing_contracts",
+        ),
+        (
+            "report_reader",
+            "reader",
+            "ReportReader",
+            "lx_dtypes.models.contracts.report_anonymization",
+        ),
+    ],
+)
+def test_processing_packages_preserve_public_identity(
+    package: str,
+    implementation: str,
+    processor: str,
+    contract_owner: str,
+) -> None:
+    public = importlib.import_module(f"lx_anonymizer.{package}")
+    internal = importlib.import_module(f"lx_anonymizer.{package}.{implementation}")
+    contracts = importlib.import_module(contract_owner)
+    assert getattr(public, processor) is getattr(internal, processor)
+    assert getattr(lx_anonymizer, processor) is getattr(public, processor)
+    prefix = "Video" if package == "frame_cleaner" else "Report"
+    for suffix in ("Request", "Result"):
+        name = f"{prefix}Anonymization{suffix}"
+        assert getattr(public, name) is getattr(contracts, name)
 
 
 def test_build_parser_lists_commands() -> None:

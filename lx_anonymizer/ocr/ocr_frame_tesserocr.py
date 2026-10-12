@@ -704,8 +704,7 @@ class TesseOCRFrameProcessor:
         high_quality: bool = True,
     ) -> Tuple[str, float, Dict[str, Any]]:
         if not self.api:
-            logger.error("TesseOCR API not initialized.")
-            return "", 0.0, {}
+            raise RuntimeError("TesseOCR API not initialized")
 
         t0 = time.time()
         with self._lock:
@@ -754,7 +753,7 @@ class TesseOCRFrameProcessor:
 
             except Exception as e:
                 logger.error("TesseOCR failed: %s", e)
-                return "", 0.0, {}
+                raise
 
     # ---------------- Batch ----------------
     def extract_text_from_frame_batch(

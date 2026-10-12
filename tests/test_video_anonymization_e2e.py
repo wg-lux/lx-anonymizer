@@ -23,6 +23,8 @@ from lx_anonymizer.frame_cleaner import (
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
+from lx_anonymizer.model_loading import ModelUnavailableError
+from lx_anonymizer.processing_contracts import ModelExecutionSummary
 from lx_anonymizer.video_processing.analysis_budget import FrameAnalysisBudgetExceeded
 from lx_anonymizer.video_processing.video_encoder import VideoEncoder
 from lx_anonymizer.video_processing.video_utils import (
@@ -96,6 +98,71 @@ def _initialize_deterministic_core(cleaner: FrameCleaner) -> None:
     cleaner.use_enhanced_ocr = True
 
 
+@pytest.mark.parametrize("technique", ["mask_overlay", "remove_frames"])
+def test_all_models_unavailable_returns_configured_mask_silent_reprocessing_candidate(
+    tmp_path: Path,
+    mock_central_video_format: MagicMock,
+    technique: str,
+) -> None:
+    source, candidate = tmp_path / "source.mp4", tmp_path / "candidate.mp4"
+    _create_source_video(source)
+    digest = _sha256(source)
+    mock_central_video_format.side_effect = real_detect_video_format
+    with (
+        patch.object(VideoEncoder, "_detect_nvenc_support", return_value=False),
+        patch.object(
+            FrameCleaner, "_init_core_components", _initialize_deterministic_core
+        ),
+        patch.object(FrameCleaner, "_log_hf_cache_status"),
+    ):
+        cleaner = FrameCleaner(use_llm=False, quality_profile="exhaustive")
+        ocr = cast(MagicMock, cleaner.frame_ocr)
+        ocr.extract_text_with_rapidocr.side_effect = ModelUnavailableError(
+            "No OCR available"
+        )
+        result_path, metadata = cleaner.clean_video(
+            source,
+            {
+                "x": 40,
+                "y": 20,
+                "width": 100,
+                "height": 80,
+                "image_width": 160,
+                "image_height": 120,
+            },
+            None,
+            Fraction(10, 1),
+            output_path=candidate,
+            technique=technique,
+        )
+    assert result_path == candidate
+    assert _sha256(source) == digest
+    summary = ModelExecutionSummary.model_validate(metadata["model_execution"])
+    assert summary.configured_mask_fallback and summary.reprocessing_required
+    assert summary.models_used == []
+    coverage = cleaner._metadata_analysis  # pyright: ignore[reportPrivateUsage]
+    assert coverage is not None and not coverage.complete
+    assert coverage.cap_reason == "model_failure"
+    streams = _probe_streams(candidate)
+    assert len(streams) == 1 and streams[0]["codec_type"] == "video"
+    assert streams[0]["nb_frames"] == "10"
+    assert (streams[0]["width"], streams[0]["height"]) == (160, 120)
+    capture = cv2.VideoCapture(str(candidate))
+    frames = 0
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            assert isinstance(frame, np.ndarray)
+            assert float(frame[:, :35].max()) < 8
+            assert float(frame[25:95, 45:135].max()) > 30
+            frames += 1
+    finally:
+        capture.release()
+    assert frames == 10
+
+
 @pytest.mark.video
 @pytest.mark.ffmpeg
 @pytest.mark.integration
@@ -139,11 +206,11 @@ def test_clean_video_masks_real_media_and_preserves_the_attempt_contract(
         # Act: cross the public FrameCleaner boundary and execute real decode/FFmpeg.
         with (
             patch(
-                "lx_anonymizer.frame_cleaner.check_analysis_budget",
+                "lx_anonymizer.frame_cleaner.cleaner.check_analysis_budget",
                 side_effect=[None, FrameAnalysisBudgetExceeded("deadline_exceeded")],
             )
             if capped_metadata
-            else patch("lx_anonymizer.frame_cleaner.check_analysis_budget")
+            else patch("lx_anonymizer.frame_cleaner.cleaner.check_analysis_budget")
         ):
             result_path, raw_metadata = cleaner.clean_video(
                 video_path=source,

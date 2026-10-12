@@ -1,11 +1,38 @@
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # Ordered, lazy model blocks. Environment values use JSON arrays.
+    OCR_MODEL_ORDER: tuple[Literal["rapidocr", "tesserocr", "pytesseract"], ...] = (
+        "rapidocr",
+        "tesserocr",
+        "pytesseract",
+    )
+    METADATA_MODEL_ORDER: tuple[Literal["llm", "spacy"], ...] = ("llm", "spacy")
+    REPORT_OCR_MODEL_ORDER: tuple[Literal["vision", "ensemble", "tesseract"], ...] = (
+        "vision",
+        "ensemble",
+        "tesseract",
+    )
+    MODEL_BLOCK_TIMEOUT: float = Field(default=30.0, gt=0, le=120, allow_inf_nan=False)
+
+    @field_validator(
+        "OCR_MODEL_ORDER", "METADATA_MODEL_ORDER", "REPORT_OCR_MODEL_ORDER"
+    )
+    @classmethod
+    def validate_model_order(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value or len(set(value)) != len(value):
+            raise ValueError("Model order must be nonempty and contain no duplicates")
+        if "llm" in value and "spacy" not in value:
+            raise ValueError(
+                "Metadata model order must include the local spacy fallback"
+            )
+        return value
+
     # --- General Toggles ---
     MODE: str = "production"
     DEBUG_SAVE_FRAMES: bool = False

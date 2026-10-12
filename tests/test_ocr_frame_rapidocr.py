@@ -34,7 +34,8 @@ class FakeRapidOCREngine:
 
 @pytest.mark.parametrize("ocr_model", ["", "custom-vision"])
 def test_gemma4_refines_conventional_ocr_and_preserves_confidence(
-    monkeypatch: pytest.MonkeyPatch, ocr_model: str,
+    monkeypatch: pytest.MonkeyPatch,
+    ocr_model: str,
 ) -> None:
     monkeypatch.setattr(ocr_mod.settings, "LLM_OCR_MODEL", ocr_model)
     observed: dict[str, object] = {}

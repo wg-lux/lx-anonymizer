@@ -45,6 +45,19 @@ response_contract:
   - Unsupported structured-output requests fail without silently dropping the schema.
   - One metadata HTTP request per invocation; scheduling retries belong to the caller.
   - Chunked OCR correction preserves the original chunk on inference failure and logs the failure class.
+model_blocks:
+  documentation: docs/guides/model-loading.md
+  environment:
+    OCR_MODEL_ORDER: '["rapidocr", "tesserocr", "pytesseract"]'
+    REPORT_OCR_MODEL_ORDER: '["vision", "ensemble", "tesseract"]'
+    METADATA_MODEL_ORDER: '["llm", "spacy"]'
+    MODEL_BLOCK_TIMEOUT: 30
+  rules:
+    - Arrays define priority; unknown names, duplicate names and empty arrays are rejected.
+    - Metadata order always contains spacy; LLM_ENABLED=false filters out the llm block.
+    - Ensemble and vision report blocks also respect their existing enable flags.
+    - Each timeout includes worker startup, model loading and inference; cleanup has a separate one-second reap bound.
+    - Reordering metadata blocks does not select another remote model or change transport policy.
 validation_limits:
   - Contract tests use synthetic HTTP responses and do not establish clinical accuracy or live model availability.
   - Validate each deployed model on representative de-identified reports before clinical use.

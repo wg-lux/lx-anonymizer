@@ -7,46 +7,6 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from lx_dtypes.models.meta.ReportMeta import ReportReaderFlags
 
-
-DEFAULT_FIRST_NAMES = [
-    "Markus",
-    "Linhel",
-    "Rainer",
-    "Hans",
-    "Anja",
-    "Dorothea",
-    "Doro",
-    "Angelika",
-    "Sven",
-    "Theodor",
-    "Alexander",
-    "Mandy",
-    "Kathrin",
-    "Florian",
-    "Philip",
-    "Laura",
-]
-
-DEFAULT_LAST_NAMES = [
-    "Kozielski",
-    "Reiter",
-    "Purrer",
-    "Kudlich",
-    "Brand",
-    "Weich",
-    "Lux",
-    "Meining",
-    "Hann",
-    "Retzbach",
-    "Hose",
-    "Henniger",
-    "Weich",
-    "Dela Cruz",
-    "Wiese",
-    "Weise",
-    "Sodmann",
-]
-
 DEFAULT_PATIENT_INFO_LINE_FLAG = "Patient: "
 DEFAULT_ENDOSCOPE_INFO_LINE_FLAG = "Gerät: "
 DEFAULT_EXAMINER_INFO_LINE_FLAG = "1. Unters.:"
@@ -70,8 +30,6 @@ class ReportReaderSettings(BaseSettings):
     """Pydantic settings for report-reader parsing and anonymization defaults."""
 
     locale: str = "de_DE"
-    first_names: list[str] = Field(default_factory=lambda: list(DEFAULT_FIRST_NAMES))
-    last_names: list[str] = Field(default_factory=lambda: list(DEFAULT_LAST_NAMES))
     text_date_format: str = "%d.%m.%Y"
     flags: ReportReaderFlags = Field(default_factory=default_report_reader_flags)
 
@@ -83,22 +41,6 @@ class ReportReaderSettings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
-
-    @field_validator("first_names", "last_names", mode="before")
-    @classmethod
-    def normalize_name_list(cls, value: object) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(value, (list, tuple, set)):
-            normalized_items: list[str] = []
-            for item in cast(tuple[object, ...] | list[object] | set[object], value):
-                text = str(item).strip()
-                if text:
-                    normalized_items.append(text)
-            return normalized_items
-        return [str(value).strip()] if str(value).strip() else []
 
     @field_validator("flags", mode="before")
     @classmethod
@@ -117,8 +59,6 @@ class ReportReaderSettings(BaseSettings):
     def default_settings_dict(self) -> dict[str, object]:
         return {
             "locale": self.locale,
-            "first_names": list(self.first_names),
-            "last_names": list(self.last_names),
             "text_date_format": self.text_date_format,
             "flags": self.flags.model_dump(),
         }
@@ -137,8 +77,6 @@ __all__ = [
     "DEFAULT_CUT_OFF_BELOW_LINE_FLAG",
     "DEFAULT_ENDOSCOPE_INFO_LINE_FLAG",
     "DEFAULT_EXAMINER_INFO_LINE_FLAG",
-    "DEFAULT_FIRST_NAMES",
-    "DEFAULT_LAST_NAMES",
     "DEFAULT_PATIENT_INFO_LINE_FLAG",
     "DEFAULT_SETTINGS",
     "ReportReaderSettings",

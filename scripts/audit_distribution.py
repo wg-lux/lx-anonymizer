@@ -131,10 +131,10 @@ def _forbidden_member_reason(name: str, *, wheel: bool) -> str | None:
 def _frame_cleaner_consistency_errors(path: Path) -> list[str]:
     frame_cleaner = _read_artifact_member_by_suffix(
         path,
-        "lx_anonymizer/frame_cleaner.py",
+        "lx_anonymizer/frame_cleaner/cleaner.py",
     )
     if frame_cleaner is None:
-        return [f"{path}: missing lx_anonymizer/frame_cleaner.py"]
+        return [f"{path}: missing lx_anonymizer/frame_cleaner/cleaner.py"]
 
     if "self._iter_video(" not in frame_cleaner:
         return []
@@ -151,12 +151,12 @@ def _frame_cleaner_consistency_errors(path: Path) -> list[str]:
 
     frame_cleaner_video = _read_artifact_member_by_suffix(
         path,
-        "lx_anonymizer/frame_cleaner_video.py",
+        "lx_anonymizer/frame_cleaner/video.py",
     )
     if frame_cleaner_video is None:
         return [
             f"{path}: FrameCleaner inherits FrameCleanerVideoMixin but "
-            "lx_anonymizer/frame_cleaner_video.py is missing"
+            "lx_anonymizer/frame_cleaner/video.py is missing"
         ]
     if "def _iter_video(" not in frame_cleaner_video:
         return [

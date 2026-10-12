@@ -40,13 +40,13 @@ def test_distribution_audit_rejects_unwired_frame_cleaner_video_mixin(
     _write_wheel(
         wheel,
         {
-            "lx_anonymizer/frame_cleaner.py": """
+            "lx_anonymizer/frame_cleaner/cleaner.py": """
 class FrameCleaner:
     def _analyze_video_frames(self, video_path, total_frames):
         for idx, frame, stride in self._iter_video(video_path, total_frames):
             pass
 """,
-            "lx_anonymizer/frame_cleaner_video.py": """
+            "lx_anonymizer/frame_cleaner/video.py": """
 class FrameCleanerVideoMixin:
     def _iter_video(self, video_path, total_frames):
         yield from ()
@@ -69,8 +69,8 @@ def test_distribution_audit_accepts_wired_frame_cleaner_video_mixin(
     _write_wheel(
         wheel,
         {
-            "lx_anonymizer/frame_cleaner.py": """
-from lx_anonymizer.frame_cleaner_video import FrameCleanerVideoMixin
+            "lx_anonymizer/frame_cleaner/cleaner.py": """
+from lx_anonymizer.frame_cleaner.video import FrameCleanerVideoMixin
 
 
 class FrameCleaner(FrameCleanerVideoMixin):
@@ -78,7 +78,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         for idx, frame, stride in self._iter_video(video_path, total_frames):
             pass
 """,
-            "lx_anonymizer/frame_cleaner_video.py": """
+            "lx_anonymizer/frame_cleaner/video.py": """
 class FrameCleanerVideoMixin:
     def _iter_video(self, video_path, total_frames):
         yield from ()
@@ -95,7 +95,7 @@ def test_distribution_audit_allows_tesserocr_base_dependency(tmp_path: Path) -> 
     _write_wheel(
         wheel,
         {
-            "lx_anonymizer/frame_cleaner.py": """
+            "lx_anonymizer/frame_cleaner/cleaner.py": """
 class FrameCleaner:
     pass
 """,

@@ -96,3 +96,22 @@ luxnix_ollama_alignment:
     profile: Local JSON Modelfile matches the named LuxNix module after indentation normalization.
     shell: bash -n scripts/provision_ollama_gemma4.sh passed.
     whitespace: git diff --check passed.
+
+model_loading_architecture:
+  assessed_by: codex-model-loading-20261012
+  assessed_at: '2026-10-12'
+  status: locally_tested
+  implementation:
+    - Generic ordered ModelBlock factories with lazy process isolation, deadlines, cancellation and deterministic worker cleanup.
+    - OCR and metadata ordering is validated configuration; failed blocks are disabled per attempt and model names are logged.
+    - Report metadata invokes the local extraction implementation inside the worker; nested isolated workers are rejected before spawning.
+    - Exhausted video OCR applies configured masks, preserves encoder and integrity errors, and returns incomplete coverage plus reprocessing diagnostics.
+    - Shared lx-dtypes VideoMaskProfile and data root replace package-local JSON mask creation.
+  verification:
+    - Full anonymizer Pyright reports 0 errors and 10 existing warnings.
+    - Main model, frame, concurrency, OCR, report, provider, real-video, exhaustive and strand regression lane passed 205 tests.
+    - Final model loading, real scanned report and LLM helper lane passed 55 tests in 52.55 seconds, including recursive-worker prevention and real report extraction.
+    - New model modules and core tests pass Ruff; dependency sync used uv sync --extra dev --extra cpu followed by the local lx-dtypes checkout.
+  limitations:
+    - Local source verification; coordinated package release and deployed clinical quality remain separate gates.
+  reference: docs/guides/model-loading.md

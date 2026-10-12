@@ -206,7 +206,10 @@ def test_analysis_cap_returns_metadata_and_releases_invocation(
     cleaner = _cleaner()
     cleaner.sampling_profile = replace(cleaner.sampling_profile, max_analysis_seconds=1)
     with (
-        patch("lx_anonymizer.frame_cleaner.time.monotonic", side_effect=[0, 0, 2, 2]),
+        patch(
+            "lx_anonymizer.frame_cleaner.cleaner.time.monotonic",
+            side_effect=[0, 0, 2, 2],
+        ),
         patch.object(
             cleaner,
             "_process_frame_result",
@@ -245,7 +248,7 @@ def test_capped_analysis_cannot_drive_sensitive_frame_removal(tmp_path: Path) ->
     cleaner = _cleaner()
     cleaner.sampling_profile = replace(cleaner.sampling_profile, max_analysis_seconds=1)
     with (
-        patch("lx_anonymizer.frame_cleaner.time.monotonic", side_effect=[0, 2]),
+        patch("lx_anonymizer.frame_cleaner.cleaner.time.monotonic", side_effect=[0, 2]),
         pytest.raises(FrameAnalysisBudgetExceeded),
     ):
         cleaner.clean_video(
@@ -295,7 +298,10 @@ def test_projected_cap_probes_timeline_and_finds_name_at_last_frame(
         )
 
     with (
-        patch("lx_anonymizer.frame_cleaner.check_analysis_budget", side_effect=guard),
+        patch(
+            "lx_anonymizer.frame_cleaner.cleaner.check_analysis_budget",
+            side_effect=guard,
+        ),
         patch.object(cleaner, "_process_frame_result", side_effect=process),
     ):
         # Act: infeasible exhaustive OCR becomes bounded timeline probing.

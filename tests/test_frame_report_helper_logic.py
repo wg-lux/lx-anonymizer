@@ -12,7 +12,7 @@ from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
 from lx_anonymizer.report_reader import ReportReader
-from lx_anonymizer.report_reader_extraction import (
+from lx_anonymizer.report_reader.extraction import (
     LLMExtractorProtocol,
     _EndoscopeExtractor,  # pyright: ignore[reportPrivateUsage]
     _ExaminationExtractor,  # pyright: ignore[reportPrivateUsage]
@@ -324,10 +324,9 @@ def test_extract_report_meta_uses_line_fallback_parses_dob_and_enriches_fields()
         ]
     )
 
-    with patch(
-        "lx_anonymizer.report_reader.PatientDataExtractor", PatientExtractorStub
-    ):
-        meta = rr.extract_report_meta(text, pdf_path=None)
+    from lx_anonymizer.report_reader.extraction import ReportReaderExtractionMixin
+
+    meta = ReportReaderExtractionMixin.extract_report_meta(rr, text, pdf_path=None)
 
     assert meta["first_name"] == "Max"
     assert meta["last_name"] == "Muster"

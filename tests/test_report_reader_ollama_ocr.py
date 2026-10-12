@@ -1,69 +1,64 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import pytest
 from PIL import Image
 
-from lx_anonymizer import report_reader as report_reader_module
+from lx_anonymizer.report_reader import reader as report_reader_module
+from lx_anonymizer.config import Settings
 from lx_anonymizer.llm.llm_service import LLMService
+from lx_anonymizer.model_adapters import ReportOCRFactory
 from lx_anonymizer.report_reader import ReportReader
 
 
 @pytest.mark.parametrize("ocr_model", ["", "custom-vision"])
-def test_report_reader_uses_gemma4_vision_ocr_with_tesseract_candidate(
-    monkeypatch: pytest.MonkeyPatch, ocr_model: str,
+def test_report_vision_block_uses_configured_model(
+    monkeypatch: pytest.MonkeyPatch,
+    ocr_model: str,
 ) -> None:
-    monkeypatch.setattr(report_reader_module.settings, "LLM_OCR_MODEL", ocr_model)
     observed: dict[str, object] = {}
-
-    def conventional_ocr(image: Image.Image) -> tuple[str, list[object]]:
-        return "Patlent Müller", []
 
     def recognize_image(
         self: LLMService, image: Image.Image, candidate_text: str = ""
     ) -> str:
         assert self.model_name == (ocr_model or "gemma4:e2b")
-        observed["candidate"] = candidate_text
         observed["size"] = image.size
         return "Patient Müller"
 
-    monkeypatch.setattr(
-        report_reader_module, "tesseract_full_image_ocr", conventional_ocr
-    )
     monkeypatch.setattr(LLMService, "recognize_image", recognize_image)
-    reader = ReportReader.__new__(ReportReader)
-    reader.ollama_available = True
-
-    result = reader._ocr_image(  # pyright: ignore[reportPrivateUsage]
-        Image.new("RGB", (80, 40), "white"), page_num=1, use_ensemble=False
-    )
-
-    assert result == "Patient Müller"
-    assert observed == {"candidate": "Patlent Müller", "size": (80, 40)}
+    monkeypatch.setattr(report_reader_module.settings, "LLM_OCR_MODEL", ocr_model)
+    config = report_reader_module.settings.model_copy(deep=True)
+    model = ReportOCRFactory("vision", config)()
+    assert model(Image.new("RGB", (80, 40), "white")) == "Patient Müller"
+    assert observed == {"size": (80, 40)}
 
 
-def test_report_reader_keeps_tesseract_text_when_gemma4_fails(
+def conventional_ocr(image: Image.Image) -> str:
+    assert image.size == (80, 40)
+    return "Patient Müller"
+
+
+@dataclass(frozen=True)
+class FailingVisionFactory:
+    backend: str
+    config: Settings
+
+    def __call__(self) -> Callable[[Image.Image], str]:
+        if self.backend == "vision":
+            raise ConnectionError("Ollama unavailable")
+        return conventional_ocr
+
+
+def test_report_reader_uses_tesseract_when_vision_cannot_load(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def conventional_ocr(image: Image.Image) -> tuple[str, list[object]]:
-        return "Patient Müller", []
-
-    monkeypatch.setattr(
-        report_reader_module,
-        "tesseract_full_image_ocr",
-        conventional_ocr,
-    )
-
-    def fail_recognition(
-        self: LLMService, image: Image.Image, candidate_text: str = ""
-    ) -> str:
-        raise ConnectionError("Ollama unavailable")
-
-    monkeypatch.setattr(LLMService, "recognize_image", fail_recognition)
+    monkeypatch.setattr(report_reader_module, "ReportOCRFactory", FailingVisionFactory)
+    monkeypatch.setattr(report_reader_module.settings, "LLM_ENABLED", True)
+    monkeypatch.setattr(report_reader_module.settings, "OLLAMA_OCR_ENABLED", True)
     reader = ReportReader.__new__(ReportReader)
-    reader.ollama_available = True
-
     result = reader._ocr_image(  # pyright: ignore[reportPrivateUsage]
         Image.new("RGB", (80, 40), "white"), page_num=1, use_ensemble=False
     )
-
     assert result == "Patient Müller"

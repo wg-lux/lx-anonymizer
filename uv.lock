@@ -1583,7 +1583,7 @@ wheels = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "1.0.5"
+version = "1.0.7"
 source = { editable = "." }
 dependencies = [
     { name = "certifi", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1677,7 +1677,7 @@ requires-dist = [
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.1.1" },
     { name = "gender-guesser", specifier = ">=0.4.0" },
     { name = "hezar", marker = "extra == 'dev'", specifier = ">=0.42.0" },
-    { name = "lx-dtypes", specifier = ">=0.4.1" },
+    { name = "lx-dtypes", specifier = ">=0.4.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18.2" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "onnx", specifier = ">=1.12.0,<2.0.0" },
@@ -1735,7 +1735,7 @@ cpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.4.1"
+version = "0.4.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
@@ -1759,9 +1759,9 @@ dependencies = [
     { name = "scipy", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
     { name = "types-pyyaml", marker = "sys_platform == 'linux' or (extra == 'extra-13-lx-anonymizer-cpu' and extra == 'extra-13-lx-anonymizer-gpu')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/11/9c/f7aa83b87fd85b51e99100dd0735cfdac9def3e7cb6f76c403848cff19c5/lx_dtypes-0.4.1.tar.gz", hash = "sha256:bef55b8feafd267c06351d91d8f65095cdd0185913ceb4ac746fa3a48d8af2d8", size = 2882000, upload-time = "2026-09-29T12:19:25.616Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/e7/0d23e95ce3ed2b14e398f4e6b86f08e730195990fe5f583733e400f04c46/lx_dtypes-0.4.5.tar.gz", hash = "sha256:7511a3102feba75011c8417b238eb19516f30bfae9c61aa44553ba8012629f0f", size = 3040555, upload-time = "2026-10-12T13:19:26.908Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/37/253be31b9a9d1b87b1c6e485e6a91f13716e973bf7d91d584db667e83288/lx_dtypes-0.4.1-py3-none-any.whl", hash = "sha256:9cc8ee13c266de340b6f525aa39cab3a0725c2aa5b270662d010c2a9471d33fe", size = 1160661, upload-time = "2026-09-29T12:19:21.729Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/aa/e763e53617347a17abf3e9a3f91a415ca9e8bb858204a7576ccd05d09a67/lx_dtypes-0.4.5-py3-none-any.whl", hash = "sha256:dbdd9e07f2f3d45fd0686b3b2c838873c1d473b3cc5875b4698117d4a0e4f3e1", size = 1247459, upload-time = "2026-10-12T13:19:24.788Z" },
 ]
 
 [[package]]

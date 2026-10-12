@@ -19,6 +19,7 @@ invariants:
   - ReportReader processes immutable caller-owned input and returns typed metadata plus an unpublished attempt-owned result.
   - Durable attempts, leases, fencing, retries, publication, and clinical identity persistence remain outside lx-anonymizer.
   - Invalid input, contract mismatch, extraction failure, and artifact-integrity failure raise loudly without exposing partial output as success.
+  - Employee name lists are optional caller-provided inputs; report-reader settings contain no hardcoded name lists or default name source.
 definition_of_done:
   - id: typed_public_boundary
     category: requirements

@@ -50,7 +50,9 @@ class LLMService:
     ) -> None:
         self.provider, self.base_url = resolve_connection(provider, base_url)
         self.model_name = (
-            settings.llm_ocr_model_for(self.provider) if model_name is None else model_name
+            settings.llm_ocr_model_for(self.provider)
+            if model_name is None
+            else model_name
         ).strip()
         self.timeout = settings.LLM_TIMEOUT if timeout is None else timeout
         if not self.model_name:

@@ -79,8 +79,8 @@ def cutoff_trailing_text(text: str, cutoff_flags: Sequence[str]) -> str:
 
 def replace_employee_names(
     text: str,
-    first_names: Sequence[str],
-    last_names: Sequence[str],
+    first_names: Sequence[str] | None,
+    last_names: Sequence[str] | None,
     locale: str = "de_DE",
 ) -> str:
     """Replace known employee names with fake names."""
@@ -183,8 +183,8 @@ def anonymize_text(
     lower_cut_off_flags: Sequence[str] = (),
     upper_cut_off_flags: Sequence[str] = (),
     locale: str = "de_DE",
-    first_names: Sequence[str] = (),
-    last_names: Sequence[str] = (),
+    first_names: Sequence[str] | None = (),
+    last_names: Sequence[str] | None = (),
     apply_cutoffs: bool = False,
     verbose: bool = False,
     *,

@@ -522,6 +522,7 @@ class TestFrameCleanerRefactored:
         mock_extract.assert_called_once_with(
             mock_frame,
             {"endoscope_image": {"x": 10, "y": 20, "width": 300, "height": 120}},
+            high_quality=True,
         )
 
     def test_process_frame_prefers_explicit_nested_ocr_roi(
@@ -546,7 +547,7 @@ class TestFrameCleanerRefactored:
                 frame_id=7,
             )
 
-        mock_extract.assert_called_once_with(mock_frame, nested_roi)
+        mock_extract.assert_called_once_with(mock_frame, nested_roi, high_quality=True)
 
     def test_process_frame_can_use_fast_ocr_quality(
         self,

@@ -131,8 +131,6 @@ class FrameOCR:
                 RAPIDOCR_BACKEND,
                 self._resolved_rapidocr_acceleration(),
             )
-        elif tesserocr_available and _TesseOCRFrameProcessor is not None:
-            self._ensure_tesserocr_processor()
         else:
             logger.info("TesseOCR not available, using PyTesseract")
 
@@ -167,6 +165,37 @@ class FrameOCR:
         return self._default_pytesseract_config()
 
     # ---------------- Public API ----------------
+    def extract_text_with_backend(
+        self,
+        backend: str,
+        frame: np.ndarray,
+        roi: RoiInput = None,
+        high_quality: bool = False,
+    ) -> tuple[str, float, dict[str, object]]:
+        """Run exactly one named block; the owner controls fallback and deadlines."""
+        if frame.size == 0 or frame.ndim not in (2, 3):
+            raise ValueError("OCR requires a nonempty image")
+        if backend == "rapidocr":
+            self._ensure_rapidocr_engine()
+            result = self._extract_text_rapidocr(frame, roi, high_quality)
+        elif backend == "tesserocr":
+            self._ensure_tesserocr_processor()
+            if self.tesserocr_processor is None:
+                raise RuntimeError("Tesserocr is unavailable")
+            result = self.tesserocr_processor.extract_text_from_frame(
+                frame, roi, high_quality
+            )
+        elif backend == "pytesseract":
+            flat_roi = roi if roi and "x" in roi else None
+            result = self._extract_text_pytesseract(
+                frame, cast(Optional[FlatRoi], flat_roi), high_quality
+            )
+        else:
+            raise ValueError(f"Unknown OCR model block: {backend}")
+        text, confidence, metadata = self._with_tracking_metadata(result)
+        metadata["backend"] = backend
+        return text, confidence, dict(metadata)
+
     def extract_text_with_rapidocr(
         self, frame: np.ndarray
     ) -> tuple[str, float, dict[str, object]]:
@@ -449,7 +478,9 @@ class FrameOCR:
         try:
             import onnxruntime as ort  # type: ignore[import-untyped]
         except ImportError:
-            logger.info("To use RapidOCR (recommended) install lx-anonymizer[cpu] or lx-anonymizer[gpu] if you have CUDA.")
+            logger.info(
+                "To use RapidOCR (recommended) install lx-anonymizer[cpu] or lx-anonymizer[gpu] if you have CUDA."
+            )
             return ()
 
         providers = cast(Sequence[object], cast(Any, ort).get_available_providers())
@@ -814,7 +845,7 @@ class FrameOCR:
             return text, avg_conf, {"words": len(words), "avg_conf": avg_conf}
         except Exception as e:
             logger.error(f"PyTesseract OCR failed: {e}")
-            return "", 0.0, {}
+            raise
 
     # ---------------- Preprocessing ----------------
     def _preprocess_frame(

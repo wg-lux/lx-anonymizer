@@ -24,7 +24,7 @@ definition_of_done:
       - On infeasible projected completion, mask_overlay and extract_only use at most 128 interval-subdivision probe positions in addition to the inspected prefix, preserving immutable source order and useful collected metadata.
       - On elapsed budget exhaustion, those modes return partial metadata with validated inspected frame numbers, completeness, mode, cap reason and elapsed budget; no missing value is invented.
       - Whole-video overlay masking still covers every output frame and preserves the candidate contract; human anonymization validation remains a separate application gate. Partial analysis cannot drive remove_frames.
-      - Decoder failures, actual OCR failures and invalid metadata coverage still propagate; the analysis budget is checked around synchronous calls and does not claim to preempt a hung native call.
+      - Decoder failures and invalid metadata coverage still propagate; exhausted OCR blocks select a configured-mask silent reprocessing candidate with incomplete metadata coverage. Model loading and inference run behind process deadlines.
     required: true
     verification:
       kind: command
@@ -35,6 +35,11 @@ definition_of_done:
       assessed_by: codex-dataset-audit-20261002
       assessed_at: '2026-10-02'
       evidence:
+        - kind: test
+          reference: '2026-10-12 model loading: 205 focused regressions passed, including real FFmpeg configured-mask output with all OCR unavailable for overlay and frame-removal modes; source hashes, frame counts, dimensions, audio removal and reprocessing diagnostics checked.'
+        - kind: command
+          reference: 'Full Pyright: 0 errors, 10 existing warnings. Generic nested-worker, cancellation and real report follow-up lane: 55 passed.'
+
         - kind: command
           reference: 78 focused tests passed in 16.59 seconds; full repository Pyright reports 0 errors; no added lint findings.
         - kind: document
@@ -60,7 +65,7 @@ definition_of_done:
     category: functionality
     title: Every source frame contributes to patient metadata extraction
     acceptance:
-      - Within its analysis budget, the exhaustive profile uses full-frame RapidOCR without sample caps, ROI exclusions, vision LLM calls, or metadata-driven early stopping. Explicit budget caps are governed by bounded_metadata_return.
+      - Within its analysis budget, the exhaustive profile uses the configured full-frame OCR cascade (RapidOCR first by default) without sample caps, ROI exclusions, vision LLM calls, or metadata-driven early stopping. Explicit budget caps are governed by bounded_metadata_return.
       - Sequential decoding preserves frame order and closes the decoder on success, cancellation, or failure; incomplete decoding raises.
       - Only pixel-identical consecutive frames reuse OCR; changed pixels always trigger inference.
       - Repeated text extraction and retained LLM candidates are bounded per invocation; observation capacity exhaustion raises.

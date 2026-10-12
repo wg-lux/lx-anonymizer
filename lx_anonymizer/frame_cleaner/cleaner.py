@@ -6,7 +6,8 @@ import stat
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
@@ -36,7 +37,7 @@ from lx_anonymizer.anonymization.detector_video_masking import (
 )
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.config import settings
-from lx_anonymizer.frame_cleaner_video import FrameCleanerVideoMixin
+from lx_anonymizer.frame_cleaner.video import FrameCleanerVideoMixin
 from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
 from lx_anonymizer.llm.factory import LLMFactory
 from lx_anonymizer.llm.llm_extractor import (
@@ -49,14 +50,23 @@ from lx_anonymizer.metrics_provenance import (
     summarize_frame_observations,
 )
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
-from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
-from lx_anonymizer.ocr.ocr_frame import FlatRoi, FrameOCR, RoiInput
+from lx_anonymizer.model_adapters import (
+    BoundedFrameOCR as FrameOCR,
+    BoundedMetadataExtractor,
+)
+from lx_anonymizer.model_loading import (
+    ModelChainRuntime,
+    ModelCleanupError,
+    ModelUnavailableError,
+)
+from lx_anonymizer.ocr.ocr_frame import FlatRoi, RoiInput
 from lx_anonymizer.paper_metrics import (
     VideoPaperEvaluationMetrics,
     build_video_paper_evaluation_metrics,
 )
 from lx_anonymizer.processing_contracts import (
     MetadataAnalysisCoverage,
+    ModelExecutionSummary,
     VideoAnonymizationRequest,
     VideoAnonymizationResult,
 )
@@ -204,6 +214,11 @@ def _current_max_rss_kib() -> int:
 class FrameCleaner(FrameCleanerVideoMixin):
     """Frame extraction and sensitive data detection for one video attempt."""
 
+    llm_extractor: LLMMetadataExtractor | None = None
+    _model_failure_requires_mask: bool = False
+    _fallback_mask_applied: bool = False
+    patient_data_extractor: Callable[[str], Mapping[str, object]]
+
     _previous_ocr_frame: np.ndarray | None
     _previous_ocr_result: tuple[str, float, dict[str, object]] | None
     _metadata_text_cache: OrderedDict[str, None]
@@ -264,7 +279,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
             )
         )
         self.frame_metadata_extractor = FrameMetadataExtractor()
-        self.patient_data_extractor = PatientDataExtractor()
+        self.patient_data_extractor = BoundedMetadataExtractor(use_llm=False)
         self.roi_processor = ROIProcessor()
 
         logger.info("Initializing with Enhanced OCR components (OCR_FIX_V1 enabled)")
@@ -339,6 +354,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
         )
 
     def _reset_run_state(self) -> None:
+        self._model_failure_requires_mask = False
+        self._fallback_mask_applied = False
+        for chain in self._model_chains():
+            chain.reset()
         self.frame_collection: List[FrameCollectionItem] = []
         self.frame_observations: List[FrameObservation] = []
         self.ocr_text_collection: List[str] = []
@@ -392,6 +411,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 "FrameCleaner instances are single-run resources and must not be "
                 "shared by concurrent video attempts."
             )
+        candidate_path: Path | None = None
         try:
             candidate_path = self._validate_video_invocation(
                 video_path=video_path,
@@ -426,7 +446,16 @@ class FrameCleaner(FrameCleanerVideoMixin):
         finally:
             self._previous_ocr_frame = None
             self._previous_ocr_result = None
-            self._run_lock.release()
+            try:
+                with ExitStack() as cleanup:
+                    for chain in self._model_chains():
+                        cleanup.callback(chain.close)
+            except BaseException:
+                if candidate_path is not None and technique != "extract_only":
+                    candidate_path.unlink(missing_ok=True)
+                raise
+            finally:
+                self._run_lock.release()
 
     def process(
         self,
@@ -443,6 +472,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
             device=request.device,
         )
         coverage_payload = raw_metadata.get("metadata_analysis")
+        execution_payload = raw_metadata.get("model_execution")
         return VideoAnonymizationResult(
             source_path=request.source_path,
             artifact_path=(
@@ -454,7 +484,39 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 if coverage_payload is not None
                 else None
             ),
+            model_execution=(
+                ModelExecutionSummary.model_validate(execution_payload)
+                if execution_payload is not None
+                else None
+            ),
         )
+
+    def _model_chains(self) -> list[ModelChainRuntime]:
+        chains: list[ModelChainRuntime] = []
+        ocr = getattr(self, "frame_ocr", None)
+        if isinstance(ocr, FrameOCR):
+            chains.append(ocr.chain)
+        patient = getattr(self, "patient_data_extractor", None)
+        if isinstance(patient, BoundedMetadataExtractor):
+            chains.append(patient.chain)
+        extractor = self.llm_extractor
+        if (
+            isinstance(extractor, LLMMetadataExtractor)
+            and extractor.model_chain is not None
+        ):
+            chains.append(extractor.model_chain)
+        return chains
+
+    def _model_execution_summary(self) -> dict[str, object]:
+        chains = self._model_chains()
+        return ModelExecutionSummary(
+            models_used=sorted({name for chain in chains for name in chain.used}),
+            failed_models=sorted(
+                {name for chain in chains for name in chain.failed_models}
+            ),
+            configured_mask_fallback=self._fallback_mask_applied,
+            reprocessing_required=self._model_failure_requires_mask,
+        ).model_dump()
 
     @staticmethod
     def _validate_video_invocation(
@@ -705,10 +767,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
             final_payload["frame_observations"] = frame_observation_payloads
         final_meta = VideoMeta.model_validate(final_payload)
         payload = final_meta.model_dump(mode="json")
+        payload["model_execution"] = self._model_execution_summary()
         if self._analyzes_every_frame():
             payload["frame_analysis"] = {
                 "profile": "exhaustive",
-                "ocr_backend": "rapidocr",
+                "ocr_backend": "configured_cascade",
                 "ocr_scope": "full_frame",
                 "identical_frame_cache_hits": self._ocr_cache_hits,
                 "retained_text_limit": self.sampling_profile.max_retained_texts,
@@ -792,7 +855,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 try:
                     check_budget()
                 except FrameAnalysisBudgetExceeded as exc:
-                    if technique == "remove_frames":
+                    if (
+                        technique == "remove_frames"
+                        and not self._model_failure_requires_mask
+                    ):
                         raise
                     if exc.reason == "deadline_exceeded":
                         cap_reason = "deadline_exceeded"
@@ -846,7 +912,10 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 try:
                     check_budget()
                 except FrameAnalysisBudgetExceeded as exc:
-                    if technique == "remove_frames":
+                    if (
+                        technique == "remove_frames"
+                        and not self._model_failure_requires_mask
+                    ):
                         raise
                     if exc.reason == "deadline_exceeded":
                         cap_reason = "deadline_exceeded"
@@ -872,9 +941,12 @@ class FrameCleaner(FrameCleanerVideoMixin):
             self._metadata_analysis = MetadataAnalysisCoverage(
                 total_frames=total_frames,
                 inspected_frame_numbers=inspected_frame_numbers,
-                complete=len(inspected_frame_numbers) == total_frames,
+                complete=len(inspected_frame_numbers) == total_frames
+                and not self._model_failure_requires_mask,
                 mode="exhaustive" if probes is None else "interval_sampled",
-                cap_reason=cap_reason,
+                cap_reason="model_failure"
+                if self._model_failure_requires_mask
+                else cap_reason,
                 elapsed_seconds=time.monotonic() - analysis_started_at,
                 maximum_seconds=self.sampling_profile.max_analysis_seconds,
             )
@@ -942,6 +1014,18 @@ class FrameCleaner(FrameCleanerVideoMixin):
         endoscope_image_roi: Mapping[str, object] | None,
         source_frame_rate: Fraction,
     ) -> Path:
+        if self._model_failure_requires_mask and technique != "extract_only":
+            logger.warning(
+                "All OCR blocks failed; applying configured mask for reprocessing"
+            )
+            result = self._apply_mask_overlay(
+                video_path=video_path,
+                output_video=output_video,
+                endoscope_image_roi=endoscope_image_roi,
+                source_frame_rate=source_frame_rate,
+            )
+            self._fallback_mask_applied = True
+            return result
         if technique == "remove_frames":
             return self._apply_frame_removal(
                 video_path=video_path,
@@ -1058,24 +1142,21 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
     def _unified_metadata_extract(self, text: str) -> dict[str, object]:
         meta: dict[str, object] | None = {}
-        if self.patient_data_extractor:
-            try:
-                patient_candidate: Mapping[str, object] = self.patient_data_extractor(
-                    text
-                )
-                normalized_candidate = SensitiveMeta()
-                normalized_candidate.safe_update(patient_candidate)
-                if self._metadata_has_signal(
-                    normalized_candidate.model_dump(exclude_unset=True)
-                ):
-                    self.sensitive_meta.safe_update(normalized_candidate)
-                    meta = self.sensitive_meta.to_dict()
-                else:
-                    meta = None
-            except SensitiveMetaResolutionError:
-                raise
-            except Exception:
+        try:
+            patient_candidate: Mapping[str, object] = self.patient_data_extractor(text)
+            normalized_candidate = SensitiveMeta()
+            normalized_candidate.safe_update(patient_candidate)
+            if self._metadata_has_signal(
+                normalized_candidate.model_dump(exclude_unset=True)
+            ):
+                self.sensitive_meta.safe_update(normalized_candidate)
+                meta = self.sensitive_meta.to_dict()
+            else:
                 meta = None
+        except (SensitiveMetaResolutionError, ModelCleanupError):
+            raise
+        except Exception:
+            meta = None
         if not meta:
             out = self.frame_metadata_extractor.extract_metadata_from_frame_text(text)
             self.sensitive_meta.safe_update(out)
@@ -1370,23 +1451,29 @@ class FrameCleaner(FrameCleanerVideoMixin):
             endoscope_image_roi,
             endoscope_data_roi_nested,
         )
-        if self._analyzes_every_frame():
-            ocr_roi = None
-            ocr_text, ocr_conf, frame_metadata = self._exhaustive_frame_ocr(gray_frame)
-        elif high_quality_ocr:
-            ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
-                gray_frame, ocr_roi
-            )
-        else:
-            ocr_text, ocr_conf, frame_metadata = self.frame_ocr.extract_text_from_frame(
-                gray_frame, ocr_roi, high_quality=False
-            )
+        frame_metadata: dict[str, object]
+        try:
+            if self._analyzes_every_frame():
+                ocr_roi = None
+                ocr_text, ocr_conf, frame_metadata = self._exhaustive_frame_ocr(
+                    gray_frame
+                )
+            else:
+                ocr_text, ocr_conf, frame_metadata = (
+                    self.frame_ocr.extract_text_from_frame(
+                        gray_frame, ocr_roi, high_quality=high_quality_ocr
+                    )
+                )
+        except ModelUnavailableError:
+            self._model_failure_requires_mask = True
+            ocr_text, ocr_conf = "", 0.0
+            frame_metadata = {"model_failure": True}
         phi_regions: list[dict[str, object]] = []
         inspect_regions = not self._analyzes_every_frame() or (
             self._phi_frames_processed < self._phi_sample_limit
             and (frame_id is None or frame_id % self._phi_sample_stride == 0)
         )
-        if inspect_regions:
+        if inspect_regions and not self._model_failure_requires_mask:
             detector_frame = (
                 cv2.cvtColor(gray_frame, cv2.COLOR_BGR2RGB)
                 if self._analyzes_every_frame() and gray_frame.ndim == 3
@@ -1396,7 +1483,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
             if self._analyzes_every_frame():
                 self._phi_frames_processed += 1
         frame_metadata = self._metadata_for_ocr_text(ocr_text, frame_metadata)
-        is_sensitive = self._frame_is_sensitive(frame_metadata, phi_regions)
+        is_sensitive = self._model_failure_requires_mask or self._frame_is_sensitive(
+            frame_metadata, phi_regions
+        )
 
         if collect_for_batch:
             self._collect_frame_observation(
@@ -1588,51 +1677,28 @@ class FrameCleaner(FrameCleanerVideoMixin):
         if not text or not text.strip():
             return {}
 
-        logger.debug(
-            f"Extracting metadata from text of length {len(text)} with content: {text}..."
-        )
-
-        meta: dict[str, object] = {}
-        if (
-            getattr(self, "use_llm", False)
-            and getattr(self, "llm_extractor", None) is not None
-        ):
+        for backend in settings.METADATA_MODEL_ORDER:
             try:
-                meta_obj = self.llm_extractor.extract_metadata(text)  # type: ignore
-                if meta_obj is not None:
-                    meta = meta_obj.to_dict()
-            except SensitiveMetaResolutionError:
-                raise
-            except Exception as e:
-                logger.warning("LLM extraction failed: %s", e)
-                meta = {}
-
-        if meta == {}:
-            try:
-                spacy_meta: Mapping[str, object] = {}
-                if callable(self.patient_data_extractor):
-                    spacy_meta = cast(
-                        Mapping[str, object], self.patient_data_extractor(text)
-                    )
-                elif hasattr(self.patient_data_extractor, "extract"):
-                    spacy_meta = cast(
-                        Mapping[str, object], self.patient_data_extractor.extract(text)
-                    )
-                elif hasattr(self.patient_data_extractor, "patient_extractor"):
-                    spacy_meta = cast(
-                        Mapping[str, object],
-                        self.patient_data_extractor.patient_extractor(text),
+                if backend == "llm":
+                    extractor = self.llm_extractor
+                    if not getattr(self, "use_llm", False) or extractor is None:
+                        continue
+                    result = extractor.extract_metadata(text)
+                    meta: dict[str, object] = (
+                        result.to_dict() if result is not None else {}
                     )
                 else:
-                    spacy_meta = {}
-                meta = dict(spacy_meta)
-            except SensitiveMetaResolutionError:
+                    meta = dict(self.patient_data_extractor(text))
+            except (SensitiveMetaResolutionError, ModelCleanupError):
                 raise
-            except Exception as e:
-                logger.error(f"spaCy fallback failed: {e}")
-                meta = {}
-
-        return meta or {}
+            except Exception as exc:
+                logger.warning(
+                    "Metadata block %s failed (%s)", backend, type(exc).__name__
+                )
+                continue
+            if self._metadata_has_signal(meta):
+                return meta
+        return {}
 
     def _extract_enriched_metadata_batch(self) -> dict[str, object]:
         if not self.use_llm:
@@ -1680,7 +1746,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
             logger.info("Video-level LLM extraction produced no validated metadata.")
             return {}
-        except SensitiveMetaResolutionError:
+        except (SensitiveMetaResolutionError, ModelCleanupError):
             raise
         except Exception as exc:
             logger.warning(

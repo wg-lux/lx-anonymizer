@@ -24,7 +24,9 @@ def _sensitive_meta_fields() -> list[str]:
 
 
 @pytest.mark.integration
-def test_example_report_populates_sensitive_meta_fields(tmp_path: Path) -> None:
+def test_example_report_populates_sensitive_meta_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """
     Run ReportReader on an example report PDF and verify metadata/text propagation.
 
@@ -33,12 +35,17 @@ def test_example_report_populates_sensitive_meta_fields(tmp_path: Path) -> None:
     - verifies raw/anonymized text are returned and persisted when extraction succeeds
     - xfails (not fails) if fixture text is unreadable or yields no sensitive metadata
     """
+    from lx_anonymizer.config import settings
+
+    # Real OCR and cold spaCy startup share a bounded integration-test budget.
+    monkeypatch.setattr(settings, "MODEL_BLOCK_TIMEOUT", 120.0)
+    monkeypatch.setattr(settings, "OLLAMA_OCR_ENABLED", False)
     pdf_path = _example_report_path()
     if not pdf_path.exists():
         pytest.skip(f"Example report not found: {pdf_path}")
 
     with patch(
-        "lx_anonymizer.report_reader.LLMFactory.create_metadata_extractor",
+        "lx_anonymizer.report_reader.reader.LLMFactory.create_metadata_extractor",
         side_effect=RuntimeError("test"),
     ):
         reader = ReportReader()

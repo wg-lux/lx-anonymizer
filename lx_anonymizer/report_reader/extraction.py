@@ -24,6 +24,7 @@ from PIL import Image
 
 from lx_anonymizer.anonymization import text_anonymizer
 from lx_anonymizer.config import settings
+from lx_anonymizer.model_loading import ModelCleanupError
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.ner.spacy_extractor import (
     EndoscopeInfo,
@@ -98,8 +99,8 @@ class ReportReaderExtractionMixin:
     flags: ReportReaderFlags
     text_date_format: str
     locale: str
-    employee_first_names: Sequence[str]
-    employee_last_names: Sequence[str]
+    employee_first_names: Sequence[str] | None
+    employee_last_names: Sequence[str] | None
     sensitive_meta: SensitiveMeta
     patient_extractor: _PatientExtractor
     examiner_extractor: _ExaminerExtractor
@@ -346,7 +347,7 @@ class ReportReaderExtractionMixin:
             self.sensitive_meta.safe_update(meta_obj)
             logger.info("%s LLM extraction successful.", extractor_name)
             return self.sensitive_meta.to_dict()
-        except SensitiveMetaResolutionError:
+        except (SensitiveMetaResolutionError, ModelCleanupError):
             raise
         except Exception as e:
             logger.warning(f"{extractor_name} LLM extraction error: {e}")

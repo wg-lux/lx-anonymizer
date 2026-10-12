@@ -58,12 +58,12 @@ def test_maturin_excludes_local_artifacts() -> None:
 
 
 def test_frame_cleaner_keeps_video_mixin_wired() -> None:
-    source = Path("lx_anonymizer/frame_cleaner.py").read_text()
+    source = Path("lx_anonymizer/frame_cleaner/cleaner.py").read_text()
     tree = ast.parse(source)
 
     imports_video_mixin = any(
         isinstance(node, ast.ImportFrom)
-        and node.module == "lx_anonymizer.frame_cleaner_video"
+        and node.module == "lx_anonymizer.frame_cleaner.video"
         and any(alias.name == "FrameCleanerVideoMixin" for alias in node.names)
         for node in tree.body
     )

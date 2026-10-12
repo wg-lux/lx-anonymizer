@@ -1,6 +1,6 @@
 # This module has a strong focus on anonymizing video and image data
-- Main Entrypoint Video: /lx_anonymizer/frame_cleaner.py
-- Main Entrypoint for Reports:  /lx_anonymizer/report_reader.py
+- Main Entrypoint Video: /lx_anonymizer/frame_cleaner/__init__.py
+- Main Entrypoint for Reports: /lx_anonymizer/report_reader/__init__.py
 - Study Data about the LLM usage in the pipeline: ./study_data
 
 ## The pipeline contains
@@ -17,7 +17,7 @@ Standardized Output: /home/admin/lx-anonymizer/lx_anonymizer/sensitive_meta_inte
 
 ## Mandatory video concurrency contract
 
-Before changing `frame_cleaner.py`, `frame_cleaner_video.py`,
+Before changing `frame_cleaner/`,
 `video_processing/`, native Rust video helpers, FFmpeg or FFprobe execution,
 temporary video files, output naming, cancellation, retry, or resource
 parallelism, read and preserve:

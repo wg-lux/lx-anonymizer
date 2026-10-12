@@ -26,18 +26,14 @@ from lx_anonymizer.anonymization.sensitive_region_cropper import (
 from lx_anonymizer.config import settings
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.llm.factory import LLMFactory
-from lx_anonymizer.llm.llm_service import LLMService
 from lx_anonymizer.metrics_provenance import build_anonymizer_provenance
-from lx_anonymizer.ner.spacy_extractor import (
-    EndoscopeDataExtractor,
-    ExaminationDataExtractor,
-    ExaminerDataExtractor,
-    PatientDataExtractor,
+from lx_anonymizer.model_adapters import (
+    OCRCorrectionFactory,
+    ReportMetadataFactory,
+    ReportOCRFactory,
+    text_has_signal,
 )
-from lx_anonymizer.ocr.ocr import (
-    tesseract_full_image_ocr,
-)  # , trocr_full_image_ocr_on_boxes # Import OCR fallback
-from lx_anonymizer.ocr.ocr_ensemble import ensemble_ocr  # Import the new ensemble OCR
+from lx_anonymizer.model_loading import ModelBlock, ModelChain, ModelCleanupError
 from lx_anonymizer.paper_metrics import build_report_paper_evaluation_metrics
 from lx_anonymizer.report_contracts import (
     AnonymizationArtifactError,
@@ -50,11 +46,11 @@ from lx_anonymizer.report_contracts import (
     ReportArtifactValidation,
     SourceIdentityMismatchError,
 )
-from lx_anonymizer.report_reader_extraction import (
+from lx_anonymizer.report_reader.extraction import (
     LLMExtractorProtocol,
     ReportReaderExtractionMixin,
 )
-from lx_anonymizer.report_reader_settings import get_report_reader_settings
+from lx_anonymizer.report_reader.settings import get_report_reader_settings
 from lx_anonymizer.sensitive_meta_interface import SensitiveMeta, sensitive_meta_to_dict
 from lx_anonymizer.setup.custom_logger import logger
 from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetector
@@ -107,8 +103,8 @@ class ReportReader(ReportReaderExtractionMixin):
         Args:
             report_root_path: Optional root path for report files.
             locale: Faker locale used for anonymization replacements.
-            employee_first_names: Optional override for replacement first names.
-            employee_last_names: Optional override for replacement last names.
+            employee_first_names: Optional caller-provided employee first names.
+            employee_last_names: Optional caller-provided employee last names.
             flags: Optional report parsing/anonymization flags.
                 Supported keys (all optional; missing keys fall back to defaults):
                 - ``patient_info_line``: str marker for patient info line detection
@@ -130,26 +126,12 @@ class ReportReader(ReportReaderExtractionMixin):
             if text_date_format is not None
             else report_settings.text_date_format
         )
-        self.employee_first_names = (
-            employee_first_names
-            if employee_first_names is not None
-            else tuple(report_settings.first_names)
-        )
-        self.employee_last_names = (
-            employee_last_names
-            if employee_last_names is not None
-            else tuple(report_settings.last_names)
-        )
+        self.employee_first_names = employee_first_names
+        self.employee_last_names = employee_last_names
         self.flags = self._resolve_flags(flags)
         self.fake = Faker(locale=self.locale)
         self.gender_detector = gender_detector.Detector(case_sensitive=True)
         self.patient_pseudonym_resolver = patient_pseudonym_resolver
-
-        # Initialize extractors
-        self.patient_extractor = PatientDataExtractor()
-        self.examiner_extractor = ExaminerDataExtractor()
-        self.endoscope_extractor = EndoscopeDataExtractor()
-        self.examination_extractor = ExaminationDataExtractor()
 
         # Initialize sensitive region cropper
         self.sensitive_cropper = SensitiveRegionCropper()
@@ -205,6 +187,32 @@ class ReportReader(ReportReaderExtractionMixin):
             self.llm_available = False
             self.ollama_available = False
             self.llm_extractor = None
+
+    def extract_report_meta(
+        self,
+        text: str,
+        pdf_path: str | os.PathLike[str] | Path | None,
+    ) -> dict[str, object]:
+        """Load local report models lazily inside a deadline-owned worker."""
+        with ModelChain(
+            [
+                ModelBlock(
+                    f"spacy:{settings.SPACY_MODEL}",
+                    ReportMetadataFactory(settings.model_copy(deep=True), self.flags),
+                    settings.MODEL_BLOCK_TIMEOUT,
+                )
+            ]
+        ) as chain:
+            payload = chain.run(text)
+        self.sensitive_meta.safe_update(payload)
+        return self._merge_report_meta(
+            payload,
+            self._partial_report_meta(
+                {
+                    "pdf_hash": self.pdf_hash_file(pdf_path) if pdf_path else None,
+                }
+            ),
+        )
 
     @classmethod
     def _resolve_flags(cls, flags: object | None) -> ReportReaderFlags:
@@ -333,6 +341,26 @@ class ReportReader(ReportReaderExtractionMixin):
         self,
         request: ReportAnonymizationRequest,
     ) -> ReportAnonymizationResult:
+        from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
+
+        extractor = getattr(self, "llm_extractor", None)
+        chain = (
+            extractor.model_chain
+            if isinstance(extractor, LLMMetadataExtractor)
+            else None
+        )
+        if chain is not None:
+            chain.reset()
+        try:
+            return self._process_report_owned(request)
+        finally:
+            if chain is not None:
+                chain.close()
+
+    def _process_report_owned(
+        self,
+        request: ReportAnonymizationRequest,
+    ) -> ReportAnonymizationResult:
         """Process one immutable report snapshot into an attempt-local artifact.
 
         This is the canonical report-anonymization API.
@@ -388,6 +416,15 @@ class ReportReader(ReportReaderExtractionMixin):
                 phase=ReportAnonymizationPhase.EXTRACT_TEXT,
             )
             process_result = self._process_report_request(process_request)
+            from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
+
+            extractor = getattr(self, "llm_extractor", None)
+            if (
+                isinstance(extractor, LLMMetadataExtractor)
+                and extractor.model_chain is not None
+            ):
+                # Reap model workers before making the validated candidate visible.
+                extractor.model_chain.close()
             self._raise_if_report_deadline_expired(
                 request,
                 phase=ReportAnonymizationPhase.VALIDATE_ARTIFACT,
@@ -635,8 +672,8 @@ class ReportReader(ReportReaderExtractionMixin):
         except OSError as exc:
             logger.error("Error reading image %s: %s", image_path, exc)
             return None
-        text, _ = tesseract_full_image_ocr(pil_image)
-        return text
+        with pil_image:
+            return self._ocr_image(pil_image, page_num=1, use_ensemble=True)
 
     def _apply_ocr_fallback_if_needed(
         self, text: str, request: ReportProcessRequest
@@ -691,41 +728,26 @@ class ReportReader(ReportReaderExtractionMixin):
     def _ocr_image(
         self, pil_image: Image.Image, *, page_num: int, use_ensemble: bool
     ) -> str:
-        conventional_text = ""
-        if use_ensemble:
-            try:
-                conventional_text = ensemble_ocr(pil_image)
-            except Exception as exc:
-                logger.error("Ensemble OCR failed on page %d: %s", page_num, exc)
-        if not conventional_text:
-            try:
-                conventional_text, _ = tesseract_full_image_ocr(pil_image)
-                logger.info("Tesseract OCR successful for page %d", page_num)
-            except Exception as exc:
-                logger.error("Tesseract OCR failed on page %d: %s", page_num, exc)
-
-        if (
-            settings.LLM_ENABLED
-            and settings.OLLAMA_OCR_ENABLED
-            and settings.LLM_PROVIDER == "ollama"
-            and getattr(self, "ollama_available", False)
-        ):
-            try:
-                recognized_text = LLMService(
-                    provider="ollama",
-                    base_url=settings.resolved_llm_base_url,
-                    timeout=settings.LLM_TIMEOUT,
-                ).recognize_image(pil_image, candidate_text=conventional_text)
-                if recognized_text:
-                    logger.info("Gemma 4 vision OCR successful for page %d", page_num)
-                    return recognized_text
-            except Exception as exc:
-                logger.warning(
-                    "Gemma 4 vision OCR failed on page %d; using conventional OCR: %s",
-                    page_num,
-                    exc,
-                )
-        return conventional_text
+        config = settings.model_copy(deep=True)
+        blocks = [
+            ModelBlock(
+                name,
+                ReportOCRFactory(name, config),
+                config.MODEL_BLOCK_TIMEOUT,
+                text_has_signal,
+            )
+            for name in config.REPORT_OCR_MODEL_ORDER
+            if (name != "ensemble" or use_ensemble)
+            and (name != "vision" or (config.LLM_ENABLED and config.OLLAMA_OCR_ENABLED))
+        ]
+        if not blocks:
+            raise ValueError("No enabled report OCR blocks")
+        with ModelChain(blocks) as chain:
+            result = chain.run(pil_image)
+            logger.info(
+                "Report OCR page=%d models_used=%s", page_num, sorted(chain.used)
+            )
+            return result
 
     def _correct_ocr_text_if_enabled(self, text: str) -> str:
         if not text:
@@ -745,11 +767,18 @@ class ReportReader(ReportReaderExtractionMixin):
             settings.LLM_PROVIDER,
         )
         try:
-            llm_client = LLMService(
-                provider=settings.LLM_PROVIDER,
-                base_url=settings.resolved_llm_base_url,
-            )
-            corrected = llm_client.correct_ocr_text_in_chunks(text)
+            with ModelChain(
+                [
+                    ModelBlock(
+                        "ocr_correction",
+                        OCRCorrectionFactory(settings.model_copy(deep=True)),
+                        settings.MODEL_BLOCK_TIMEOUT,
+                    )
+                ]
+            ) as chain:
+                corrected = chain.run(text)
+        except ModelCleanupError:
+            raise
         except Exception as exc:
             logger.warning("Error using LLM for correction: %s", exc)
             return text
@@ -792,39 +821,18 @@ class ReportReader(ReportReaderExtractionMixin):
                 )
             )
 
-        if not use_provider_llm:
-            logger.info("Using default SpaCy/Regex metadata extraction.")
-            report_meta = self.extract_report_meta(text, pdf_path)
+        for name in settings.METADATA_MODEL_ORDER:
+            if name == "llm":
+                if not use_provider_llm or not self._should_attempt_report_llm(text):
+                    continue
+                report_meta = self.extract_report_meta_with_llm(text)
+                if not self._report_metadata_has_signal(report_meta):
+                    continue
+            else:
+                report_meta = self.extract_report_meta(text, pdf_path)
             self.sensitive_meta.safe_update(report_meta)
             return self.sensitive_meta.to_dict()
-
-        logger.info("Using provider-backed LLM metadata extraction.")
-        report_meta = self.extract_report_meta(text, pdf_path)
-        if self._report_metadata_has_signal(report_meta):
-            logger.info(
-                "Skipping LLM report metadata extraction because local extraction "
-                "already found signal."
-            )
-            self.sensitive_meta.safe_update(report_meta)
-            return self.sensitive_meta.to_dict()
-        if not self._should_attempt_report_llm(text):
-            logger.info(
-                "Skipping LLM report metadata extraction for short/low-signal text "
-                "(%d chars).",
-                len(text.strip()),
-            )
-            self.sensitive_meta.safe_update(report_meta)
-            return self.sensitive_meta.to_dict()
-
-        llm_meta = self.extract_report_meta_with_llm(text)
-        if llm_meta:
-            self.sensitive_meta.safe_update(llm_meta)
-            return self.sensitive_meta.to_dict()
-        logger.warning(
-            "Provider-backed LLM extraction failed. Falling back to default "
-            "SpaCy/Regex extraction."
-        )
-        return self.extract_report_meta(text, pdf_path)
+        raise RuntimeError("Report metadata chain produced no result")
 
     def _maybe_create_anonymized_pdf(
         self, *, request: ReportProcessRequest, report_meta: Mapping[str, object]
