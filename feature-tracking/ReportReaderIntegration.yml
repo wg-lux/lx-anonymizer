@@ -21,6 +21,64 @@ invariants:
   - Invalid input, contract mismatch, extraction failure, and artifact-integrity failure raise loudly without exposing partial output as success.
   - Employee name lists are optional caller-provided inputs; report-reader settings contain no hardcoded name lists or default name source.
 definition_of_done:
+  - id: content_free_anonymizer_logs
+    category: security
+    title: Anonymizer diagnostics never disclose document content
+    acceptance:
+      - Remove OCR excerpts, matched sensitive values, metadata payloads, prompts, provider responses and identifying filenames from report-processing logs at every level, including debug and exception paths.
+      - Emit only allowlisted event codes, phases, counts, durations and opaque attempt identifiers; preserve useful failure classification without interpolating input or exception payloads.
+      - Cover the sensitive-region cropper and the invoked OCR, NER, LLM and PDF adapters, including stdout/stderr captured and relabelled by Celery; log-level suppression or verbose=false alone is not sufficient.
+      - Regression tests use deterministic non-patient sentinel content and assert its absence from logs and captured output on success, provider failure and redaction failure while safe diagnostics remain observable.
+      - This compute boundary does not introduce durable attempt state, retries or publication authority; endoreg-db retains those responsibilities.
+    required: true
+    verification:
+      kind: manual
+      instructions: Review report call-chain logging, run strict Pyright and focused logging regressions, then verify sanitized packaged-worker output without recording source content.
+      timeout_seconds: 900
+    assessment:
+      status: verified
+      assessed_by: codex-anonymizer-logs-20261016
+      evidence:
+        - kind: command
+          reference: .devenv/state/venv/bin/pyright
+          note: Strict project check passed with 0 errors; pre-existing private-usage and unused-function warnings remain.
+        - kind: command
+          reference: .devenv/state/venv/bin/pytest tests/test_report_log_privacy.py tests/test_ocr_log_privacy.py tests/test_provider_log_privacy.py tests/test_anonymizer.py tests/test_phi_region_detector.py tests/test_llm_provider_contracts.py tests/test_llm_meta_helpers.py tests/test_frame_metadata_extractor_dates.py tests/test_spacy_model_manager.py tests/test_report_reader_contract.py tests/test_report_reader_init.py tests/test_report_reader_ollama_ocr.py tests/test_frame_report_helper_logic.py -q --tb=short -o log_cli=false
+          note: 188 tests passed in 22.38s using sibling lx-dtypes source before the empty-provider continuation correction; pytest warned only about unrelated stale temporary-directory cleanup.
+        - kind: command
+          reference: .devenv/state/venv/bin/pytest -q -o log_cli=false tests/test_report_reader_contract.py tests/test_frame_report_helper_logic.py tests/test_report_reader_init.py
+          note: After judge correction, 57 tests passed; valid empty provider responses preserve configured local extraction, while terminal valid empty remains distinct from provider failure.
+        - kind: command
+          reference: python scripts/lint_structure.py
+          note: Structure schema, references and root reachability valid; git diff --check passed.
+        - kind: command
+          reference: /home/admin/.cache/codex/report-v2-20261016/worker-venv/bin/python -I /home/admin/lx-anonymizer/scripts/verify_packaged_report_privacy.py --site-packages /home/admin/.cache/codex/report-v2-20261016/worker-venv/lib/python3.12/site-packages
+          note: Final candidate pair passed an actual Celery 5.6.3 memory-broker solo worker; success succeeded, provider and redaction failures failed with two sanitized tracebacks, redirected stdout/stderr observed, and no sentinel disclosure. Sources remained unchanged and failed artifacts were absent.
+        - kind: command
+          reference: /home/admin/.cache/codex/report-v2-20261016/worker-venv/bin/python -I -m pytest -q -c /dev/null /home/admin/.cache/codex/report-v2-20261016/installed-tests --tb=short -o log_cli=false
+          note: 61 installed-package privacy, public-contract and anonymizer tests passed in 6.87s outside the checkout; no source PYTHONPATH. Candidate package and native-extension origins were under isolated site-packages.
+        - kind: artifact
+          reference: /home/admin/.cache/codex/report-v2-20261016/artifact-evidence-final.json
+          note: >-
+            lx-anonymizer 1.0.9.dev1 wheel SHA256 6b4c6a9b1cf1d2eec0d54a062e0cc99cbdd69f93e3496c71f93316692fae941f;
+            lx-dtypes 0.5.4.dev1 wheel SHA256 94d0a5f8f95f133f9cc09ada59651052ca90127bab7706d12b9e6c896183a2ac.
+            All 107 packaged Python files matched the reviewed worktree. Read-only baseline dependency
+            inventory SHA256 6c89b4a230998fda1d32b3d3041ae00d1cc5b012b5789627e98a1c58b5a56aae;
+            dependencies reused without recursive editable pth processing, so this is not clean resolver acceptance.
+        - kind: command
+          reference: .devenv/state/venv/bin/pytest tests/test_distribution_metadata.py tests/test_audit_distribution.py -q --tb=short -o log_cli=false
+          note: 14 tests passed; focused strict Pyright passed with zero errors/warnings, final wheel distribution audit and package.nix syntax checks passed.
+      note: >-
+        2026-10-16: Removed content, identifying paths and raw exception payloads at report,
+        cropper, invoked OCR/ensemble/Donut, NER, LLM and redaction emitters. Public report and
+        PDF errors suppress external exception chains; synthetic tracebacks and captured streams
+        are tested. Safe phase/count/failure diagnostics remain. Existing staged work preserved.
+        Local candidate packaged-worker privacy is verified; this is not production approval.
+        Release readiness remains blocked: UV_PROJECT_ENVIRONMENT=/home/admin/lx-anonymizer/.devenv/state/venv
+        uv lock --check exits 1 because the index offers lx-dtypes<=0.5.3 while the candidate requires
+        lx-dtypes>=0.5.4.dev1. The existing staged lock is preserved, not replaced with invented registry
+        metadata or local artifact paths. Other report criteria remain unassessed/in progress.
+        No publishing, deployment or remote mutation performed.
   - id: typed_public_boundary
     category: requirements
     title: ReportReader exposes versioned typed request and result contracts
@@ -54,7 +112,7 @@ definition_of_done:
       - Processing failures clean only invocation-owned temporary artifacts and cannot return an apparently complete result.
       - PDF-Schwärzung prüft deu+eng-Sprachdaten vor dem Rendern mit dem vorhandenen Tesseract-Resolver.
       - Nix-Installationen beziehen Tessdata auch bei direkten Python-Importen aus dem in package.nix definierten Tesseract-Paket; fehlende Paketsprachdaten werden nicht durch Systemdaten ersetzt.
-      - Fehlende OCR-Laufzeitdaten und PDF-Verarbeitungsfehler erhalten ihre Ursache als verketteten AnonymizationArtifactError statt eines None-Ergebnisses; Importquellen bleiben unverändert.
+      - Missing OCR runtime data and PDF processing failures raise a classified AnonymizationArtifactError instead of returning None; public errors suppress external exception payloads and chains, and import sources remain unchanged.
     required: true
     verification:
       kind: command
@@ -92,6 +150,8 @@ definition_of_done:
         Der im Paketbuild aufgedeckte leere Shellwert pythonSitePackages ist durch den Nix-Wert
         py.python.sitePackages ersetzt, damit direkte Python-Importe den installierten Paketpfad finden.
         PDF-Erzeugung prüft deu+eng mit dem bestehenden Tesseract-Resolver vor dem Rendern.
-        Fehler werden als AnonymizationArtifactError samt Ursache weitergegeben statt als None.
+        Historical 2026-09-23 evidence retained: exceptions originally preserved their causes.
+        The 2026-10-16 privacy contract supersedes raw cause propagation at public boundaries:
+        classified AnonymizationArtifactError failures suppress external payloads and chains.
         Formatprüfung bestanden; bestehende Ruff-Stilbefunde bleiben offen. Deployment,
         Systempakete und ein erfolgreicher Produktionsneuimport auf gc-02 sind nicht verifiziert.

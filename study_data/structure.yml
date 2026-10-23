@@ -1,0 +1,27 @@
+version: 1
+tier: domain
+path: study_data
+parent: ../structure.yml
+summary: Tracked gold and prediction snapshots for metadata extraction studies. Read only for evaluation;
+  retain dataset provenance and avoid exposing sensitive records.
+responsibilities:
+- Reference evaluation records
+boundaries:
+- Keep changes within this responsibility; follow dependency manifests before crossing module boundaries.
+- Evidence and documentation do not authorize changes to runtime or active data storage.
+entrypoints:
+- name: Gold records
+  file: gold.json
+  purpose: Reference evaluation records
+dependencies:
+  internal:
+  - lx_anonymizer/evaluation
+  external:
+  - JSON
+submodules: []
+contracts:
+- name: OCR_BACKEND_EVALUATION
+  doc: ../docs/OCR_BACKEND_EVALUATION.md
+tests:
+  directory: ../tests
+  command: uv run pytest -q tests/test_pipeline_evaluation.py

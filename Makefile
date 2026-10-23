@@ -1,6 +1,8 @@
 YTHON_BIN ?= python
 MATURIN_BIN ?= maturin
 TWINE_BIN ?= twine
+PYTHON_BIN ?= python
+
 PYPI_DIST_DIR ?= dist
 PYPI_MANIFEST_PATH ?= Cargo.toml
 PYPI_INTERPRETER ?=
@@ -36,3 +38,12 @@ package:
 	@make pypi-clean
 	@make pypi-wheel
 	@make pypi-sdist
+
+.PHONY: lint-structure test-structure
+lint-structure:
+	$(PYTHON_BIN) scripts/lint_structure.py
+
+test-structure: lint-structure
+	.devenv/state/venv/bin/pyright
+	uv sync --extra dev
+	uv run pytest tests/test_lint_structure.py -q

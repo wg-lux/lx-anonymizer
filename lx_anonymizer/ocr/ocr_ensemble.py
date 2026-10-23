@@ -161,8 +161,8 @@ def ensemble_ocr_with_details(
         results["tesseract"] = text_tesseract
         confidence_scores["tesseract"] = confidence_tesseract
         logger.debug(f"Tesseract OCR confidence: {confidence_tesseract:.2f}")
-    except Exception as e:
-        logger.error(f"Tesseract OCR failed: {str(e)}")
+    except Exception:
+        logger.error("Tesseract OCR failed")
         results["tesseract"] = ""
         confidence_scores["tesseract"] = 0
 
@@ -177,8 +177,8 @@ def ensemble_ocr_with_details(
         results["trocr"] = text_trocr
         confidence_scores["trocr"] = confidence_trocr
         logger.debug(f"TrOCR confidence proxy: {confidence_trocr:.2f}")
-    except Exception as e:
-        logger.error(f"TrOCR failed: {str(e)}")
+    except Exception:
+        logger.error("TrOCR failed")
         results["trocr"] = ""
         confidence_scores["trocr"] = 0
 
@@ -205,8 +205,8 @@ def ensemble_ocr_with_details(
         logger.debug(
             f"Donut OCR confidence: {confidence_donut:.2f} (based on {len(sentences)} sentences, {word_count} words)"
         )
-    except Exception as e:
-        logger.error(f"Donut OCR failed: {str(e)}")
+    except Exception:
+        logger.error("Donut OCR failed")
         results["donut"] = ""
         confidence_scores["donut"] = 0
 

@@ -1,6 +1,6 @@
 """Lazy, ordered model blocks with process-enforced loading/inference deadlines.
 
-Factories must be importable (spawn-compatible). Only trusted Python objects
+Factories must be importable in a fresh Python interpreter. Only trusted Python objects
 cross the private socket; this is not a network or persisted pickle format.
 """
 
@@ -9,24 +9,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import multiprocessing
 import os
 import pickle
-import signal
 import socket
 import struct
+import subprocess
+import sys
 import threading
 import time
 import weakref
 from collections import Counter, deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from multiprocessing.process import BaseProcess
 from typing import Protocol, Self, cast
 
 logger = logging.getLogger(__name__)
 _MAX_MESSAGE = 128 * 1024 * 1024
 _in_model_worker = False
+# Host workers gate daemon-compatible isolation on this explicit contract.
+MODEL_PROCESS_ISOLATION_VERSION = 2
 
 
 class ModelUnavailableError(RuntimeError):
@@ -138,8 +139,6 @@ def _serve[Input, Output](
 ) -> None:
     global _in_model_worker
     _in_model_worker = True
-    # Descendants (e.g. Tesseract) belong to the same disposable model worker.
-    os.setsid()
     try:
         _write(channel, "ready")
         model = load()
@@ -159,21 +158,23 @@ def _serve[Input, Output](
         channel.close()
 
 
-def _dispose(process: BaseProcess | None, channel: socket.socket | None) -> None:
+def _dispose(
+    process: subprocess.Popen[bytes] | None,
+    channel: socket.socket | None,
+    lifeline: socket.socket | None,
+) -> None:
     if channel is not None:
         channel.close()
-    if process is None or process.pid is None:
+    if lifeline is not None:
+        lifeline.close()
+    if process is None:
         return
-    # Kill the group even when its leader already exited, to cover helpers.
     try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        if process.is_alive():
-            process.kill()
-    process.join(timeout=1.0)
-    if process.is_alive():
-        raise ModelCleanupError("Model worker could not be reaped")
-    process.close()
+        status = process.wait(timeout=5.0)
+    except subprocess.TimeoutExpired as exc:
+        raise ModelCleanupError("Model supervisor could not be reaped") from exc
+    if status != 0:
+        raise ModelCleanupError("Model supervisor could not confirm descendant cleanup")
 
 
 class ModelChain[Input, Output]:
@@ -191,11 +192,20 @@ class ModelChain[Input, Output]:
         self.attempts: deque[ModelAttempt] = deque(maxlen=128)
         self.used: Counter[str] = Counter()
         self._disabled: set[str] = set()
-        self._process: BaseProcess | None = None
+        self._process: subprocess.Popen[bytes] | None = None
+        self._lifeline: socket.socket | None = None
         self._channel: socket.socket | None = None
         self._active: str | None = None
         self._finalizer: (
-            weakref.finalize[[BaseProcess | None, socket.socket | None], Self] | None
+            weakref.finalize[
+                [
+                    subprocess.Popen[bytes] | None,
+                    socket.socket | None,
+                    socket.socket | None,
+                ],
+                Self,
+            ]
+            | None
         ) = None
         self._lock = threading.Lock()
         self._cancel = threading.Event()
@@ -285,26 +295,44 @@ class ModelChain[Input, Output]:
             return
         self._stop()
         parent, child = socket.socketpair()
-        process = multiprocessing.get_context("spawn").Process(
-            target=_serve, args=(block.load, child)
-        )
-        self._channel, self._process = parent, process
+        lifeline, monitor = socket.socketpair()
+        self._channel, self._lifeline = parent, lifeline
         try:
-            process.start()
-            self._finalizer = weakref.finalize(self, _dispose, process, parent)
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "lx_anonymizer._model_supervisor",
+                    "supervisor",
+                    str(child.fileno()),
+                    str(monitor.fileno()),
+                ],
+                pass_fds=(child.fileno(), monitor.fileno()),
+                start_new_session=True,
+                env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            )
+            self._process = process
+            self._finalizer = weakref.finalize(
+                self, _dispose, process, parent, lifeline
+            )
         finally:
             child.close()
+            monitor.close()
+        _write(parent, block.load, deadline, self._cancel)
         if _read(parent, deadline, self._cancel) != "ready":
             raise ModelUnavailableError("Model worker did not initialize")
         self._active = block.name
 
     def _stop(self) -> None:
-        process, channel = self._process, self._channel
+        process, channel, lifeline = self._process, self._channel, self._lifeline
+        # Preserve failed cleanup state: another call cannot start a new model
+        # until this supervisor has confirmed that all descendants were reaped.
+        _dispose(process, channel, lifeline)
         self._process = self._channel = self._active = None
+        self._lifeline = None
         if self._finalizer is not None:
             self._finalizer.detach()
             self._finalizer = None
-        _dispose(process, channel)
 
     def close(self) -> None:
         self._cancel.set()

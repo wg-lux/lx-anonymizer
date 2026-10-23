@@ -1,0 +1,34 @@
+version: 1
+tier: domain
+path: feature-tracking
+parent: ../structure.yml
+summary: Existing YAML feature assessments and verification evidence. Preserve these custom schemas and
+  distinguish compute progress from host production readiness.
+responsibilities:
+- Video compute assessments
+- Report boundary assessments
+- Type ownership evidence
+boundaries:
+- Keep changes within this responsibility; follow dependency manifests before crossing module boundaries.
+- Evidence and documentation do not authorize changes to runtime or active data storage.
+entrypoints:
+- name: Frame integration
+  file: FrameCleanerIntegration.yml
+  purpose: Video compute assessments
+- name: Report integration
+  file: ReportReaderIntegration.yml
+  purpose: Report boundary assessments
+- name: Runtime types
+  file: RuntimeTypeStandardization.yml
+  purpose: Type ownership evidence
+dependencies:
+  internal:
+  - docs
+  external: []
+submodules: []
+contracts:
+- name: AGENTS
+  doc: ../AGENTS.md
+tests:
+  directory: ../tests
+  command: uv run pytest -q tests/test_lint_structure.py

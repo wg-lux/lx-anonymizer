@@ -1,4 +1,5 @@
 # This module has a strong focus on anonymizing video and image data
+
 - Main Entrypoint Video: /lx_anonymizer/frame_cleaner/__init__.py
 - Main Entrypoint for Reports: /lx_anonymizer/report_reader/__init__.py
 - Study Data about the LLM usage in the pipeline: ./study_data
@@ -14,6 +15,29 @@ Heuristic Selection: BestFrameText scoring and LLM integration for identifying t
 Anonymization Strategy: Blurring + NER.
 
 Standardized Output: /home/admin/lx-anonymizer/lx_anonymizer/sensitive_meta_interface.py
+
+## Source of Truth & Context Protocol
+
+- Start with the root `structure.yml`, then follow `submodules` into the domain
+  relevant to the task. Read its entrypoints and contracts before inspecting
+  implementation. Use scoped searches in that tree rather than broad repository
+  grepping; follow dependency manifests when the task crosses a boundary.
+- Manifests are navigation and boundary metadata. Code, shared `lx_dtypes`
+  contracts, and the referenced canonical specifications remain authoritative
+  for behavior. Preserve existing feature assessments and custom manifest fields.
+- Whenever adding, removing or renaming files or changing architectural
+  boundaries, update the corresponding `structure.yml` files in the same
+  changeset. Record important files in entrypoints or the optional `files`
+  inventory; small helpers remain covered by their nearest manifest. Keep child
+  links and parent links consistent. Do not generate a manifest for every folder.
+- Scope delegated work to a manifest-owned directory tree, its contracts and a
+  focused verification command. Coordinate before editing another domain or
+  shared interfaces; delegation itself requires task authorization.
+- Before concluding any prompt or submitting a pull request, run
+  `python scripts/lint_structure.py` (or `uv run python scripts/lint_structure.py`)
+  and resolve all reported drift. For code changes, strict Pyright precedes pytest
+  and `uv sync --extra dev` is required before pytest.
+- See [agent context guidance](docs/agent_context.md) for schema and path rules.
 
 ## Mandatory video concurrency contract
 

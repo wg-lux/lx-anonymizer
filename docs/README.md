@@ -20,6 +20,7 @@ guidance that is useful after the first successful run.
 
 - [Contributing](../CONTRIBUTING.md) — local setup, checks, pull requests, and
   project communication.
+- [Agent context](agent_context.md) — hierarchical manifests, traversal and drift checks.
 - [Model calls and decision flow](MODEL_CALLS_AND_DECISIONS.md) — the OCR,
   metadata, detector, and anonymization decisions made by the active pipelines.
 - [Video import concurrency contract](VIDEO_IMPORT_CONCURRENCY_CONTRACT.md) —

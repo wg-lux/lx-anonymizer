@@ -40,7 +40,7 @@ liegen.
 
 ```python
 class ReportAnonymizationRequest(BaseModel):
-    contract_version: Literal["report_anonymization"]
+    contract_version: Literal["report_anonymization_v2"]
     attempt_id: UUID
     source_path: Path
     source_sha256: str
@@ -68,7 +68,7 @@ vom Host zugesicherten Hash nicht still neu interpretieren.
 
 ```python
 class ReportAnonymizationResult(BaseModel):
-    contract_version: Literal["report_anonymization"]
+    contract_version: Literal["report_anonymization_v2"]
     attempt_id: UUID
     source_sha256: str
     original_text: str
@@ -189,8 +189,11 @@ ReportAnonymizationError
 ```
 
 Breite Ausnahmen dürfen nur an der äußeren Integrationsgrenze protokolliert
-werden. Interne Phasen fangen konkrete Fehler und erhalten die ursprüngliche
-Ursache.
+werden. Internal phases catch specific failures. At the public report boundary,
+exceptions retain a bounded failure category but use content-free messages
+and suppress external exception chains. Raw dependency error messages can
+contain report text, filenames or provider payloads and must not reach worker
+tracebacks.
 
 ## Native Funktionen in `lx-anonymizer`
 
@@ -301,3 +304,79 @@ nicht als Ersatz für Endoreg-Persistenz oder Fencing.
 Jede Stufe muss den bisherigen öffentlichen Import erhalten oder über einen
 getesteten Adapter bereitstellen. Sicherheits- oder Integritätsfehler dürfen
 nicht durch einen stillen Legacy-Fallback verdeckt werden.
+
+## Content-free diagnostic verification
+
+Report, cropper, OCR and metadata diagnostics report phases, counts and bounded
+failure categories. They must not include extracted text, matched identifiers,
+metadata, provider endpoints, document filenames or raw exception payloads at
+any log level. Removing DEBUG output or setting `verbose=False` is insufficient:
+workers may capture stdout/stderr and render exception chains.
+
+The public `ReportReader.process_report` boundary sanitizes failures, including
+model cleanup failures, before a host can render them. The PDF anonymizer also
+raises content-free artifact failures. Callers must use these public boundaries;
+internal dependency exceptions are not a safe diagnostic interface.
+
+Run `tests/test_report_log_privacy.py`, `tests/test_ocr_log_privacy.py`,
+`tests/test_provider_log_privacy.py` and `tests/test_report_reader_contract.py`
+after strict Pyright. These tests exercise synthetic sentinel content in
+success, provider failure, redaction failure, captured streams and rendered
+tracebacks. The reusable `scripts/verify_packaged_report_privacy.py` harness additionally
+executes installed wheels in an actual local Celery memory-broker solo worker.
+It verifies package/native origins, successful redaction, failed provider and
+redaction tasks, sanitized tracebacks, redirected streams and immutable inputs.
+Only external provider/OCR/detector boundaries are injected. This local candidate
+check does not attest to a deployed worker revision.
+
+The v2 shared report contract requires `extraction_evidence`: the actual
+`configured_llm` or `spacy_regex` backend, findings/empty/fallback outcome,
+validated populated metadata-field count, provider-attempt flag and bounded
+provider-failure category. Readiness does not prove provider success. A selected
+provider that fails may produce fallback evidence only after the deterministic
+extractor actually completes and validates its result. A valid empty provider
+response still runs a configured later local extractor; this fallback records
+`provider_attempted=True` with no provider failure. A terminal valid empty
+provider response remains distinct from a failed invocation. Empty text and
+absence of evidence cannot become successful imports. Evidence is observational; Rust
+in endoreg-db remains the single authority for durable lifecycle transitions.
+
+The producer, shared lx-dtypes contract and endoreg-db consumer must be released
+together. The v1 contract cannot be interpreted as v2 success. Local coordinated
+tests use the sibling lx-data-models checkout explicitly; published dependency
+resolution and packaged-worker output require release verification.
+
+Candidate `lx-anonymizer==1.0.9.dev1` requires `lx-dtypes>=0.5.4.dev1`. These
+versions identify the unreleased v2 boundary; older published versions are not
+claimed compatible. The final candidate pair passed installed-package and
+Celery verification using an isolated interpreter with a read-only dependency
+baseline. Candidate packages and the native extension were installed from wheels,
+not imported from sibling source checkouts. This is not a clean dependency
+resolver test. Canonical lock regeneration remains blocked until the shared
+prerelease is available from the configured index; retain existing lock evidence
+and never fabricate registry metadata or commit verification-only artifact paths.
+
+To repeat the local worker check, build both candidate wheels first and supply
+those paths as `anonymizer_wheel` and `dtypes_wheel`. Create a fresh verification
+venv with Python 3.12, install Celery and pytest into it, then install both wheels
+with `uv pip install --python "$verify_root/venv/bin/python" --no-deps
+"$dtypes_wheel" "$anonymizer_wheel"`. Supply compatible third-party dependencies
+through a normal install, or explicitly reuse a read-only development dependency
+directory: write its absolute `site-packages` path as the only line in a `.pth`
+file in the verification venv. Do not use `site.addsitedir`, source checkout
+paths, `PYTHONPATH`, or copied editable `.pth` files. A plain path entry does not
+process that dependency directory's nested editable `.pth` files.
+
+Run from the verification directory, outside all checkouts:
+
+```bash
+"$verify_root/venv/bin/python" -I \
+  "$anonymizer_checkout/scripts/verify_packaged_report_privacy.py" \
+  --site-packages "$verify_root/venv/lib/python3.12/site-packages"
+```
+
+The script rejects candidate package or native-extension origins outside the
+specified installation directory, requires the v2 contract and emits only a
+safe JSON result. Record the exact wheels' SHA256 digests and the third-party
+dependency inventory alongside the result. Reused dependencies are a candidate
+integration test, never evidence of a clean resolver installation or deployment.

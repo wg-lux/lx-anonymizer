@@ -1,0 +1,38 @@
+version: 1
+tier: domain
+path: lx_anonymizer/anonymization
+parent: ../structure.yml
+summary: Apply text redaction, image masks, blur and detector-driven video masking. Transformations use
+  caller-selected resources and expose masking evidence.
+responsibilities:
+- Image anonymization orchestration
+- Typed mask application
+- Detector-based video masking
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+- Do not choose canonical storage paths or treat a partial masking artifact as successful output.
+entrypoints:
+- name: Anonymizer
+  file: anonymizer.py
+  purpose: Image anonymization orchestration
+- name: Masking
+  file: masking.py
+  purpose: Typed mask application
+- name: DetectorVideoMasker
+  file: detector_video_masking.py
+  purpose: Detector-based video masking
+dependencies:
+  internal:
+  - lx_anonymizer/text_detection
+  - lx_anonymizer/region_processing
+  external:
+  - OpenCV
+  - NumPy
+  - FFmpeg
+submodules: []
+contracts:
+- name: VIDEO_IMPORT_CONCURRENCY_CONTRACT
+  doc: ../../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_masking_crop.py tests/test_detector_video_masking.py

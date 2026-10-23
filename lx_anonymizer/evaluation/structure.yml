@@ -1,0 +1,39 @@
+version: 1
+tier: domain
+path: lx_anonymizer/evaluation
+parent: ../structure.yml
+summary: Offline pipeline, OCR backend and MIDI-B evaluation with explicit provenance. Measurements are
+  engineering evidence rather than clinical release approval.
+responsibilities:
+- Compare predicted and gold metadata
+- DICOM benchmark command
+- Backend comparison
+boundaries:
+- Do not mutate tracked gold records or turn benchmark measurements into clinical acceptance claims.
+entrypoints:
+- name: Pipeline evaluation
+  file: pipeline_evaluation.py
+  purpose: Compare predicted and gold metadata
+- name: MIDI-B evaluation
+  file: midi_b.py
+  purpose: DICOM benchmark command
+- name: OCR matrix
+  file: ocr_backend_matrix.py
+  purpose: Backend comparison
+dependencies:
+  internal:
+  - lx_anonymizer/metrics
+  - study_data
+  - midi-b-dataset
+  external:
+  - pydicom
+  - NumPy
+submodules: []
+contracts:
+- name: OCR_BACKEND_EVALUATION
+  doc: ../../docs/OCR_BACKEND_EVALUATION.md
+- name: midi-b-evaluation-2026-07-14
+  doc: ../../docs/midi-b-evaluation-2026-07-14.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_pipeline_evaluation.py tests/test_ocr_backend_matrix.py tests/test_midi_b_evaluation.py

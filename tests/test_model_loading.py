@@ -2,10 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import os
+import signal
+import socket
+import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -51,6 +57,162 @@ class FakeModel:
         return f"{value}:{os.getpid()}:{self.calls}"
 
 
+@dataclass(frozen=True)
+class DescendantFactory:
+    snapshot: str
+    hang_during_load: bool = False
+
+    def __call__(self) -> Callable[[str], str]:
+        # Both generations detach from the model process group. The intermediate
+        # process exits, exercising subreaper adoption before cancellation.
+        script = (
+            "import subprocess,sys; "
+            "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'], "
+            "start_new_session=True); print(p.pid, flush=True)"
+        )
+        middle = subprocess.Popen(
+            [sys.executable, "-c", script],
+            start_new_session=True,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        assert middle.stdout is not None
+        grandchild = int(middle.stdout.readline())
+        middle.stdout.close()
+        middle.wait(timeout=3)
+        Path(self.snapshot).write_text(f"{os.getppid()} {os.getpid()} {grandchild}")
+        if self.hang_during_load:
+            time.sleep(60)
+        return FakeModel("infer_hang")
+
+
+def _daemon_model_task(
+    result_path: str,
+    descendants: bool = False,
+    backpressure: bool = False,
+) -> None:
+    factory = (
+        DescendantFactory(result_path, backpressure) if descendants else FakeFactory()
+    )
+    with ModelChain([ModelBlock("model", factory, 30.0)]) as chain:
+        value = chain.run("x" * (8 * 1024 * 1024) if backpressure else "daemon")
+        Path(result_path).write_text(value)
+
+
+def _wait_for_snapshot(path: Path) -> list[int]:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if path.exists() and (value := path.read_text()):
+            return [int(pid) for pid in value.split()]
+        time.sleep(0.02)
+    raise AssertionError("Model descendant snapshot was not produced")
+
+
+def _assert_reaped(pids: list[int]) -> None:
+    deadline = time.monotonic() + 7
+    while time.monotonic() < deadline:
+        if all(not Path(f"/proc/{pid}").exists() for pid in pids):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"Model descendants survived cleanup: {pids}")
+
+
+def test_daemon_task_can_start_model_and_next_recycled_task_succeeds(
+    tmp_path: Path,
+) -> None:
+    model_pids: list[str] = []
+    for attempt in range(2):
+        output = tmp_path / str(attempt)
+        task = multiprocessing.get_context("spawn").Process(
+            target=_daemon_model_task,
+            args=(str(output),),
+            daemon=True,
+        )
+        task.start()
+        task.join(timeout=10)
+        try:
+            assert task.exitcode == 0
+            value = output.read_text()
+            assert value.startswith("daemon:")
+            model_pids.append(value.split(":")[1])
+        finally:
+            if task.is_alive():
+                task.kill()
+                task.join(timeout=5)
+            task.close()
+    assert model_pids[0] != model_pids[1]
+
+
+@pytest.mark.parametrize("loading", [False, True])
+def test_model_timeout_reaps_detached_descendants(
+    tmp_path: Path, loading: bool
+) -> None:
+    snapshot = tmp_path / "descendants"
+    with (
+        ModelChain(
+            [ModelBlock("hanging", DescendantFactory(str(snapshot), loading), 2.0)]
+        ) as chain,
+        pytest.raises(ModelUnavailableError),
+    ):
+        chain.run("value")
+    _assert_reaped(_wait_for_snapshot(snapshot))
+
+
+@pytest.mark.parametrize("backpressure", [False, True])
+def test_hard_killed_daemon_task_cleans_detached_descendants(
+    tmp_path: Path,
+    backpressure: bool,
+) -> None:
+    snapshot = tmp_path / "descendants"
+    task = multiprocessing.get_context("spawn").Process(
+        target=_daemon_model_task,
+        args=(str(snapshot), True, backpressure),
+        daemon=True,
+    )
+    task.start()
+    try:
+        pids = _wait_for_snapshot(snapshot)
+        task.kill()
+        task.join(timeout=5)
+        assert task.exitcode == -signal.SIGKILL
+        # The orphan supervisor is reaped by the service manager; it must reap
+        # every executor/descendant itself before exiting.
+        _assert_reaped(pids[1:])
+    finally:
+        if task.is_alive():
+            task.kill()
+            task.join(timeout=5)
+        task.close()
+
+
+@pytest.mark.parametrize("startup_delay", [0.0, 0.05, 0.2])
+def test_parent_disappearing_during_supervisor_startup_is_clean(
+    startup_delay: float,
+) -> None:
+    parent, child = socket.socketpair()
+    lifeline, monitor = socket.socketpair()
+    try:
+        supervisor = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "lx_anonymizer._model_supervisor",
+                "supervisor",
+                str(child.fileno()),
+                str(monitor.fileno()),
+            ],
+            pass_fds=(child.fileno(), monitor.fileno()),
+            start_new_session=True,
+        )
+    finally:
+        child.close()
+        monitor.close()
+    time.sleep(startup_delay)
+    lifeline.close()
+    parent.close()
+    assert supervisor.wait(timeout=5) == 0
+
+
 def nonempty(value: str) -> bool:
     return bool(value)
 
@@ -73,7 +235,7 @@ def test_failure_advances_and_disables_failed_block(failure: str) -> None:
         assert chain.failed_models == ["preferred"]
         assert chain.used == {"fallback": 2}
         process = chain._process
-        assert process is not None and process.is_alive()
+        assert process is not None and process.poll() is None
     assert chain._process is None
 
 

@@ -11,6 +11,7 @@ from lx_anonymizer.frame_cleaner import FrameCleaner
 from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ner.spacy_extractor import PatientDataExtractor
+from lx_anonymizer.report_contracts import ProviderUnavailableError
 from lx_anonymizer.report_reader import ReportReader
 from lx_anonymizer.report_reader.extraction import (
     LLMExtractorProtocol,
@@ -285,8 +286,8 @@ def test_report_reader_shared_llm_wrapper_success_and_failure_paths():
     assert ok["first_name"] == "LLM"
 
     llm_extractor.extract_metadata.return_value = None
-    fail = rr._extract_report_meta_via_llm("txt", "DeepSeek")  # pyright: ignore[reportPrivateUsage]
-    assert fail == {}
+    with pytest.raises(ProviderUnavailableError):
+        rr._extract_report_meta_via_llm("txt", "DeepSeek")  # pyright: ignore[reportPrivateUsage]
 
 
 def test_extract_report_meta_uses_line_fallback_parses_dob_and_enriches_fields():

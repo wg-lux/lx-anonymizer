@@ -10,6 +10,7 @@ from lx_dtypes.models.contracts.report_anonymization import (
     ReportAnonymizationProvenance,
     ReportAnonymizationRequest,
     ReportAnonymizationResult,
+    ReportExtractionEvidence,
     ReportAnonymizationWarningCode,
     ReportAnonymizationWarning,
     ReportArtifactValidation,
@@ -44,6 +45,10 @@ class AnonymizationArtifactError(ReportAnonymizationError):
     """The anonymizer failed to produce a valid attempt-local artifact."""
 
 
+class ProviderUnavailableError(ReportAnonymizationError):
+    """A selected metadata provider failed without a usable response."""
+
+
 class OperationDeadlineExceededError(ReportAnonymizationError, TimeoutError):
     """The host-assigned monotonic deadline expired."""
 
@@ -62,6 +67,8 @@ __all__ = [
     "ReportAnonymizationProvenance",
     "ReportAnonymizationRequest",
     "ReportAnonymizationResult",
+    "ReportExtractionEvidence",
+    "ProviderUnavailableError",
     "ReportAnonymizationWarningCode",
     "ReportAnonymizationWarning",
     "ReportArtifactValidation",

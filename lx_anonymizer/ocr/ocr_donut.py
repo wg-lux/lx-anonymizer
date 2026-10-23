@@ -416,11 +416,11 @@ def donut_full_image_ocr(image_input: ImageInput, token: str | None = None) -> s
                             sub_outputs.append(sub_output)
                             torch.cuda.empty_cache()
                         all_outputs.append(" ".join(sub_outputs))
-                    except Exception as sub_e:
-                        logger.error(f"Error processing sub-chunks: {sub_e}")
+                    except Exception:
+                        logger.error("Error processing sub-chunks")
                         continue
-                except Exception as e:
-                    logger.error(f"Error processing chunk {i + 1}: {e}")
+                except Exception:
+                    logger.error(f"Error processing chunk {i + 1}")
                     continue
 
             # Process and merge the outputs
@@ -475,11 +475,11 @@ def donut_full_image_ocr(image_input: ImageInput, token: str | None = None) -> s
             combined_output = post_process_chunks(all_outputs, positions)
             logger.info("Donut OCR completed successfully on CPU")
             return combined_output
-        except Exception as cpu_error:
-            logger.error(f"Error during CPU fallback: {cpu_error}")
+        except Exception:
+            logger.error("Error during CPU fallback")
             return ""
-    except Exception as e:
-        logger.error(f"Error in Donut OCR: {e}")
+    except Exception:
+        logger.error("Error in Donut OCR")
         return ""
 
 

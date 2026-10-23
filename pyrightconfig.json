@@ -1,5 +1,5 @@
 {
-  "include": ["lx_anonymizer", "tests"],
+  "include": ["lx_anonymizer", "tests", "scripts/lint_structure.py"],
   "extraPaths": ["lx-data-models"],
   "exclude": [
     "**/__pycache__",

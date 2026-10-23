@@ -1,0 +1,120 @@
+version: 1
+tier: package
+path: lx_anonymizer
+parent: ../structure.yml
+summary: Compute-only anonymization APIs and pipeline orchestration. Shared configuration, model loading,
+  image/PDF adapters, text ranking, pseudonymization and resource assets remain covered here.
+responsibilities:
+- Expose typed Python and CLI interfaces for medical media anonymization.
+- Coordinate processing strands, sensitive metadata, configuration and model adapters.
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+entrypoints:
+- name: Package exports
+  file: __init__.py
+  purpose: Public Python API
+- name: CLI
+  file: cli.py
+  purpose: Dispatch processing commands
+- name: SensitiveMeta interface
+  file: sensitive_meta_interface.py
+  purpose: Standardized metadata boundary
+- name: PipelineManager
+  file: pipeline_manager.py
+  purpose: Processing strand orchestration
+- name: DICOM export
+  file: dicom_anonymization.py
+  purpose: DICOM anonymization interface
+dependencies:
+  internal:
+  - rust
+  external:
+  - lx-dtypes
+  - Pydantic
+  - OpenCV
+  - NumPy
+  - PyMuPDF
+  - Linux procfs and PR_SET_CHILD_SUBREAPER
+submodules:
+- name: frame_cleaner
+  path: frame_cleaner
+  manifest: frame_cleaner/structure.yml
+  summary: Analyze and anonymize one immutable video source into an unpublished attempt-owned candidate.
+- name: video_processing
+  path: video_processing
+  manifest: video_processing/structure.yml
+  summary: Bounded video probing, decoding, filtering and encoding for caller-owned attempts.
+- name: report_reader
+  path: report_reader
+  manifest: report_reader/structure.yml
+  summary: Extract report text and sensitive metadata and produce an unpublished redacted PDF.
+- name: ocr
+  path: ocr
+  manifest: ocr/structure.yml
+  summary: OCR adapters and preprocessing for medical reports and video frames.
+- name: text_detection
+  path: text_detection
+  manifest: text_detection/structure.yml
+  summary: Locate text and PHI regions through EAST, CRAFT, Tesseract and optional detector proposals.
+- name: ner
+  path: ner
+  manifest: ner/structure.yml
+  summary: Extract patient metadata using spaCy, regular expressions and optional NER adapters.
+- name: llm
+  path: llm
+  manifest: llm/structure.yml
+  summary: Typed language-model provider boundary for optional metadata extraction and vision OCR.
+- name: anonymization
+  path: anonymization
+  manifest: anonymization/structure.yml
+  summary: Apply text redaction, image masks, blur and detector-driven video masking.
+- name: training
+  path: training
+  manifest: training/structure.yml
+  summary: Offline synthetic PHI datasets and reproducible training inputs.
+- name: evaluation
+  path: evaluation
+  manifest: evaluation/structure.yml
+  summary: Offline pipeline, OCR backend and MIDI-B evaluation with explicit provenance.
+contracts:
+- name: MODEL_CALLS_AND_DECISIONS
+  doc: ../docs/MODEL_CALLS_AND_DECISIONS.md
+- name: processing_contracts
+  doc: processing_contracts.py
+- name: report_contracts
+  doc: report_contracts.py
+tests:
+  directory: ../tests
+  command: uv run pytest -q tests/test_cli_and_package_exports.py tests/test_type_contract_ownership.py
+    tests/test_processing_strands.py
+files:
+- path: image_processing
+  purpose: Image and PDF adapters
+- path: image_reassembly
+  purpose: PDF reconstruction
+- path: nlp
+  purpose: Text ranking and fuzzy coupling
+- path: pseudonymization
+  purpose: Name replacement
+- path: region_processing
+  purpose: Bounding-box operations
+- path: metrics
+  purpose: Utility metrics
+- path: setup
+  purpose: Device configuration and directories
+- path: hardware
+  purpose: GPU selection
+- path: resources
+  purpose: Packaged model assets
+- path: devices
+  purpose: Device JSON profiles
+- path: names_dict
+  purpose: Name dictionaries
+- path: utils
+  purpose: ROI normalization
+- path: model_loading.py
+  purpose: Shared model lifecycle
+- path: _model_supervisor.py
+  purpose: Linux subreaper and private subprocess relay for daemon-compatible model isolation
+- path: config.py
+  purpose: Typed configuration

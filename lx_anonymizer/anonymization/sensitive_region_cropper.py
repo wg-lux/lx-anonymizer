@@ -234,13 +234,15 @@ class SensitiveRegionCropper:
         sensitive_regions: list[Box] = []
         full_text = " ".join([word for word, _ in validated_word_boxes])
 
-        logger.info(f"Analyzing text for sensitive data: {full_text[:100]}...")
+        logger.info(
+            "sensitive_region_analysis_started words=%d", len(validated_word_boxes)
+        )
 
         # 1. Verwende SpaCy-Extraktoren für strukturierte Erkennung
         patient_info = self.patient_extractor(full_text)
 
         # 2. Finde Positionen von sensitiven Daten in den Word-Boxes
-        for data_type, pattern in self.sensitive_patterns.items():
+        for pattern in self.sensitive_patterns.values():
             matches = re.finditer(pattern, full_text, re.IGNORECASE)
 
             for match in matches:
@@ -248,9 +250,7 @@ class SensitiveRegionCropper:
                 end_pos = match.end()
                 matched_text = match.group()
 
-                logger.debug(
-                    f"Found {data_type}: '{matched_text}' at Position {start_pos}-{end_pos}"
-                )
+                logger.debug("sensitive_region_pattern_matched")
 
                 # Finde entsprechende Word-Boxes für diesen Text
                 region_boxes = self._find_word_boxes_for_text_span(
@@ -458,7 +458,7 @@ class SensitiveRegionCropper:
             output_dir_path.mkdir(parents=True, exist_ok=True)
 
             # Konvertiere PDF zu Bildern
-            logger.info(f"Konvertiere PDF zu Bildern: {pdf_path}")
+            logger.info("sensitive_region_pdf_render_started")
             images = convert_pdf_to_images(pdf_path)
 
             selected_page_numbers = (
@@ -505,13 +505,11 @@ class SensitiveRegionCropper:
                     cropped_image.save(crop_path)
                     page_crops.append(str(crop_path))
 
-                    logger.info(
-                        f"Gespeichert: {crop_filename} ({x2 - x1}x{y2 - y1} px)"
-                    )
+                    logger.info("sensitive_region_crop_saved")
 
                 results[f"page_{page_num + 1}"] = page_crops
-        except Exception as e:
-            logger.error(f"Fehler beim Cropping von Seite {page_num + 1}: {e}")
+        except Exception:
+            logger.error("sensitive_region_crop_failed")
             results[f"page_{page_num + 1}"] = []
 
         return results
@@ -547,7 +545,7 @@ class SensitiveRegionCropper:
             draw.rectangle([x1, y1, x2, y2], outline="blue", width=1)
 
         vis_image.save(output_path)
-        logger.info(f"Visualisierung gespeichert: {output_path}")
+        logger.info("sensitive_region_visualization_saved")
 
     def create_anonymized_pdf_with_crops(
         self, pdf_path: str, crop_output_dir: str, anonymized_pdf_path: str
@@ -564,7 +562,7 @@ class SensitiveRegionCropper:
         try:
             import pymupdf  # type: ignore[import-untyped]  # PyMuPDF
 
-            logger.info(f"Erstelle anonymisiertes PDF: {anonymized_pdf_path}")
+            logger.info("sensitive_region_pdf_started")
 
             # Öffne das ursprüngliche PDF
             doc = cast(_PdfDocument, pymupdf.open(pdf_path))
@@ -612,21 +610,19 @@ class SensitiveRegionCropper:
                         # Füge schwarzes Rechteck hinzu
                         page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
 
-                        logger.debug(
-                            f"Geschwärzt: ({pdf_x1:.1f}, {pdf_y1:.1f}, {pdf_x2:.1f}, {pdf_y2:.1f})"
-                        )
+                        logger.debug("sensitive_region_redaction_applied")
 
             # Speichere das anonymisierte PDF
             doc.save(anonymized_pdf_path)
             doc.close()
 
-            logger.info(f"Anonymisiertes PDF gespeichert: {anonymized_pdf_path}")
+            logger.info("sensitive_region_pdf_saved")
 
         except ImportError:
             logger.error("PymuPDF not installed.")
             raise
-        except Exception as e:
-            logger.error(f"Fehler beim Erstellen des anonymisierten PDFs: {e}")
+        except Exception:
+            logger.error("sensitive_region_pdf_failed")
             raise
 
 

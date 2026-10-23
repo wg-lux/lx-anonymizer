@@ -1,0 +1,34 @@
+version: 1
+tier: domain
+path: docs
+parent: ../structure.yml
+summary: Durable architecture, operator guides and dated evaluation records. README.md at repository root
+  remains the canonical user entrypoint.
+responsibilities:
+- Choose an operational or contributor guide
+- Manifest traversal and maintenance
+boundaries:
+- Keep changes within this responsibility; follow dependency manifests before crossing module boundaries.
+- Evidence and documentation do not authorize changes to runtime or active data storage.
+entrypoints:
+- name: Documentation index
+  file: README.md
+  purpose: Choose an operational or contributor guide
+- name: Agent context
+  file: agent_context.md
+  purpose: Manifest traversal and maintenance
+dependencies:
+  internal:
+  - feature-tracking
+  external: []
+submodules: []
+contracts:
+- name: AGENTS
+  doc: ../AGENTS.md
+- name: VIDEO_IMPORT_CONCURRENCY_CONTRACT
+  doc: VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+- name: report_pipeline_concurrency_contract
+  doc: report_pipeline_concurrency_contract.md
+tests:
+  directory: ../tests
+  command: uv run pytest -q tests/test_lint_structure.py

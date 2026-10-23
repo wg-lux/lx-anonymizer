@@ -1,0 +1,40 @@
+version: 1
+tier: domain
+path: lx_anonymizer/text_detection
+parent: ../structure.yml
+summary: Locate text and PHI regions through EAST, CRAFT, Tesseract and optional detector proposals. Detector
+  training is an explicit offline workflow.
+responsibilities:
+- Region proposal inference
+- Offline training command
+- OCR bounding-box detection
+boundaries:
+- Region proposals must not gate required OCR coverage or replace caller-owned masking acceptance.
+entrypoints:
+- name: PHI detector
+  file: phi_region_detector.py
+  purpose: Region proposal inference
+- name: Detector training
+  file: phi_region_detector_training.py
+  purpose: Offline training command
+- name: Tesseract detection
+  file: tesseract_text_detection.py
+  purpose: OCR bounding-box detection
+dependencies:
+  internal:
+  - lx_anonymizer/region_processing
+  - lx_anonymizer/ocr
+  - models
+  external:
+  - Ultralytics
+  - OpenCV
+  - Tesseract
+submodules: []
+contracts:
+- name: phi-region-detector-training
+  doc: ../../docs/phi-region-detector-training.md
+- name: README
+  doc: ../../models/phi-region-detector/README.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_phi_region_detector.py tests/test_tesseract_text_detection_boundary.py

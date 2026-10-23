@@ -195,32 +195,30 @@ class SpacyModelManager:
             return cls._instance
 
         try:
-            logger.info(f"Loading spacy model: {model_name}")
+            logger.info("Loading configured spaCy model")
             cls._instance = spacy.load(model_name)
         except OSError as exc:
             if cls._auto_download_enabled():
                 logger.warning(
-                    "spaCy model '%s' is not installed. Attempting download because "
+                    "Configured spaCy model is not installed. Attempting download because "
                     "spaCy auto-download is enabled.",
-                    model_name,
                 )
                 cls._download_model(model_name)
                 try:
                     logger.info(
-                        "Reloading spaCy model '%s' after download attempt.",
-                        model_name,
+                        "Reloading configured spaCy model after download attempt.",
                     )
                     cls._instance = spacy.load(model_name)
                 except OSError as load_exc:
                     message = cls._download_did_not_make_model_loadable_message(
                         model_name
                     )
-                    logger.error(message)
+                    logger.error("Configured spaCy model could not be loaded")
                     raise RuntimeError(message) from load_exc
-                logger.info(f"Successfully loaded {model_name} after download.")
+                logger.info("Configured spaCy model loaded after download")
             elif cls._strict_model_required():
                 message = cls._missing_model_message(model_name)
-                logger.error(message)
+                logger.error("Configured spaCy model could not be loaded")
                 raise RuntimeError(message) from exc
             else:
                 cls._instance = cls._fallback_model(model_name)
@@ -264,11 +262,9 @@ class SpacyModelManager:
     def _fallback_model(cls, model_name: str) -> Language:
         lang = cls._language_code_for_model(model_name)
         logger.warning(
-            "spaCy model '%s' is not installed. Falling back to a blank '%s' "
+            "Configured spaCy model is not installed. Falling back to a blank "
             "pipeline; NER and POS-based extraction are degraded. Install the "
             "model or set %s=1/%s=True to allow an explicit runtime download.",
-            model_name,
-            lang,
             cls.AUTO_DOWNLOAD_ENV,
             cls.SETTINGS_AUTO_DOWNLOAD_ENV,
         )
@@ -332,7 +328,7 @@ def _clean_date(date_str: str) -> Optional[str]:
         except ValueError:
             continue
 
-    logger.debug(f"Could not parse date: {date_str}")
+    logger.debug("Date parsing failed")
     return None
 
 

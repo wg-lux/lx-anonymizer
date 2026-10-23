@@ -424,7 +424,7 @@ class FrameMetadataExtractor:
                     return date(year, month, day)
             return None
         except (ValueError, IndexError) as e:
-            logger.debug(f"Compact date parsing failed for '{date_str}': {e}")
+            logger.debug("Compact date parsing failed (%s)", type(e).__name__)
             return None
 
     def _extract_case_number(self, text: str) -> Optional[str]:
@@ -466,7 +466,7 @@ class FrameMetadataExtractor:
                 first_name, last_name = examiner, None
             if self._is_valid_examiner(examiner):
                 return first_name, last_name
-            logger.debug(f"Rejected invalid examiner candidate: {examiner}")
+            logger.debug("Rejected invalid examiner candidate")
         return None, None
 
     def _is_valid_examiner(self, examiner: str) -> bool:
@@ -521,5 +521,5 @@ class FrameMetadataExtractor:
                     return date(y, m, d)
             return None
         except Exception as e:
-            logger.debug(f"Date parsing failed for '{date_str}': {e}")
+            logger.debug("Date parsing failed (%s)", type(e).__name__)
             return None

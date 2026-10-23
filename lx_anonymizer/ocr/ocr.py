@@ -265,10 +265,8 @@ def trocr_full_image_ocr(image_input: TrocrImageInput) -> str:
     # 1) In PIL.Image umwandeln
     try:
         pil_img = _load_rgb_trocr_image(image_input)
-    except Exception as e:
-        logger.warning(
-            f"Failed to prepare image for TrOCR: {e}. Falling back to Tesseract."
-        )
+    except Exception:
+        logger.warning("Failed to prepare image for TrOCR. Falling back to Tesseract.")
         try:
             fb_img = _load_rgb_trocr_image(image_input)
             return _pytesseract_image_to_string(fb_img, config="--psm 6").strip()
@@ -360,7 +358,7 @@ def trocr_full_image_ocr_on_boxes(image_path: ImageInput) -> str:
             recognized_text = tokenizer.batch_decode(
                 outputs.sequences, skip_special_tokens=True
             )[0]
-            logger.debug(f"Box {box} yielded text: '{recognized_text}'")
+            logger.debug("TrOCR region processed")
             if recognized_text.strip():
                 ocr_results.append(recognized_text.strip())
         final_text = "\n".join(ocr_results)
@@ -460,18 +458,18 @@ def trocr_on_boxes(
                 confidences.append(confidence_score)
 
                 logger.info(
-                    f"Processed box {idx + 1}/{len(boxes)}: '{generated_text.strip()}' with confidence {confidence_score:.4f}"
+                    f"Processed box {idx + 1}/{len(boxes)} with confidence {confidence_score:.4f}"
                 )
 
-            except Exception as e:
-                logger.info(f"Error processing box {idx + 1}/{len(boxes)}: {e}")
+            except Exception:
+                logger.info(f"Error processing box {idx + 1}/{len(boxes)}")
                 extracted_text_with_boxes.append(("", box))
                 confidences.append(0.0)
 
         logger.debug("TrOCR processing complete")
         return extracted_text_with_boxes, confidences
-    except Exception as e:
-        logger.error(f"Error in TrOCR processing: {e}")
+    except Exception:
+        logger.error("Error in TrOCR processing")
         cleanup_gpu()
         return [], []  # Added return for this exception path
     finally:
@@ -494,8 +492,8 @@ def fallback_full_ocr(
         )
         outputs = model.generate(pixel_values, max_new_tokens=150)
         return processor.batch_decode(outputs, skip_special_tokens=True)[0]
-    except Exception as e:
-        logger.error(f"Fallback OCR failed: {e}")
+    except Exception:
+        logger.error("Fallback OCR failed")
         return ""
 
 
@@ -520,8 +518,8 @@ def tesseract_on_boxes(
         try:
             logger.debug("Using optimized TesseOCR for text extraction")
             return tesseract_on_boxes_pytesseract(image_path, boxes)
-        except Exception as e:
-            logger.warning(f"TesseOCR failed ({e}), falling back to pytesseract")
+        except Exception:
+            logger.warning("TesseOCR failed, falling back to pytesseract")
 
     # Fallback to original pytesseract implementation
     logger.debug("Using pytesseract for text extraction")
@@ -570,11 +568,11 @@ def tesseract_on_boxes_pytesseract(
             confidences.append(confidence_score)
 
             logger.debug(
-                f"Processed box {idx + 1}/{len(boxes)}: '{ocr_result.strip()}' with confidence {confidence_score:.2f}"
+                f"Processed box {idx + 1}/{len(boxes)} with confidence {confidence_score:.2f}"
             )
 
-        except Exception as e:
-            logger.info(f"Error processing box {idx + 1}/{len(boxes)}: {e}")
+        except Exception:
+            logger.info(f"Error processing box {idx + 1}/{len(boxes)}")
             extracted_text_with_boxes.append(("", box))
             confidences.append(0.0)
 
@@ -597,13 +595,8 @@ if __name__ == "__main__":
 
     # Perform OCR using TrOCR
     trocr_results, trocr_confidences = trocr_on_boxes(image_path, boxes)
-    logger.debug("TrOCR Results:", trocr_results)
-    logger.debug("TrOCR Confidences:", trocr_confidences)
+    logger.debug("TrOCR result count: %d", len(trocr_results))
 
     # Perform OCR using Tesseract
     tesseract_results, tesseract_confidences = tesseract_on_boxes(image_path, boxes)
-    logger.debug("Tesseract Results:", tesseract_results)
-    logger.debug("Tesseract Confidences:", tesseract_confidences)
-    logger.debug("Tesseract Confidences:", tesseract_confidences)
-    logger.debug("Tesseract Confidences:", tesseract_confidences)
-    logger.debug("Tesseract Confidences:", tesseract_confidences)
+    logger.debug("Tesseract result count: %d", len(tesseract_results))

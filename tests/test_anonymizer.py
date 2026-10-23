@@ -560,13 +560,15 @@ def test_create_anonymized_pdf_preserves_pdf_open_failure(
         Anonymizer, "_detect_sensitive_regions_from_image", _no_sensitive_regions
     )
 
-    with pytest.raises(AnonymizationArtifactError, match="cannot open pdf") as error:
+    with pytest.raises(
+        AnonymizationArtifactError, match="Anonymized PDF creation failed"
+    ) as error:
         anonymizer.create_anonymized_pdf(
             str(input_path),
             output_path=str(output_path),
         )
 
-    assert isinstance(error.value.__cause__, RuntimeError)
+    assert error.value.__cause__ is None
     assert anonymizer.last_redaction_summary is None
     assert not output_path.exists()
 
@@ -605,7 +607,7 @@ def test_pdf_missing_language_data_fails_before_rendering(
     ) as error:
         anonymizer.create_anonymized_pdf(str(sample_pdf_path), str(output))
 
-    assert isinstance(error.value.__cause__, FileNotFoundError)
+    assert error.value.__cause__ is None
     assert not isinstance(error.value, FileNotFoundError)
     assert not render_calls
     assert not output.parent.exists()
@@ -639,7 +641,8 @@ def test_pdf_processing_failure_preserves_cause(
     with pytest.raises(AnonymizationArtifactError) as error:
         anonymizer.create_anonymized_pdf(str(sample_pdf_path), str(output))
 
-    assert error.value.__cause__ is failure
+    assert error.value.__cause__ is None
+    assert str(failure) not in str(error.value)
     assert not output.exists()
     assert sample_pdf_path.read_bytes() == original
     assert anonymizer.last_redaction_summary is None

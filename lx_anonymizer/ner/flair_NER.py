@@ -40,13 +40,13 @@ def _get_tagger():
         logger.info("Flair German NER tagger loaded successfully.")
         return tagger
     except Exception as e:
-        logger.error(f"Failed to load Flair German NER tagger: {e}")
+        logger.error("Failed to load Flair German NER tagger (%s)", type(e).__name__)
         return None
 
 
 def flair_NER_German(text: object) -> object | None:
     if not isinstance(text, str):
-        logger.error(f"Expected a string, but got {type(text)}")
+        logger.error("NER input must be a string")
         return None
     active_tagger = _get_tagger()
     if active_tagger is None or SentenceType is None:
@@ -57,9 +57,7 @@ def flair_NER_German(text: object) -> object | None:
         active_tagger.predict(sentence)
         entities = sentence.get_spans("ner")
         if entities:
-            logger.info("The following NER tags are found:")
-            for entity in entities:
-                logger.info(entity)
+            logger.info("NER extraction completed: entity_count=%d", len(entities))
 
             per_found = any(entity.tag == "PER" for entity in entities)
             if per_found:
@@ -71,5 +69,5 @@ def flair_NER_German(text: object) -> object | None:
             logger.info("No entities found")
             return None
     except Exception as e:
-        logger.error(f"Error in NER_German: {e}")
+        logger.error("Error in NER_German (%s)", type(e).__name__)
         return None

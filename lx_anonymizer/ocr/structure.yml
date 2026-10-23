@@ -1,0 +1,46 @@
+version: 1
+tier: domain
+path: lx_anonymizer/ocr
+parent: ../structure.yml
+summary: OCR adapters and preprocessing for medical reports and video frames. Optional backends and explicit
+  model fallbacks supply text evidence to the pipelines.
+responsibilities:
+- RapidOCR frame extraction
+- Validated medical OCR invocation
+- Native Tesseract adapter
+- Language-data resolution
+boundaries:
+- Do not infer patient identity or publish artifacts from OCR text; preserve empty text versus backend
+  failure.
+entrypoints:
+- name: Frame OCR
+  file: ocr_frame.py
+  purpose: RapidOCR frame extraction
+- name: Medical Tesseract
+  file: medical_pytesseract.py
+  purpose: Validated medical OCR invocation
+- name: Tesserocr frames
+  file: ocr_frame_tesserocr.py
+  purpose: Native Tesseract adapter
+- name: Tessdata
+  file: tessdata.py
+  purpose: Language-data resolution
+dependencies:
+  internal:
+  - lx_anonymizer/model_loading.py
+  - rust
+  external:
+  - RapidOCR
+  - Tesseract
+  - tesserocr
+  - pytesseract
+  - OpenCV
+submodules: []
+contracts:
+- name: OCR_BACKEND_EVALUATION
+  doc: ../../docs/OCR_BACKEND_EVALUATION.md
+- name: MODEL_CALLS_AND_DECISIONS
+  doc: ../../docs/MODEL_CALLS_AND_DECISIONS.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_medical_pytesseract.py tests/test_tessdata.py tests/test_ocr_text_native.py

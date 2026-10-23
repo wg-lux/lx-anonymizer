@@ -193,7 +193,7 @@ def detect_phi_regions_from_settings(
             raise CustomPhiRegionDetectorError(
                 "Invalid PHI region detector configuration"
             ) from exc
-        logger.warning("Ignoring invalid PHI region detector configuration: %s", exc)
+        logger.warning("phi_detector_configuration_invalid")
         return []
 
     if config is None:
@@ -210,7 +210,7 @@ def detect_phi_regions_from_settings(
             raise CustomPhiRegionDetectorError(
                 "Configured PHI region detector failed"
             ) from exc
-        logger.warning("Custom PHI detector failed; continuing without it: %s", exc)
+        logger.warning("phi_detector_failed optional=true")
         return []
 
 

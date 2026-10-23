@@ -214,7 +214,7 @@ class MetadataCache:
         key = self._generate_key(text)
         if key in self.cache:
             self.hit_count += 1
-            logger.debug(f"Cache HIT für Key {key}")
+            logger.debug("Metadata cache hit")
             return self.cache[key].model_copy(deep=True)
         else:
             self.miss_count += 1
@@ -229,7 +229,7 @@ class MetadataCache:
 
         key = self._generate_key(text)
         self.cache[key] = metadata.model_copy(deep=True)
-        logger.debug(f"Cache PUT für Key {key}")
+        logger.debug("Metadata cache updated")
 
     def get_stats(self) -> LLMMetadataCacheStatsPayload:
         """Gibt Cache-Statistiken zurück."""
@@ -392,28 +392,23 @@ class LLMMetadataExtractor:
                     model_config = model_config.with_timeout(self.preferred_timeout)
                 self.current_model = model_config
                 logger.info(
-                    "Verwende bevorzugtes Modell: %s",
-                    model_config.name,
+                    "Using preferred LLM model",
                 )
                 return
             if not self.available_models:
                 logger.warning(
-                    "Modellliste nicht verfügbar, aktiviere LLM nicht fuer konfiguriertes Modell: %s",
-                    self.preferred_model,
+                    "Model discovery unavailable; configured LLM remains disabled",
                 )
                 return
             logger.warning(
-                "Bevorzugtes Modell nicht verfuegbar: %s",
-                self.preferred_model,
+                "Preferred LLM model unavailable",
             )
             return
 
         for model_config in ModelConfig.get_models_by_priority():
             if model_config.name in self.available_models:
                 self.current_model = model_config
-                logger.info(
-                    f"Verwende Modell: {model_config.name} - {model_config.description}"
-                )
+                logger.info("Using available LLM model")
                 return
 
         logger.warning(
@@ -504,10 +499,7 @@ OCR_TEXT_END"""
             assert self.current_model is not None
             timeout = self.current_model.timeout
 
-            model_name = payload.model
-            logger.debug(
-                f"🔗 API-Request an {self.chat_endpoint} mit Modell {model_name}"
-            )
+            logger.debug("LLM API request started")
 
             response = requests.post(
                 self.chat_endpoint,
@@ -537,12 +529,10 @@ OCR_TEXT_END"""
 
         except requests.Timeout:
             assert self.current_model is not None
-            logger.error(
-                f"⏰ Timeout ({timeout}s) bei Modell {self.current_model.name}"
-            )
+            logger.error("LLM API timeout after %s seconds", timeout)
             raise
         except requests.ConnectionError as e:
-            logger.error("🔌 Verbindungsfehler zu %s: %s", self.provider, e)
+            logger.error("LLM connection failed (%s)", type(e).__name__)
             raise requests.RequestException(f"{self.provider} nicht erreichbar: {e}")
         except Exception as e:
             logger.error("LLM API response failed (%s)", type(e).__name__)
@@ -626,11 +616,8 @@ OCR_TEXT_END"""
                 model_config.priority > current_priority
                 and model_config.name in self.available_models
             ):
-                old_model = self.current_model.name
                 self.current_model = model_config
-                logger.info(
-                    f"🔄 Modell-Wechsel: {old_model} → {model_config.name} (Priorität {current_priority} → {model_config.priority})"
-                )
+                logger.info("Switching to fallback LLM model")
                 return True
 
         logger.warning("⚠️ Keine weiteren Modelle für Fallback verfügbar")
@@ -708,7 +695,9 @@ OCR_TEXT_END"""
                 payload = self._build_chat_payload(text, prompt_type="full")
 
                 logger.info(
-                    f"Versuch {model_attempt + 1}/{len(available_model_configs)}: Extraktion mit {self.current_model.name}"
+                    "LLM extraction attempt %d/%d",
+                    model_attempt + 1,
+                    len(available_model_configs),
                 )
 
                 # API-Request mit Retry-Logik
@@ -734,17 +723,14 @@ OCR_TEXT_END"""
                     if self.cache is not None:
                         self.cache.put(text, metadata)
 
-                    logger.info(
-                        f"✅ Erfolgreich extrahiert mit {self.current_model.name}: "
-                        "Metadaten validiert"
-                    )
+                    logger.info("LLM extraction completed; metadata validated")
 
                     self.sensitive_meta.safe_update(metadata)
                     return self.sensitive_meta
 
                 except (json.JSONDecodeError, ValidationError) as e:
                     logger.warning(
-                        f"JSON/Validierung fehlgeschlagen für {self.current_model.name}: {type(e).__name__}"
+                        "LLM metadata validation failed (%s)", type(e).__name__
                     )
 
                     # Bei JSON-Fehlern versuche das nächste Modell
@@ -758,7 +744,8 @@ OCR_TEXT_END"""
 
             except requests.Timeout:
                 logger.warning(
-                    f"Timeout bei {self.current_model.name} nach {self.current_model.timeout}s"
+                    "LLM extraction timeout after %s seconds",
+                    self.current_model.timeout,
                 )
                 # Bei Timeout versuche das nächste Modell
                 if model_attempt < len(available_model_configs) - 1:
@@ -771,7 +758,7 @@ OCR_TEXT_END"""
             except SensitiveMetaResolutionError:
                 raise
             except Exception as e:
-                logger.error(f"Fehler mit Modell {self.current_model.name}: {e}")
+                logger.error("LLM metadata extraction failed (%s)", type(e).__name__)
 
                 # Bei anderen Fehlern versuche das nächste Modell
                 if model_attempt < len(available_model_configs) - 1:
@@ -908,7 +895,7 @@ OCR_TEXT_END"""
                 prompt_type="fast",
             )
 
-            logger.info(f"Smart-Sampling mit {self.current_model.name}")
+            logger.info("Metadata sampling started")
             response = self._make_api_request(payload)
             content = self._extract_response_content(response)
 
@@ -929,7 +916,7 @@ OCR_TEXT_END"""
                     self.sensitive_meta.safe_update(metadata_payload)
                     metadata = self.sensitive_meta
                     logger.info(
-                        f"✅ Smart-Sampling erfolgreich (Konfidenz: {confidence:.2f}): {metadata.first_name} {metadata.last_name}, DOB: {metadata.dob}"
+                        "Metadata sampling succeeded (confidence=%.2f)", confidence
                     )
                     return metadata
                 else:
@@ -942,7 +929,8 @@ OCR_TEXT_END"""
 
             except (json.JSONDecodeError, ValidationError) as e:
                 logger.debug(
-                    f"Smart-Sampling JSON-Fehler, Fallback zur Vollextraktion: {e}"
+                    "Metadata sampling validation failed; using full extraction (%s)",
+                    type(e).__name__,
                 )
                 return self.extract_metadata(text)
 
@@ -950,7 +938,7 @@ OCR_TEXT_END"""
             raise
         except Exception as e:
             logger.warning(
-                f"Smart-Sampling fehlgeschlagen, Fallback zur Vollextraktion: {e}"
+                "Metadata sampling failed; using full extraction (%s)", type(e).__name__
             )
             return self.extract_metadata(text)
 
@@ -2097,5 +2085,5 @@ class AsyncMetadataWorker:
         except SensitiveMetaResolutionError:
             raise
         except Exception as exc:
-            logger.warning("Async metadata extraction failed: %s", exc)
+            logger.warning("Async metadata extraction failed (%s)", type(exc).__name__)
             return None

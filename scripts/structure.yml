@@ -1,0 +1,48 @@
+version: 1
+tier: tool
+path: scripts
+parent: ../structure.yml
+summary: Repository checks, distribution audits and offline evidence utilities. These scripts are developer
+  tooling rather than production pipeline entrypoints.
+responsibilities:
+- Validate the context graph
+- Sync, type-check, lint and test
+- Repository integrity and tests
+- Verify wheel and sdist contents
+boundaries:
+- Keep changes within this responsibility; follow dependency manifests before crossing module boundaries.
+entrypoints:
+- name: Packaged report privacy
+  file: verify_packaged_report_privacy.py
+  purpose: Verify installed candidate wheels through a local Celery worker with synthetic reports
+- name: Structure linter
+  file: lint_structure.py
+  purpose: Validate the context graph
+- name: Checks
+  file: run_checks.sh
+  purpose: Sync, type-check, lint and test
+- name: Pre-commit checks
+  file: pre_commit_checks.sh
+  purpose: Repository integrity and tests
+- name: Distribution audit
+  file: audit_distribution.py
+  purpose: Verify wheel and sdist contents
+dependencies:
+  internal:
+  - tests
+  - docs
+  external:
+  - Git
+  - PyYAML
+  - uv
+  - Pyright
+  - pytest
+submodules: []
+contracts:
+- name: agent_context
+  doc: ../docs/agent_context.md
+- name: CONTRIBUTING
+  doc: ../CONTRIBUTING.md
+tests:
+  directory: ../tests
+  command: uv run pytest -q tests/test_lint_structure.py tests/test_audit_distribution.py

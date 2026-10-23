@@ -3,6 +3,8 @@ import zipfile
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _load_audit_module() -> ModuleType:
     module_path = Path(__file__).parents[1] / "scripts" / "audit_distribution.py"
@@ -89,7 +91,12 @@ class FrameCleanerVideoMixin:
     assert audit_distribution.audit_artifact(wheel) == []
 
 
-def test_distribution_audit_allows_tesserocr_base_dependency(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "requirement", ["tesserocr>=2.9.1", "rapidocr>=3.8.1", "ultralytics>=8.4.47"]
+)
+def test_distribution_audit_allows_baseline_capabilities(
+    tmp_path: Path, requirement: str
+) -> None:
     audit_distribution = _load_audit_module()
     wheel = tmp_path / "lx_anonymizer-0.0.0-py3-none-any.whl"
     _write_wheel(
@@ -104,8 +111,37 @@ class FrameCleaner:
             "Metadata-Version: 2.4\n"
             "Name: lx-anonymizer\n"
             "Version: 0.0.0\n"
-            "Requires-Dist: tesserocr>=2.9.1\n"
+            f"Requires-Dist: {requirement}\n"
         ),
     )
 
     assert audit_distribution.audit_artifact(wheel) == []
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "ziglang",
+        "pre-commit",
+        "types-requests",
+        "onnxruntime",
+        "protobuf",
+        "puccinialin",
+    ],
+)
+def test_distribution_audit_rejects_optional_tools_in_baseline(
+    tmp_path: Path, requirement: str
+) -> None:
+    audit_distribution = _load_audit_module()
+    wheel = tmp_path / "lx_anonymizer-0.0.0-py3-none-any.whl"
+    _write_wheel(
+        wheel,
+        {"lx_anonymizer/frame_cleaner/cleaner.py": "class FrameCleaner: pass\n"},
+        metadata=(
+            "Metadata-Version: 2.4\nName: lx-anonymizer\nVersion: 0.0.0\n"
+            f"Requires-Dist: {requirement}\n"
+        ),
+    )
+    errors = audit_distribution.audit_artifact(wheel)
+    assert len(errors) == 1
+    assert f"forbidden base dependency {requirement!r}" in errors[0]

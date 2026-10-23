@@ -1,0 +1,42 @@
+version: 1
+tier: domain
+path: lx_anonymizer/training
+parent: ../structure.yml
+summary: Offline synthetic PHI datasets and reproducible training inputs. Dataset preparation stays separate
+  from production anonymization.
+responsibilities:
+- Generate PHI overlay examples
+- Build MIDI-B training inputs
+- Prepare radiology examples
+- Generate sticker overlays
+boundaries:
+- Do not alter active data storage or production inference configuration while preparing offline datasets.
+entrypoints:
+- name: Synthetic frames
+  file: synthetic_phi_frames.py
+  purpose: Generate PHI overlay examples
+- name: MIDI-B dataset
+  file: midi_b_phi_dataset.py
+  purpose: Build MIDI-B training inputs
+- name: RadPHI dataset
+  file: radphi_dataset.py
+  purpose: Prepare radiology examples
+- name: Endoscopy stickers
+  file: synthetic_endoscopy_stickers.py
+  purpose: Generate sticker overlays
+dependencies:
+  internal:
+  - lx_anonymizer/text_detection
+  - midi-b-dataset
+  external:
+  - Pillow
+  - pydicom
+  - Faker
+submodules: []
+contracts:
+- name: phi-region-detector-training
+  doc: ../../docs/phi-region-detector-training.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_synthetic_phi_frames.py tests/test_synthetic_endoscopy_stickers.py
+    tests/test_midi_b_phi_dataset.py tests/test_radphi_dataset.py

@@ -549,3 +549,30 @@ Provider metadata calls can exceed these logical counts because
 `LLMMetadataExtractor` retries a failed HTTP request twice and can then switch to
 another available model. Report OCR correction and vision calls do not have that
 retry wrapper; their callers retain original/conventional text on failure.
+
+## Model process isolation
+
+`model_loading.ModelChain` uses a private subprocess supervisor on Linux. It can
+run inside a Celery prefork task without changing the task's daemon flag, hard
+or soft time limits, or worker recycling. Hosts can require
+`MODEL_PROCESS_ISOLATION_VERSION == 2` when validating their installed runtime.
+
+Each chain owns one supervisor and one model executor. The supervisor enables
+Linux child-subreaper behavior before launching the executor. A separate private
+liveness socket detects task death even when model input or output is blocked;
+the data relay buffers at most one MiB in either direction. Only the model
+executor deserializes the caller's trusted factory and requests. No socket is
+network-accessible and payloads are never logged.
+
+Model timeout, cancellation, normal close, or task process death closes the
+liveness channel. The supervisor kills the executor's process group, then kills
+and reaps adopted descendants until none remain, including descendants that
+detach with `setsid` or double-fork. Cleanup has a three-second bound; the caller
+waits up to five seconds for confirmation. Cleanup failure raises
+`ModelCleanupError` and prevents starting another model on that chain.
+
+This requires Linux `PR_SET_CHILD_SUBREAPER` and a readable `/proc` child list.
+Deployment service control groups must still cover all subprocesses: forcibly
+killing the supervisor itself, a kernel-stuck process, or machine failure is
+outside application-level cleanup guarantees. The host retains its durable
+lease and publication fencing; model cleanup never grants publication authority.

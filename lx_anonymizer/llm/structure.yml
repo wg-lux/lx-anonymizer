@@ -1,0 +1,43 @@
+version: 1
+tier: service
+path: lx_anonymizer/llm
+parent: ../structure.yml
+summary: Typed language-model provider boundary for optional metadata extraction and vision OCR. Provider
+  configuration and transport remain separate from pipeline decisions.
+responsibilities:
+- Select provider implementation
+- Typed provider request boundary
+- Metadata and vision calls
+- Normalize external results
+boundaries:
+- Provider responses are evidence; do not grant clinical acceptance or silently accept malformed payloads.
+entrypoints:
+- name: Provider factory
+  file: factory.py
+  purpose: Select provider implementation
+- name: Provider protocol
+  file: base.py
+  purpose: Typed provider request boundary
+- name: LLM service
+  file: llm_service.py
+  purpose: Metadata and vision calls
+- name: Response validation
+  file: responses.py
+  purpose: Normalize external results
+dependencies:
+  internal:
+  - lx_anonymizer/config.py
+  - lx_anonymizer/sensitive_meta_interface.py
+  external:
+  - HTTP
+  - Ollama
+  - requests
+  - Pydantic
+submodules: []
+contracts:
+- name: llm-configuration
+  doc: ../../docs/guides/llm-configuration.yml
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_llm_provider_contracts.py tests/test_llm_configuration.py
+    tests/test_provider_log_privacy.py

@@ -1,0 +1,41 @@
+version: 1
+tier: service
+path: lx_anonymizer/report_reader
+parent: ../structure.yml
+summary: Extract report text and sensitive metadata and produce an unpublished redacted PDF. Serializable
+  request and result contracts belong to lx-dtypes.
+responsibilities:
+- Public report API
+- Contract-driven PDF processing
+- Text and metadata extraction
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+- Do not create host database records or claim source ownership; preserve immutable sources and caller
+  output paths.
+entrypoints:
+- name: ReportReader
+  file: __init__.py
+  purpose: Public report API
+- name: Reader implementation
+  file: reader.py
+  purpose: Contract-driven PDF processing
+- name: Extraction
+  file: extraction.py
+  purpose: Text and metadata extraction
+dependencies:
+  internal:
+  - lx_anonymizer/ocr
+  - lx_anonymizer/ner
+  - lx_anonymizer/llm
+  - lx_anonymizer/report_contracts.py
+  external:
+  - lx-dtypes
+  - PyMuPDF
+  - pdfplumber
+submodules: []
+contracts:
+- name: report_pipeline_concurrency_contract
+  doc: ../../docs/report_pipeline_concurrency_contract.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_report_reader_contract.py

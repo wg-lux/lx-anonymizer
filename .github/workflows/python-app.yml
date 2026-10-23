@@ -24,10 +24,19 @@ jobs:
         run: uv python install 3.12
 
       - name: Sync dependencies
-        run: uv sync --extra dev --extra django --extra ocr
+        run: uv sync --extra dev
+
+      - name: Check types
+        run: uv run pyright
 
       - name: Lint with flake8
         run: uv run flake8
+
+      - name: Validate context manifests
+        run: uv run python scripts/lint_structure.py
+
+      - name: Test context validator
+        run: uv run pytest tests/test_lint_structure.py -q
 
       - name: Run lightweight tests
         env:

@@ -1,0 +1,40 @@
+version: 1
+tier: service
+path: lx_anonymizer/video_processing
+parent: ../structure.yml
+summary: Bounded video probing, decoding, filtering and encoding for caller-owned attempts. This module
+  supplies compute primitives rather than durable import authority.
+responsibilities:
+- Video transform orchestration
+- Pipeline adapter
+- Bounded frame coverage planning
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+- Every FFmpeg process and temporary resource has one attempt owner, bounded cancellation and deterministic
+  cleanup.
+entrypoints:
+- name: VideoProcessor
+  file: video_processor.py
+  purpose: Video transform orchestration
+- name: Video processing service
+  file: video_processing_service.py
+  purpose: Pipeline adapter
+- name: Analysis budget
+  file: analysis_budget.py
+  purpose: Bounded frame coverage planning
+dependencies:
+  internal:
+  - lx_anonymizer/anonymization
+  external:
+  - FFmpeg
+  - FFprobe
+  - OpenCV
+submodules: []
+contracts:
+- name: VIDEO_IMPORT_CONCURRENCY_CONTRACT
+  doc: ../../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+- name: NVENC_ACCELERATION
+  doc: ../../docs/NVENC_ACCELERATION.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_ffmpeg_filters.py tests/test_video_processor_ffmpeg.py

@@ -11,11 +11,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - Import smoke test coverage for core package modules
 
 ### Changed
+- Prepare candidate `1.0.9.dev1` with the report anonymization v2 contract; require
+  `lx-dtypes>=0.5.4.dev1` and coordinate the endoreg-db consumer release.
+- Preserve valid-empty provider fallback opportunities and distinguish extraction
+  evidence from Rust-owned durable lifecycle state.
 - README and contributing docs to match native-wheel CI and flake/devenv packaging
 - Local release guidance to treat `python -m build --sdist` as sdist validation while CI produces wheels
 
 ### Fixed
-- None yet
+- Remove document content and raw dependency exception payloads from report
+  diagnostics, including worker-captured streams and public failure tracebacks.
 
 ## [0.9.0.4] - 2026-03-11
 ### Added

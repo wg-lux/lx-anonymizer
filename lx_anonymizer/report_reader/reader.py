@@ -40,10 +40,15 @@ from lx_anonymizer.report_contracts import (
     ArtifactAlreadyExistsError,
     OperationDeadlineExceededError,
     ReportAnonymizationPhase,
+    ReportAnonymizationError,
+    ReportAnonymizationErrorCode,
+    ReportExtractionEvidence,
+    ProviderUnavailableError,
     ReportAnonymizationProvenance,
     ReportAnonymizationRequest,
     ReportAnonymizationResult,
     ReportArtifactValidation,
+    ReportContractError,
     SourceIdentityMismatchError,
 )
 from lx_anonymizer.report_reader.extraction import (
@@ -78,6 +83,8 @@ class PatientPseudonymResolver(Protocol):
 
 
 class ReportReader(ReportReaderExtractionMixin):
+    _extraction_evidence: ReportExtractionEvidence | None = None
+
     _SUPPORTED_FLAG_KEYS = {
         "patient_info_line",
         "endoscope_info_line",
@@ -178,12 +185,8 @@ class ReportReader(ReportReaderExtractionMixin):
                 self.ollama_available = False
                 self.llm_extractor = None
 
-        except Exception as e:
-            logger.warning(
-                "Provider %s unavailable for ReportReader, will use SpaCy/regex fallback: %s",
-                settings.LLM_PROVIDER,
-                e,
-            )
+        except Exception:
+            logger.warning("report_provider_unavailable fallback=spacy_regex")
             self.llm_available = False
             self.ollama_available = False
             self.llm_extractor = None
@@ -235,10 +238,7 @@ class ReportReader(ReportReaderExtractionMixin):
 
         unknown_keys = [k for k in provided.keys() if k not in cls._SUPPORTED_FLAG_KEYS]
         if unknown_keys:
-            logger.warning(
-                "ReportReader received unknown flags keys (preserved for compatibility): %s",
-                sorted(map(str, unknown_keys)),
-            )
+            logger.warning("report_unknown_flags count=%d", len(unknown_keys))
 
         merged.update(provided)
         resolved = ReportReaderFlags.model_validate(merged)
@@ -349,13 +349,33 @@ class ReportReader(ReportReaderExtractionMixin):
             if isinstance(extractor, LLMMetadataExtractor)
             else None
         )
-        if chain is not None:
-            chain.reset()
         try:
-            return self._process_report_owned(request)
-        finally:
-            if chain is not None:
-                chain.close()
+            try:
+                if chain is not None:
+                    chain.reset()
+                return self._process_report_owned(request)
+            finally:
+                if chain is not None:
+                    chain.close()
+        except ReportAnonymizationError as exc:
+            # The public worker boundary must also suppress third-party causes.
+            for error_type in (
+                AnonymizationArtifactError,
+                ArtifactAlreadyExistsError,
+                OperationDeadlineExceededError,
+                ProviderUnavailableError,
+                ReportContractError,
+                SourceIdentityMismatchError,
+            ):
+                if type(exc) is error_type:
+                    raise error_type(
+                        f"report processing failed: {error_type.__name__}"
+                    ) from None
+            raise ReportAnonymizationError("report processing failed") from None
+        except ModelCleanupError:
+            raise ModelCleanupError("report model cleanup failed") from None
+        except Exception:
+            raise AnonymizationArtifactError("report processing failed") from None
 
     def _process_report_owned(
         self,
@@ -399,6 +419,7 @@ class ReportReader(ReportReaderExtractionMixin):
                 f"attempt output already exists: {attempt_name}"
             )
 
+        self._extraction_evidence = None
         process_request = ReportProcessRequest(
             pdf_path=request.source_path,
             image_path=None,
@@ -453,6 +474,9 @@ class ReportReader(ReportReaderExtractionMixin):
                     "source content changed during report anonymization"
                 )
 
+            evidence = self._extraction_evidence
+            if evidence is None:
+                raise AnonymizationArtifactError("metadata extraction evidence missing")
             artifact_size = temporary_path.stat().st_size
             artifact_sha256 = self._report_file_sha256(temporary_path)
             self._sync_file(temporary_path)
@@ -472,7 +496,7 @@ class ReportReader(ReportReaderExtractionMixin):
             legacy_provenance = ReportAnonymizerProvenance.model_validate(
                 provenance_payload if isinstance(provenance_payload, Mapping) else {}
             )
-            used_llm = request.options.use_llm is not False and self.llm_available
+            used_llm = evidence.backend == "configured_llm"
             anonymizer_version = legacy_provenance.anonymizer_version
             if anonymizer_version == "unknown":
                 anonymizer_version = lx_anonymizer_version
@@ -488,6 +512,7 @@ class ReportReader(ReportReaderExtractionMixin):
                 artifact_sha256=artifact_sha256,
                 artifact_size_bytes=artifact_size,
                 artifact_validation=artifact_validation,
+                extraction_evidence=evidence,
                 provenance=ReportAnonymizationProvenance(
                     anonymizer_version=anonymizer_version,
                     detector_sources=tuple(legacy_provenance.detector_sources),
@@ -566,6 +591,7 @@ class ReportReader(ReportReaderExtractionMixin):
         self, request: ReportProcessRequest
     ) -> ReportProcessResult:
         self.sensitive_meta = SensitiveMeta()
+        self._extraction_evidence = None
         source_text = self._load_report_text(request)
         if source_text is None:
             return self._empty_process_result(request)
@@ -655,22 +681,22 @@ class ReportReader(ReportReaderExtractionMixin):
             return request.text
         if request.pdf_path:
             if not request.pdf_path.exists():
-                logger.error("PDF file not found: %s", request.pdf_path)
+                logger.error("report_pdf_missing")
                 return None
             return self.read_pdf(request.pdf_path)
         if request.image_path:
             if not request.image_path.exists():
-                logger.error("Image file not found: %s", request.image_path)
+                logger.error("report_image_missing")
                 return None
-            logger.info("Reading text from image file: %s", request.image_path)
+            logger.info("report_image_read_started")
             return self._ocr_single_image(request.image_path)
         return None
 
     def _ocr_single_image(self, image_path: Path) -> str | None:
         try:
             pil_image = Image.open(image_path)
-        except OSError as exc:
-            logger.error("Error reading image %s: %s", image_path, exc)
+        except OSError:
+            logger.error("report_image_read_failed")
             return None
         with pil_image:
             return self._ocr_image(pil_image, page_num=1, use_ensemble=True)
@@ -696,22 +722,18 @@ class ReportReader(ReportReaderExtractionMixin):
             return text
 
         ocr_text = self._ocr_images(images, use_ensemble=request.use_ensemble)
-        logger.info(
-            "OCR fallback finished. Total text length: %d. Preview: %s...",
-            len(ocr_text),
-            ocr_text[:200],
-        )
+        logger.info("report_ocr_complete chars=%d", len(ocr_text))
         return self._correct_ocr_text_if_enabled(ocr_text)
 
     def _load_images_for_ocr(self, request: ReportProcessRequest) -> list[Image.Image]:
         if request.pdf_path:
-            logger.info("Converting PDF to images for OCR: %s", request.pdf_path)
+            logger.info("report_pdf_render_started")
             return convert_pdf_to_images(request.pdf_path)
         if request.image_path:
             try:
                 return [Image.open(request.image_path)]
-            except OSError as exc:
-                logger.error("Failed to open image file: %s", exc)
+            except OSError:
+                logger.error("report_image_open_failed")
         return []
 
     def _ocr_images(self, images: list[Image.Image], *, use_ensemble: bool) -> str:
@@ -779,8 +801,8 @@ class ReportReader(ReportReaderExtractionMixin):
                 corrected = chain.run(text)
         except ModelCleanupError:
             raise
-        except Exception as exc:
-            logger.warning("Error using LLM for correction: %s", exc)
+        except Exception:
+            logger.warning("report_ocr_correction_failed")
             return text
 
         if corrected and corrected != text and len(corrected) > 0.5 * len(text):
@@ -807,31 +829,52 @@ class ReportReader(ReportReaderExtractionMixin):
     def _extract_or_default_report_meta(
         self, *, text: str, pdf_path: Path | None, use_provider_llm: bool
     ) -> dict[str, object]:
-        if len(text.strip()) < 10:
-            logger.warning(
-                "Skipping metadata extraction due to insufficient text content."
-            )
-            return self._validated_report_meta(
-                self._partial_report_meta(
-                    {
-                        "pdf_hash": self.pdf_hash_file(pdf_path)
-                        if pdf_path and pdf_path.exists()
-                        else None
-                    }
-                )
-            )
-
-        for name in settings.METADATA_MODEL_ORDER:
+        provider_attempted = False
+        provider_failure: ReportAnonymizationErrorCode | None = None
+        for index, name in enumerate(settings.METADATA_MODEL_ORDER):
             if name == "llm":
                 if not use_provider_llm or not self._should_attempt_report_llm(text):
                     continue
-                report_meta = self.extract_report_meta_with_llm(text)
-                if not self._report_metadata_has_signal(report_meta):
+                provider_attempted = True
+                try:
+                    report_meta = self.extract_report_meta_with_llm(text)
+                except ProviderUnavailableError:
+                    provider_failure = ReportAnonymizationErrorCode.PROVIDER_UNAVAILABLE
+                    logger.warning("report_metadata_provider_failed")
                     continue
+                count = self._metadata_field_count(report_meta)
+                if not count and any(
+                    backend != "llm"
+                    for backend in settings.METADATA_MODEL_ORDER[index + 1 :]
+                ):
+                    # An empty provider response is valid evidence, but does not
+                    # bypass a configured local opportunity to find identifiers.
+                    continue
+                self._extraction_evidence = ReportExtractionEvidence(
+                    outcome="findings" if count else "empty",
+                    backend="configured_llm",
+                    finding_count=count,
+                    provider_attempted=True,
+                )
             else:
-                report_meta = self.extract_report_meta(text, pdf_path)
+                # Successful typed local extraction, including an empty result,
+                # is evidence; configuration/readiness alone is never evidence.
+                report_meta = self._validated_report_meta(
+                    self.extract_report_meta(text, pdf_path)
+                )
+                self._extraction_evidence = ReportExtractionEvidence(
+                    outcome="fallback",
+                    backend="spacy_regex",
+                    finding_count=self._metadata_field_count(report_meta),
+                    provider_attempted=provider_attempted,
+                    provider_failure=provider_failure,
+                )
             self.sensitive_meta.safe_update(report_meta)
             return self.sensitive_meta.to_dict()
+        if provider_failure is not None:
+            raise ProviderUnavailableError(
+                "report metadata provider failed without fallback"
+            )
         raise RuntimeError("Report metadata chain produced no result")
 
     def _maybe_create_anonymized_pdf(
@@ -866,7 +909,7 @@ class ReportReader(ReportReaderExtractionMixin):
                     )
                 }
             )
-        logger.info("Anonymized PDF created: %s", output_path)
+        logger.info("report_artifact_created")
         return Path(str(output_path)), self._merge_report_meta(report_meta, update)
 
     def _finalize_report_meta(
@@ -888,9 +931,12 @@ class ReportReader(ReportReaderExtractionMixin):
                 }
             ),
         )
-        detector_sources = ["regex", "spacy"]
-        if use_provider_llm:
-            detector_sources.append("llm")
+        evidence = self._extraction_evidence
+        detector_sources = (
+            ["llm"]
+            if evidence is not None and evidence.backend == "configured_llm"
+            else ["regex", "spacy"]
+        )
         redaction_summary_value = meta.get("redaction_summary")
         redaction_count = 0
         if isinstance(redaction_summary_value, dict):
@@ -932,7 +978,14 @@ class ReportReader(ReportReaderExtractionMixin):
             "examiner_last_name",
             "center",
         )
-        return sum(1 for key in keys if meta.get(key))
+        # Count extracted metadata fields, excluding shared unknown/default markers.
+        normalized = SensitiveMeta()
+        normalized.safe_update(meta)
+        return sum(
+            1
+            for key in keys
+            if SensitiveMeta._is_nonblank(getattr(normalized, key))  # pyright: ignore[reportPrivateUsage]
+        )
 
     @staticmethod
     def _report_metadata_has_signal(meta: Mapping[str, object]) -> bool:

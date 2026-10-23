@@ -12,14 +12,14 @@ import zipfile
 from pathlib import Path
 
 
+# README's complete baseline includes RapidOCR and PHI detector training
+# (Ultralytics); hardware selection and build/development tooling stay optional.
 FORBIDDEN_BASE_REQUIREMENTS = {
     "onnxruntime",
     "pre-commit",
     "protobuf",
     "puccinialin",
-    "rapidocr",
     "types-requests",
-    "ultralytics",
     "ziglang",
 }
 

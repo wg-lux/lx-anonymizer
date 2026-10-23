@@ -23,7 +23,8 @@ docs/publication
 
 # data artefacts and large runtime outputs
 data/
-study_data/
+study_data/*
+!study_data/structure.yml
 logs/
 **~/etc
 **/etc/

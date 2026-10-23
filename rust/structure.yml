@@ -1,0 +1,31 @@
+version: 1
+tier: package
+path: rust
+parent: ../structure.yml
+summary: PyO3 native library for bounded OCR normalization, ranking and compute acceleration. Cargo configuration
+  lives at repository root.
+responsibilities:
+- Python extension implementation
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+entrypoints:
+- name: Native module
+  file: lx-anonymizer-native/src/lib.rs
+  purpose: Python extension implementation
+dependencies:
+  internal: []
+  external:
+  - PyO3
+  - numpy
+  - Rayon
+  - regex
+  - strsim
+submodules: []
+contracts:
+- name: VIDEO_IMPORT_CONCURRENCY_CONTRACT
+  doc: ../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+- name: Cargo
+  doc: ../Cargo.toml
+tests:
+  directory: ../tests
+  command: uv run pytest -q tests/test_ocr_text_native.py

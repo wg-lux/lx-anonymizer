@@ -1,0 +1,40 @@
+version: 1
+tier: domain
+path: lx_anonymizer/ner
+parent: ../structure.yml
+summary: Extract patient metadata using spaCy, regular expressions and optional NER adapters. Bundled
+  model resolution is owned here; shared metadata types are owned by lx-dtypes.
+responsibilities:
+- Patient and date extraction
+- Shared model loading
+- Packaged spaCy resources
+boundaries:
+- Do not modify image pixels or duplicate serializable lx-dtypes metadata contracts.
+entrypoints:
+- name: Frame metadata
+  file: frame_metadata_extractor.py
+  purpose: Patient and date extraction
+- name: SpacyModelManager
+  file: spacy_extractor.py
+  purpose: Shared model loading
+- name: Bundled model
+  file: bundled_spacy.py
+  purpose: Packaged spaCy resources
+dependencies:
+  internal:
+  - lx_anonymizer/sensitive_meta_interface.py
+  - lx_anonymizer/resources/spacy
+  external:
+  - spaCy
+  - lx-dtypes
+  - dateparser
+submodules: []
+contracts:
+- name: MODEL_CALLS_AND_DECISIONS
+  doc: ../../docs/MODEL_CALLS_AND_DECISIONS.md
+- name: manifest
+  doc: ../resources/spacy/manifest.json
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_frame_metadata_extractor_dates.py tests/test_gender_detection.py
+    tests/test_spacy_model_manager.py

@@ -112,7 +112,7 @@ def _east_text_detection_on_pil_image(
         try:
             tmp_path.unlink(missing_ok=True)
         except OSError:
-            logger.debug("Could not remove temporary EAST image: %s", tmp_path)
+            logger.debug("redaction_temporary_image_cleanup_failed")
 
 
 def _clamp_box(
@@ -272,17 +272,8 @@ class Anonymizer:
             return self._detect_sensitive_regions_from_image(image)
         except CustomPhiRegionDetectorError:
             raise
-        except Exception as exc:
-            page_label = (
-                f"page {page_num + 1}" if isinstance(page_num, int) else "image"
-            )
-            logger.warning(
-                "Primary EAST-based sensitive-region detection failed for %s: %s. "
-                "Falling back to OCR-only region detection.",
-                page_label,
-                exc,
-                exc_info=True,
-            )
+        except Exception:
+            logger.warning("redaction_primary_detection_failed fallback=ocr")
 
         _text, word_boxes = tesseract_full_image_ocr(image)
         if not word_boxes:
@@ -312,12 +303,12 @@ class Anonymizer:
         for roi in rois:
             clamped = _clamp_box(*roi, width=width, height=height, padding=padding)
             if clamped is None:
-                logger.debug("Skipping invalid ROI for image draw: %s", roi)
+                logger.debug("redaction_invalid_image_region")
                 continue
 
             x1, y1, x2, y2 = clamped
             draw.rectangle([(x1, y1), (x2, y2)], fill="black")
-            logger.debug("Blackened image ROI: (%d, %d, %d, %d)", x1, y1, x2, y2)
+            logger.debug("redaction_image_region_applied")
 
         return image
 
@@ -350,7 +341,7 @@ class Anonymizer:
                     padding=0,
                 )
                 if clamped is None:
-                    logger.debug("Skipping invalid PDF ROI: %s", roi)
+                    logger.debug("redaction_invalid_pdf_region")
                     continue
 
                 rect = _pil_to_pdf_rect(
@@ -362,7 +353,7 @@ class Anonymizer:
                     padding=padding_points,
                 )
                 if rect is None:
-                    logger.debug("Skipping empty converted PDF rect for ROI: %s", roi)
+                    logger.debug("redaction_empty_pdf_region")
                     continue
 
                 page.add_redact_annot(rect, fill=(0.0, 0.0, 0.0))
@@ -383,19 +374,17 @@ class Anonymizer:
 
         try:
             get_tessdata_path("deu+eng")
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError):
             raise AnonymizationArtifactError(
-                f"Report OCR runtime is not configured: {exc}"
-            ) from exc
+                "Report OCR runtime is not configured for deu+eng"
+            ) from None
 
         try:
             if output_path is None:
                 output_path = self._default_output_path(pdf_path)
 
             self._ensure_output_parent(output_path)
-            logger.info(
-                "Creating anonymized PDF with EAST + OCR redaction: %s", output_path
-            )
+            logger.info("redaction_pdf_started")
 
             images = convert_pdf_to_images(pdf_path)
             rois_per_page: dict[int, list[Box]] = {}
@@ -417,14 +406,12 @@ class Anonymizer:
             finally:
                 doc.close()
 
-            logger.info("Anonymized PDF saved: %s", output_path)
+            logger.info("redaction_pdf_saved")
             return output_path
 
-        except Exception as exc:
+        except Exception:
             self.last_redaction_summary = None
-            raise AnonymizationArtifactError(
-                f"Anonymized PDF creation failed ({type(exc).__name__}): {exc}"
-            ) from exc
+            raise AnonymizationArtifactError("Anonymized PDF creation failed") from None
 
     def create_anonymized_image(
         self,
@@ -438,7 +425,7 @@ class Anonymizer:
                 output_path = self._default_output_path(image_path)
 
             self._ensure_output_parent(output_path)
-            logger.info("Creating anonymized image with EAST + OCR: %s", output_path)
+            logger.info("redaction_image_started")
 
             image = Image.open(image_path).convert("RGB")
             rois = self._detect_sensitive_regions_with_fallback(image)
@@ -446,16 +433,14 @@ class Anonymizer:
             anonymized = self._draw_black_boxes_on_image(image, rois, padding=2)
             anonymized.save(output_path)
 
-            logger.info("Anonymized image saved: %s", output_path)
+            logger.info("redaction_image_saved")
             return output_path
 
-        except ImportError as exc:
-            logger.error(
-                "Required module not installed. Cannot create anonymized image: %s", exc
-            )
+        except ImportError:
+            logger.error("redaction_image_dependency_missing")
             return None
-        except Exception as exc:
-            logger.error("Error creating anonymized image: %s", exc, exc_info=True)
+        except Exception:
+            logger.error("redaction_image_failed")
             return None
 
     def create_anonymized_pdf_from_rois(
@@ -469,7 +454,7 @@ class Anonymizer:
                 output_path = self._default_output_path(pdf_path)
 
             self._ensure_output_parent(output_path)
-            logger.info("Creating anonymized PDF from ROIs: %s", output_path)
+            logger.info("redaction_pdf_regions_started")
 
             images = convert_pdf_to_images(pdf_path)
 
@@ -480,13 +465,11 @@ class Anonymizer:
             finally:
                 doc.close()
 
-            logger.info("Anonymized PDF saved: %s", output_path)
+            logger.info("redaction_pdf_saved")
             return output_path
 
-        except Exception as exc:
-            logger.error(
-                "Error creating anonymized PDF from ROIs: %s", exc, exc_info=True
-            )
+        except Exception:
+            logger.error("redaction_pdf_regions_failed")
             return None
 
     def create_anonymized_image_from_rois(
@@ -500,17 +483,15 @@ class Anonymizer:
                 output_path = self._default_output_path(image_path)
 
             self._ensure_output_parent(output_path)
-            logger.info("Creating anonymized image from ROIs: %s", output_path)
+            logger.info("redaction_image_regions_started")
 
             image = Image.open(image_path).convert("RGB")
             anonymized = self._draw_black_boxes_on_image(image, rois, padding=2)
             anonymized.save(output_path)
 
-            logger.info("Anonymized image saved: %s", output_path)
+            logger.info("redaction_image_saved")
             return output_path
 
-        except Exception as exc:
-            logger.error(
-                "Error creating anonymized image from ROIs: %s", exc, exc_info=True
-            )
+        except Exception:
+            logger.error("redaction_image_regions_failed")
             return None

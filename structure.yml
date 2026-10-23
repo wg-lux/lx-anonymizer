@@ -1,0 +1,77 @@
+version: 1
+tier: root
+path: .
+parent: null
+summary: Medical image, video, report and DICOM anonymization with shared typed metadata. Route tasks
+  through the compute package, native library, tooling, verification and evidence domains.
+responsibilities:
+- Provide image, video, report and DICOM anonymization through typed compute interfaces.
+- Route development, verification and evidence work to the owning domain.
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+entrypoints:
+- name: lx-anonymizer
+  file: lx_anonymizer/cli.py
+  purpose: Public command-line interface
+- name: Contributor guidance
+  file: AGENTS.md
+  purpose: Required operating rules
+dependencies:
+  internal: []
+  external:
+  - Python 3.12+
+  - Maturin
+  - lx-dtypes
+  - Nix
+submodules:
+- name: lx_anonymizer
+  path: lx_anonymizer
+  manifest: lx_anonymizer/structure.yml
+  summary: Compute-only anonymization APIs and pipeline orchestration.
+- name: rust
+  path: rust
+  manifest: rust/structure.yml
+  summary: PyO3 native library for bounded OCR normalization, ranking and compute acceleration.
+- name: scripts
+  path: scripts
+  manifest: scripts/structure.yml
+  summary: Repository checks, distribution audits and offline evidence utilities.
+- name: tests
+  path: tests
+  manifest: tests/structure.yml
+  summary: Unit and integration verification for processing, contracts, models and packaging.
+- name: docs
+  path: docs
+  manifest: docs/structure.yml
+  summary: Durable architecture, operator guides and dated evaluation records.
+- name: feature-tracking
+  path: feature-tracking
+  manifest: feature-tracking/structure.yml
+  summary: Existing YAML feature assessments and verification evidence.
+- name: study_data
+  path: study_data
+  manifest: study_data/structure.yml
+  summary: Tracked gold and prediction snapshots for metadata extraction studies.
+contracts:
+- name: VIDEO_IMPORT_CONCURRENCY_CONTRACT
+  doc: docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+- name: report_pipeline_concurrency_contract
+  doc: docs/report_pipeline_concurrency_contract.md
+tests:
+  directory: tests
+  command: uv run pytest -q tests/test_lint_structure.py tests/test_distribution_metadata.py
+files:
+- path: models
+  purpose: Detector model configuration and artifact contract
+- path: midi-b-dataset
+  purpose: TCIA collection descriptors; datasets are not application code
+- path: nix
+  purpose: Nix packaging tests
+- path: devenv
+  purpose: Development environment task modules
+- path: .github/workflows
+  purpose: CI and release pipelines
+- path: typings
+  purpose: Third-party typing boundaries
+- path: pyproject.toml
+  purpose: Dependencies, commands and build configuration

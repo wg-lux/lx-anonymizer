@@ -4,6 +4,8 @@ import tomllib
 from pathlib import Path
 from typing import TypedDict, cast
 
+from packaging.requirements import Requirement
+
 
 ProjectTable = TypedDict(
     "ProjectTable",
@@ -78,3 +80,13 @@ def test_frame_cleaner_keeps_video_mixin_wired() -> None:
         isinstance(base, ast.Name) and base.id == "FrameCleanerVideoMixin"
         for base in frame_cleaner_class.bases
     )
+
+
+def test_report_v2_requires_candidate_shared_contract() -> None:
+    dependency = next(
+        Requirement(value)
+        for value in _pyproject()["project"]["dependencies"]
+        if _dependency_name(value) == "lx-dtypes"
+    )
+    assert "0.5.3" not in dependency.specifier
+    assert "0.5.4.dev1" in dependency.specifier

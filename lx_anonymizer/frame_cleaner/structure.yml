@@ -1,0 +1,42 @@
+version: 1
+tier: service
+path: lx_anonymizer/frame_cleaner
+parent: ../structure.yml
+summary: Analyze and anonymize one immutable video source into an unpublished attempt-owned candidate.
+  FrameCleaner carries mutable per-video state.
+responsibilities:
+- Public frame-cleaning API
+- Metadata and masking orchestration
+- Attempt-local video analysis
+boundaries:
+- Do not add durable persistence, publication, leases or retry authority; endoreg-db owns them.
+- One FrameCleaner per attempt; concurrent use of one mutable instance is prohibited.
+- Integrity failures must raise; partial artifacts must never become apparent success.
+entrypoints:
+- name: FrameCleaner
+  file: __init__.py
+  purpose: Public frame-cleaning API
+- name: Cleaner implementation
+  file: cleaner.py
+  purpose: Metadata and masking orchestration
+- name: Video mixin
+  file: video.py
+  purpose: Attempt-local video analysis
+dependencies:
+  internal:
+  - lx_anonymizer/video_processing
+  - lx_anonymizer/ocr
+  - lx_anonymizer/ner
+  - lx_anonymizer/anonymization
+  - lx_anonymizer/llm
+  external:
+  - lx-dtypes
+  - OpenCV
+  - FFmpeg
+submodules: []
+contracts:
+- name: VIDEO_IMPORT_CONCURRENCY_CONTRACT
+  doc: ../../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+tests:
+  directory: ../../tests
+  command: uv run pytest -q tests/test_frame_cleaner_concurrency.py tests/test_frame_analysis_budget.py

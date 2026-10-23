@@ -23,7 +23,7 @@ from lx_dtypes.models.meta.ReportMeta import (
 from PIL import Image
 
 from lx_anonymizer.anonymization import text_anonymizer
-from lx_anonymizer.config import settings
+from lx_anonymizer.report_contracts import ProviderUnavailableError
 from lx_anonymizer.model_loading import ModelCleanupError
 from lx_anonymizer.image_processing.pdf_operations import convert_pdf_to_images
 from lx_anonymizer.ner.spacy_extractor import (
@@ -133,15 +133,15 @@ class ReportReaderExtractionMixin:
                     if page_text:
                         text += page_text + "\n"
                 return text
-        except Exception as exc:
-            logger.error("Error reading PDF %s: %s", pdf_file, exc)
+        except Exception:
+            logger.error("report_pdf_read_failed")
             return ""
 
     def extract_report_meta(
         self, text: str, pdf_path: str | os.PathLike[str] | Path | None
     ) -> dict[str, object]:
         """Extract metadata from report text using the spacy extractor classes."""
-        logger.debug(f"Full text extracted from PDF: {text[:500]}...")
+        logger.debug("report_text_extracted chars=%d", len(text))
         lines = text.split("\n") if text else []
         patient_info = self._extract_patient_info(text, lines)
         final_patient_info = ReportPatientInfo.model_validate(patient_info).model_dump()
@@ -165,7 +165,7 @@ class ReportReaderExtractionMixin:
     ) -> Mapping[str, object]:
         patient_info = self.patient_extractor(text) if text else None
         if patient_info:
-            logger.debug("Patient extractor result on full text: %s", patient_info)
+            logger.debug("report_patient_extraction_completed")
         else:
             logger.debug("Skipping extraction on empty text.")
 
@@ -322,36 +322,23 @@ class ReportReaderExtractionMixin:
     ) -> dict[str, object]:
         """Shared wrapper for provider-backed LLM metadata extraction variants."""
         if not self.llm_available or not self.llm_extractor:
-            msg = (
-                f"LLM provider {settings.LLM_PROVIDER} not available for "
-                f"{extractor_name} extraction, returning empty dict."
-            )
-            log_fn = getattr(logger, unavailable_log_level, logger.debug)
-            log_fn(msg)
-            return {}
+            raise ProviderUnavailableError("report metadata provider unavailable")
 
-        logger.info(
-            "Attempting metadata extraction with %s via provider %s",
-            extractor_name,
-            settings.LLM_PROVIDER,
-        )
+        logger.info("report_metadata_provider_started")
         try:
             meta_obj = self.llm_extractor.extract_metadata(text)
-            if not meta_obj:
-                logger.warning(
-                    "%s LLM extraction failed, returning empty dict.",
-                    extractor_name,
-                )
-                return {}
-
-            self.sensitive_meta.safe_update(meta_obj)
-            logger.info("%s LLM extraction successful.", extractor_name)
-            return self.sensitive_meta.to_dict()
         except (SensitiveMetaResolutionError, ModelCleanupError):
             raise
-        except Exception as e:
-            logger.warning(f"{extractor_name} LLM extraction error: {e}")
-            return {}
+        except Exception:
+            # The external provider boundary may raise transport-specific errors.
+            raise ProviderUnavailableError("report metadata provider failed") from None
+        if meta_obj is None:
+            raise ProviderUnavailableError(
+                "report metadata provider returned no result"
+            )
+        self.sensitive_meta.safe_update(meta_obj)
+        logger.info("report_metadata_provider_completed")
+        return meta_obj.to_dict()
 
     def anonymize_report(
         self,
@@ -396,8 +383,8 @@ class ReportReaderExtractionMixin:
                 for chunk in iter(lambda: handle.read(chunk_size), b""):
                     hasher.update(chunk)
             return hasher.hexdigest()
-        except Exception as e:
-            logger.error(f"Could not stream-hash PDF {pdf_file}: {e}")
+        except Exception:
+            logger.error("report_pdf_hash_failed")
             return None
 
     def process_report_with_cropping(
@@ -508,11 +495,8 @@ class ReportReaderExtractionMixin:
             return self.sensitive_cropper.crop_sensitive_regions(
                 pdf_path=str(pdf_path), output_dir=str(crop_output_dir)
             )
-        except Exception as exc:
-            logger.error(
-                "Fehler beim initialien Aufruf der Funktion zum Cropping: %s",
-                exc,
-            )
+        except Exception:
+            logger.error("report_crop_failed")
             return {}
 
     def _create_pdf_from_crops(
@@ -535,7 +519,7 @@ class ReportReaderExtractionMixin:
                 anonymized_pdf_path=str(anonymized_pdf_path),
             )
         except Exception as exc:
-            logger.warning("Konnte anonymisiertes PDF nicht erstellen: %s", exc)
+            logger.warning("report_crop_artifact_failed")
             crop_error = ReportCropInfo(anonymized_pdf_error=str(exc))
             return None, self._merge_report_meta(
                 report_meta,

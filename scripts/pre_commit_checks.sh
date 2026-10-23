@@ -34,6 +34,8 @@ fi
 
 BEFORE_STATUS="$(git status --porcelain=v1)"
 
+python scripts/lint_structure.py
+
 echo "[pre-commit] Running test suite..."
 pytest -q
 

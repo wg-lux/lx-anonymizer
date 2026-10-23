@@ -1,0 +1,46 @@
+version: 1
+tier: domain
+path: tests
+parent: ../structure.yml
+summary: Unit and integration verification for processing, contracts, models and packaging. Hardware and
+  inference-heavy tests require their declared environments.
+responsibilities:
+- Common video probe mocking
+- Context schema and drift regression suite
+boundaries:
+- Keep changes within this responsibility; follow dependency manifests before crossing module boundaries.
+entrypoints:
+- name: Report diagnostic privacy
+  file: test_report_log_privacy.py
+  purpose: Sentinel non-disclosure through report, cropper and redaction diagnostics
+- name: OCR diagnostic privacy
+  file: test_ocr_log_privacy.py
+  purpose: OCR success and backend failure log non-disclosure
+- name: Provider diagnostic privacy
+  file: test_provider_log_privacy.py
+  purpose: NER and LLM diagnostic non-disclosure
+- name: Model process lifecycle
+  file: test_model_loading.py
+  purpose: Model deadlines, daemon parents and descendant cleanup regressions
+- name: Pytest fixtures
+  file: conftest.py
+  purpose: Common video probe mocking
+- name: Manifest tests
+  file: test_lint_structure.py
+  purpose: Context schema and drift regression suite
+dependencies:
+  internal:
+  - lx_anonymizer
+  - scripts
+  - rust
+  external:
+  - pytest
+submodules: []
+contracts:
+- name: pytest
+  doc: ../pytest.ini
+- name: AGENTS
+  doc: ../AGENTS.md
+tests:
+  directory: .
+  command: uv run pytest -q tests/test_lint_structure.py tests/test_distribution_metadata.py tests/test_audit_distribution.py

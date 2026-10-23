@@ -26,6 +26,8 @@ fi
 
 "$UV_BIN" sync --extra dev --extra cpu
 
+"$UV_BIN" run python scripts/lint_structure.py
+
 # Run strict type checking before test execution
 .devenv/state/venv/bin/pyright
 
