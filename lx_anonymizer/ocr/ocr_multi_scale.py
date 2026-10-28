@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Dict, List, Optional, Protocol, Tuple, TypedDict, Union, cast
+from typing import Optional, Protocol, TypedDict, cast
 
 import numpy as np
 import pytesseract
@@ -10,11 +10,11 @@ from PIL import Image
 from lx_anonymizer.ocr.ocr_preprocessing import preprocess_image
 from lx_anonymizer.setup.custom_logger import logger
 
-ScaleResultMetadata = Dict[str, Union[float, int, str]]
-ScaleResultsMetadata = Dict[str, ScaleResultMetadata]
-PyramidMetadataValue = Union[float, ScaleResultsMetadata, Dict[str, float]]
-PyramidMetadata = Dict[str, PyramidMetadataValue]
-PyramidOcrResult = Tuple[str, PyramidMetadata]
+ScaleResultMetadata = dict[str, float | int | str]
+ScaleResultsMetadata = dict[str, ScaleResultMetadata]
+PyramidMetadataValue = float | ScaleResultsMetadata | dict[str, float]
+PyramidMetadata = dict[str, PyramidMetadataValue]
+PyramidOcrResult = tuple[str, PyramidMetadata]
 
 
 class BlockWord(TypedDict):
@@ -41,8 +41,8 @@ def _image_to_data(image: Image.Image, config: str = "") -> pytesseract.Tesserac
 
 def pyramid_ocr(
     image: Image.Image,
-    scales: Optional[List[float]] = None,
-    preprocessing_methods: Optional[List[str]] = None,
+    scales: Optional[list[float]] = None,
+    preprocessing_methods: Optional[list[str]] = None,
 ) -> PyramidOcrResult:
     """
     Process an image at multiple scales and combine results for best OCR output.
@@ -141,7 +141,7 @@ def pyramid_ocr(
 def segment_and_ocr(
     image: Image.Image,
     segmentation_mode: str = "blocks",
-    preprocessing_methods: Optional[List[str]] = None,
+    preprocessing_methods: Optional[list[str]] = None,
 ) -> str:
     """
     Segment the image into logical blocks and apply OCR to each segment.
@@ -173,7 +173,7 @@ def segment_and_ocr(
         data = _image_to_data(processed_image)
 
         # Group words into blocks based on block_num
-        blocks: Dict[int, List[BlockWord]] = {}
+        blocks: dict[int, list[BlockWord]] = {}
         for i in range(len(data["text"])):
             if data["text"][i].strip():
                 block_num = int(data["block_num"][i])

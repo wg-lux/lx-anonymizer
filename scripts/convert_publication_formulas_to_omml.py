@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 from zipfile import ZipFile
 
 from docx import Document

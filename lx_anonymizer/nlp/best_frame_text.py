@@ -7,7 +7,7 @@ import random
 import unicodedata
 from dataclasses import dataclass
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Optional, cast
 
 from lx_anonymizer.llm.llm_extractor import LLMMetadataExtractor
 from lx_anonymizer.regex_patterns import GERMAN_WORD_RE, MEDICAL_QUALITY_PATTERNS
@@ -25,7 +25,7 @@ class Candidate:
     text: str
     conf: float
     score: float
-    meta: Dict[str, Any]
+    meta: dict[str, Any]
 
 
 class BestFrameText:
@@ -57,8 +57,8 @@ class BestFrameText:
         )
 
         self._i = 0
-        self._reservoir: List[Candidate] = []
-        self._topk: List[Candidate] = []
+        self._reservoir: list[Candidate] = []
+        self._topk: list[Candidate] = []
         if seed is not None:
             random.seed(seed)
 
@@ -129,7 +129,7 @@ class BestFrameText:
         ocr_conf: float,
         *,
         is_sensitive: Optional[bool] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         if not text:
             return
@@ -158,10 +158,10 @@ class BestFrameText:
     def best_text(self) -> str:
         return self._topk[0].text if self._topk else ""
 
-    def topk_candidates(self) -> List[Candidate]:
+    def topk_candidates(self) -> list[Candidate]:
         return list(self._topk)
 
-    def reduce(self, preview_size: int = 50) -> Dict[str, str]:
+    def reduce(self, preview_size: int = 50) -> dict[str, str]:
         """
         Human-friendly preview:
           - 'best': highest score (not just longest)
@@ -212,7 +212,7 @@ class BestFrameText:
         average = "\n\n".join(c.text for c in samples)[:1500]
         return {"best": best, "average": average}
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         if not (self._reservoir or self._topk):
             return {"n": 0}
         allc = self._reservoir + self._topk

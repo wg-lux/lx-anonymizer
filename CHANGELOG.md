@@ -21,6 +21,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Fixed
 - Remove document content and raw dependency exception payloads from report
   diagnostics, including worker-captured streams and public failure tracebacks.
+- Frame removal no longer re-times retained frames (`setpts=N/FRAME_RATE/TB`,
+  `asetpts=N/SR/TB`). Retained video frames and audio samples keep their decoded
+  timestamps and removed spans remain as gaps, so recorded presentation
+  timestamps can be matched against external clocks. endoreg-db can drop its
+  host-side retiming shim once it pins a release containing this change.
+- Standalone frame-removal commands (`FrameCleaner` direct and CPU fallback,
+  `VideoProcessor.remove_frames_streaming`) pass `-copyts`, `-fps_mode passthrough`,
+  `-enc_time_base demux` and an MP4 track timescale equal to the source time base,
+  so retained frames keep their exact recorded ticks without host hooks. A missing
+  or unrepresentable source time base is logged and leaves the timescale to the
+  muxer, so frame removal never fails on it.
 
 ## [0.9.0.4] - 2026-03-11
 ### Added

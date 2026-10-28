@@ -2,7 +2,8 @@ import json
 import math
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterator, cast
+from typing import cast
+from collections.abc import Iterator
 
 import numpy as np
 import pytest

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import shutil
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Literal, overload
+from typing import Literal, overload
 from uuid import uuid4
 
 from lx_dtypes.models.contracts.image_processing import ImageProcessingResultPayload

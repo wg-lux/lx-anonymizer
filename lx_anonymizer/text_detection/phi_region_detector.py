@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, Sequence, cast
+from typing import Literal, Protocol, cast
+from collections.abc import Sequence
 
 import cv2
 import numpy as np

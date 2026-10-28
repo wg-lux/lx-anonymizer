@@ -152,6 +152,74 @@ def detect_video_frame_rate(
         return fallback
 
 
+def detect_video_time_base(
+    video_path: Path,
+    *,
+    timeout_seconds: float = DEFAULT_FFPROBE_TIMEOUT_SECONDS,
+) -> Fraction:
+    """Return the first video stream's time base; there is no fallback because
+    timestamp-preserving encodes cannot guess it."""
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=time_base",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=timeout_seconds,
+        stdin=subprocess.DEVNULL,
+    )
+    lines = result.stdout.strip().splitlines()
+    raw_time_base = lines[0].strip() if lines else ""
+    try:
+        time_base = Fraction(raw_time_base)
+    except (ValueError, ZeroDivisionError) as exc:
+        raise ValueError(
+            f"Video stream time base is unavailable for {video_path}: {raw_time_base!r}"
+        ) from exc
+    if time_base <= 0:
+        raise ValueError(f"Video stream time base must be positive for {video_path}")
+    return time_base
+
+
+def timestamp_preserving_output_args(video_path: Path) -> list[str]:
+    """Output options keeping every retained frame's decoded timestamp and the
+    source time base; combine with ``-copyts`` before the input.
+
+    When the time base is unavailable or cannot be stored as an MP4 track
+    timescale, the timescale is left to the muxer and a warning is logged:
+    removal still succeeds, and the host verifies stored timestamps.
+    """
+    timing_args = ["-fps_mode", "passthrough", "-enc_time_base", "demux"]
+    try:
+        time_base = detect_video_time_base(video_path)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.warning(
+            "Time base unavailable for %s; MP4 timescale not pinned: %s",
+            video_path,
+            exc,
+        )
+        return timing_args
+    if time_base.numerator != 1:
+        logger.warning(
+            "Time base %s of %s cannot be stored as an MP4 track timescale; "
+            "timestamps may be rounded",
+            time_base,
+            video_path,
+        )
+        return timing_args
+    return [*timing_args, "-video_track_timescale", str(time_base.denominator)]
+
+
 def parse_frame_rate(value: object) -> float | None:
     """Parse ffprobe frame-rate values such as '30000/1001' or '30'."""
     if isinstance(value, bool):

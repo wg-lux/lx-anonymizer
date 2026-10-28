@@ -4,7 +4,8 @@ import json
 import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Sequence, TypeAlias, cast
+from typing import Any, TypeAlias, cast
+from collections.abc import Iterable, Mapping, Sequence
 
 from rapidfuzz import fuzz, utils
 
@@ -83,9 +84,9 @@ class ScenarioEvaluation:
     macro_exact_match_rate: float
     macro_similarity: float
     macro_presence_f1: float
-    field_metrics: Dict[str, FieldMetrics]
+    field_metrics: dict[str, FieldMetrics]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["field_metrics"] = {
             field: asdict(metrics) for field, metrics in self.field_metrics.items()
@@ -105,7 +106,7 @@ class FeedbackAgreement:
     recall: float
     f1: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -178,8 +179,8 @@ def _record_key(
 def _build_record_map(
     records: Sequence[Mapping[str, Any]],
     key_fields: Sequence[str],
-) -> tuple[Dict[tuple[str, ...], Mapping[str, Any]], int]:
-    record_map: Dict[tuple[str, ...], Mapping[str, Any]] = {}
+) -> tuple[dict[tuple[str, ...], Mapping[str, Any]], int]:
+    record_map: dict[tuple[str, ...], Mapping[str, Any]] = {}
     duplicate_keys = 0
     for index, record in enumerate(records):
         key = _record_key(record, key_fields=key_fields, index_fallback=index)
@@ -280,7 +281,7 @@ def evaluate_records(
     missing_keys = set(gold_map) - set(prediction_map)
     extra_keys = set(prediction_map) - set(gold_map)
 
-    field_results: Dict[str, FieldMetrics] = {}
+    field_results: dict[str, FieldMetrics] = {}
 
     for field in fields:
         support = 0
@@ -410,7 +411,7 @@ def evaluate_study_dataset(study_dir: Path | str) -> list[ScenarioEvaluation]:
     key_fields = ("file", "report_id")
     frozen_gold = load_records(frozen_gold_path)
     gold_map, _ = _build_record_map(frozen_gold, key_fields)
-    prediction_maps: Dict[str, Dict[tuple[str, ...], Mapping[str, Any]]] = {}
+    prediction_maps: dict[str, dict[tuple[str, ...], Mapping[str, Any]]] = {}
     for scenario_name, path in prediction_paths.items():
         records = load_records(path)
         prediction_maps[scenario_name], _ = _build_record_map(records, key_fields)

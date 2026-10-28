@@ -288,6 +288,7 @@ def test_projected_cap_probes_timeline_and_finds_name_at_last_frame(
         frame_id: int,
         collect_for_batch: bool,
         high_quality_ocr: bool,
+        sticker: object,
     ) -> FrameProcessResult:
         has_name = frame_id == 259
         return FrameProcessResult(

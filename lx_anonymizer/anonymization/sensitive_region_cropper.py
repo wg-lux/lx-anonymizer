@@ -1,7 +1,8 @@
 from __future__ import annotations
 import re
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence, cast
+from typing import cast
+from collections.abc import Iterable, Mapping, Sequence
 
 from PIL import Image, ImageDraw
 

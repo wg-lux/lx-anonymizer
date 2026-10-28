@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Mapping, cast
+from typing import cast
+from collections.abc import Mapping
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict

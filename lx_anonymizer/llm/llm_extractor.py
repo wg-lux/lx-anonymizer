@@ -14,7 +14,8 @@ import time
 from collections.abc import Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from types import TracebackType
-from typing import Optional, Self, Sequence, cast
+from typing import Optional, Self, cast
+from collections.abc import Sequence
 
 import requests
 from lx_dtypes.models.contracts.llm_extractor import (

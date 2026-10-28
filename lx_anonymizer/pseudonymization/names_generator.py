@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Protocol, Sequence, TextIO, cast
+from typing import Protocol, TextIO, cast
+from collections.abc import Sequence
 
 import gender_guesser.detector as gender
 from lx_dtypes.models.contracts.text_anonymization import (

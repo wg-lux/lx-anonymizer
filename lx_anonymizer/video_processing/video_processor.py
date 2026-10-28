@@ -2,7 +2,6 @@ import logging
 import subprocess
 from pathlib import Path
 from collections.abc import Mapping
-from typing import List
 
 from lx_dtypes.models.contracts.video_processing import VideoMaskConfig
 
@@ -227,7 +226,7 @@ class VideoProcessor:
             return False
 
     def frame_removal(
-        self, input_video: Path, frames_to_remove: List[int], output_video: Path
+        self, input_video: Path, frames_to_remove: list[int], output_video: Path
     ) -> bool:
         """
         Remove specified frames from the video without dumping all frames to disk.
@@ -236,7 +235,7 @@ class VideoProcessor:
 
     def extract_frames(
         self, video_path: Path, output_dir: Path, fps: int = 1
-    ) -> List[Path]:
+    ) -> list[Path]:
         """Dumps high-quality PNGs for OCR processing."""
         output_dir.mkdir(parents=True, exist_ok=True)
         cmd = [
@@ -259,7 +258,7 @@ class VideoProcessor:
         return sorted(output_dir.glob("frame_*.png"))
 
     def remove_frames_streaming(
-        self, input_video: Path, frames: List[int], output_video: Path
+        self, input_video: Path, frames: list[int], output_video: Path
     ) -> bool:
         """Remove specific frames in one FFmpeg process."""
         if not frames:
@@ -274,11 +273,13 @@ class VideoProcessor:
                 "ffmpeg",
                 "-nostdin",
                 "-y",
+                "-copyts",
                 "-i",
                 str(input_video),
                 "-vf",
                 filters.video_filter,
                 *encoder_args,
+                *video_utils.timestamp_preserving_output_args(input_video),
                 "-an",
                 "-movflags",
                 "+faststart",

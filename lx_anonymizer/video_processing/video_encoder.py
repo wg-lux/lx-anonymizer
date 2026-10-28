@@ -1,5 +1,5 @@
 import subprocess
-from typing import Any, Dict, List
+from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class VideoEncoder:
             logger.warning(f"Unexpected error during NVENC detection: {e}")
             return False
 
-    def _get_preferred_encoder(self) -> Dict[str, Any]:
+    def _get_preferred_encoder(self) -> dict[str, Any]:
         """
         Get the preferred video encoder configuration based on available hardware.
 
@@ -94,7 +94,7 @@ class VideoEncoder:
 
     def build_encoder_cmd(
         self, quality_mode: str = "balanced", fallback: bool = False
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Build encoder command arguments based on available hardware and quality requirements.
 

@@ -3,7 +3,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Tuple, cast
+from typing import Optional, cast
 
 import cv2
 import numpy as np
@@ -313,7 +313,7 @@ def add_device_name_to_image(
     device: Optional[str] = None,
     font: Optional[str] = None,
     font_size: int = 100,
-    background_color: Tuple[int, int, int] = (0, 0, 0),
+    background_color: tuple[int, int, int] = (0, 0, 0),
     font_color: RGBColor = (255, 255, 255),
     text_formatting: str | None = None,
     line_spacing: int = 40,

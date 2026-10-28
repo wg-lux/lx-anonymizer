@@ -4,7 +4,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Tuple, TypedDict, Union, cast
+from typing import Optional, TypedDict, cast
 
 import pytesseract
 from PIL import Image
@@ -16,10 +16,10 @@ from lx_anonymizer.ocr.ocr_preprocessing import (
 )
 from lx_anonymizer.setup.custom_logger import logger
 
-OcrTextConfidenceResult = Tuple[str, float]
-OcrFunction = Callable[[Image.Image], Union[str, OcrTextConfidenceResult]]
-OcrResultsDict = Dict[str, str]
-ConfidenceScoresDict = Dict[str, float]
+OcrTextConfidenceResult = tuple[str, float]
+OcrFunction = Callable[[Image.Image], str | OcrTextConfidenceResult]
+OcrResultsDict = dict[str, str]
+ConfidenceScoresDict = dict[str, float]
 
 
 class OcrEngine(str, Enum):
@@ -88,7 +88,7 @@ except ImportError:
 
 
 def ensemble_ocr(
-    image_path_or_object: Union[str, Image.Image], optimize_for_medical: bool = True
+    image_path_or_object: str | Image.Image, optimize_for_medical: bool = True
 ) -> str:
     """
     Apply multiple OCR engines and combine their results for best accuracy.
@@ -107,7 +107,7 @@ def ensemble_ocr(
 
 
 def ensemble_ocr_with_details(
-    image_path_or_object: Union[str, Image.Image], optimize_for_medical: bool = True
+    image_path_or_object: str | Image.Image, optimize_for_medical: bool = True
 ) -> EnsembleOcrResult:
     """Run the ensemble and retain comparable selection scores for evaluation."""
     # Load image if path is provided
@@ -247,7 +247,7 @@ def ensemble_ocr_with_details(
     )
 
 
-def combine_ocr_results(results: Dict[str, str]) -> str:
+def combine_ocr_results(results: dict[str, str]) -> str:
     """
     Combine results from multiple OCR engines using a voting approach.
 
@@ -269,7 +269,7 @@ def combine_ocr_results(results: Dict[str, str]) -> str:
         return list(results.values())[0]
 
     # Split each result into lines
-    line_sets: Dict[str, list[str]] = {
+    line_sets: dict[str, list[str]] = {
         engine: text.split("\n") for engine, text in results.items()
     }
 

@@ -6,7 +6,7 @@ bounding boxes in images.
 """
 
 from collections.abc import Sequence
-from typing import Any, List, Optional, Protocol, Tuple, cast
+from typing import Any, Optional, Protocol, cast
 
 import cv2
 import numpy as np
@@ -67,12 +67,12 @@ def fill_boxes(
 
 class _NativeBoxOperations(Protocol):
     def filter_empty_boxes_native(
-        self, ocr_results: List[OcrResult], min_text_len: int
-    ) -> List[OcrResult]: ...
+        self, ocr_results: list[OcrResult], min_text_len: int
+    ) -> list[OcrResult]: ...
 
     def get_dominant_color_native(
         self, image: ImageArray, box: Optional[Box]
-    ) -> Tuple[int, int, int]: ...
+    ) -> tuple[int, int, int]: ...
 
     def make_box_from_name_native(
         self, image: ImageArray, name: str, padding: int
@@ -85,18 +85,18 @@ class _NativeBoxOperations(Protocol):
     def extend_boxes_if_needed_native(
         self,
         image: ImageArray,
-        boxes: List[Box],
+        boxes: list[Box],
         extension_margin: int,
         color_threshold: float,
-    ) -> List[Box]: ...
+    ) -> list[Box]: ...
 
     def find_or_create_close_box_native(
-        self, phrase_box: Box, boxes: List[Box], image_width: int, min_offset: int
+        self, phrase_box: Box, boxes: list[Box], image_width: int, min_offset: int
     ) -> Box: ...
 
     def combine_boxes_native(
-        self, text_with_boxes: List[OcrResult], y_tolerance: int
-    ) -> List[OcrResult]: ...
+        self, text_with_boxes: list[OcrResult], y_tolerance: int
+    ) -> list[OcrResult]: ...
 
     def close_to_box_native(self, name_box: Box, phrase_box: Box) -> bool: ...
 
@@ -109,14 +109,14 @@ def _has_native_method(name: str) -> bool:
 
 
 def filter_empty_boxes(
-    ocr_results: List[OcrResult], min_text_len: int = 2
-) -> List[OcrResult]:
+    ocr_results: list[OcrResult], min_text_len: int = 2
+) -> list[OcrResult]:
     """
     Returns only entries where stripped text length >= min_text_len.
     """
     if native_box_ops is not None and _has_native_method("filter_empty_boxes_native"):
         return native_box_ops.filter_empty_boxes_native(ocr_results, min_text_len)
-    filtered: List[OcrResult] = []
+    filtered: list[OcrResult] = []
     for text, box in ocr_results:
         if len(text.strip()) >= min_text_len:
             filtered.append((text, box))
@@ -125,7 +125,7 @@ def filter_empty_boxes(
 
 def get_dominant_color(
     image: ImageArray, box: Optional[Box] = None
-) -> Tuple[int, int, int]:
+) -> tuple[int, int, int]:
     """
     Get the dominant color in a given box region of the image.
     """
@@ -212,10 +212,10 @@ def make_box_from_device_list(x: int, y: int, w: int, h: int) -> Box:
 
 def extend_boxes_if_needed(
     image: ImageArray,
-    boxes: List[Box],
+    boxes: list[Box],
     extension_margin: int = 10,
     color_threshold: int = 30,
-) -> List[Box]:
+) -> list[Box]:
     """
     Extends the Box if surrounding colors differ significantly from dominant color.
     """
@@ -228,7 +228,7 @@ def extend_boxes_if_needed(
             image, boxes, extension_margin, float(color_threshold)
         )
     logger.debug("Starting box extension to make room for names.")
-    extended_boxes: List[Box] = []
+    extended_boxes: list[Box] = []
 
     for box in boxes:
         start_x, start_y, end_x, end_y = box
@@ -285,7 +285,7 @@ def extend_boxes_if_needed(
 
 
 def find_or_create_close_box(
-    phrase_box: Box, boxes: List[Box], image_width: int, min_offset: int = 20
+    phrase_box: Box, boxes: list[Box], image_width: int, min_offset: int = 20
 ) -> Box:
     """Dynamic box creation based on text length"""
     if native_box_ops is not None and _has_native_method(
@@ -312,8 +312,8 @@ def find_or_create_close_box(
 
 
 def combine_boxes(
-    text_with_boxes: List[OcrResult], y_tolerance: int = 10
-) -> List[OcrResult]:
+    text_with_boxes: list[OcrResult], y_tolerance: int = 10
+) -> list[OcrResult]:
     """Merges boxes on the same line that are horizontally close."""
     if native_box_ops is not None and _has_native_method("combine_boxes_native"):
         return native_box_ops.combine_boxes_native(text_with_boxes, y_tolerance)
@@ -322,7 +322,7 @@ def combine_boxes(
 
     # Sort by Y then X
     sorted_items = sorted(text_with_boxes, key=lambda x: (x[1][1], x[1][0]))
-    merged: List[OcrResult] = [sorted_items[0]]
+    merged: list[OcrResult] = [sorted_items[0]]
 
     for current_text, current_box in sorted_items[1:]:
         last_text, last_box = merged[-1]

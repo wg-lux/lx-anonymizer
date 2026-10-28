@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from lx_anonymizer.setup.custom_logger import get_logger
 
@@ -63,7 +63,7 @@ def _str_to_path(path: str | Path) -> Path:
     return path
 
 
-def create_directories(directories: Optional[List[Path]] = None) -> List[Path]:
+def create_directories(directories: Optional[list[Path]] = None) -> list[Path]:
     if not directories:
         directories = [main_dir, temp_dir_root]
     else:

@@ -1,4 +1,5 @@
-from typing import Mapping, TypedDict
+from typing import TypedDict
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 

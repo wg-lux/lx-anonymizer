@@ -11,7 +11,6 @@ import sys
 import statistics as stats
 from collections import defaultdict, Counter
 from pathlib import Path
-from typing import List, Tuple
 from rapidfuzz import fuzz, utils
 
 from lx_dtypes.models.contracts.assessment import AssessmentRecord
@@ -58,7 +57,7 @@ def strip_titles(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def read_jsonl(path: Path) -> dict[Tuple[str, str], AssessmentRecord]:
+def read_jsonl(path: Path) -> dict[tuple[str, str], AssessmentRecord]:
     """Return dict keyed by (file, report_id) with the record as value"""
     with path.open(encoding="utf-8") as file_handle:
         records: list[AssessmentRecord] = []
@@ -82,9 +81,9 @@ def main(generated_path: str, gold_path: str) -> None:
     gen = read_jsonl(Path(generated_path))
     gold = read_jsonl(Path(gold_path))
 
-    first_scores: List[float] = []
-    last_scores: List[float] = []
-    per_file: dict[str, List[Tuple[float, float]]]
+    first_scores: list[float] = []
+    last_scores: list[float] = []
+    per_file: dict[str, list[tuple[float, float]]]
 
     missing: Counter[str] = Counter()
     per_file = defaultdict(list)
@@ -106,7 +105,7 @@ def main(generated_path: str, gold_path: str) -> None:
         missing["gold"] += 1
 
     # ------------------ reporting -----------------------------------------
-    def _stats(series: List[float]) -> str:
+    def _stats(series: list[float]) -> str:
         return (
             f"mean={stats.mean(series):5.1f} std={stats.stdev(series):5.1f} "
             f"median={stats.median(series):4.1f} perfect={sum(s == 100 for s in series)}"

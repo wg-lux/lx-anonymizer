@@ -16,7 +16,7 @@ import threading
 import time
 import unicodedata
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Optional, cast
 
 import cv2
 import numpy as np
@@ -157,7 +157,7 @@ def _py_normalize_ocr_text(text: str) -> str:
     return text
 
 
-def _py_candidate_rank(text: str, conf: float) -> Tuple[int, int, float, float, int]:
+def _py_candidate_rank(text: str, conf: float) -> tuple[int, int, float, float, int]:
     is_empty = 0 if text else 1
     is_gib = 1 if (text and _py_is_gibberish(text)) else 0
     gib_score = _py_gibberish_score(text)
@@ -188,14 +188,14 @@ def _normalize_ocr_text_impl(text: str) -> str:
     return _py_normalize_ocr_text(text)
 
 
-def _candidate_rank_impl(text: str, conf: float) -> Tuple[int, int, float, float, int]:
+def _candidate_rank_impl(text: str, conf: float) -> tuple[int, int, float, float, int]:
     if _native is not None:
         return _native.candidate_rank(text, conf)
     return _py_candidate_rank(text, conf)
 
 
 # ---------------- Global processor cache (per language) ----------------
-_GLOBAL_PROCESSORS: Dict[str, "TesseOCRFrameProcessor"] = {}
+_GLOBAL_PROCESSORS: dict[str, "TesseOCRFrameProcessor"] = {}
 _GLOBAL_LOCK = threading.Lock()
 
 
@@ -332,7 +332,7 @@ class TesseOCRFrameProcessor:
 
     def _candidate_rank(
         self, text: str, conf: float
-    ) -> Tuple[int, int, float, float, int]:
+    ) -> tuple[int, int, float, float, int]:
         return _candidate_rank_impl(text, conf)
 
     @staticmethod
@@ -417,7 +417,7 @@ class TesseOCRFrameProcessor:
 
     def _ocr_processed_image(
         self, processed: np.ndarray, has_roi: bool, dpi: int
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         """
         OCR a preprocessed frame/ROI image and return text, confidence, and metadata.
         """
@@ -429,12 +429,12 @@ class TesseOCRFrameProcessor:
         else:
             regions = []
 
-        text_parts: List[str] = []
+        text_parts: list[str] = []
         accepted_regions = 0
         rejected_regions = 0
         best_region_text = ""
         best_region_conf = 0.0
-        best_region_rank: Optional[Tuple[int, int, float, float, int]] = None
+        best_region_rank: Optional[tuple[int, int, float, float, int]] = None
         if has_roi:
             h, w = processed.shape[:2]
             self.api.SetVariable(
@@ -645,7 +645,7 @@ class TesseOCRFrameProcessor:
         return text, conf, meta
 
     # ---------------- Text region detection ----------------
-    def _detect_text_regions(self, gray: np.ndarray) -> List[Tuple[int, int, int, int]]:
+    def _detect_text_regions(self, gray: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
         Detect likely text regions in a grayscale/binary image.
         Returns list of (x, y, w, h) bounding boxes sorted top-to-bottom, left-to-right.
@@ -665,7 +665,7 @@ class TesseOCRFrameProcessor:
                 connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
-            rois: List[Tuple[int, int, int, int]] = []
+            rois: list[tuple[int, int, int, int]] = []
             H, W = gray.shape
             max_area = self._max_area_ratio * (W * H)
 
@@ -700,9 +700,9 @@ class TesseOCRFrameProcessor:
     def extract_text_from_frame(
         self,
         frame: np.ndarray,
-        roi: Optional[Dict[str, Any]] = None,
+        roi: Optional[dict[str, Any]] = None,
         high_quality: bool = True,
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         if not self.api:
             raise RuntimeError("TesseOCR API not initialized")
 
@@ -713,7 +713,7 @@ class TesseOCRFrameProcessor:
                 dpi = self.frame_config["high_quality_dpi" if high_quality else "dpi"]
                 typed_roi = cast(Optional[OCRRoi], roi)
                 has_roi = bool(typed_roi)
-                candidates: List[Tuple[str, str, float, Dict[str, Any]]] = []
+                candidates: list[tuple[str, str, float, dict[str, Any]]] = []
                 for preprocess_mode in ("gray_clahe", "binary"):
                     processed = self._preprocess_to_gray(
                         frame, typed_roi, mode=preprocess_mode
@@ -758,11 +758,11 @@ class TesseOCRFrameProcessor:
     # ---------------- Batch ----------------
     def extract_text_from_frame_batch(
         self,
-        frames: List[np.ndarray],
-        roi: Optional[Dict[str, Any]] = None,
+        frames: list[np.ndarray],
+        roi: Optional[dict[str, Any]] = None,
         high_quality: bool = True,
-    ) -> List[Tuple[str, float, Dict[str, Any]]]:
-        out: List[Tuple[str, float, Dict[str, Any]]] = []
+    ) -> list[tuple[str, float, dict[str, Any]]]:
+        out: list[tuple[str, float, dict[str, Any]]] = []
         t0 = time.time()
         for i, f in enumerate(frames):
             out.append(self.extract_text_from_frame(f, roi, high_quality))
@@ -778,7 +778,7 @@ class TesseOCRFrameProcessor:
         return out
 
     # ---------------- Stats ----------------
-    def get_performance_stats(self) -> Dict[str, float]:
+    def get_performance_stats(self) -> dict[str, float]:
         if self.processed_frames == 0:
             return {"avg_time": 0.0, "frames": 0, "fps": 0.0}
         t = self.total_processing_time
@@ -805,9 +805,9 @@ def get_tesseocr_processor(language: str = "deu"):
 
 def extract_text_from_frame_fast(
     frame: np.ndarray,
-    roi: Optional[Dict[str, Any]] = None,
+    roi: Optional[dict[str, Any]] = None,
     high_quality: bool = True,
     language: str = "deu",
-) -> Tuple[str, float, Dict[str, Any]]:
+) -> tuple[str, float, dict[str, Any]]:
     proc = get_tesseocr_processor(language)
     return proc.extract_text_from_frame(frame, roi, high_quality)

@@ -5,7 +5,7 @@ import tempfile
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 import cv2
 from PIL import Image

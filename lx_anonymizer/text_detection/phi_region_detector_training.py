@@ -6,7 +6,8 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, Sequence, TypedDict, cast
+from typing import Any, Protocol, TypedDict, cast
+from collections.abc import Sequence
 
 from lx_anonymizer.text_detection.phi_region_detector import PhiRegionDetectorConfig
 

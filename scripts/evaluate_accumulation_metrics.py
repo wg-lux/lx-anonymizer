@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 
-BBox = Tuple[int, int, int, int]
+BBox = tuple[int, int, int, int]
 
 
 @dataclass
@@ -64,7 +64,7 @@ def coverage(gt_box: BBox, pred_box: BBox) -> float:
     return inter / gt_area if gt_area > 0 else 0.0
 
 
-def _entity_matches(gt: Dict, pred: Dict, cfg: EvalConfig) -> bool:
+def _entity_matches(gt: dict, pred: dict, cfg: EvalConfig) -> bool:
     if gt.get("label") != pred.get("label"):
         return False
     gt_box = tuple(gt["bbox"])
@@ -75,7 +75,7 @@ def _entity_matches(gt: Dict, pred: Dict, cfg: EvalConfig) -> bool:
     )
 
 
-def phi_leakage_rate(frames: List[Dict], cfg: EvalConfig) -> float:
+def phi_leakage_rate(frames: list[dict], cfg: EvalConfig) -> float:
     """
     Strict frame-level leakage:
     A frame leaks if it has at least one GT entity and ANY GT entity is not matched.
@@ -102,7 +102,7 @@ def phi_leakage_rate(frames: List[Dict], cfg: EvalConfig) -> float:
     return 100.0 * leaked_frames / frames_with_phi
 
 
-def entity_recall(frames: List[Dict], cfg: EvalConfig) -> float:
+def entity_recall(frames: list[dict], cfg: EvalConfig) -> float:
     """
     Standard recall = TP / (TP + FN), using one-to-one greedy matching.
     """
@@ -131,7 +131,7 @@ def entity_recall(frames: List[Dict], cfg: EvalConfig) -> float:
     return tp / denom if denom else 0.0
 
 
-def viewport_preservation_ratio(frames: List[Dict], cfg: EvalConfig) -> float:
+def viewport_preservation_ratio(frames: list[dict], cfg: EvalConfig) -> float:
     """
     VPR = unblurred safe endoscopic circle area / total safe circle area.
     """
@@ -162,7 +162,7 @@ def viewport_preservation_ratio(frames: List[Dict], cfg: EvalConfig) -> float:
     return 100.0 * float(np.mean(frame_ratios))
 
 
-def evaluate(frames: List[Dict], cfg: EvalConfig) -> pd.DataFrame:
+def evaluate(frames: list[dict], cfg: EvalConfig) -> pd.DataFrame:
     leakage = phi_leakage_rate(frames, cfg)
     recall = entity_recall(frames, cfg)
     vpr = viewport_preservation_ratio(frames, cfg)
@@ -175,7 +175,7 @@ def evaluate(frames: List[Dict], cfg: EvalConfig) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def sample_frames() -> List[Dict]:
+def sample_frames() -> list[dict]:
     return [
         {
             "frame_id": 1,

@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, Optional, cast
 
 import cv2
 import numpy as np
@@ -22,7 +22,7 @@ def adaptive_threshold(
 
 
 def preprocess_image(
-    image: Image.Image, methods: Optional[List[str]] = None
+    image: Image.Image, methods: Optional[list[str]] = None
 ) -> Image.Image:
     """
     Preprocess the image for OCR with multiple enhancement techniques.
@@ -130,8 +130,8 @@ def expand_roi(
     endX: int,
     endY: int,
     margin: int,
-    image_shape: Tuple[int, int],
-) -> Tuple[int, int, int, int]:
+    image_shape: tuple[int, int],
+) -> tuple[int, int, int, int]:
     """
     Expand region of interest by a margin, ensuring it stays within image boundaries.
 
@@ -195,7 +195,7 @@ def optimize_image_for_medical_text(image: Image.Image) -> Image.Image:
     return Image.fromarray(binary)
 
 
-def detect_table_structure(image: Image.Image) -> List[Tuple[int, int, int, int]]:
+def detect_table_structure(image: Image.Image) -> list[tuple[int, int, int, int]]:
     """
     Detect table structures in the image and return bounding boxes.
 
@@ -232,10 +232,10 @@ def detect_table_structure(image: Image.Image) -> List[Tuple[int, int, int, int]
     )
 
     # Extract bounding boxes
-    table_boxes: List[Tuple[int, int, int, int]] = []
+    table_boxes: list[tuple[int, int, int, int]] = []
     for contour in contours:
         x, y, w, h = cast(
-            Tuple[int, int, int, int], cast(Any, cv2).boundingRect(contour)
+            tuple[int, int, int, int], cast(Any, cv2).boundingRect(contour)
         )
         # Filter out very small boxes
         if w > 50 and h > 50:

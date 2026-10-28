@@ -52,6 +52,7 @@ def _frame_cleaner_unit_stub() -> FrameCleaner:
     frame_cleaner.frame_collection = []
     frame_cleaner.frame_observations = []
     frame_cleaner.ocr_text_collection = []
+    frame_cleaner.frame_sticker_pixels = []
     return frame_cleaner
 
 
@@ -171,7 +172,7 @@ class TestFrameCleanerRefactored:
 
             # Setup the stream: Return a frame 100 times, then False (EOF)
             # side_effect: [(True, frame), (True, frame), ... (False, None)]
-            # We create a dummy color frame (H, W, 3) because _iter_video converts BGR2GRAY
+            # Dummy BGR frame (H, W, 3), yielded unchanged for sticker detection
             dummy_color_frame: ImageArray = np.zeros((100, 100, 3), dtype=np.uint8)
 
             # Create a side effect that yields frames and then stops
@@ -198,7 +199,7 @@ class TestFrameCleanerRefactored:
             assert isinstance(idx, int)
             assert isinstance(frame, np.ndarray)
             assert isinstance(stride, int)
-            assert frame.ndim == 2  # Ensure it was converted to grayscale
+            assert frame.ndim == 3  # Colour is kept for sticker detection
 
             # Validate sampling logic using the current helper behavior.
             target_samples = frame_cleaner._target_sample_count(total_frames)  # pyright: ignore[reportPrivateUsage]
@@ -742,6 +743,10 @@ class TestFrameCleanerRefactored:
             patch(
                 "lx_anonymizer.video_processing.video_utils.detect_video_frame_rate"
             ) as mock_frame_rate,
+            patch(
+                "lx_anonymizer.video_processing.video_utils.detect_video_time_base",
+                return_value=Fraction(1, 90_000),
+            ),
             patch.object(frame_cleaner, "_verify_video_output", return_value=True),
         ):
             # Setup mocks
@@ -774,6 +779,13 @@ class TestFrameCleanerRefactored:
             video_filter = ffmpeg_args[ffmpeg_args.index("-vf") + 1]
             assert "eq(n\\,10)" in video_filter
             assert "eq(n\\,11)" in video_filter
+            # Retained frames keep their recorded timestamps and time base.
+            assert "setpts" not in video_filter
+            assert ffmpeg_args.index("-copyts") < ffmpeg_args.index("-i")
+            assert ffmpeg_args[ffmpeg_args.index("-fps_mode") + 1] == "passthrough"
+            assert (
+                ffmpeg_args[ffmpeg_args.index("-video_track_timescale") + 1] == "90000"
+            )
             assert "-c:v" in ffmpeg_args
             assert "-an" in ffmpeg_args
             assert "-af" not in ffmpeg_args

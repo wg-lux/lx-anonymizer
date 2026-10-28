@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Final, Pattern
+from typing import Final
+from re import Pattern
 
 GERMAN_NAME_CHARS: Final[str] = "A-Za-zäöüÄÖÜß"
 GERMAN_WORD_CHARS: Final[str] = "A-Za-zÄÖÜäöüß"

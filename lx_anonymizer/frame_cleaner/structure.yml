@@ -22,6 +22,9 @@ entrypoints:
 - name: Video mixin
   file: video.py
   purpose: Attempt-local video analysis
+- name: Sticker detection
+  file: sticker_detection.py
+  purpose: Colour-based patient-data sticker detection in the endoscope image area
 dependencies:
   internal:
   - lx_anonymizer/video_processing
@@ -39,4 +42,4 @@ contracts:
   doc: ../../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
 tests:
   directory: ../../tests
-  command: uv run pytest -q tests/test_frame_cleaner_concurrency.py tests/test_frame_analysis_budget.py
+  command: uv run pytest -q tests/test_frame_cleaner_concurrency.py tests/test_frame_analysis_budget.py tests/test_sticker_detection.py

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 from lx_anonymizer.runtime_types import Box as Box
 from lx_anonymizer.runtime_types import ModifiedImageMap as ModifiedImageMap

@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Tuple, TypeAlias, cast
+from typing import Any, Literal, Optional, TypeAlias, cast
 
 import cv2
 import numpy as np
@@ -98,7 +98,7 @@ class FrameOCR:
     _rapidocr_metrics: RapidOCRMetrics
     frame_metadata_extractor: FrameMetadataExtractor
     rapidocr_engine: Optional[Any]
-    rapidocr_params: Dict[str, Any]
+    rapidocr_params: dict[str, Any]
     _rapidocr_lock: threading.Lock
     tesserocr_processor: Optional[Any]
     _rapidocr_available: bool
@@ -213,7 +213,7 @@ class FrameOCR:
         frame: np.ndarray,
         roi: RoiInput,
         high_quality: bool = True,
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         """
         Extract text + confidence + meta from a single frame.
         Always returns a (text, confidence, meta) tuple.
@@ -245,8 +245,8 @@ class FrameOCR:
 
     @staticmethod
     def _with_tracking_metadata(
-        result: Tuple[str, float, Dict[str, Any]],
-    ) -> Tuple[str, float, Dict[str, Any]]:
+        result: tuple[str, float, dict[str, Any]],
+    ) -> tuple[str, float, dict[str, Any]]:
         text, confidence, raw_metadata = result
         normalized_text = text.strip()
         metadata = dict(raw_metadata)
@@ -262,7 +262,7 @@ class FrameOCR:
         return text, confidence, metadata
 
     @staticmethod
-    def _log_ocr_result(result: Tuple[str, float, Dict[str, Any]]) -> None:
+    def _log_ocr_result(result: tuple[str, float, dict[str, Any]]) -> None:
         _text, confidence, metadata = result
         logger.debug(
             "Frame OCR completed: backend=%s status=%s text_chars=%d "
@@ -279,7 +279,7 @@ class FrameOCR:
         frame: np.ndarray,
         roi: RoiInput,
         high_quality: bool,
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         """Run the deterministic OCR cascade used as source and safe fallback."""
         # Prefer RapidOCR: CPU-bound ONNX Runtime avoids GPU VRAM pressure.
         if self._rapidocr_available:
@@ -318,8 +318,8 @@ class FrameOCR:
         self,
         frame: np.ndarray,
         roi: RoiInput,
-        traditional_result: Tuple[str, float, Dict[str, Any]],
-    ) -> Tuple[str, float, Dict[str, Any]]:
+        traditional_result: tuple[str, float, dict[str, Any]],
+    ) -> tuple[str, float, dict[str, Any]]:
         from lx_anonymizer.llm.llm_service import LLMService
 
         candidate_text, candidate_confidence, candidate_metadata = traditional_result
@@ -370,7 +370,7 @@ class FrameOCR:
 
             # Nutzt die über init_params generierten vollständigen Parameter
             rapidocr_params = cast(
-                Dict[str, Any],
+                dict[str, Any],
                 getattr(self, "rapidocr_params", {}),
             )
 
@@ -387,7 +387,7 @@ class FrameOCR:
 
     @classmethod
     def _new_rapidocr_engine(
-        cls, rapidocr_cls: type[Any], rapidocr_params: Dict[str, Any]
+        cls, rapidocr_cls: type[Any], rapidocr_params: dict[str, Any]
     ) -> Any:
         if rapidocr_params and cls._rapidocr_constructor_accepts_params(rapidocr_cls):
             return rapidocr_cls(params=rapidocr_params)
@@ -418,13 +418,13 @@ class FrameOCR:
         return settings.RAPIDOCR_ACCELERATION
 
     @classmethod
-    def _rapidocr_init_params(cls) -> Dict[str, Any]:
+    def _rapidocr_init_params(cls) -> dict[str, Any]:
         if not rapidocr_available:
             return {}
 
         # German/English overlays are Latin-script. RapidOCR defaults to Chinese
         # models, so pin Latin recognition at the package boundary.
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "Det.engine_type": EngineType.ONNXRUNTIME,
             "Det.lang_type": LangDet.EN,
             "Det.model_type": ModelType.MOBILE,
@@ -507,7 +507,7 @@ class FrameOCR:
         frame: np.ndarray,
         roi: RoiInput = None,
         high_quality: bool = True,
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         """Run RapidOCR and normalize output to the FrameOCR API."""
         if self.rapidocr_engine is None:
             return "", 0.0, {}
@@ -520,7 +520,7 @@ class FrameOCR:
             all_texts: list[str] = []
             all_confs: list[float] = []
             all_regions: list[dict[str, Any]] = []
-            metadata: Dict[str, Any] = {
+            metadata: dict[str, Any] = {
                 "backend": RAPIDOCR_BACKEND,
                 "method": "rapidocr+roi",
                 "roi_count": len(roi_entries),
@@ -754,7 +754,7 @@ class FrameOCR:
         avg_conf: float,
         regions: list[dict[str, Any]],
         started_at: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         normalized_text = text.strip()
         status: OcrResultStatus = (
             "text_detected" if normalized_text else "no_text_detected"
@@ -818,7 +818,7 @@ class FrameOCR:
         frame: np.ndarray,
         roi: Optional[FlatRoi] = None,
         high_quality: bool = True,
-    ) -> Tuple[str, float, Dict[str, Any]]:
+    ) -> tuple[str, float, dict[str, Any]]:
         """Simplified pytesseract fallback for emergency OCR."""
         try:
             img = self._preprocess_frame(frame, roi)
@@ -895,7 +895,7 @@ class FrameOCR:
         self,
         gray_frame: np.ndarray,
         endoscope_data_roi_nested: Optional[NestedRoi | list[object]] = None,
-    ) -> tuple[str, float, Dict[str, Any], bool]:
+    ) -> tuple[str, float, dict[str, Any], bool]:
         """
         OCR with TesserOCR and metadata extraction.
         Handles both dict-based and list-based ROI structures gracefully.
@@ -903,7 +903,7 @@ class FrameOCR:
         """
         try:
             logger.debug("Using TesserOCR OCR engine with enhanced validation")
-            frame_metadata: Dict[str, Any] = {}
+            frame_metadata: dict[str, Any] = {}
             ocr_text = ""
             valid_texts: list[str] = []  # Store only validated text
 

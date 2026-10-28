@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Optional, Tuple, cast
+from typing import Any, Optional, cast
 
 import dateparser  # type: ignore[import-untyped]
 from lx_dtypes.names import GENDER_OPTIONS_LITERAL
@@ -261,7 +261,7 @@ class FrameMetadataExtractor:
                     return parsed.date()
         return None
 
-    def _extract_patient_names(self, text: str) -> Tuple[Optional[str], Optional[str]]:
+    def _extract_patient_names(self, text: str) -> tuple[Optional[str], Optional[str]]:
         for pattern in self.patient_patterns:
             matches = cast(
                 list[str | tuple[str, ...]],
@@ -453,7 +453,7 @@ class FrameMetadataExtractor:
                     return t
         return None
 
-    def _extract_examiner(self, text: str) -> Tuple[Optional[str], Optional[str]]:
+    def _extract_examiner(self, text: str) -> tuple[Optional[str], Optional[str]]:
         for pattern in self.examiner_patterns:
             m = re.findall(pattern, text, re.IGNORECASE)
             if not m:

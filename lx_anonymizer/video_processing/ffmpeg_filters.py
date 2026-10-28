@@ -18,21 +18,25 @@ def build_frame_drop_filters(
     """
     Build FFmpeg filters that remove video frames by frame index and matching
     audio spans by timestamp.
+
+    Retained frames and samples keep their decoded timestamps; removed spans stay
+    as gaps. Recorded presentation timestamps are matched against external clocks
+    downstream, so the filters must never re-time later frames.
     """
     clean = _validated_frame_indices(frames_to_remove)
     fps = validated_frame_rate(frame_rate)
 
     if not clean:
         return FrameDropFilters(
-            video_filter="select='1',setpts=N/FRAME_RATE/TB",
-            audio_filter="aselect='1',asetpts=N/SR/TB",
+            video_filter="select='1'",
+            audio_filter="aselect='1'",
         )
 
     video_condition = _frame_index_condition(clean)
     audio_condition = _frame_time_condition(frame_ranges(clean), fps)
     return FrameDropFilters(
-        video_filter=f"select='not({video_condition})',setpts=N/FRAME_RATE/TB",
-        audio_filter=f"aselect='not({audio_condition})',asetpts=N/SR/TB",
+        video_filter=f"select='not({video_condition})'",
+        audio_filter=f"aselect='not({audio_condition})'",
     )
 
 

@@ -4,7 +4,8 @@ import subprocess
 import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Iterator, List, Optional, Protocol, Tuple, cast
+from typing import Optional, Protocol, cast
+from collections.abc import Iterator
 
 import cv2
 import numpy as np
@@ -48,7 +49,7 @@ class FrameCleanerVideoMixin:
     video_encoder: VideoEncoder
     video_processor: VideoProcessor
     preferred_encoder: VideoEncoderConfig
-    build_encoder_cmd: Callable[..., List[str]]
+    build_encoder_cmd: Callable[..., list[str]]
 
     def _target_sample_count(self, total_frames: int) -> int:
         raise NotImplementedError
@@ -59,7 +60,7 @@ class FrameCleanerVideoMixin:
     def remove_frames_from_video_streaming(
         self,
         original_video: Path,
-        frames_to_remove: List[int],
+        frames_to_remove: list[int],
         output_video: Path,
         total_frames: Optional[int] = None,
         use_named_pipe: bool = True,
@@ -119,7 +120,7 @@ class FrameCleanerVideoMixin:
     def _build_frame_removal_plan(
         *,
         original_video: Path,
-        frames_to_remove: List[int],
+        frames_to_remove: list[int],
         output_video: Path,
         total_frames: Optional[int],
         use_named_pipe: bool,
@@ -191,7 +192,7 @@ class FrameCleanerVideoMixin:
         self,
         original_video: Path,
         output_video: Path,
-        vf_args: List[str],
+        vf_args: list[str],
         ffmpeg_timeout: int,
     ) -> None:
         """
@@ -324,7 +325,7 @@ class FrameCleanerVideoMixin:
         self,
         original_video: Path,
         output_video: Path,
-        vf_args: List[str],
+        vf_args: list[str],
         ffmpeg_timeout: int,
     ) -> None:
         """
@@ -357,6 +358,7 @@ class FrameCleanerVideoMixin:
             "ffmpeg",
             "-nostdin",
             "-y",
+            "-copyts",
             "-i",
             str(original_video),
             *vf_args,
@@ -365,6 +367,7 @@ class FrameCleanerVideoMixin:
         cmd.extend(
             [
                 *encoder_args,
+                *video_utils.timestamp_preserving_output_args(original_video),
                 "-movflags",
                 "+faststart",
                 str(output_video),
@@ -376,7 +379,7 @@ class FrameCleanerVideoMixin:
         self,
         original_video: Path,
         output_video: Path,
-        vf_args: List[str],
+        vf_args: list[str],
         ffmpeg_timeout: int,
     ) -> bool:
         """
@@ -420,11 +423,13 @@ class FrameCleanerVideoMixin:
             "ffmpeg",
             "-nostdin",
             "-y",
+            "-copyts",
             "-i",
             str(original_video),
             *vf_args,
             "-an",
             *self.build_encoder_cmd("fast", fallback=True),
+            *video_utils.timestamp_preserving_output_args(original_video),
             str(output_video),
         ]
 
@@ -439,7 +444,7 @@ class FrameCleanerVideoMixin:
 
     def _iter_video(
         self, video_path: Path, total_frames: int
-    ) -> Iterator[Tuple[int, np.ndarray, int]]:
+    ) -> Iterator[tuple[int, np.ndarray, int]]:
         cap = cast(_VideoCaptureProtocol, cv2.VideoCapture(str(video_path)))
         try:
             if not cap.isOpened():
@@ -460,12 +465,12 @@ class FrameCleanerVideoMixin:
                 ok, bgr = cap.read()
                 if not ok:
                     break
+                # Yield decoded BGR: colour drives sticker detection, and exhaustive
+                # OCR and duplicate detection need the source pixels.
                 if exhaustive:
-                    # Preserve source pixels for OCR and exact duplicate detection.
                     yield idx, bgr, 1
                 elif idx % skip == 0:
-                    gray = cv2.equalizeHist(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
-                    yield idx, gray, skip
+                    yield idx, bgr, skip
                 idx += 1
             if exhaustive and idx != total_frames:
                 raise RuntimeError(
@@ -475,10 +480,10 @@ class FrameCleanerVideoMixin:
             cap.release()
 
     @staticmethod
-    def _frame_ranges(indices: List[int]) -> List[Tuple[int, int]]:
+    def _frame_ranges(indices: list[int]) -> list[tuple[int, int]]:
         return build_frame_ranges(indices)
 
-    def _build_filter_args(self, video_filter: str) -> Tuple[List[str], List[Path]]:
+    def _build_filter_args(self, video_filter: str) -> tuple[list[str], list[Path]]:
         if len(video_filter) < 8000:
             return ["-vf", video_filter], []
 

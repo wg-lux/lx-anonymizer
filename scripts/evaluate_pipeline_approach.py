@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Sequence
+from collections.abc import Sequence
 
 from lx_anonymizer.evaluation.pipeline_evaluation import (
     evaluate_feedback_alignment,

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 from types import ModuleType
-from typing import Sequence
+from collections.abc import Sequence
 
 import pytest
 

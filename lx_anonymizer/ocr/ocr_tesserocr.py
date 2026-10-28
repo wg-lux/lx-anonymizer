@@ -21,7 +21,7 @@ Usage:
 import logging
 import threading
 import time
-from typing import Any, List, Tuple, Union
+from typing import Any
 
 import tesserocr  # type: ignore[import-untyped]
 from PIL import Image
@@ -91,9 +91,9 @@ class TesseOCROptimized:
 
     def process_image_boxes(
         self,
-        image_path: Union[str, Image.Image],
-        boxes: List[Box],
-    ) -> Tuple[List[OcrResult], List[float]]:
+        image_path: str | Image.Image,
+        boxes: list[Box],
+    ) -> tuple[list[OcrResult], list[float]]:
         """
         Process multiple text boxes in an image using optimized Tesseract.
 
@@ -114,8 +114,8 @@ class TesseOCROptimized:
         else:
             image = Image.open(image_path).convert("RGB")
 
-        extracted_text_with_boxes: List[OcrResult] = []
-        confidences: List[float] = []
+        extracted_text_with_boxes: list[OcrResult] = []
+        confidences: list[float] = []
 
         start_time = time.time()
         logger.debug(f"Processing {len(boxes)} boxes with TesseOCR")
@@ -196,10 +196,10 @@ def get_global_tesserocr_processor(language: str = "deu+eng") -> TesseOCROptimiz
 
 
 def tesseract_on_boxes_fast(
-    image_path: Union[str, Image.Image],
-    boxes: List[Box],
+    image_path: str | Image.Image,
+    boxes: list[Box],
     language: str = "deu+eng",
-) -> Tuple[List[OcrResult], List[float]]:
+) -> tuple[list[OcrResult], list[float]]:
     """
     Drop-in replacement for tesseract_on_boxes with significant performance improvement.
 
@@ -228,8 +228,8 @@ def cleanup_global_processor():
 
 # Performance comparison function for testing
 def compare_ocr_performance(
-    image_path: Union[str, Image.Image],
-    boxes: List[Box],
+    image_path: str | Image.Image,
+    boxes: list[Box],
     language: str = "deu+eng",
 ) -> dict[str, object]:
     """

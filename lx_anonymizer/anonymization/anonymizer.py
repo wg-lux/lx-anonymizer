@@ -4,7 +4,7 @@ import inspect
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, cast
+from typing import Any, Optional, Protocol, cast
 
 import pymupdf  # type: ignore[import-untyped]
 from PIL import Image, ImageDraw
@@ -417,7 +417,7 @@ class Anonymizer:
         self,
         image_path: str,
         output_path: Optional[str] = None,
-        report_meta: Optional[Dict[str, Any]] = None,
+        report_meta: Optional[dict[str, Any]] = None,
     ) -> Optional[str]:
         _ = report_meta
         try:

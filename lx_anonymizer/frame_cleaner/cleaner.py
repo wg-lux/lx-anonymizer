@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, List, Literal, cast
+from typing import Any, Literal, cast
 
 import cv2
 import numpy as np
@@ -38,6 +38,7 @@ from lx_anonymizer.anonymization.detector_video_masking import (
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.config import settings
 from lx_anonymizer.frame_cleaner.video import FrameCleanerVideoMixin
+from lx_anonymizer.frame_cleaner.sticker_detection import StickerScore, score_sticker
 from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
 from lx_anonymizer.llm.factory import LLMFactory
 from lx_anonymizer.llm.llm_extractor import (
@@ -89,7 +90,7 @@ from lx_anonymizer.text_detection.phi_region_detector import (
     detect_phi_regions,
 )
 from lx_anonymizer.text_detection.roi_processor import ROIProcessor
-from lx_anonymizer.utils.roi_normalization import normalize_roi_keys
+from lx_anonymizer.utils.roi_normalization import NormalizedRoi, normalize_roi_keys
 from lx_anonymizer.video_processing import video_encoder, video_processor
 from lx_anonymizer.video_processing.analysis_budget import (
     DEFAULT_MAX_ANALYSIS_SECONDS,
@@ -358,9 +359,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self._fallback_mask_applied = False
         for chain in self._model_chains():
             chain.reset()
-        self.frame_collection: List[FrameCollectionItem] = []
-        self.frame_observations: List[FrameObservation] = []
-        self.ocr_text_collection: List[str] = []
+        self.frame_collection: list[FrameCollectionItem] = []
+        self.frame_observations: list[FrameObservation] = []
+        self.ocr_text_collection: list[str] = []
+        # Largest white sticker region per frame, index-aligned with frame_collection.
+        self.frame_sticker_pixels: list[int] = []
         self._llm_calls_this_video = 0
         self._llm_seen_texts: set[str] = set()
         self.sensitive_meta: SensitiveMeta = SensitiveMeta()
@@ -828,6 +831,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         frames_processed = 0
         best_ocr_text = ""
         best_ocr_conf = -1.0
+        best_sticker_pixels = -1
+        sticker_roi = self._sticker_roi(endoscope_image_roi)
+        sticker_frames = 0
         previous_metadata: dict[str, object] | None = None
         analysis_started_at = time.monotonic()
         inspected_frame_numbers: list[int] = []
@@ -850,7 +856,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
         frames = self._iter_video(video_path, total_frames)
         try:
-            for idx, gray_frame, stride in frames:
+            for idx, decoded_frame, stride in frames:
                 _ = stride
                 try:
                     check_budget()
@@ -873,13 +879,22 @@ class FrameCleaner(FrameCleanerVideoMixin):
                     )
                     break
 
+                sticker = (
+                    score_sticker(decoded_frame, sticker_roi)
+                    if sticker_roi is not None
+                    else None
+                )
+                sticker_pixels = sticker.ranking_pixels if sticker else 0
+                if sticker is not None and sticker.detected:
+                    sticker_frames += 1
                 frame_result = self._process_frame_result(
-                    gray_frame=gray_frame,
+                    gray_frame=self._analysis_frame(decoded_frame),
                     endoscope_image_roi=endoscope_image_roi,
                     endoscope_data_roi_nested=endoscope_data_roi_nested,
                     frame_id=idx,
                     collect_for_batch=True,
                     high_quality_ocr=self.sampling_profile.high_quality_ocr,
+                    sticker=sticker,
                 )
 
                 if (
@@ -896,12 +911,19 @@ class FrameCleaner(FrameCleanerVideoMixin):
 
                 if frame_result.ocr_text and frame_result.ocr_text.strip():
                     candidate = frame_result.ocr_text.strip()
-                    if frame_result.ocr_confidence > best_ocr_conf or (
-                        abs(frame_result.ocr_confidence - best_ocr_conf) < 1e-6
+                    # Prefer the largest sticker in the endoscope image, then OCR
+                    # confidence.
+                    if (sticker_pixels, frame_result.ocr_confidence) > (
+                        best_sticker_pixels,
+                        best_ocr_conf,
+                    ) or (
+                        sticker_pixels == best_sticker_pixels
+                        and abs(frame_result.ocr_confidence - best_ocr_conf) < 1e-6
                         and len(candidate) > len(best_ocr_text)
                     ):
                         best_ocr_text = candidate
                         best_ocr_conf = float(frame_result.ocr_confidence)
+                        best_sticker_pixels = sticker_pixels
 
                 if frame_result.is_sensitive:
                     sensitive_idx.append(idx)
@@ -936,6 +958,13 @@ class FrameCleaner(FrameCleanerVideoMixin):
         finally:
             if isinstance(frames, Generator):
                 frames.close()
+
+        if sticker_frames:
+            logger.info(
+                "Detected patient-data sticker candidates in %d of %d analyzed frames.",
+                sticker_frames,
+                frames_processed,
+            )
 
         if self._analyzes_every_frame():
             self._metadata_analysis = MetadataAnalysisCoverage(
@@ -1203,8 +1232,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
             return None
         return max(0, max_calls - self._llm_calls_this_video)
 
-    def _select_llm_video_text_candidates(self) -> List[str]:
-        candidates: List[str] = []
+    def _select_llm_video_text_candidates(self) -> list[str]:
+        candidates: list[str] = []
         seen: set[str] = set()
 
         if self.enriched_extractor:
@@ -1223,14 +1252,22 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 candidates.append(aggregated)
                 seen.add(normalized)
 
-        ranked_frames = sorted(
-            self.frame_collection,
-            key=lambda item: (
-                float(item.ocr_confidence),
-                len(item.ocr_text),
-            ),
-            reverse=True,
-        )
+        if len(self.frame_sticker_pixels) != len(self.frame_collection):
+            raise VideoAnonymizationError(
+                "Frame sticker scores are not aligned with the frame collection"
+            )
+        ranked_frames = [
+            frame_data
+            for _, frame_data in sorted(
+                zip(self.frame_sticker_pixels, self.frame_collection),
+                key=lambda pair: (
+                    pair[0],
+                    float(pair[1].ocr_confidence),
+                    len(pair[1].ocr_text),
+                ),
+                reverse=True,
+            )
+        ]
         for frame_data in ranked_frames:
             text = frame_data.ocr_text.strip()
             normalized = self._normalize_text_for_llm(text)
@@ -1347,6 +1384,29 @@ class FrameCleaner(FrameCleanerVideoMixin):
         return {"endoscope_image": cast(FlatRoi, normalized_image_roi)}
 
     @staticmethod
+    def _sticker_roi(
+        endoscope_image_roi: Mapping[str, object] | None,
+    ) -> NormalizedRoi | None:
+        """Endoscope image area searched for stickers; None disables detection."""
+        if not endoscope_image_roi:
+            return None
+        normalized = normalize_roi_keys(endoscope_image_roi)
+        if normalized is None or normalized["width"] <= 0 or normalized["height"] <= 0:
+            # Ranking preference only: masking and OCR handle the ROI separately.
+            logger.warning(
+                "Sticker detection disabled: unusable endoscope image ROI %s",
+                dict(endoscope_image_roi),
+            )
+            return None
+        return normalized
+
+    def _analysis_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Equalized grayscale for sampled OCR; exhaustive OCR keeps source pixels."""
+        if self._analyzes_every_frame() or frame.ndim == 2:
+            return frame
+        return cv2.equalizeHist(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+
+    @staticmethod
     def _frame_image_for_phi_detection(gray_frame: np.ndarray) -> Image.Image:
         if gray_frame.ndim == 2:
             return Image.fromarray(gray_frame).convert("RGB")
@@ -1445,6 +1505,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         frame_id: int | None = None,
         collect_for_batch: bool = False,
         high_quality_ocr: bool = True,
+        sticker: StickerScore | None = None,
     ) -> FrameProcessResult:
         logger.debug(f"Processing frame_id={frame_id or 'unknown'}")
         ocr_roi = self._resolve_ocr_roi(
@@ -1468,6 +1529,22 @@ class FrameCleaner(FrameCleanerVideoMixin):
             self._model_failure_requires_mask = True
             ocr_text, ocr_conf = "", 0.0
             frame_metadata = {"model_failure": True}
+        sticker_detected = sticker is not None and sticker.detected
+        if (
+            sticker_detected
+            and endoscope_data_roi_nested
+            and not self._analyzes_every_frame()
+            and not self._model_failure_requires_mask
+        ):
+            # The data-ROI OCR above never sees the endoscope image, where the
+            # sticker is. Exhaustive OCR already reads the full frame.
+            ocr_text, ocr_conf = self._merge_sticker_ocr(
+                gray_frame,
+                endoscope_image_roi,
+                ocr_text,
+                ocr_conf,
+                high_quality=high_quality_ocr,
+            )
         phi_regions: list[dict[str, object]] = []
         inspect_regions = not self._analyzes_every_frame() or (
             self._phi_frames_processed < self._phi_sample_limit
@@ -1507,6 +1584,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 frame_metadata=frame_metadata,
                 is_sensitive=is_sensitive,
                 phi_regions=phi_regions,
+                sticker_pixels=sticker.ranking_pixels if sticker else 0,
             )
         return FrameProcessResult(
             is_sensitive=is_sensitive,
@@ -1514,6 +1592,33 @@ class FrameCleaner(FrameCleanerVideoMixin):
             ocr_text=ocr_text,
             ocr_confidence=ocr_conf,
         )
+
+    def _merge_sticker_ocr(
+        self,
+        gray_frame: np.ndarray,
+        endoscope_image_roi: Mapping[str, object] | None,
+        ocr_text: str,
+        ocr_conf: float,
+        *,
+        high_quality: bool,
+    ) -> tuple[str, float]:
+        sticker_roi = self._sticker_roi(endoscope_image_roi)
+        if sticker_roi is None:
+            raise ValueError("Sticker OCR requires a valid endoscope image ROI")
+        try:
+            sticker_text, sticker_conf, _ = self.frame_ocr.extract_text_from_frame(
+                gray_frame,
+                {"endoscope_image": cast(FlatRoi, sticker_roi)},
+                high_quality=high_quality,
+            )
+        except ModelUnavailableError:
+            self._model_failure_requires_mask = True
+            return ocr_text, ocr_conf
+        if not sticker_text.strip():
+            return ocr_text, ocr_conf
+        if not ocr_text.strip():
+            return sticker_text, sticker_conf
+        return f"{ocr_text}\n{sticker_text}", max(ocr_conf, sticker_conf)
 
     def _exhaustive_frame_ocr(
         self, frame: np.ndarray
@@ -1607,21 +1712,30 @@ class FrameCleaner(FrameCleanerVideoMixin):
         frame_metadata: dict[str, object],
         is_sensitive: bool,
         phi_regions: list[dict[str, object]],
+        sticker_pixels: int = 0,
     ) -> None:
+        if sticker_pixels < 0:
+            raise ValueError(
+                f"Sticker pixels must be non-negative, got {sticker_pixels}"
+            )
         if self._analyzes_every_frame():
             if ocr_text in self.ocr_text_collection:
                 return
             if len(self.frame_collection) >= self.sampling_profile.max_retained_texts:
                 # Metadata has already been collected from every text. Retain only
                 # the strongest bounded candidates for optional video-level LLM use.
-                weakest = min(
-                    range(len(self.frame_collection)),
-                    key=lambda i: self.frame_collection[i].ocr_confidence,
-                )
-                if ocr_conf <= self.frame_collection[weakest].ocr_confidence:
+                def strength(i: int) -> tuple[int, float]:
+                    return (
+                        self.frame_sticker_pixels[i],
+                        self.frame_collection[i].ocr_confidence,
+                    )
+
+                weakest = min(range(len(self.frame_collection)), key=strength)
+                if (sticker_pixels, ocr_conf) <= strength(weakest):
                     return
                 del self.frame_collection[weakest]
                 del self.ocr_text_collection[weakest]
+                del self.frame_sticker_pixels[weakest]
         self.frame_collection.append(
             FrameCollectionItem.model_validate(
                 {
@@ -1636,6 +1750,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
             )
         )
         self.ocr_text_collection.append(ocr_text)
+        self.frame_sticker_pixels.append(sticker_pixels)
 
     def _process_frame_single(
         self,
@@ -1656,7 +1771,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         ).as_legacy_tuple()
 
     def video_ocr_stream(
-        self, frame_paths: List[Path]
+        self, frame_paths: list[Path]
     ) -> Generator[tuple[str, float], None, None]:
         for fp in frame_paths:
             img = Image.open(fp).convert("L")

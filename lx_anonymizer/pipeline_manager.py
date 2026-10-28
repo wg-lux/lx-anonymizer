@@ -2,7 +2,8 @@ import csv
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, TypeAlias, cast
+from typing import Any, Optional, Protocol, TypeAlias, cast
+from collections.abc import Sequence
 
 import cv2
 import numpy as np
@@ -83,9 +84,9 @@ except ImportError:
 
 CRAFT_AVAILABLE: bool = _craft_available
 
-DetectedEntity: TypeAlias = Tuple[str, str]
-CombinedResult: TypeAlias = Tuple[str, Box, float, List[DetectedEntity]]
-ProcessingResult: TypeAlias = Dict[str, object]
+DetectedEntity: TypeAlias = tuple[str, str]
+CombinedResult: TypeAlias = tuple[str, Box, float, list[DetectedEntity]]
+ProcessingResult: TypeAlias = dict[str, object]
 
 
 class _FlairEntity(Protocol):
@@ -121,8 +122,8 @@ def _resolve_file_type(file_path: Path) -> str:
 
 def _prepare_image_paths(
     file_path: Path, file_type: str, temp_dir: Path
-) -> Tuple[List[Path], str]:
-    image_paths: List[Path] = []
+) -> tuple[list[Path], str]:
+    image_paths: list[Path] = []
     extracted_text = ""
 
     if file_type == "pdf":
@@ -149,15 +150,15 @@ def _prepare_image_paths(
 
 def _load_device_defaults(
     device: str, img_path: Path
-) -> Tuple[
+) -> tuple[
     Optional[Box],
     Optional[Box],
-    Tuple[int, int, int],
+    tuple[int, int, int],
 ]:
     try:
         first_name_box, last_name_box = read_name_boxes(device)
         background_color = cast(
-            Tuple[int, int, int],
+            tuple[int, int, int],
             read_background_color(device),  # pyright: ignore[reportUnknownArgumentType]
         )
     except Exception:
@@ -172,7 +173,7 @@ def _load_device_defaults(
     return first_name_box, last_name_box, background_color
 
 
-def _run_llm_image_analysis(img_path: Path) -> Dict[str, object]:
+def _run_llm_image_analysis(img_path: Path) -> dict[str, object]:
     logger.info("Skipping blur, running LLM analysis on image")
     extractor = LLMMetadataExtractor(
         base_url=settings.LLM_BASE_URL,
@@ -225,14 +226,14 @@ def detect_combined_text_boxes(
     height: int,
     region_detector: PhiRegionDetector | None = None,
     phi_regions: Sequence[Box] | None = None,
-) -> List[Box]:
+) -> list[Box]:
     east_boxes, _ = east_text_detection(
         img_path, east_path, min_confidence, width, height
     )
     tesseract_boxes, _ = tesseract_text_detection(
         img_path, min_confidence, width, height
     )
-    craft_boxes: List[Box] = []
+    craft_boxes: list[Box] = []
     if CRAFT_AVAILABLE:
         craft_boxes, _ = craft_text_detection(img_path, min_confidence, width, height)
     else:
@@ -249,8 +250,8 @@ _detect_combined_text_boxes = detect_combined_text_boxes
 
 
 def _run_ocr_for_boxes(
-    img_path: Path, combined_boxes: List[Box]
-) -> Tuple[List[OcrResult], List[float]]:
+    img_path: Path, combined_boxes: list[Box]
+) -> tuple[list[OcrResult], list[float]]:
     logger.info("Running OCR on boxes")
     trocr_results, trocr_confidences = trocr_on_boxes(img_path, combined_boxes)
     tesseract_results, tess_confidences = tesseract_on_boxes(img_path, combined_boxes)
@@ -264,7 +265,7 @@ def _run_ocr_for_boxes(
 def _write_ner_csv(
     csv_dir: Path,
     file_path: Path,
-    combined_results: List[CombinedResult],
+    combined_results: list[CombinedResult],
 ) -> Path:
     csv_path = (
         csv_dir / f"name_anonymization_data_i{Path(file_path).stem}{uuid.uuid4()}.csv"
@@ -330,7 +331,7 @@ def process_images_with_OCR_and_NER(
     skip_blur: bool = False,
     skip_reassembly: bool = False,
     region_detector: PhiRegionDetector | None = None,
-) -> Tuple[ModifiedImageMap, ProcessingResult]:
+) -> tuple[ModifiedImageMap, ProcessingResult]:
     """
     Process images with OCR and NER.
 
@@ -358,10 +359,10 @@ def process_images_with_OCR_and_NER(
     csv_dir = Path(csv_dir)
     logger.info(f"Processing file: {file_path}")
     modified_images_map: ModifiedImageMap = {}
-    combined_results: List[CombinedResult] = []
-    names_detected: List[str] = []
-    gender_pars: List[str] = []
-    llm_results: Dict[str, object] = {}
+    combined_results: list[CombinedResult] = []
+    names_detected: list[str] = []
+    gender_pars: list[str] = []
+    llm_results: dict[str, object] = {}
 
     try:
         file_type = _resolve_file_type(file_path)
@@ -494,25 +495,25 @@ def process_ocr_results(
     phrase: str,
     phrase_box: Box,
     ocr_confidence: float,
-    combined_results: List[CombinedResult],
-    names_detected: List[str],
+    combined_results: list[CombinedResult],
+    names_detected: list[str],
     device: str,
     modified_images_map: ModifiedImageMap,
-    combined_boxes: List[Box],
+    combined_boxes: list[Box],
     first_name_box: Optional[Box] = None,  # Changed here
     last_name_box: Optional[Box] = None,  # Changed here
-) -> Tuple[
+) -> tuple[
     str,
     ModifiedImageMap,
-    List[CombinedResult],
-    List[str],
+    list[CombinedResult],
+    list[str],
 ]:
     processed_text = process_text(phrase)
     entities = split_and_check(processed_text)
     logger.info(f"Entities detected: {entities}")
 
-    box_to_image_map: Dict[Tuple[str, str], Path] = {}
-    gender_pars: List[str] = []  # Changed from {} to []
+    box_to_image_map: dict[tuple[str, str], Path] = {}
+    gender_pars: list[str] = []  # Changed from {} to []
     new_image_path = (
         image_path  # Keep track of the current image path being manipulated
     )
@@ -558,18 +559,18 @@ def process_ocr_results(
 
 
 def do_ocr_with_fuzzy_correction(
-    all_ocr_results: List[OcrResult],
-    all_ocr_confidences: List[float],
+    all_ocr_results: list[OcrResult],
+    all_ocr_confidences: list[float],
     blurred_image_path: str | Path,
-    combined_results: List[CombinedResult],
-    names_detected: List[str],
+    combined_results: list[CombinedResult],
+    names_detected: list[str],
     device: str,
     modified_images_map: ModifiedImageMap,
-    combined_boxes: List[Box],
+    combined_boxes: list[Box],
     first_name_box: Optional[Box] = None,
     last_name_box: Optional[Box] = None,
     full_text_candidates: Optional[Sequence[str]] = None,
-) -> Tuple[str, ModifiedImageMap, List[CombinedResult], List[str]]:
+) -> tuple[str, ModifiedImageMap, list[CombinedResult], list[str]]:
     """
     Demonstrates how to integrate fuzzy matching and box correction
     into your existing loop before calling 'process_ocr_results'.
@@ -579,7 +580,7 @@ def do_ocr_with_fuzzy_correction(
     if full_text_candidates is None:
         full_text_candidates = []
 
-    updated_genders: List[str] = []
+    updated_genders: list[str] = []
 
     for (snippet_text, snippet_box), snippet_conf in zip(
         all_ocr_results, all_ocr_confidences
@@ -636,8 +637,8 @@ def do_ocr_with_fuzzy_correction(
 
 
 def modify_image_for_name(
-    image_path: str | Path, phrase_box: Box, combined_boxes: List[Box]
-) -> Tuple[Path, Box]:
+    image_path: str | Path, phrase_box: Box, combined_boxes: list[Box]
+) -> tuple[Path, Box]:
     image_obj = cast(object, cv2.imread(str(image_path)))
     image = cast(ImageArray, image_obj)
     _image_height, image_width, _ = image.shape
@@ -650,9 +651,9 @@ def modify_image_for_name(
     return blur_function(temp_image_path, phrase_box), last_name_box
 
 
-def split_and_check(phrase: str) -> List[DetectedEntity]:
+def split_and_check(phrase: str) -> list[DetectedEntity]:
     # Initialize an empty list to store entities
-    all_entities: List[DetectedEntity] = []
+    all_entities: list[DetectedEntity] = []
 
     # Get entities from spaCy
     spacy_entities = spacy_NER_German(phrase)

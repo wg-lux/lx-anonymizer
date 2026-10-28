@@ -7,14 +7,12 @@ from datetime import datetime
 from typing import (
     Any,
     Final,
-    Mapping,
     Optional,
-    Pattern,
-    Sequence,
-    Tuple,
     TypedDict,
     cast,
 )
+from re import Pattern
+from collections.abc import Mapping, Sequence
 
 import spacy
 from spacy.language import Language
@@ -466,7 +464,7 @@ class PatientDataExtractor(BaseExtractor):
 
     def _extract_names(
         self, tokens: Sequence[Token]
-    ) -> Tuple[Optional[str], Optional[str]]:
+    ) -> tuple[Optional[str], Optional[str]]:
         """Heuristics to split names based on commas or position."""
         header_end_idx = 0
         # Find where "Patient:" ends

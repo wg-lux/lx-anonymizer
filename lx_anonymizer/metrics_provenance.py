@@ -4,7 +4,8 @@ from lx_anonymizer.runtime_types import Box
 import importlib.metadata
 from collections.abc import Sequence
 from statistics import mean
-from typing import Mapping, cast
+from typing import cast
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 

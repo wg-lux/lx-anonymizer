@@ -1,4 +1,6 @@
+import shutil
 import subprocess
+from fractions import Fraction
 from pathlib import Path
 from typing import cast
 
@@ -126,8 +128,16 @@ def test_remove_frames_streaming_uses_single_process_and_removes_audio(
     monkeypatch.setattr(
         processor_module.video_utils, "detect_video_frame_rate", fake_frame_rate
     )
+
+    def fake_time_base(video_path: Path) -> Fraction:
+        _ = video_path
+        return Fraction(1, 600)
+
     monkeypatch.setattr(
         processor_module.video_utils, "detect_video_format", fake_format
+    )
+    monkeypatch.setattr(
+        processor_module.video_utils, "detect_video_time_base", fake_time_base
     )
     monkeypatch.setattr(processor_module.subprocess, "run", fake_run)
     monkeypatch.setattr(processor_module.subprocess, "Popen", fail_popen)
@@ -147,4 +157,76 @@ def test_remove_frames_streaming_uses_single_process_and_removes_audio(
 
     video_filter = captured_cmd[captured_cmd.index("-vf") + 1]
     assert "eq(n\\,10)" in video_filter
+    assert "setpts" not in video_filter
+    assert captured_cmd.index("-copyts") < captured_cmd.index("-i")
+    assert captured_cmd[captured_cmd.index("-fps_mode") + 1] == "passthrough"
+    assert captured_cmd[captured_cmd.index("-enc_time_base") + 1] == "demux"
+    assert captured_cmd[captured_cmd.index("-video_track_timescale") + 1] == "600"
     assert captured_cmd[captured_cmd.index("-c:v") + 1] == "libx264"
+
+
+def _probe_ticks(ffprobe: str, path: Path) -> list[int]:
+    probed = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=best_effort_timestamp",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [int(value.strip(",")) for value in probed.stdout.split()]
+
+
+@pytest.mark.parametrize("timescale", [600, 1000, 90_000])
+def test_real_frame_removal_keeps_recorded_timestamps_without_host_hooks(
+    tmp_path: Path, timescale: int
+) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        pytest.skip("ffmpeg and ffprobe are not available")
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "removed.mp4"
+    # A 30 then 24 frames-per-second clip yields variable spacing; the offset
+    # reproduces a nonzero recording origin.
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=30",
+            "-vf",
+            "setpts='if(lt(N,10),N/30,10/30+(N-10)/24)/TB+7/TB'",
+            "-frames:v",
+            "20",
+            "-fps_mode",
+            "passthrough",
+            "-c:v",
+            "libx264",
+            "-video_track_timescale",
+            str(timescale),
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    assert _video_processor().remove_frames_streaming(source, [4, 5, 12], output)
+
+    source_ticks = _probe_ticks(ffprobe, source)
+    assert len(source_ticks) == 20
+    assert _probe_ticks(ffprobe, output) == [
+        tick for index, tick in enumerate(source_ticks) if index not in {4, 5, 12}
+    ]
