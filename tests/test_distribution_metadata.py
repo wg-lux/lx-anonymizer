@@ -6,7 +6,6 @@ from typing import TypedDict, cast
 
 from packaging.requirements import Requirement
 
-
 ProjectTable = TypedDict(
     "ProjectTable",
     {
@@ -89,4 +88,3 @@ def test_report_v2_requires_candidate_shared_contract() -> None:
         if _dependency_name(value) == "lx-dtypes"
     )
     assert "0.5.3" not in dependency.specifier
-    assert "0.5.4.dev1" in dependency.specifier

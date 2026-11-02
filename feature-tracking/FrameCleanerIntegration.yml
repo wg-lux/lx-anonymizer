@@ -92,6 +92,31 @@ definition_of_done:
           note: Includes real 501-frame 1080p import with RapidOCR. Endoreg uses the local editable lx-anonymizer package; caller and compute package must be deployed together. This is functional verification, not a controlled throughput or clinical recall benchmark.
       assessed_by: codex-metadata-boundaries-20260910
       assessed_at: "2026-09-10"
+  - id: screened_ocr_selection
+    category: functionality
+    title: The screened profile screens every frame and runs OCR only on informative frames
+    acceptance:
+      - The screened profile decodes and colour-screens every source frame in order; sampling caps and metadata-driven early stopping stay disabled.
+      - Full-frame OCR runs for frames with a detected sticker, frames not classified as inside the body (mucosa colour share below threshold, including NBI and dark frames), the first clean frame after such a frame, overlay changes outside the endoscope image area against the last OCR'd frame, and at least once per screened_max_reuse_frames frames.
+      - Only a frame positively screened as clean, inside the body and overlay-unchanged reuses the previous clean inside-body OCR result; every frame keeps its own observation and metadata coverage reports mode colour_screened.
+      - Without a usable endoscope image ROI the profile emits the structured frame_analysis.ocr_screening_disabled event and runs OCR on every changed frame.
+      - frame_analysis telemetry reports requested and active screening, the reuse bound and per-reason decision counts without OCR text.
+      - The exhaustive profile is unchanged; callers opt in to screened explicitly.
+    required: false
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/test_frame_screening.py, tests/test_exhaustive_video_metadata.py, tests/test_sticker_detection.py, -q]
+      timeout_seconds: 600
+    assessment:
+      status: in_progress
+      assessed_by: claude-screened-ocr-20261102
+      assessed_at: '2026-11-02'
+      evidence:
+        - kind: test
+          reference: 'tests/test_frame_screening.py: 16 passed; frame cleaner, budget, sticker, exhaustive, OCR, e2e and strand regression lane 163 passed; Pyright 0 errors on changed files.'
+        - kind: command
+          reference: 'Decision-count measurement with stubbed OCR on endoreg-db 501-frame 1080p assets: endoscope 36, instrument 15, small intestine 16, outside 271, NBI 501 OCR calls.'
+          note: Functional evidence only. Clinical recall of patient overlays and stickers against exhaustive OCR on representative videos, and clinical/security approval of the coverage change, are outstanding.
   - id: typed_public_boundary
     category: requirements
     title: FrameCleaner exposes a typed invocation and result boundary

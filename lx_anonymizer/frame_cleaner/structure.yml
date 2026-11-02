@@ -25,6 +25,9 @@ entrypoints:
 - name: Sticker detection
   file: sticker_detection.py
   purpose: Colour-based patient-data sticker detection in the endoscope image area
+- name: Frame screening
+  file: frame_screening.py
+  purpose: Colour screening deciding when the screened profile reuses OCR or runs fresh full-frame OCR
 dependencies:
   internal:
   - lx_anonymizer/video_processing
@@ -42,4 +45,4 @@ contracts:
   doc: ../../docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
 tests:
   directory: ../../tests
-  command: uv run pytest -q tests/test_frame_cleaner_concurrency.py tests/test_frame_analysis_budget.py tests/test_sticker_detection.py
+  command: uv run pytest -q tests/test_frame_cleaner_concurrency.py tests/test_frame_analysis_budget.py tests/test_sticker_detection.py tests/test_frame_screening.py

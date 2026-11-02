@@ -175,7 +175,7 @@ class MetadataAnalysisCoverage(BaseModel):
     total_frames: int = Field(gt=0)
     inspected_frame_numbers: list[int]
     complete: bool
-    mode: Literal["exhaustive", "interval_sampled"]
+    mode: Literal["exhaustive", "colour_screened", "interval_sampled"]
     cap_reason: (
         Literal["projected_deadline_exceeded", "deadline_exceeded", "model_failure"]
         | None

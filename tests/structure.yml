@@ -10,6 +10,9 @@ responsibilities:
 boundaries:
 - Keep changes within this responsibility; follow dependency manifests before crossing module boundaries.
 entrypoints:
+- name: Frame OCR screening
+  file: test_frame_screening.py
+  purpose: Verify opt-in screening decisions, bounded OCR reuse and exhaustive-profile compatibility.
 - name: Report diagnostic privacy
   file: test_report_log_privacy.py
   purpose: Sentinel non-disclosure through report, cropper and redaction diagnostics

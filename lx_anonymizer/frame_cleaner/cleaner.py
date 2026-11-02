@@ -5,10 +5,10 @@ import resource
 import stat
 import threading
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Generator, Mapping
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
@@ -37,8 +37,14 @@ from lx_anonymizer.anonymization.detector_video_masking import (
 )
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.config import settings
-from lx_anonymizer.frame_cleaner.video import FrameCleanerVideoMixin
+from lx_anonymizer.frame_cleaner.frame_screening import (
+    OcrScreenReason,
+    ScreenReference,
+    emit_screening_disabled,
+    screen_frame,
+)
 from lx_anonymizer.frame_cleaner.sticker_detection import StickerScore, score_sticker
+from lx_anonymizer.frame_cleaner.video import FrameCleanerVideoMixin
 from lx_anonymizer.huggingface_cache.can_load_model import HF_Cache
 from lx_anonymizer.llm.factory import LLMFactory
 from lx_anonymizer.llm.llm_extractor import (
@@ -50,9 +56,10 @@ from lx_anonymizer.metrics_provenance import (
     build_anonymizer_provenance,
     summarize_frame_observations,
 )
-from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.model_adapters import (
     BoundedFrameOCR as FrameOCR,
+)
+from lx_anonymizer.model_adapters import (
     BoundedMetadataExtractor,
 )
 from lx_anonymizer.model_loading import (
@@ -60,6 +67,7 @@ from lx_anonymizer.model_loading import (
     ModelCleanupError,
     ModelUnavailableError,
 )
+from lx_anonymizer.ner.frame_metadata_extractor import FrameMetadataExtractor
 from lx_anonymizer.ocr.ocr_frame import FlatRoi, RoiInput
 from lx_anonymizer.paper_metrics import (
     VideoPaperEvaluationMetrics,
@@ -120,6 +128,7 @@ class FrameCleanerQualityProfile(str, Enum):
     BALANCED = "balanced"
     QUALITY = "quality"
     EXHAUSTIVE = "exhaustive"
+    SCREENED = "screened"
 
 
 @dataclass(frozen=True)
@@ -133,6 +142,9 @@ class FrameCleanerSamplingProfile:
     max_retained_texts: int = 128
     ocr_inference_threads: int = 2
     max_analysis_seconds: float = DEFAULT_MAX_ANALYSIS_SECONDS
+    # Screening reuses OCR only for frames positively screened as unchanged.
+    ocr_screening: bool = False
+    screened_max_reuse_frames: int = 50
 
     def __post_init__(self) -> None:
         validate_analysis_budget(self.max_analysis_seconds)
@@ -142,10 +154,13 @@ class FrameCleanerSamplingProfile:
                 self.max_retained_observations,
                 self.max_retained_texts,
                 self.ocr_inference_threads,
+                self.screened_max_reuse_frames,
             )
             <= 0
         ):
             raise ValueError("Frame analysis limits must be positive")
+        if self.ocr_screening and not self.every_frame:
+            raise ValueError("OCR screening requires every decoded frame")
         if self.every_frame and (self.smart_early_stopping or self.high_quality_ocr):
             raise ValueError(
                 "Exhaustive analysis requires conventional OCR without early stopping"
@@ -160,13 +175,17 @@ class FrameCleanerSamplingProfile:
         )
         configured_samples = max(1, settings.MAX_FRAMES_TO_SAMPLE)
 
-        if resolved_profile is FrameCleanerQualityProfile.EXHAUSTIVE:
+        if resolved_profile in (
+            FrameCleanerQualityProfile.EXHAUSTIVE,
+            FrameCleanerQualityProfile.SCREENED,
+        ):
             return cls(
                 max_frames_to_sample=configured_samples,
                 high_quality_ocr=False,
                 smart_early_stopping=False,
                 early_stop_techniques=frozenset(),
                 every_frame=True,
+                ocr_screening=resolved_profile is FrameCleanerQualityProfile.SCREENED,
             )
 
         if resolved_profile is FrameCleanerQualityProfile.FAST:
@@ -228,6 +247,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
     _phi_sample_stride: int
     _phi_sample_limit: int
     _phi_frames_processed: int
+    _screen_roi: NormalizedRoi | None
+    _screen_reference: ScreenReference | None
+    _screen_decisions: Counter[OcrScreenReason]
 
     def __init__(
         self,
@@ -371,6 +393,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         self._previous_ocr_result: tuple[str, float, dict[str, object]] | None = None
         self._metadata_text_cache: OrderedDict[str, None] = OrderedDict()
         self._ocr_cache_hits = 0
+        self._screen_roi = None
+        self._screen_reference = None
+        self._screen_decisions = Counter()
         self._metadata_analysis: MetadataAnalysisCoverage | None = None
         self._phi_sample_stride = 1
         self._phi_sample_limit = self.sampling_profile.max_frames_to_sample
@@ -449,6 +474,7 @@ class FrameCleaner(FrameCleanerVideoMixin):
         finally:
             self._previous_ocr_frame = None
             self._previous_ocr_result = None
+            self._screen_reference = None
             try:
                 with ExitStack() as cleanup:
                     for chain in self._model_chains():
@@ -773,10 +799,19 @@ class FrameCleaner(FrameCleanerVideoMixin):
         payload["model_execution"] = self._model_execution_summary()
         if self._analyzes_every_frame():
             payload["frame_analysis"] = {
-                "profile": "exhaustive",
+                "profile": "screened" if self._screening_active() else "exhaustive",
                 "ocr_backend": "configured_cascade",
                 "ocr_scope": "full_frame",
                 "identical_frame_cache_hits": self._ocr_cache_hits,
+                "ocr_screening": {
+                    "requested": self.sampling_profile.ocr_screening,
+                    "active": self._screening_active(),
+                    "max_reuse_frames": self.sampling_profile.screened_max_reuse_frames,
+                    "decisions": {
+                        reason.value: self._screen_decisions[reason]
+                        for reason in OcrScreenReason
+                    },
+                },
                 "retained_text_limit": self.sampling_profile.max_retained_texts,
                 "observation_limit": self.sampling_profile.max_retained_observations,
                 "phi_detector_frames_processed": self._phi_frames_processed,
@@ -833,6 +868,9 @@ class FrameCleaner(FrameCleanerVideoMixin):
         best_ocr_conf = -1.0
         best_sticker_pixels = -1
         sticker_roi = self._sticker_roi(endoscope_image_roi)
+        self._screen_roi = sticker_roi
+        if self.sampling_profile.ocr_screening and sticker_roi is None:
+            emit_screening_disabled(logger)
         sticker_frames = 0
         previous_metadata: dict[str, object] | None = None
         analysis_started_at = time.monotonic()
@@ -972,7 +1010,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
                 inspected_frame_numbers=inspected_frame_numbers,
                 complete=len(inspected_frame_numbers) == total_frames
                 and not self._model_failure_requires_mask,
-                mode="exhaustive" if probes is None else "interval_sampled",
+                mode="interval_sampled"
+                if probes is not None
+                else "colour_screened"
+                if self._screening_active()
+                else "exhaustive",
                 cap_reason="model_failure"
                 if self._model_failure_requires_mask
                 else cap_reason,
@@ -1517,7 +1559,8 @@ class FrameCleaner(FrameCleanerVideoMixin):
             if self._analyzes_every_frame():
                 ocr_roi = None
                 ocr_text, ocr_conf, frame_metadata = self._exhaustive_frame_ocr(
-                    gray_frame
+                    gray_frame,
+                    sticker_detected=sticker is not None and sticker.detected,
                 )
             else:
                 ocr_text, ocr_conf, frame_metadata = (
@@ -1620,8 +1663,11 @@ class FrameCleaner(FrameCleanerVideoMixin):
             return sticker_text, sticker_conf
         return f"{ocr_text}\n{sticker_text}", max(ocr_conf, sticker_conf)
 
+    def _screening_active(self) -> bool:
+        return self.sampling_profile.ocr_screening and self._screen_roi is not None
+
     def _exhaustive_frame_ocr(
-        self, frame: np.ndarray
+        self, frame: np.ndarray, *, sticker_detected: bool = False
     ) -> tuple[str, float, dict[str, object]]:
         previous = self._previous_ocr_frame
         result = self._previous_ocr_result
@@ -1632,9 +1678,40 @@ class FrameCleaner(FrameCleanerVideoMixin):
         ):
             self._ocr_cache_hits += 1
             return result[0], result[1], dict(result[2])
+        decision = None
+        if self._screen_roi is not None and self.sampling_profile.ocr_screening:
+            decision = screen_frame(
+                frame,
+                self._screen_roi,
+                sticker_detected=sticker_detected,
+                reference=self._screen_reference,
+                max_reuse_frames=self.sampling_profile.screened_max_reuse_frames,
+            )
+            self._screen_decisions[decision.reason] += 1
+            reference = self._screen_reference
+            if (
+                not decision.requires_ocr
+                and result is not None
+                and reference is not None
+            ):
+                self._screen_reference = replace(
+                    reference, frames_since_ocr=reference.frames_since_ocr + 1
+                )
+                return result[0], result[1], dict(result[2])
         result = self.frame_ocr.extract_text_with_rapidocr(frame)
         self._previous_ocr_frame = frame.copy()
         self._previous_ocr_result = result
+        if decision is not None:
+            # Only a clean inside-body OCR result may be reused by later frames.
+            self._screen_reference = (
+                ScreenReference(
+                    frame_shape=frame.shape,
+                    overlay_pixels=decision.overlay_pixels,
+                    frames_since_ocr=0,
+                )
+                if decision.clean_inside
+                else None
+            )
         return result[0], result[1], dict(result[2])
 
     def _metadata_for_ocr_text(

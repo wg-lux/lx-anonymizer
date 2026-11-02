@@ -16,7 +16,7 @@
 let
   py = python312Packages;
   pname = "lx-anonymizer";
-  version = "1.0.9.dev1";
+  version = "1.1.2";
   tesseractWithLangs = tesseract.override {
     enableLanguages = [
       "deu"
